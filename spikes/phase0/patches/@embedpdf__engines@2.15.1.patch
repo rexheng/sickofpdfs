@@ -1,0 +1,18 @@
+diff --git a/dist/lib/pdfium/engine.d.ts b/dist/lib/pdfium/engine.d.ts
+index 26006508987850f2cc64903021cf33e4663cca6b..948a4528edb7f5e7d9b0441bd0223c8e972214b4 100644
+--- a/dist/lib/pdfium/engine.d.ts
++++ b/dist/lib/pdfium/engine.d.ts
+@@ -53,11 +53,11 @@ export interface PdfiumEngineOptions {
+  * Pdf engine that based on pdfium wasm
+  */
+ export declare class PdfiumNative implements IPdfiumExecutor {
+-    private pdfiumModule;
++    protected pdfiumModule;
+     /**
+      * pdf documents that opened
+      */
+-    private readonly cache;
++    protected readonly cache;
+     /**
+      * memory manager instance
+      */

@@ -1,0 +1,4 @@
+{
+  "extends": "./.wxt/tsconfig.json",
+  "include": ["entrypoints", "src", ".wxt/wxt.d.ts"]
+}

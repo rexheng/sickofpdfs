@@ -12,3 +12,7 @@ test-results/
 docs/research/classifier-fixtures/**/*.pdf
 docs/research/drive-refs/third-party/
 .superpowers/
+spikes/phase0/fixtures/out/
+spikes/phase0/results/
+test-assets/
+*.pem
