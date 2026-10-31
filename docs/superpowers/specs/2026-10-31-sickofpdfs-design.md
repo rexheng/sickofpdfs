@@ -8,7 +8,7 @@ Oct 31, 2026 · @rex
 
 sickofpdfs is a Chrome extension that replaces Chrome's PDF viewer with a Google-Drive-style reader. You highlight and comment with Ctrl+Alt+M, ask Claude inside comment threads, and every learning PDF you read lands in a searchable library. The library syncs to your own Cloudflare account, so claude.ai can search it too. Commenting is the core feature; everything else supports it.
 
-It ships in three releases, each finished and critic-tested before the next: **Release 1** is the reader, all marks, comments, library and @Claude; **Release 2** adds your cloud and the claude.ai connector; **Release 3** adds text recognition for scans, version linking and Foxit/Acrobat export.
+It ships in three releases, each finished and critic-tested before the next: **Release 1** is the reader, all marks, comments, library and @Claude; **Release 2** adds your cloud and the claude.ai connector; **Release 3** adds text recognition for scans and Foxit/Acrobat export.
 
 **Release 1 is done when:**
 
@@ -23,7 +23,7 @@ It ships in three releases, each finished and critic-tested before the next: **R
 
 **Release 2 is done when** everything marked as synced restores after a reinstall (the library shows how many items are still unsynced), the web library works from any computer, and a comment Claude adds in claude.ai appears in the viewer.
 
-**Release 3 is done when** scanned pages can be selected and searched like normal text, notes can be linked across versions of a reading, and an exported PDF shows our marks and threads in Foxit and Acrobat.
+**Release 3 is done when** scanned pages can be selected and searched like normal text, and an exported PDF shows our marks and threads in Foxit and Acrobat.
 
 Checked by hand: double-clicking in File Explorer, keyboard layouts, the claude.ai connector screens, and Foxit and Acrobat display. The Drive look (criterion 7) is judged by the visual critic. Everything else is an automated test.
 
@@ -39,7 +39,7 @@ Every request so far is mapped to one decision below. Anything not in this table
 | Integrated with Claude, like Claude Docs | Two parts: @Claude inside any comment thread (your API key), plus (Release 2) a claude.ai connector that can search your library and add comments. |
 | Save PDFs and a history of what you read | Learning PDFs are copied into the library automatically, with reading history, resume position and one search over titles, full text and notes. |
 | Only learning PDFs, never receipts | An on-device filter glances at the text in memory and decides before anything is stored. Non-learning PDFs leave no trace. |
-| Notes stay on the link and persist | Each PDF is identified by a fingerprint of its contents, and links and file paths are remembered as places it was seen. Notes survive moves, renames and new versions. |
+| Notes stay on the link and persist | Each PDF is identified by a fingerprint of its contents, and links and file paths are remembered as places it was seen. Notes survive moves, renames and re-downloads. |
 | Hosted | Release 2: your own free Cloudflare account runs sync, backup, a web version of the library, and the Claude connector. |
 | Looks like Google Drive (the look and feel) | Drive's Material 3 look and feel: its colours, type, icons, spacing and components. Close in feel, not a pixel-for-pixel copy. |
 | Beat Foxit and Google's viewer | Chrome's own PDF engine (PDFium), plus the best ideas from pdf.js, Hypothesis, Zotero, Sioyek and Google Docs. |
@@ -50,11 +50,9 @@ Every request so far is mapped to one decision below. Anything not in this table
 | Highlight, underline, bold, strikethrough and comments, all seamless | A Google-Docs-style toolbar on every selection, one shortcut per mark, no tool modes. |
 | Keep it simple first | Three releases, each finished and tested before the next. |
 
-**Not planned:** phone apps, Firefox and Safari, ink drawing, flashcards, sharing with classmates, editing your original files in place, a Ctrl+Alt+M that works inside other apps such as Foxit, and a Chrome Web Store listing (you install it directly first).
-
 ## How it feels to use
 
-Ten everyday moments, start to finish. Each becomes an end-to-end test; the two that need Windows File Explorer or claude.ai (2 and 7) are checked by hand.
+Nine everyday moments, start to finish. Each becomes an end-to-end test; the two that need Windows File Explorer or claude.ai (2 and 7) are checked by hand.
 
 1. **You click any PDF link.** It could be a journal article, a Moodle reading, lecture slides or a textbook chapter. The tab shows our viewer, not Chrome's. A chip in the top bar reads "Saved to library" (reasons on hover, such as "References section, DOI, 40 pages"). If you have read it before, it opens where you stopped.
 2. **You double-click a PDF in File Explorer.** Chrome opens it (it is your default PDF app) and the extension takes over. If that file was seen before, even in another folder or under another name, your notes appear.
@@ -64,8 +62,7 @@ Ten everyday moments, start to finish. Each becomes an end-to-end test; the two 
 6. **You look something up next week.** Press Ctrl+K in any viewer or library tab and type "parallel trends". Results show readings, matching pages and your notes; Enter jumps to the exact passage.
 7. **You ask claude.ai (Release 2).** "What did I note about difference-in-differences this term?" The connector searches your library and Claude answers with sources. "Add a comment on page 3 summarising this" appears in the viewer as a comment from Claude.
 8. **You move, rename or re-download a file.** Same contents, same fingerprint, same notes. Re-downloads that differ only by a download stamp, as JSTOR adds, are recognised by their text. The library records the new location.
-9. **Your professor uploads a new version to the same link.** Your notes carry over to the new version and re-attach by matching the quoted text; the old version keeps its own placement. Any that cannot be placed are listed under "Couldn't place" with their quote, never deleted.
-10. **You open a receipt.** It displays normally with the chip "Not saved: looks like a receipt". Nothing is stored, indexed or uploaded. If the filter is wrong, one click on the chip saves it.
+9. **You open a receipt.** It displays normally with the chip "Not saved: looks like a receipt". Nothing is stored, indexed or uploaded. If the filter is wrong, one click on the chip saves it.
 
 ## Architecture
 
@@ -155,7 +152,7 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 - **Mark:** a style decoration with style, colour and anchor. A text anchor holds the page boxes it covers (one set per page, so it can span pages), the exact quote, 32 characters before and after, and its character position. An area anchor holds the page and rectangle.
 - **Comment thread:** has its own anchor in the same format, or sits on a point, a page or the whole document. Making a comment also adds a highlight, but the two are independent: if a commented passage loses every style, the thread shows a dotted underline. A thread holds comments, each with author (you or Claude), Markdown body, and created and edited times.
 - **Re-anchoring on open:** the stored position is used only if the quote still matches there; next comes the quote on the same page; then a fuzzy match across the document scoring at least 0.8 on a quote of at least 12 characters. Anything else goes to "Couldn't place", never onto doubtful text.
-- **One schema:** the implementation plan defines the single normative data schema. It replaces the research draft, which lacks bold, area marks, separate comment anchors and readings.
+- **One schema:** the implementation plan defines the single normative data schema. It replaces the research draft, which lacks bold, area marks and separate comment anchors.
 
 **The Ctrl+Alt+M flow:**
 
@@ -223,10 +220,9 @@ A PDF is known by what it contains, not where it lives. Links and file paths are
 
 1. **A document is its fingerprint:** the SHA-256 of the file's bytes, computed while it streams in. The same bytes from any link or folder are the same document with the same notes.
 2. **Same text, new bytes = still the same document.** Many sites stamp each download (JSTOR prints "This content downloaded from \<IP> on \<date>" on every page). If new bytes have the same page count and their page text matches a known document at 99.5% or more after stamp lines, IP addresses and dates are removed, the new fingerprint becomes an alias: same notes, nothing copied.
-3. **Same link, changed content = a new version of the same reading** (Release 1). A "link" is the canonical link: tracking and token parameters removed, http made https, library-proxy hosts mapped back, and Moodle's revision number removed, with the Moodle page that led to the file recorded too. Local file paths never count as links; a known path with new content asks instead.
-4. **Notes belong to the reading, not to one file.** Each note keeps one anchor per version, so nothing is duplicated. The library opens the newest version first, with a version picker.
-5. **Different link and different content = a separate reading.** From Release 3, a new version is linked automatically only when the arXiv id in the link or file name matches, or the DOI in the PDF's own metadata matches. Weaker hints (the PDF's internal ID, similar first pages) only prompt: "Looks like a new version of X. Link notes?"
-6. **Ids never duplicate across devices.** A reading's id is the fingerprint of its first version (if two devices disagree, the smaller id wins and the other becomes an alias), and a location's id is a hash of its canonical link. Notes get a random id once, when created.
+3. **A genuinely different file is a different document.** PDFs rarely change, so there is no version tracking. If a link ever serves a different file, its notes stay with the old copy, which remains in your library.
+4. **Links are canonical:** tracking and token parameters removed, http made https, library-proxy hosts mapped back, and Moodle's revision number removed, with the Moodle page that led to the file recorded too. Local file paths are kept as locations only.
+5. **Ids never duplicate across devices.** A document's id is its fingerprint, and a stamped re-download becomes an alias of the first copy seen (if two devices disagree, the smaller id wins). A location's id is a hash of its canonical link, and notes get a random id once, when created.
 
 The exact canonical-link function, the stamp-stripping rules and their test cases are written in the implementation plan.
 
@@ -320,7 +316,7 @@ Everything is written locally first, so reading and noting work offline. Release
 
 **On your computer (inside Chrome):**
 
-- **Database:** SQLite with full-text search, owned by one hidden background page that Chrome recreates on demand. Tables: readings, documents, locations, page text, marks, threads, comments, history, settings, and an outbox of changes to sync.
+- **Database:** SQLite with full-text search, owned by one hidden background page that Chrome recreates on demand. Tables: documents, locations, page text, marks, threads, comments, history, settings, and an outbox of changes to sync.
 - **PDF copies:** tabs write them straight into the extension's private file storage, named by fingerprint, so duplicates are stored once. Large data never travels through Chrome's extension messages (limited to about 64 MB); it goes through a direct channel or the file storage.
 - **Tabs in step:** a broadcast channel tells every open tab when something changes.
 - **Safety:** unlimited storage, and a fixed extension key we generate ourselves (no Web Store account needed), so the extension's identity and data survive updates and folder moves.
@@ -329,7 +325,7 @@ Everything is written locally first, so reading and noting work offline. Release
 
 **Sync rules (Release 2):**
 
-- Documents are keyed by fingerprint, readings by the fingerprint of their first version, and locations by their canonical link, so two devices never create duplicates. Notes get a random id once and are never copied.
+- Documents are keyed by fingerprint, stamped re-downloads as aliases of the first copy seen, and locations by their canonical link, so two devices never create duplicates. Notes get a random id once and are never copied.
 - Every change carries the revision it was based on and a hybrid clock, not the computer's wall clock, which can be wrong. If two devices changed the same record, the later change wins, and the other version of a note's text is added to its thread as a reply marked "edited on another device".
 - An edit beats a delete: if one device deletes a note that another edited, the note comes back.
 - Sync and uploads run in the hidden background page, so they never need an open tab. Each PDF uploads once per fingerprint, in 32 MB parts.
@@ -495,9 +491,9 @@ flowchart TB
     p5["Phase 5 · Cloud sync<br/>Worker, GitHub login, sync, restore, staging and production"] --> g5{"Restore works<br/>after a full reinstall"}
     g5 --> p6["Phase 6 · Web library and connector<br/>Library on the web, MCP tools for claude.ai and Claude Code"] --> g6{"Claude's comment appears<br/>in the viewer after sync"}
   end
-  subgraph R3[Release 3 · Scans, versions, Foxit and Acrobat export]
+  subgraph R3[Release 3 · Scans and Foxit/Acrobat export]
     p7["Phase 7 · Scanned PDFs<br/>Local text recognition, visible pages first, searchable"] --> g7{"Scans select like text<br/>accuracy target met"}
-    g7 --> p8["Phase 8 · Versions and export<br/>Version linking, PDF export and import, courses"] --> g8{"Foxit shows our notes<br/>round-trip test passes"}
+    g7 --> p8["Phase 8 · Export and courses<br/>PDF export and import, Foxit round-trip, courses"] --> g8{"Foxit shows our notes<br/>round-trip test passes"}
   end
   g4 --> p5
   g6 --> p7
@@ -551,28 +547,3 @@ Release 1 needs about 10 minutes and no new accounts, apart from an Anthropic AP
 - [ ] Run the "Bootstrap cloud" workflow once from the Actions tab. It creates the databases, bucket and Workers, and commits their ids to the repo's configuration. Then swap the token for the narrower deploy token SETUP.md describes.
 - [ ] Extension → Settings → Cloud → Connect, and sign in with GitHub.
 - [ ] In claude.ai: Settings → Connectors → Add custom connector. Name it "My readings", use the address ending in /mcp, choose "Use Claude's published identity", and sign in with GitHub.
-
-## Licences and credits
-
-Everything reused is under a permissive licence, so the app can be shared later. AGPL projects are studied for ideas only; none of their code is copied.
-
-| Project | Licence | How we use it |
-| --- | --- | --- |
-| [EmbedPDF](https://github.com/embedpdf/embed-pdf-viewer) (PDFium) | MIT (npm) / Apache-2.0 | Dependency, pinned, small patches; comment sidebar ported to React |
-| [pdf.js](https://github.com/mozilla/pdf.js) Chrome extension | Apache-2.0 | PDF takeover logic and text-layer code adapted; fallback engine |
-| [Hypothesis client](https://github.com/hypothesis/client) anchoring | BSD-2-Clause | Quote matching copied |
-| approx-string-match | MIT | Dependency (fuzzy matching) |
-| [SQLite WASM](https://sqlite.org/wasm) | Public domain | Local database and search |
-| WXT, React, Radix UI, Vite | MIT | Dependencies |
-| transformers.js, MiniLM model | Apache-2.0 | Filter tie-breaker |
-| Material Symbols | Apache-2.0 | All icons |
-| Material Design Icons (file-pdf-box) | Apache-2.0 | PDF file icon |
-| Google Sans, Google Sans Flex | SIL OFL 1.1 | Bundled fonts |
-| Anthropic TypeScript SDK | MIT | @Claude calls |
-| Cloudflare Workers OAuth Provider, MCP SDK | MIT / Apache-2.0 | Hosting and connector |
-| Zotero reader, Readest, Koodo Reader | AGPL-3.0 | Ideas only, no code |
-| Chromium PDF viewer | BSD-3-Clause | Zoom, fit and keyboard behaviour reused |
-| hash-wasm | MIT | Streaming fingerprints |
-| tesseract.js or PaddleOCR with onnxruntime-web | Apache-2.0 / MIT | Text recognition for scans (Release 3) |
-
-Not shipped: Google's logos, Product Sans, Google Symbols and Drive's own file icons, which are Google brand assets. The name "EmbedPDF" is a trademark and is not used for this app.
