@@ -6,7 +6,7 @@
 
 **Architecture:** One pnpm monorepo, with the WXT extension in `apps/extension`: its service worker owns takeover (DNR rules, the `file://` fallback, Referer, the escape hatch), the viewer page draws the PDF, and an offscreen document is the only owner of SQLite-wasm on OPFS, which tabs reach over a MessagePort brokered by the service worker (PDF bytes go straight to OPFS). `packages/viewer` holds the `PdfBackend` adapter, which runs our own engine worker hosting a `PdfiumNative` subclass from EmbedPDF 2.15.1, plus the virtual page list, zoom, find and the text layer. `packages/core` holds pure identity, data-model and save-decision logic, and `packages/ui` holds the Drive tokens, fonts, icons and Radix-based components.
 
-**Tech Stack:** pnpm 10.28.0 workspaces, Node 22, WXT 0.21.5 (Vite 8.3.5), React 19.3.1, TypeScript 6.0.3 (7.0.2 trialled in Phase 0), `@embedpdf/engines`/`pdfium`/`models` 2.15.1 (pinned and patched with `pnpm patch`, the pnpm-native patch-package), `@embedpdf/fonts-latin` and `@embedpdf/fonts-sc` 1.0.0, `@sqlite.org/sqlite-wasm` 3.54.1-build1 (`opfs-sahpool`), hash-wasm 4.12.0, `radix-ui` 1.8.1, `material-symbols` 0.48.2, `@fontsource-variable/google-sans` and `google-sans-flex` 5.3.2, `@iconify-json/mdi` 1.2.3, `diff-match-patch` 1.0.5, `pdf-lib` 1.17.1 (fixtures only), Vitest 5.0.5 (plus `@vitest/browser-playwright` 5.0.5), `@playwright/test` 1.63.0 (it matches the preinstalled Chromium 1243), ESLint 10.14.0, typescript-eslint 8.72.1, `@eslint/css` 2.0.1 and `@axe-core/playwright` 4.14.0.
+**Tech Stack:** pnpm 10.28.0 workspaces, Node 22, WXT 0.21.5 (Vite 8.3.5), React 19.3.1, TypeScript 6.0.3 (7.0.2 trialled in Phase 0), `@embedpdf/engines`/`pdfium`/`models` 2.15.1 (pinned and patched with `pnpm patch`, the pnpm-native patch-package), `@embedpdf/fonts-latin` and `@embedpdf/fonts-sc` 1.0.0, `@sqlite.org/sqlite-wasm` 3.54.1-build1 (`opfs-sahpool`), hash-wasm 4.12.0, `radix-ui` 1.8.1, `material-symbols` 0.48.2, `@fontsource-variable/google-sans` and `google-sans-flex` 5.3.2, `@iconify-json/mdi` 1.2.3, `diff-match-patch` 1.0.5, `pdf-lib` 1.17.1 (fixtures only), `react-dom` 19.3.1 with `@types/react` and `@types/react-dom` 19.3.0, `@fontsource/noto-serif` and `@fontsource/noto-sans-hebrew` 5.3.0 (spike text-layer fixtures), Vitest 5.0.5 (plus `@vitest/browser-playwright` 5.0.5), `@playwright/test` 1.63.0 (it matches the preinstalled Chromium 1243), ESLint 10.14.0, typescript-eslint 8.72.1, `@eslint/css` 2.0.1 and `@axe-core/playwright` 4.14.0. The one-off password fixture uses Python `pypdf` 6.21.4 and `cryptography` 50.0.2. GitHub Actions are pinned to full commit SHAs (Task 11 lists them).
 
 **Spec:** `docs/superpowers/specs/2026-10-31-sickofpdfs-design.md` (commit 8b3358d). Research: `docs/research/01-pdf-engine.md`, `02-drive-visual-spec.md`, `03-platform-claude.md`, `04-features-classifier.md` and `06-figures-multimodal.md`.
 
@@ -17,14 +17,14 @@
 - The product is a Chrome extension only: Manifest V3, `minimum_chrome_version` "128". It takes over every PDF in the same tab.
 - The CSP for extension pages is `script-src 'self' 'wasm-unsafe-eval'; object-src 'self'`. No remote code is allowed.
 - "Every engine file, font and model ships inside the extension; nothing is downloaded." A build test fails on any request other than the PDF itself and allowed calls.
-- Pin every dependency to an exact version (`save-exact=true`). EmbedPDF stays pinned at 2.15.1, and every engine call goes through the one `PdfBackend` adapter.
+- Pin every dependency to an exact version (`save-exact=true`), with no `^`, `~`, `latest` or major-only tags anywhere. This covers fallbacks the moment they are added, and Python tools (`==` pins in a `requirements.txt`). GitHub Actions are pinned to full commit SHAs, with the version in a comment. EmbedPDF stays pinned at 2.15.1, and every engine call goes through the one `PdfBackend` adapter.
 - Use a "fixed extension key we generate ourselves (no Web Store account needed)". Commit the public key only.
-- Privacy: "A PDF that isn't saved leaves no history row, thumbnail, search entry or log line." The filter decides in memory before anything is stored.
+- Privacy: "A PDF that isn't saved leaves no history row, thumbnail, search entry or log line." The filter decides in memory before anything is stored. Nothing about an unsaved PDF may persist. In Phase 1 the outbox receives rows only for saved documents. Undo of a first-mark save and Forget delete that document's outbox rows, locations, aliases, history, page text and blob.
 - "Large data never travels through Chrome's extension messages (limited to about 64 MB); it goes through a direct channel or the file storage."
-- Secrets go in a separate store that backups, export and sync cannot read. Content scripts and web pages cannot read it either.
+- Secrets go in a separate store that backups, export and sync cannot read. Content scripts and web pages cannot read it either. It is its own IndexedDB database (`sop-local`), opened only by viewer and settings code. The SQLite store worker, the offscreen document, backup, export, sync and the test hooks never import it, and an import-boundary test enforces this (Task 29).
 - A document is "the SHA-256 of the file's bytes, computed while it streams in". A stamped re-download becomes an alias when it has the "same page count" and its page text matches "at 99.5% or more after stamp lines, IP addresses and dates are removed". "A location's id is a hash of its canonical link", and "notes get a random id once".
 - Speed budgets: first page under 1 s for a 50-page paper; a 600-page scan shows no blank page for more than 150 ms; a mark under 50 ms; the note box under 100 ms; the figure outline under 100 ms after hovering; figure detection never delays drawing a page.
-- Budgets are measured on the reference laptop (Windows, stable Chrome, 150% scaling, 20% tolerance). CI runs looser smoke versions.
+- Budgets are measured on the reference laptop. That is the `perf-gate` GitHub Actions job on `windows-latest`, running Playwright with `channel: 'chrome'` (stable Chrome) and `--force-device-scale-factor=1.5`, with 20% tolerance. It runs by manual dispatch and at every phase gate (Task 32). Headless Linux runs are smoke only, with looser thresholds.
 - Zoom offers fit width, fit page and 25 to 400%. Ctrl+= and Ctrl++ zoom in, Ctrl+− zooms out and Ctrl+0 fits the width. "Ctrl+wheel and pinch zoom the page, not the browser."
 - "Single-key and Ctrl+Alt shortcuts never fire while you are typing." Letters are matched by the character they type; only the number row (Alt+Shift+5, 1 to 5) is matched by position.
 - Large files: "Up to 1 GB opens normally; larger files (size read from the download header) open in Chrome's viewer with a note."
@@ -60,7 +60,7 @@ spikes/phase0/                         THROWAWAY engine proof (own package and l
   src/engine/engine.worker.ts          our file-URL worker: wasm init, bundled fonts, RPC
   src/engine/client.ts                 createFileWorkerEngine / createStockBlobEngine (SpikeEngine)
   src/engine/fonts.ts                  bundled FontFallbackConfig (Latin plus one CJK file)
-  src/textlayer/text-layer.ts          port of pdf.js src/display/text_layer.js (Apache-2.0 header kept)
+  src/textlayer/text-layer.ts          port of pdf.js src/display/text_layer.js (Apache-2.0 header kept), LICENSE.pdfjs beside it
   src/textlayer/items.ts, char-map.ts  PDFium glyphs → text items (drift-split); DOM range → char range
   src/figures/find-figures.ts          minimal objects-plus-captions detector (06 §3.2–3.3)
   src/checks/*.ts                      render, scroll, textlayer, bold, objects, transfer, big-open, forms, backup-folder
@@ -68,25 +68,32 @@ spikes/phase0/                         THROWAWAY engine proof (own package and l
                                        make-textlayer-fixtures, make-objects-fixture, make-tagged-fixture, make-big-pdf, report
   fixtures/src/*.html, *.txt           text-layer fixture sources and ground truth
   ts7/                                 TypeScript 7 + typescript-eslint probe
-  tests/fixtures.ts, server.mjs, netlog.ts, record.ts, p0-*.spec.ts
+  tests/fixtures.ts, server.mjs, netlog.ts, record.ts, textlayer-fixtures.ts, p0-*.spec.ts
 docs/spikes/phase0-report.md           one line per check (generated table), plus the Decision section
 
 package.json  pnpm-workspace.yaml  .npmrc  tsconfig.base.json  vitest.config.ts  eslint.config.mjs
-.github/workflows/ci.yml               typecheck, lint, unit, browser, build, e2e
+.github/workflows/ci.yml               typecheck, lint, unit, fixtures, browser (Task 11); the e2e job (Task 12)
+.github/workflows/perf-gate.yml        windows-latest, stable Chrome at 150%: the speed-budget gate (Task 32)
+scripts/gate.mjs                       `pnpm gate:phase1` / `pnpm gate:perf`: sets SOP_GATE inside Node, then runs the steps
 patches/@embedpdf__engines@2.15.1.patch  ported from the spike
 scripts/fixtures/build.mjs             builds test-assets/ (gitignored): fetches plus generators below
-scripts/fixtures/fetch-classifier.mjs  manifest.json → test-assets/classifier/** (sha256 verified)
-scripts/fixtures/make-{paper50,scan,mixed,textlayer,objects,tagged,links}.mjs, make-password.py, textlayer-src/
+scripts/fixtures/fetch-classifier.mjs  manifest.json → test-assets/classifier/** (sha256 verified; SOP_FIXTURE_SRC optional)
+scripts/fixtures/make-{paper50,scan,mixed,textlayer,objects,tagged,links}.mjs, textlayer-src/
+scripts/fixtures/make-password.py, requirements.txt   one-off generator of the committed password fixture (pinned pypdf)
 tooling/eslint-plugin-sop/             local ESLint plugin: rule no-raw-design-values (+ RuleTester tests)
 e2e/playwright.config.ts
-e2e/support/launch.ts                  persistent Chromium with the built extension, a per-test netlog
+e2e/support/launch.ts                  persistent full Chromium (channel 'chromium') with the test build, a per-test netlog
+e2e/support/launch-chrome.ts           perf gate only: stable Chrome (channel 'chrome'), test build loaded over CDP
 e2e/support/seed-profile.ts            switches on "Allow access to file URLs" and "Allow in Incognito" once
 e2e/support/netlog.ts                  netlogExternalUrls(): the network gate
-e2e/support/server.ts, header-cases.ts local HTTP fixture server and its header-case registry
+e2e/support/__fixtures__/sample-netlog.json  netlog sample for netlog.test.ts
+e2e/support/server.ts, header-cases.ts local HTTP fixture server (also used by Vitest browser tests) and its header cases
+e2e/support/vitest-global-setup.ts     starts the fixture server for the Vitest browser project and provides its origin
 e2e/support/stamped-pdf.ts             JSTOR-style stamped PDF generator (pdf-lib)
-e2e/support/test.ts                    Playwright fixtures: context, sw, server, openViewer, hooks
-e2e/support/drag-select.ts             mouse-drag selection helper
-e2e/support/textlayer-fixtures.ts      text-layer fixture list (name, page, dir, truth)
+e2e/support/store-samples.ts           SAMPLE_INPUT for store e2e tests
+e2e/support/test.ts                    Playwright fixtures: context, sw, server, tmp, openViewer, hooks, plus helpers
+e2e/support/drag-select.ts             mouse-drag selection and text-layer alignment helpers
+e2e/support/textlayer-fixtures.ts      text-layer fixture list (name, file, page, dir, truth)
 e2e/*.spec.ts                          one spec per feature area (named in each task)
 
 packages/core/src/
@@ -98,32 +105,41 @@ packages/core/src/
   hlc.ts                               hybrid logical clock
   model/anchor.ts, model/rows.ts       normative anchor JSON and row types (schema v1)
   filter/types.ts, filter/stand-in.ts  FilterDecision; the Phase 1 stand-in filter (always "unsure")
+  save/types.ts                        SaveState (declared in Task 23, used by Task 30)
   save/save-machine.ts                 pure save-decision reducer
+packages/core/test/stamp-samples.ts    pagesWithStamp(): stamped page-text samples shared by stamp and store tests
 packages/ui/src/
   tokens/tokens.css, tokens-dark.css   Drive GM3 tokens (02 §3) + spacing scale + viewer dimensions
   base.css                             body type, colour, focus ring
   fonts/register.ts                    FontFace registration of the bundled woff2 files
   icons/Icon.tsx, names.ts, file-pdf-box.ts, FileTypeIcon.tsx
   components/{IconButton,TextButton,Tooltip,Menu,MenuBar,Chip,Dialog,Banner,TextField,PillToolbar}.tsx + .module.css
+packages/ui/test/render.tsx            render() for browser tests on react-dom/client (no extra renderer dependency)
 packages/ui/scripts/extract-mdi.mjs    writes icons/file-pdf-box.ts from @iconify-json/mdi
 packages/viewer/src/
+  contracts.ts                                         ViewPosition, JumpHistory, FindState, FindController, SaveController (Task 23)
   backend/types.ts, errors.ts, forms.ts                PdfBackend contract, hasFillableFields
-  backend/embedpdf/{sop-native,engine.worker,rpc,fonts,backend}.ts   EmbedPDF implementation
+  backend/engine-config.ts                             ENGINE_WORKERS (the Phase 0 decision)
+  backend/embedpdf/{sop-native,engine.worker,rpc,fonts,assets,backend}.ts   EmbedPDF implementation; engineAssets()
   source/{load-source,errors,limits,file-name}.ts      fetch/XHR/File loading, hashing, size rule
   layout/{zoom,page-layout}.ts                         zoom maths, page boxes
-  render/scheduler.ts                                  preview-first render queue
+  render/scheduler.ts                                  preview-first render queue (one per tab, shared by pages and rail)
   text-layer/{text-layer,items,char-map}.ts, text-layer.css, LICENSE.pdfjs
   find/find-controller.ts  navigation/jump-history.ts  view/view-state.ts
   react/{PageList,PageView,TextLayer,LinkLayer,ThumbnailRail,OutlinePanel,FindBar,FindHighlights}.tsx, viewer-state.ts
 packages/viewer/test/fixtures/password-secret.pdf      committed (we generate it; password "secret")
 apps/extension/
-  wxt.config.ts  extension-key.pub.txt  scripts/{gen-key,make-icons,extension-id}.mjs  public/icon/{16,32,48,128}.png
+  wxt.config.ts  extension-key.pub.txt  scripts/{gen-key,make-icons,extension-id,copy-engine-assets}.mjs  public/icon/{16,32,48,128}.png
+  public/pdf/                          gitignored: pdfium.wasm and the fallback fonts, copied there by every build
+  .output/chrome-mv3/ (production build), .output/chrome-mv3-test/ (`--mode test` build that e2e loads)
   src/shared/{viewer-url,messages}.ts
   src/entrypoints/background.ts  viewer/{index.html,main.tsx}  offscreen/{index.html,main.ts}  embed.content/{index.ts,style.css}
   src/background/takeover/{rules,feature-check,register,file-fallback,request-log,referer,escape,embedded,messages}.ts, LICENSE.pdfjs
   src/background/{offscreen,store-broker}.ts
-  src/store/{schema,migrate,store-api,protocol,store-worker,client,transport,change-bus,blob-store,local-only}.ts
-  src/viewer/App.tsx, test-hooks.ts, open-document.ts, frame-escape.ts, back-to-page.ts, shortcuts.ts, commands.ts, incognito.ts, presentation.ts
+  src/store/{schema,migrate,store-api,protocol,store-worker,client,transport,change-bus,blob-store,device-id}.ts, import-boundary.test.ts
+  src/local-only/secrets-store.ts      IndexedDB "sop-local": secrets and local-only data; viewer and settings code only
+  src/testing/test-hooks.ts            test-only: installs globalThis.__sopTest; injected only into `--mode test` builds
+  src/viewer/App.tsx, runtime.ts, open-document.ts, frame-escape.ts, back-to-page.ts, shortcuts.ts, commands.ts, incognito.ts, presentation.ts
   src/viewer/chrome/{Header,Toolbar,ShortcutsDialog,AboutDialog}.tsx, menus.ts
   src/viewer/actions/{download,copy-link}.ts   src/viewer/print/{print.ts,print.css,PrintProgressDialog.tsx}
   src/viewer/ui/{LoadErrorCard,PasswordDialog,FileAccessDialog,LargeFileNotice}.tsx
@@ -142,20 +158,37 @@ Tests sit next to their source: `*.test.ts` (Node, Vitest project `unit`), `*.br
 | Engine proof: MV3 workers, bundled files, network, 600-page scan, selection suite, bold outlines, 300 MB moves, 1 GB limit, form detection, backup permission, page objects to figures in 20 ms, TS 7 | 0 |
 | Takeover: links, DNR with the Chrome 128 check, `file://` fallback, Referer, embeds with "Back to page", form-post exclusion, "Open in Chrome's viewer", form-PDF bounce, large-file rule | 1 |
 | Viewer: header menus, pill toolbar, virtual pages, zoom modes and keys, thumbnails and outline rail, links, find, go to page, rotate, two-page, presentation, dark pages, print (no marks), download / Ctrl+S, copy link, password PDFs, text layer and copy, shortcut sheet (?) | 1 |
-| Local store (schema v1, offscreen owner, OPFS blobs, change events), secrets store, fingerprint identity, canonical links, stamp aliases, locations | 1 |
+| Local store (schema v1, offscreen owner, OPFS blobs, change events, a forget that leaves no row or blob behind), secrets store (its own IndexedDB, opened by viewer and settings code only), fingerprint identity, canonical links, stamp aliases, locations | 1 |
 | Save decision with the stand-in filter, status chip, Ctrl+Alt+S, Undo after a first-mark save, Incognito view-only | 1 |
+| Speed-budget gate: the `perf-gate` job (windows-latest, stable Chrome, 150%, 20% tolerance), run at every phase gate | 1 (then every gate) |
 | Right-click mark-up menu; highlight, underline, bold, strikethrough, colours; comments and threads; Ctrl+Alt+M flow; drafts that survive a crash; re-anchoring; figure detection, figure comments, pins, Alt+drag areas; Figures tab; notes panel; next/previous note; undo/redo; print with marks; tabs in step | 2 |
 | Real learning filter (+MiniLM), "not sure" banner after 20 s, never-save list, allow/deny lists, Forget; history and resume; library pages; Ctrl+K search; Settings; Markdown export; backup folder, badge and restore; Export library zip; arXiv/Crossref lookups | 3 |
 | @Claude in threads (passages, figures, web search, models, cost caps); polish; SETUP.md; release on GitHub | 4 |
 
 ## Conventions
 
-- **Commands:** run from the repo root with Node 22 and pnpm. Playwright always uses the preinstalled Chromium (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`); never run `playwright install` locally. CI installs Chromium in the workflow only.
+- **Commands:** run from the repo root with Node 22 and pnpm. Locally, Playwright uses the preinstalled browsers in `/opt/pw-browsers`: set `PLAYWRIGHT_BROWSERS_PATH` to that folder in your shell profile, and never run `playwright install` locally. CI installs Chromium in the workflow only. No command in this plan uses a POSIX `VAR=value cmd` prefix, because gates also run on Windows. A script that needs an environment variable sets it inside Node (`scripts/gate.mjs`).
+- **Browser launch (extensions):** every Chromium launch that loads an extension calls `launchPersistentContext(userDataDir, { channel: 'chromium', headless: true, viewport, deviceScaleFactor, args: ['--disable-extensions-except=<dir>', '--load-extension=<dir>', …] })`. `channel: 'chromium'` selects the full Chromium build in its new headless mode, which loads extensions. The headless shell (`chromium_headless_shell-1243`) is never used, because it loads no extension. When Playwright cannot resolve the build, pass `executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome'`. The `viewport` and `deviceScaleFactor` values are forwarded from the test's `test.use(…)`. Each launch fixture waits up to 10 s for the extension's service worker and fails without it.
 - **Spike commands:** `pnpm -C spikes/phase0 <script>`.
-- **Monorepo commands:** `pnpm vitest run <file>` (unit and browser tests); `pnpm e2e <spec>` (builds the extension in `test` mode, then runs Playwright); `pnpm fixtures` (builds `test-assets/`).
-- **Test hooks:** e2e reads viewer internals only through `globalThis.__sopTest` (`SopTestHooks`, `apps/extension/src/viewer/test-hooks.ts`). It is installed only when `import.meta.env.MODE === 'test'` (from `wxt build --mode test`). Task 12 adds a build test proving that production output contains no `__sopTest`.
+- **Monorepo commands:**
+  - `pnpm vitest run <file>` runs unit and browser tests.
+  - `pnpm e2e <spec>` builds the extension in `test` mode into `apps/extension/.output/chrome-mv3-test`, then runs Playwright against that folder.
+  - `pnpm build` writes the production build to `apps/extension/.output/chrome-mv3`, and never touches the test folder.
+  - `pnpm fixtures` builds `test-assets/`.
+  - `pnpm gate:phase1` and `pnpm gate:perf` run the gates (Task 32).
+- **Test hooks:** e2e reads viewer internals only through `globalThis.__sopTest` (`SopTestHooks`).
+  - That global is installed by the test-only module `apps/extension/src/testing/test-hooks.ts`.
+  - A Vite plugin in `wxt.config.ts` injects that module into the viewer entry only for `wxt build --mode test`.
+  - Production modules never import it and never mention `__sopTest`. They publish internals to the module-local registry `apps/extension/src/viewer/runtime.ts` (`publishRuntime`), and the test module reads that registry.
+  - The test module never imports the secrets store.
+  - Task 12 adds a build test proving that production output contains no `__sopTest`, and an import test proving that no production module imports `src/testing/**`.
 - **Performance marks** are part of the product, not test hooks: `sop:first-page` and `sop:blank:<pageIndex>`.
-- **Fixtures:** `SOP_FIXTURE_SRC` defaults to `/tmp/claude-0/-home-user/24aa939a-b5a9-56a1-a55e-601726feabba/scratchpad/research/classifier-fixtures`. A file missing there is downloaded from its manifest `url`, and every file is checked against its manifest `sha256`. `test-assets/` and `spikes/phase0/fixtures/out/` are gitignored.
+- **Fixtures:** the default fixture cache is the repo-relative, gitignored `test-assets/` folder.
+  - `fetch-classifier.mjs` (and the spike's `fetch-fixtures.mjs`) fill `test-assets/classifier/<path>` from the manifest `url`, and check every file against its manifest `sha256`.
+  - `SOP_FIXTURE_SRC` is only an optional override, a local folder copied from instead of downloading. It never has a default.
+  - Downloading from manifest URLs is temporary, for Phases 0 and 1. The Phase 3 plan creates the test-assets release with its licence list, as the spec requires.
+  - `test-assets/` and `spikes/phase0/fixtures/out/` are gitignored.
+- **Dependencies:** every `package.json` entry is an exact version, and so is every `requirements.txt` line (`==`). Every workflow `uses:` names a full commit SHA with `# vX.Y.Z` after it.
 - **Commits:** conventional messages. Stage only the task's files.
 
 ---
@@ -196,7 +229,8 @@ export function readNetlogUrls(path: string): Promise<string[]>;
 export const test: TestType<{
   server: { url(p: string): string };
   spikePage(q: Record<string, string | number>, o?: { timeout?: number }): Promise<any>;   // opens spike.html?…, resolves window.__result
-  launchSpike(o: { netlog?: boolean; profile?: string }): Promise<{ context: BrowserContext; page: Page; netlogPath: string; openSpike(q: Record<string, string | number>): Promise<any> }>;
+  launchSpike(o: { netlog?: boolean; profile?: string; check?: string }): Promise<{ context: BrowserContext; page: Page; netlogPath: string; openSpike(q: Record<string, string | number>): Promise<any> }>;
+  // page is a fresh tab; with `check` set it is already at spike.html?check=<check> and that check's module has loaded
 }, {}>;
 // per-check wrappers over spikePage, added by Tasks 3, 5 and 7: textlayerPage(f, zoom), objectsPage(file, pageIndex, opts?), formsPage(path)
 ```
@@ -211,7 +245,7 @@ export const test: TestType<{
   - `"report": "node scripts/report.mjs"`
 
   Fixture scripts:
-  - `fetch-fixtures.mjs` copies the manifest items into `fixtures/out/classifier/<path>` and verifies `sha256`.
+  - `fetch-fixtures.mjs` reads `docs/research/classifier-fixtures/manifest.json`. It fills the shared, repo-relative cache `test-assets/classifier/<path>`, downloading each missing file from its manifest `url`, or copying it from `SOP_FIXTURE_SRC` when that optional override is set (it has no default). It checks every file against its manifest `sha256`, then copies the files into `fixtures/out/classifier/<path>`.
   - `make-paper50.mjs` writes `fixtures/out/paper-50.pdf`: pages 1–50 of `learning/nber-w29000.pdf`, copied with pdf-lib `copyPages`.
   - `make-font-fixture.mjs` hand-writes `fixtures/out/font-fixture.pdf`. It is one page with two non-embedded fonts:
     - a `/TrueType /Calibri` font with WinAnsi text `Résumé naïve`;
@@ -250,7 +284,13 @@ test('P0-2: nothing leaves the browser except the two PDF fetches', async ({ lau
   expect([...new Set(urls.map((u) => new URL(u).pathname))].sort()).toEqual(['/font-fixture.pdf', '/paper-50.pdf']);
 });
 ```
-  The fixture launches `chromium.launchPersistentContext` with `--disable-extensions-except` and `--load-extension` pointing at `.output/chrome-mv3`, plus `--log-net-log=<results>/netlog-<test>.json` when `netlog` is set. `server.mjs` serves `fixtures/out/` on `127.0.0.1:<random port>`.
+  The fixture launches `chromium.launchPersistentContext(userDataDir, { channel: 'chromium', headless: true, viewport, deviceScaleFactor, args: ['--disable-extensions-except=<abs spikes/phase0/.output/chrome-mv3>', '--load-extension=<same>'] })`, adding `--log-net-log=<results>/netlog-<test>.json` when `netlog` is set.
+  - It runs Chromium's new headless mode, never the headless shell, as the Conventions require.
+  - It takes `executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome'` when Playwright cannot resolve the build.
+  - `viewport` and `deviceScaleFactor` are the built-in Playwright options, so `test.use({ viewport, deviceScaleFactor })` in a spec reaches the browser.
+  - It waits up to 10 s for `context.serviceWorkers()` to hold the extension's worker, and throws `extension did not load` otherwise.
+
+  `server.mjs` serves `fixtures/out/` on `127.0.0.1:<random port>`.
 
 - [ ] **Step 3: Run them and confirm they fail.** Run: `pnpm -C spikes/phase0 install && pnpm -C spikes/phase0 fixtures && pnpm -C spikes/phase0 build && pnpm -C spikes/phase0 exec playwright test tests/p0-1-render.spec.ts tests/p0-2-network.spec.ts`. Expected: FAIL (`window.__result` is never set, because `src/checks/render.ts` does not exist yet).
 
@@ -270,7 +310,7 @@ test('P0-2: nothing leaves the browser except the two PDF fetches', async ({ lau
     - renders page 1 at scale 1.5 into a canvas and measures the ink fraction;
     - does the same for `fonts`;
     - writes `window.__result`.
-  - If **both** v2 variants fail, add `src/engine/v3.ts` on `@embedpdf/engine@3.0.0-next.19`. Use `engine: { worker, encoderWorker, wasmUrl }` with extension URLs, as in v3's `docs/content/viewer/self-hosting.mdx`, and re-run with `engine: 'v3-file'` added to the loop.
+  - If **both** v2 variants fail, add `src/engine/v3.ts` on `@embedpdf/engine`, pinned exactly to `3.0.0-next.19` in `spikes/phase0/package.json`. Use `engine: { worker, encoderWorker, wasmUrl }` with extension URLs, as in v3's `docs/content/viewer/self-hosting.mdx`, and re-run with `engine: 'v3-file'` added to the loop.
 
 - [ ] **Step 5: Run them again and confirm they pass.** Run: `pnpm -C spikes/phase0 build && pnpm -C spikes/phase0 exec playwright test tests/p0-1-render.spec.ts tests/p0-2-network.spec.ts`. Expected: PASS for `v2-file` and for P0-2. Record `v2-blob` as it comes out, PASS or FAIL. A blob failure is information, not a blocker.
 
@@ -285,6 +325,7 @@ git commit -m "test(spike): P0-1 EmbedPDF renders in MV3 with bundled files, P0-
 
 **Files:**
 - Create: `spikes/phase0/scripts/make-scan-fixture.mjs`, `src/checks/scroll.ts`, `tests/p0-3-scroll.spec.ts`
+- Modify: `spikes/phase0/package.json` (script `fixtures:scan`)
 
 **Interfaces:**
 - Consumes: `createFileWorkerEngine({ workers })` and `SpikeEngine.render` (Task 1).
@@ -292,7 +333,7 @@ git commit -m "test(spike): P0-1 EmbedPDF renders in MV3 with bundled files, P0-
 
 - [ ] **Step 1: Write the fixture synthesiser**
 
-  CLI: `node scripts/make-scan-fixture.mjs --source <pdf> --pages 600 --dpi 200 --quality 60 --out fixtures/out/scan-600.pdf`. It prints the byte size. The algorithm is not fixed by the CLI, so here it is:
+  CLI: `node scripts/make-scan-fixture.mjs --source <pdf> --pages 600 --dpi 200 --quality 60 --out fixtures/out/scan-600.pdf`. It prints the byte size. Add the script `"fixtures:scan": "node scripts/make-scan-fixture.mjs --source fixtures/out/classifier/learning/textbook-grinstead-snell-probability.pdf --pages 600 --dpi 200 --quality 60 --out fixtures/out/scan-600.pdf"`. The algorithm is not fixed by the CLI, so here it is:
 ```text
 for i in 0..pages-1:
   src = sourcePage(i mod sourcePageCount)              # PdfiumNative in Node: renderPageRaw at scaleFactor dpi/72
@@ -321,7 +362,7 @@ for (const workers of [1, 2] as const) {
 ```
   "Blank" is the time from a page's placeholder first intersecting the viewport to the first paint of its canvas (preview or full).
 
-- [ ] **Step 3: Run it and confirm it fails.** Run: `pnpm -C spikes/phase0 exec playwright test tests/p0-3-scroll.spec.ts`. Expected: FAIL (there is no `scroll` check).
+- [ ] **Step 3: Run it and confirm it fails.** Run: `pnpm -C spikes/phase0 fixtures && pnpm -C spikes/phase0 fixtures:scan && pnpm -C spikes/phase0 build && pnpm -C spikes/phase0 exec playwright test tests/p0-3-scroll.spec.ts`. Expected: FAIL (there is no `scroll` check).
 
 - [ ] **Step 4: Implement `checks/scroll.ts`**
 
@@ -331,9 +372,9 @@ for (const workers of [1, 2] as const) {
   - With `workers=2`, open the document in two engines and split pages by parity.
   - Drive the scroll with `requestAnimationFrame` (pxPerSec/60 per frame). Record entry time and first-paint time per page.
 
-- [ ] **Step 5: Run it again and record.** Run: `pnpm -C spikes/phase0 exec playwright test tests/p0-3-scroll.spec.ts && pnpm -C spikes/phase0 report`. Expected: PASS for at least one `workers` value. Record both values, with p50, p95 and max for each.
+- [ ] **Step 5: Run it again and record.** Run: `pnpm -C spikes/phase0 fixtures:scan && pnpm -C spikes/phase0 build && pnpm -C spikes/phase0 exec playwright test tests/p0-3-scroll.spec.ts && pnpm -C spikes/phase0 report`. Expected: PASS for at least one `workers` value. Record both values, with p50, p95 and max for each.
 
-  If both fail, add an `engine=pdfjs` variant (`pdfjs-dist` 6.4.299, same harness, `page.render` to canvas) and record it, so the gate can compare.
+  If both fail, add an `engine=pdfjs` variant and record it, so the gate can compare. It uses `pdfjs-dist`, pinned exactly to `6.4.299` in `spikes/phase0/package.json`, with the same harness and `page.render` to canvas.
 
 - [ ] **Step 6: Commit**
 ```bash
@@ -344,27 +385,30 @@ git commit -m "test(spike): P0-3 600-page synthetic scan scroll budget"
 ### Task 3: P0-4 text-layer selection suite
 
 **Files:**
-- Create: `spikes/phase0/src/textlayer/text-layer.ts` (pdf.js `src/display/text_layer.js` at 743102c; Apache-2.0 header kept, plus `// Modified for sickofpdfs: fed from PDFium glyphs`)
+- Create: `spikes/phase0/src/textlayer/text-layer.ts` (pdf.js `src/display/text_layer.js` at 743102c; Apache-2.0 header kept, plus `// Modified for sickofpdfs: fed from PDFium glyphs`) and `src/textlayer/LICENSE.pdfjs` (a copy of pdf.js's `LICENSE`)
 - Create: `spikes/phase0/src/textlayer/items.ts`, `src/textlayer/char-map.ts`, `src/checks/textlayer.ts`
 - Create: `spikes/phase0/scripts/make-textlayer-fixtures.mjs`, `fixtures/src/{two-column,rotated-table,ligatures,maths,rtl}.html` and `.txt`
-- Create: `spikes/phase0/tests/p0-4-textlayer.spec.ts`
-- Modify: `spikes/phase0/src/engine/spike-native.ts` (add `getGlyphs`, `getTextRange`)
+- Create: `spikes/phase0/tests/p0-4-textlayer.spec.ts`, `spikes/phase0/tests/textlayer-fixtures.ts` (`TEXTLAYER_FIXTURES`, `TWO_COLUMN`, `RTL`: `{ name, file, page, dir, truth?, column2LastSentence? }`)
+- Modify: `spikes/phase0/src/engine/spike-native.ts` (add `getGlyphs`, `getTextRange`), `spikes/phase0/tests/fixtures.ts` (adds the `textlayerPage(f, zoom)` wrapper), `spikes/phase0/package.json` (exact `@fontsource/noto-serif` 5.3.0 and `@fontsource/noto-sans-hebrew` 5.3.0; script `"fixtures:textlayer": "node scripts/make-textlayer-fixtures.mjs"`)
 
 **Interfaces:**
 - Consumes: `SpikeEngine` (Task 1).
-- Produces (ported in Task 22):
+- Produces (ported in Task 22; `Glyph`, `PageGlyphs` and `TextItem` have exactly Task 15's and Task 22's field names, so the port changes no signature):
 ```ts
 // SpikeNative
-getGlyphs(docId: string, pageIndex: number): { glyphs: { index: number; text: string; box: Rect; tight: Rect; fontSize: number; angle: number; generated: boolean }[]; runs: { start: number; end: number }[] };
+interface Glyph { index: number; text: string; box: Rect; tight: Rect; fontSize: number; angle: number; generated: boolean }
+interface PageGlyphs { pageIndex: number; glyphs: Glyph[]; runs: { start: number; end: number }[] }
+getGlyphs(docId: string, pageIndex: number): PageGlyphs;
 getTextRange(docId: string, pageIndex: number, start: number, count: number): string; // FPDFText_GetText via getTextSlices
 // items.ts / char-map.ts
-export function buildTextItems(g: ReturnType<SpikeNative['getGlyphs']>, scale: number, measure: (text: string, font: string) => number): TextItem[];
+export interface TextItem { str: string; dir: 'ltr' | 'rtl'; transform: [number, number, number, number, number, number]; width: number; height: number; hasEOL: boolean; start: number }
+export function buildTextItems(g: PageGlyphs, measure: (text: string, cssFont: string) => number, scale: number): TextItem[];
 export function charRangeFromDomRange(root: HTMLElement, range: Range): { pageIndex: number; start: number; end: number }[];
 ```
 
 - [ ] **Step 1: Generate the fixtures**
 
-  `make-textlayer-fixtures.mjs` renders each `fixtures/src/*.html` to `fixtures/out/tl-<name>.pdf` with Playwright `page.pdf({ format: 'Letter' })`. The fonts are bundled OFL `@fontsource/noto-serif` (ligatures fi, fl, ffi) and `@fontsource/noto-sans-hebrew`.
+  `make-textlayer-fixtures.mjs` renders each `fixtures/src/*.html` to `fixtures/out/tl-<name>.pdf` with Playwright `page.pdf({ format: 'Letter' })`. The fonts are bundled OFL `@fontsource/noto-serif` 5.3.0 (ligatures fi, fl, ffi) and `@fontsource/noto-sans-hebrew` 5.3.0, both pinned exactly in the spike's `package.json`.
   - `two-column`: CSS `columns: 2`, 6 paragraphs.
   - `rotated-table`: a 5×4 table inside `transform: rotate(-90deg)`.
   - `ligatures`: "office, fluffy, affine, file".
@@ -409,7 +453,7 @@ test('P0-4 rtl: Hebrew runs carry dir="rtl" and a right-to-left drag gives the s
 });
 ```
 
-- [ ] **Step 3: Run it and confirm it fails.** Run: `pnpm -C spikes/phase0 exec playwright test tests/p0-4-textlayer.spec.ts`. Expected: FAIL (`getGlyphs` is not a function).
+- [ ] **Step 3: Run it and confirm it fails.** Run: `pnpm -C spikes/phase0 install && pnpm -C spikes/phase0 fixtures && pnpm -C spikes/phase0 fixtures:textlayer && pnpm -C spikes/phase0 build && pnpm -C spikes/phase0 exec playwright test tests/p0-4-textlayer.spec.ts`. Expected: FAIL (`getGlyphs` is not a function).
 
 - [ ] **Step 4: Implement the port**
 
@@ -432,7 +476,7 @@ chars sharing one PDFium box (ligature expansions) get equal shares of its width
   - `charRangeFromDomRange` maps (text node, offset) back to char indices.
   - DOM order follows the PDFium char index, so drag order equals reading order.
 
-- [ ] **Step 5: Run it again and record.** Run: `pnpm -C spikes/phase0 exec playwright test tests/p0-4-textlayer.spec.ts && pnpm -C spikes/phase0 report`. Expected: PASS. Record max edge error per fixture and zoom. Any failure is recorded with its fixture name.
+- [ ] **Step 5: Run it again and record.** Run: `pnpm -C spikes/phase0 fixtures:textlayer && pnpm -C spikes/phase0 build && pnpm -C spikes/phase0 exec playwright test tests/p0-4-textlayer.spec.ts && pnpm -C spikes/phase0 report`. Expected: PASS. Record max edge error per fixture and zoom. Any failure is recorded with its fixture name.
 
 - [ ] **Step 6: Commit**
 ```bash
@@ -479,7 +523,7 @@ for (const zoom of [1, 2]) {
 }
 ```
 
-- [ ] **Step 3: Run it and confirm it fails.** Run: `pnpm -C spikes/phase0 build && pnpm -C spikes/phase0 exec playwright test tests/p0-5-bold.spec.ts`. Expected: FAIL (`getGlyphOutlines` is not a function).
+- [ ] **Step 3: Run it and confirm it fails.** Run: `pnpm -C spikes/phase0 fixtures && pnpm -C spikes/phase0 build && pnpm -C spikes/phase0 exec playwright test tests/p0-5-bold.spec.ts`. Expected: FAIL (`getGlyphOutlines` is not a function). The check uses the fetched `attention` paper, so `fixtures` is its generator.
 
 - [ ] **Step 4: Implement `getGlyphOutlines`**
 
@@ -494,7 +538,7 @@ for (const zoom of [1, 2]) {
   - rasterises the overlay to compute coverage and spill;
   - saves `results/bold-zoom<z>.png` for the gate review.
 
-- [ ] **Step 5: Run it again and record.** Run: `pnpm -C spikes/phase0 exec playwright test tests/p0-5-bold.spec.ts && pnpm -C spikes/phase0 report`. Expected: PASS. Record p95 ms, coverage, and the glyph argument form that worked.
+- [ ] **Step 5: Run it again and record.** Run: `pnpm -C spikes/phase0 fixtures && pnpm -C spikes/phase0 build && pnpm -C spikes/phase0 exec playwright test tests/p0-5-bold.spec.ts && pnpm -C spikes/phase0 report`. Expected: PASS. Record p95 ms, coverage, and the glyph argument form that worked.
 
 - [ ] **Step 6: Commit**
 ```bash
@@ -505,18 +549,21 @@ git commit -m "test(spike): P0-5 bold glyph-outline overlay speed and coverage"
 ### Task 5: P0-10 PDFium page objects find figures within 20 ms a page
 
 **Files:**
-- Modify: `spikes/phase0/src/engine/spike-native.ts` (add `getPageObjects`, `getStructFigures`, `detectFigures`)
+- Modify: `spikes/phase0/src/engine/spike-native.ts` (add `getPageObjects`, `getStructTree`, `getPageTextRuns`, `detectFigures`), `spikes/phase0/tests/fixtures.ts` (adds the `objectsPage(file, pageIndex, opts?)` wrapper), `spikes/phase0/package.json` (script `"fixtures:objects": "node scripts/make-objects-fixture.mjs && node scripts/make-tagged-fixture.mjs"`)
 - Create: `spikes/phase0/src/figures/find-figures.ts`, `scripts/make-objects-fixture.mjs`, `scripts/make-tagged-fixture.mjs`, `src/checks/objects.ts`, `tests/p0-10-objects.spec.ts`
 
 **Interfaces:**
 - Consumes: `SpikeNative` (Task 1).
-- Produces (the shapes reused by `PdfBackend.listPageObjects` and `getStructTree` in Task 15):
+- Produces. The shapes are reused unchanged by `PdfBackend.listPageObjects`, `getStructTree` and `getTextRuns` in Task 15, with the same type and field names (`StructElement` and `TextRun` are Task 15's):
 ```ts
 type PageObjectType = 'text' | 'path' | 'image' | 'shading' | 'form' | 'unknown';
 interface PageObjectInfo { type: PageObjectType; bounds: Rect; formDepth: number; markedContentId: number /* −1 none */;
   image?: { pixelWidth: number; pixelHeight: number; filters: string[] }; path?: { segmentCount: number; filled: boolean; stroked: boolean } }
+interface StructElement { type: string; altText: string | null; actualText: string | null; markedContentIds: number[]; children: StructElement[] }
+interface TextRun { text: string; rect: Rect; fontSize: number; charStart: number; charCount: number }   // one PDFium text object's chars on one line
 getPageObjects(docId: string, pageIndex: number, opts: { recurseForms: boolean; maxObjects: number; budgetMs: number }): { objects: PageObjectInfo[]; truncated: boolean; elapsedMs: number };
-getStructFigures(docId: string, pageIndex: number): { type: string; alt: string | null; actualText: string | null; mcids: number[] }[];
+getStructTree(docId: string, pageIndex: number): StructElement[];
+getPageTextRuns(docId: string, pageIndex: number): TextRun[];
 detectFigures(docId: string, pageIndex: number): { figures: DetectedFigure[]; objectCount: number; elapsedMs: number };
 interface DetectedFigure { kind: 'image' | 'vector' | 'mixed' | 'table' | 'unknown'; rect: Rect; label: string | null; captionRect: Rect | null; confidence: 'high' | 'medium' }
 ```
@@ -524,7 +571,7 @@ interface DetectedFigure { kind: 'image' | 'vector' | 'mixed' | 'table' | 'unkno
 - [ ] **Step 1: Generate the fixtures**
 
   `make-objects-fixture.mjs` writes `fixtures/out/objects.pdf` (pdf-lib, Letter). Page 1 has:
-  - one embedded JPEG at (72, 90, 216×144) with the caption "Figure 1: A photo." 8 pt below it;
+  - one embedded JPEG at (72, 90, 216×144) with the caption "Figure 1: A photo." in 9 pt Helvetica, its text top 8 pt below the image (y = 242, top-left origin);
   - a vector chart of 48 path objects inside (330, 90, 200×140), with 6 axis-label strings at 6 pt, and the caption "Figure 2: A chart." below;
   - the caption "Table 1: Scores." above a 4-row text table at (72, 420, 300×80);
   - body paragraphs elsewhere.
@@ -535,7 +582,17 @@ interface DetectedFigure { kind: 'image' | 'vector' | 'mixed' | 'table' | 'unkno
 
 - [ ] **Step 2: Write the failing test**
 ```ts
-const iou = (a: Rect, b: Rect) => /* intersection over union */ 0;
+const iou = (a: Rect, b: Rect) => {
+  const w = Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x));
+  const h = Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+  return (w * h) / (a.width * a.height + b.width * b.height - w * h);
+};
+const flatten = (els: StructElement[]): StructElement[] => els.flatMap((e) => [e, ...flatten(e.children)]);
+test('P0-10: the iou helper is real intersection over union', () => {
+  expect(iou({ x: 0, y: 0, width: 10, height: 10 }, { x: 0, y: 0, width: 10, height: 10 })).toBe(1);
+  expect(iou({ x: 0, y: 0, width: 10, height: 10 }, { x: 5, y: 0, width: 10, height: 10 })).toBeCloseTo(50 / 150, 6);
+  expect(iou({ x: 0, y: 0, width: 10, height: 10 }, { x: 20, y: 20, width: 5, height: 5 })).toBe(0);
+});
 test('P0-10: objects fixture enumerates images and paths with exact bounds', async ({ objectsPage }) => {
   const r = await objectsPage('objects.pdf', 0);
   const img = r.objects.find((o) => o.type === 'image')!;
@@ -551,7 +608,16 @@ test('P0-10: captions pair with figures and a text table', async ({ objectsPage 
   expect(figures.every((f) => f.confidence === 'high')).toBe(true);
 });
 test('P0-10: tagged PDF exposes Figure with alt text', async ({ objectsPage }) => {
-  expect((await objectsPage('tagged.pdf', 0)).struct).toContainEqual(expect.objectContaining({ type: 'Figure', alt: 'Bar chart of test scores' }));
+  expect(flatten((await objectsPage('tagged.pdf', 0)).struct)).toContainEqual(expect.objectContaining({ type: 'Figure', altText: 'Bar chart of test scores' }));
+});
+test('P0-10: getPageTextRuns gives positioned runs, and the caption sits under its image', async ({ objectsPage }) => {
+  const { runs } = await objectsPage('objects.pdf', 0, { textRuns: true });
+  const cap = runs.find((r) => r.text.startsWith('Figure 1: A photo.'))!;
+  expect(Math.abs(cap.rect.x - 72)).toBeLessThanOrEqual(1);
+  expect(cap.rect.y).toBeGreaterThanOrEqual(236);
+  expect(cap.rect.y).toBeLessThanOrEqual(248);
+  expect(Math.abs(cap.fontSize - 9)).toBeLessThanOrEqual(0.1);
+  expect(cap.charCount).toBe(cap.text.length);
 });
 test('P0-10: objects + detection p95 ≤ 20 ms a page on 50 real paper pages', async ({ objectsPage }) => {
   const r = await objectsPage('papers', 0, { timing: ['arxiv-1512.03385-resnet', 'arxiv-1706.03762-attention', 'arxiv-1603.02754-xgboost', 'nature-s41586-021-03819-2-alphafold', 'arxiv-1802.03042-deep-hedging'], pages: 10 });
@@ -566,11 +632,12 @@ test('P0-10: a 50,000-object page stops at the cap', async ({ objectsPage }) => 
 });
 ```
 
-- [ ] **Step 3: Run it and confirm it fails.** Run: `pnpm -C spikes/phase0 exec playwright test tests/p0-10-objects.spec.ts`. Expected: FAIL (`getPageObjects` is not a function).
+- [ ] **Step 3: Run it and confirm it fails.** Run: `pnpm -C spikes/phase0 fixtures && pnpm -C spikes/phase0 fixtures:objects && pnpm -C spikes/phase0 build && pnpm -C spikes/phase0 exec playwright test tests/p0-10-objects.spec.ts`. Expected: FAIL (`getPageObjects` is not a function). The `iou` test passes already.
 
 - [ ] **Step 4: Implement**
   - `getPageObjects` loops `FPDFPage_CountObjects`/`GetObject`, reading `FPDFPageObj_GetType`, `GetBounds` and `GetMarkedContentID`. It recurses through `FPDFFormObj_CountObjects`/`GetObject` when `recurseForms` is set. It reads image metadata (`FPDFImageObj_GetImagePixelSize`, `GetImageFilter(Count)`) and path data (`FPDFPath_CountSegments`, `GetDrawMode`). It stops at `maxObjects` 20000 or `budgetMs` 15.
-  - `getStructFigures` uses `FPDF_StructTree_GetForPage` and `FPDF_StructElement_GetType/GetAltText/GetActualText/GetMarkedContentIdAtIndex`.
+  - `getStructTree` uses `FPDF_StructTree_GetForPage`, `FPDF_StructElement_CountChildren`/`GetChildAtIndex` and `FPDF_StructElement_GetType/GetAltText/GetActualText/GetMarkedContentIdAtIndex`, recursing to depth 32 into `StructElement` (`altText`, `actualText`, `markedContentIds`, `children`).
+  - `getPageTextRuns` walks the page's chars in index order. It starts a new run when `FPDFText_GetTextObject` changes or the baseline moves by more than half the font size. Each run has `text` (from `FPDFText_GetText` over `charStart`…`charStart + charCount`), `rect` (the union of the char boxes, top-left origin), `fontSize` (`FPDFTextObj_GetFontSize`), `charStart` and `charCount`.
   - `find-figures.ts` implements 06 §3.2 steps 2–4:
     - images and forms with area ≥ 2% and both sides ≥ 36 pt;
     - path clusters with a 6 pt merge distance, kept when they have ≥ 8 paths or area ≥ 3%;
@@ -580,7 +647,7 @@ test('P0-10: a 50,000-object page stops at the cap', async ({ objectsPage }) => 
     - high confidence for tagged, caption-linked, or one large image/form.
   - `detectFigures` runs it in the worker, with lines from `getPageTextRuns`.
 
-- [ ] **Step 5: Run it again and record.** Run: `pnpm -C spikes/phase0 exec playwright test tests/p0-10-objects.spec.ts && pnpm -C spikes/phase0 report`. Expected: PASS. Record the p50, p95 and max ms.
+- [ ] **Step 5: Run it again and record.** Run: `pnpm -C spikes/phase0 fixtures:objects && pnpm -C spikes/phase0 build && pnpm -C spikes/phase0 exec playwright test tests/p0-10-objects.spec.ts && pnpm -C spikes/phase0 report`. Expected: PASS. Record the p50, p95 and max ms.
 
 - [ ] **Step 6: Commit**
 ```bash
@@ -591,7 +658,7 @@ git commit -m "test(spike): P0-10 page objects, struct tree and figure finding w
 ### Task 6: P0-6 moving 300 MB between a tab and the offscreen document; the 1 GB open limit
 
 **Files:**
-- Modify: `spikes/phase0/entrypoints/background.ts`, `wxt.config.ts` (add `offscreen` permission)
+- Modify: `spikes/phase0/entrypoints/background.ts`, `wxt.config.ts` (add `offscreen` permission), `spikes/phase0/package.json` (script `fixtures:big`, below)
 - Create: `spikes/phase0/entrypoints/offscreen/index.html`, `main.ts`, `src/checks/transfer.ts`, `src/checks/big-open.ts`, `scripts/make-big-pdf.mjs`, `tests/p0-6-transfer.spec.ts`
 
 **Interfaces:**
@@ -601,7 +668,7 @@ git commit -m "test(spike): P0-10 page objects, struct tree and figure finding w
 
 - [ ] **Step 1: Write the big-file generator**
 
-  `node scripts/make-big-pdf.mjs --bytes 1073741824 --out fixtures/out/big-1g.pdf` writes a valid 1-page PDF ("Big file test", Helvetica). An `/EmbeddedFiles` stream of seeded random bytes, streamed in 16 MB chunks, pads the file to exactly `--bytes`. The xref comes from tracked offsets. Also generate `big-1.5g.pdf` (1610612736 bytes) and `big-1.9g.pdf` (2040109465 bytes).
+  `node scripts/make-big-pdf.mjs --bytes 1073741824 --out fixtures/out/big-1g.pdf` writes a valid 1-page PDF ("Big file test", Helvetica). An `/EmbeddedFiles` stream of seeded random bytes, streamed in 16 MB chunks, pads the file to exactly `--bytes`. The xref comes from tracked offsets. Also generate `big-1.5g.pdf` (1610612736 bytes) and `big-1.9g.pdf` (2040109465 bytes). A file that already exists at exactly `--bytes` is skipped, so re-runs are cheap. Add the script `"fixtures:big": "node scripts/make-big-pdf.mjs --bytes 1073741824 --out fixtures/out/big-1g.pdf && node scripts/make-big-pdf.mjs --bytes 1610612736 --out fixtures/out/big-1.5g.pdf && node scripts/make-big-pdf.mjs --bytes 2040109465 --out fixtures/out/big-1.9g.pdf"` (4.4 GB on disk).
 
 - [ ] **Step 2: Write the failing test**
 ```ts
@@ -617,8 +684,12 @@ test('P0-6b: 300 MB via OPFS (tab createWritable, offscreen getFile stream)', as
   expect(r.hashMatches).toBe(true);
   expect(r.totalMs).toBeLessThan(5000);
 });
-test('P0-6c: 300 MB via chrome.runtime.sendMessage fails, as the spec assumes', async ({ spikePage }) => {
-  expect((await spikePage({ check: 'transfer', mode: 'runtime', bytes: MB300 })).failed).toBe(true);
+test('P0-6c: 300 MB via chrome.runtime.sendMessage does not arrive intact, as the spec assumes', async ({ spikePage }) => {
+  // sendMessage JSON-serialises: an ArrayBuffer arrives as {} (receivedBytes null), or the call throws on the size limit
+  const r = await spikePage({ check: 'transfer', mode: 'runtime', bytes: MB300 });
+  expect(r.hashMatches).toBe(false);
+  expect(r.receivedBytes ?? 0).toBeLessThan(MB300);
+  expect(r.receivedBytes === null || r.error !== null).toBe(true);
 });
 test('P0-6d: a 1 GiB PDF opens and renders page 1 within 20 s', async ({ spikePage, server }) => {
   const r = await spikePage({ check: 'big-open', file: server.url('big-1g.pdf') }, { timeout: 60_000 });
@@ -627,18 +698,34 @@ test('P0-6d: a 1 GiB PDF opens and renders page 1 within 20 s', async ({ spikePa
   expect(r.inkFraction).toBeGreaterThan(0.001);
 });
 test('P0-6e: record the largest file that opens', async ({ spikePage, server }) => {
-  for (const f of ['big-1.5g.pdf', 'big-1.9g.pdf']) await record('P0-6', { pass: true, measured: JSON.stringify(await spikePage({ check: 'big-open', file: server.url(f) }, { timeout: 90_000 })) });
+  const STAGES = ['fetch', 'blob', 'arrayBuffer', 'transfer', 'open', 'render'];
+  const measured: { file: string; opened: boolean; firstPageMs: number | null; stage: string | null }[] = [];
+  for (const [file, bytes] of [['big-1.5g.pdf', 1610612736], ['big-1.9g.pdf', 2040109465]] as const) {
+    const r = await spikePage({ check: 'big-open', file: server.url(file) }, { timeout: 90_000 });
+    if (r.error === null) {
+      expect(r.bytesRead).toBe(bytes);
+      expect(r.pageCount).toBe(1);
+      expect(r.firstPageMs).toBeGreaterThan(0);
+      expect(r.inkFraction).toBeGreaterThan(0.001);
+    } else {
+      expect(STAGES).toContain(r.stage);                         // a failure names the step that failed
+      expect(typeof r.error).toBe('string');
+    }
+    measured.push({ file, opened: r.error === null, firstPageMs: r.firstPageMs, stage: r.stage });
+  }
+  expect(measured).toHaveLength(2);
+  await record('P0-6', { pass: true, measured: JSON.stringify(measured) });
 });
 ```
-  `big-open` uses exactly the Phase 1 loading sequence: stream with hashing → `Blob` → `blob.arrayBuffer()` → transfer to the worker → `openDocumentBuffer`.
+  `big-open` uses exactly the Phase 1 loading sequence: stream with hashing → `Blob` → `blob.arrayBuffer()` → transfer to the worker → `openDocumentBuffer`. It returns `{ error: string | null; stage: 'fetch' | 'blob' | 'arrayBuffer' | 'transfer' | 'open' | 'render' | null; bytesRead; pageCount; firstPageMs; inkFraction }`. The `transfer` check returns `{ hashMatches; receivedBytes: number | null; error: string | null; toOffscreenMs; backMs; totalMs }`.
 
-- [ ] **Step 3: Run it and confirm it fails.** Run: `pnpm -C spikes/phase0 exec playwright test tests/p0-6-transfer.spec.ts`. Expected: FAIL (there is no `transfer` check).
+- [ ] **Step 3: Run it and confirm it fails.** Run: `pnpm -C spikes/phase0 fixtures:big && pnpm -C spikes/phase0 build && pnpm -C spikes/phase0 exec playwright test tests/p0-6-transfer.spec.ts`. Expected: FAIL (there is no `transfer` check).
 
 - [ ] **Step 4: Implement the three transports and `big-open`**
 
   The tab fills the buffer with `crypto.getRandomValues` in 64 KiB slices and hashes it with hash-wasm. For the port mode it calls `(await navigator.serviceWorker.ready).active.postMessage({type:'connect-offscreen'}, [port2])`. The offscreen side hashes what it receives and echoes the buffer back, transferred.
 
-- [ ] **Step 5: Run it again and record.** Run: `pnpm -C spikes/phase0 exec playwright test tests/p0-6-transfer.spec.ts && pnpm -C spikes/phase0 report`. Expected: 6a, 6b, 6c and 6d PASS. 6e records the largest size that opened.
+- [ ] **Step 5: Run it again and record.** Run: `pnpm -C spikes/phase0 fixtures:big && pnpm -C spikes/phase0 build && pnpm -C spikes/phase0 exec playwright test tests/p0-6-transfer.spec.ts && pnpm -C spikes/phase0 report`. Expected: 6a, 6b, 6c and 6d PASS. 6e records the largest size that opened.
 
 - [ ] **Step 6: Commit**
 ```bash
@@ -649,7 +736,7 @@ git commit -m "test(spike): P0-6 300 MB transfers and the 1 GiB open limit"
 ### Task 7: P0-7 form-field detection
 
 **Files:**
-- Modify: `spikes/phase0/src/engine/spike-native.ts` (add `getFormInfo`)
+- Modify: `spikes/phase0/src/engine/spike-native.ts` (add `getFormInfo`), `spikes/phase0/tests/fixtures.ts` (adds the `formsPage(path)` wrapper)
 - Create: `spikes/phase0/src/checks/forms.ts`, `tests/p0-7-forms.spec.ts`
 
 **Interfaces:**
@@ -682,7 +769,7 @@ test('P0-7 detection on the 133-page NBER paper takes < 200 ms', async ({ formsP
 });
 ```
 
-- [ ] **Step 2: Run it and confirm it fails.** Run: `pnpm -C spikes/phase0 exec playwright test tests/p0-7-forms.spec.ts`. Expected: FAIL (`getFormInfo` is not a function).
+- [ ] **Step 2: Run it and confirm it fails.** Run: `pnpm -C spikes/phase0 fixtures && pnpm -C spikes/phase0 build && pnpm -C spikes/phase0 exec playwright test tests/p0-7-forms.spec.ts`. Expected: FAIL (`getFormInfo` is not a function). The check reads fetched classifier fixtures, so `fixtures` is its generator.
 
 - [ ] **Step 3: Implement `getFormInfo`**
 
@@ -690,7 +777,7 @@ test('P0-7 detection on the 133-page NBER paper takes < 200 ms', async ({ formsP
 
   For `acroform`, walk pages with `getPageAnnoWidgets`. Stop at the first page holding a widget whose field type is CHECKBOX 2, RADIOBUTTON 3, COMBOBOX 4, LISTBOX 5 or TEXTFIELD 6. Push buttons (1) and signatures (7) do not count.
 
-- [ ] **Step 4: Run it again and record.** Run: `pnpm -C spikes/phase0 exec playwright test tests/p0-7-forms.spec.ts && pnpm -C spikes/phase0 report`. Expected: PASS. Record the `formType` reported for the W-9.
+- [ ] **Step 4: Run it again and record.** Run: `pnpm -C spikes/phase0 fixtures && pnpm -C spikes/phase0 build && pnpm -C spikes/phase0 exec playwright test tests/p0-7-forms.spec.ts && pnpm -C spikes/phase0 report`. Expected: PASS. Record the `formType` reported for the W-9.
 
 - [ ] **Step 5: Commit**
 ```bash
@@ -703,6 +790,8 @@ git commit -m "test(spike): P0-7 fillable-field detection ignores hyperref AcroF
 **Files:**
 - Create: `spikes/phase0/src/checks/backup-folder.ts`, `tests/p0-8-backup-folder.spec.ts`
 
+The tests reach the page through `launchSpike({ profile, check: 'backup-folder' })` (Task 1). That opens `spike.html?check=backup-folder`, which loads `checks/backup-folder.ts`.
+
 **Interfaces:**
 - Consumes: the spike harness (Task 1).
 - Produces: the report's "Handed to the Windows checklist" items W-B1 to W-B3, which Task 32 copies.
@@ -710,7 +799,7 @@ git commit -m "test(spike): P0-7 fillable-field detection ignores hyperref AcroF
 - [ ] **Step 1: Write the failing test**
 ```ts
 test('P0-8a: showDirectoryPicker in an extension tab yields a writable handle (picker intercepted)', async ({ launchSpike }) => {
-  const { page } = await launchSpike({ profile: 'p08' });
+  const { page } = await launchSpike({ profile: 'p08', check: 'backup-folder' });
   const dir = await mkdtemp(join(tmpdir(), 'sop-backup-'));
   const chooser = page.waitForEvent('filechooser', { timeout: 5000 }).then((fc) => fc.setFiles(dir)).catch(() => 'no-chooser');
   const r = await page.evaluate(() => (window as any).spikeBackupPick());  // click-initiated pick, writes backup-probe.txt, stores handle in IndexedDB
@@ -719,29 +808,29 @@ test('P0-8a: showDirectoryPicker in an extension tab yields a writable handle (p
   expect(r.permission).toBe('granted');
 });
 test('P0-8b: after a browser restart the stored handle reports granted or prompt', async ({ launchSpike }) => {
-  const { page } = await launchSpike({ profile: 'p08' });   // same user-data dir, new browser process
+  const { page } = await launchSpike({ profile: 'p08', check: 'backup-folder' });   // same user-data dir, new browser process
   const state = await page.evaluate(() => (window as any).spikeBackupQuery());
   expect(['granted', 'prompt']).toContain(state);
   await record('P0-8', { pass: true, measured: `after restart: ${state}` });
 });
 test('P0-8c: requestPermission without a user gesture is refused', async ({ launchSpike }) => {
-  const { page } = await launchSpike({ profile: 'p08' });
+  const { page } = await launchSpike({ profile: 'p08', check: 'backup-folder' });
   expect(await page.evaluate(() => (window as any).spikeBackupRequestNoGesture())).toMatch(/SecurityError|NotAllowedError|prompt/);
 });
 ```
 
-- [ ] **Step 2: Run it and confirm it fails.** Run: `pnpm -C spikes/phase0 exec playwright test tests/p0-8-backup-folder.spec.ts`. Expected: FAIL (`spikeBackupPick` is undefined).
+- [ ] **Step 2: Run it and confirm it fails.** Run: `pnpm -C spikes/phase0 build && pnpm -C spikes/phase0 exec playwright test tests/p0-8-backup-folder.spec.ts`. Expected: FAIL (`spikeBackupPick` is undefined). This check needs no fixture: it writes into a fresh temp folder.
 
 - [ ] **Step 3: Implement `checks/backup-folder.ts`**
 
-  Implement `spikeBackupPick`, `spikeBackupQuery` and `spikeBackupRequestNoGesture`. Store the `FileSystemDirectoryHandle` in IndexedDB `spike-backup`.
+  Implement `spikeBackupPick`, `spikeBackupQuery` and `spikeBackupRequestNoGesture`. Store the `FileSystemDirectoryHandle` in IndexedDB `spike-backup`. The page also shows "Pick backup folder" and "Check permission" buttons, which call the same functions, for the manual Windows run (Task 32 W6).
 
   Add to the report's Windows hand-off list:
   - **W-B1** pick a folder, restart Chrome and note `queryPermission`, and whether the three-way "Allow on every visit" prompt appears;
   - **W-B2** pick a folder inside `G:\My Drive` (Google Drive for desktop), write `backup-probe.txt`, and confirm it appears on drive.google.com within 2 minutes;
   - **W-B3** the same for a OneDrive folder.
 
-- [ ] **Step 4: Run it again and record.** Run: `pnpm -C spikes/phase0 exec playwright test tests/p0-8-backup-folder.spec.ts && pnpm -C spikes/phase0 report`. Expected: PASS, or BLOCKED for 8a and 8b with the reason recorded. 8c must PASS.
+- [ ] **Step 4: Run it again and record.** Run: `pnpm -C spikes/phase0 build && pnpm -C spikes/phase0 exec playwright test tests/p0-8-backup-folder.spec.ts && pnpm -C spikes/phase0 report`. Expected: PASS, or BLOCKED for 8a and 8b with the reason recorded. 8c must PASS.
 
 - [ ] **Step 5: Commit**
 ```bash
@@ -758,9 +847,10 @@ git commit -m "test(spike): P0-8 backup-folder permission probes and Windows han
 - Consumes: nothing.
 - Produces: the `TOOLING_TS` decision (Task 10), which Task 11 uses.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the probe manifests and the failing test**
+
+  First create `ts7/package.json` (exact `typescript` 7.0.2, `typescript-eslint` 8.72.1, `eslint` 10.14.0) and `ts7/tsconfig.json` (`strict`, `noEmit`, `include: ["src"]`), so that the install in Step 2 has a manifest. Then write the test:
 ```ts
-// ts7/package.json pins typescript 7.0.2, typescript-eslint 8.72.1, eslint 10.14.0
 // bad.ts line 3: `fetchThing();` with no await, where fetchThing(): Promise<void>
 test('P0-9: tsc 7 type-checks and typed lint rules work', async () => {
   const tsc = spawnSync('pnpm', ['-C', 'ts7', 'exec', 'tsc', '--noEmit', '-p', '.'], { encoding: 'utf8' });
@@ -771,9 +861,9 @@ test('P0-9: tsc 7 type-checks and typed lint rules work', async () => {
 });
 ```
 
-- [ ] **Step 2: Run it and confirm it fails.** Run: `pnpm -C spikes/phase0/ts7 install && pnpm -C spikes/phase0 exec playwright test tests/p0-9-ts7.spec.ts`. Expected: FAIL (the `ts7/src` files are missing).
+- [ ] **Step 2: Run it and confirm it fails.** Run: `pnpm -C spikes/phase0/ts7 install && pnpm -C spikes/phase0 exec playwright test tests/p0-9-ts7.spec.ts`. Expected: FAIL (the `ts7/src` files and `eslint.config.mjs` are missing).
 
-- [ ] **Step 3: Add the files**
+- [ ] **Step 3: Add the remaining files**
 
   `eslint.config.mjs` uses `tseslint.configs.recommendedTypeChecked` with `parserOptions.projectService: true`. Add `good.ts`, a clean module, and `bad.ts`.
 
@@ -792,10 +882,10 @@ git commit -m "test(spike): P0-9 TypeScript 7 with typescript-eslint"
 
 **Interfaces:**
 - Consumes: every `results/P0-*.json`.
-- Produces: these decision constants, read by later tasks:
+- Produces: these decision constants, read by later tasks. The Decision section writes each one as a line `NAME = value` inside a fenced `text` block, so that `packages/viewer/src/backend/engine-config.test.ts` (Task 15) can read `ENGINE_WORKERS` back:
 ```text
 ENGINE          = embedpdf-v2 | embedpdf-v3 | pdfjs
-ENGINE_WORKERS  = 1 | 2                         (Task 15 createEmbedPdfBackend opts.workers)
+ENGINE_WORKERS  = 1 | 2                         (Task 15 exports it as code: packages/viewer/src/backend/engine-config.ts)
 MAX_OPEN_BYTES  = 1073741824 unless P0-6d failed (Task 20)
 STORE_TRANSPORT = sw-brokered-port | runtime-port (Task 28)
 TOOLING_TS      = 6.0.3 | 7.0.2                  (Task 11)
@@ -804,7 +894,7 @@ FIGURES         = objects+captions | captions-only (Phase 2 plan)
 GLYPH_ARG       = unicode | charcode             (Phase 2 plan, from P0-5)
 ```
 
-- [ ] **Step 1: Run every check.** Run: `pnpm -C spikes/phase0 build && pnpm -C spikes/phase0 exec playwright test && pnpm -C spikes/phase0 report`. Expected: a full results table, with no row missing.
+- [ ] **Step 1: Run every check.** Run: `pnpm -C spikes/phase0 fixtures && pnpm -C spikes/phase0 fixtures:scan && pnpm -C spikes/phase0 fixtures:textlayer && pnpm -C spikes/phase0 fixtures:objects && pnpm -C spikes/phase0 fixtures:big && pnpm -C spikes/phase0 build && pnpm -C spikes/phase0 exec playwright test && pnpm -C spikes/phase0 report`. Expected: a full results table, with no row missing.
 
 - [ ] **Step 2: Apply the gate rules and write the Decision section**
 
@@ -852,9 +942,20 @@ git commit -m "docs(spike): Phase 0 gate results and engine decision"
 - Produces:
   - root scripts `typecheck`, `lint`, `test` (Vitest project `unit`), `test:browser` (Vitest project `browser`), `e2e` (added in Task 12) and `fixtures`;
   - the ESLint rule `sop/no-raw-design-values` with messageIds `rawColor`, `rawLength`, `rawFont`, `rawShadow`;
-  - `test-assets/classifier/**` and `test-assets/paper-50.pdf`.
+  - `test-assets/classifier/**` and `test-assets/paper-50.pdf`;
+  - `.github/workflows/ci.yml` with the job `checks` (no e2e; Task 12 adds the `e2e` job).
 
-- [ ] **Step 1: Write the failing rule tests**
+- [ ] **Step 1: Scaffold the workspace manifests, then install**
+
+  Create these files first, because the install below needs them:
+  - **Root `package.json`:** `"private": true`, `"packageManager": "pnpm@10.28.0"`, `"engines": { "node": ">=22" }` and `pnpm.patchedDependencies` (filled in Task 15). Its exact devDependencies are `typescript` `TOOLING_TS`, `vitest` 5.0.5, `@vitest/browser-playwright` 5.0.5, `eslint` 10.14.0, `@eslint/js` 10.0.1, `@eslint/css` 2.0.1, `typescript-eslint` 8.72.1, `eslint-plugin-react-hooks` 7.1.1, `globals` 17.13.0, `@playwright/test` 1.63.0, `@axe-core/playwright` 4.14.0, `pdf-lib` 1.17.1, `jpeg-js` 0.4.4 and `@types/node` 22.20.5.
+  - **`pnpm-workspace.yaml`:** `packages: [apps/*, packages/*, tooling/*]` (it excludes `spikes/**`).
+  - **`.npmrc`:** `save-exact=true`.
+  - **`tooling/eslint-plugin-sop/package.json`**, **`packages/{core,ui,viewer}/package.json`** and **`apps/cloud/package.json`**. The last is `{ "name": "@sop/cloud", "private": true, "description": "Release 2 Cloudflare Worker; not started" }`.
+
+  Run: `pnpm install`. Expected: it writes `pnpm-lock.yaml`, and the lockfile's `importers` section shows every specifier as an exact version, with no `^`, `~` or `latest`.
+
+- [ ] **Step 2: Write the failing rule tests**
 ```js
 // tooling/eslint-plugin-sop/rules/no-raw-design-values.test.js (ESLint RuleTester; CSS cases use language "css/css" from @eslint/css)
 cssTester.run('no-raw-design-values', rule, {
@@ -881,58 +982,85 @@ jsxTester.run('no-raw-design-values', rule, {
 ```
   Allowed without tokens: `0`, `1px` (hairlines), `%`, `fr`, `auto`, `transparent`, `currentColor`, `inherit` and `none`. Files under `packages/ui/src/tokens/` are exempt.
 
-- [ ] **Step 2: Run them and confirm they fail.** Run: `pnpm install && pnpm vitest run tooling/eslint-plugin-sop`. Expected: FAIL (`Cannot find module './no-raw-design-values.js'`).
+- [ ] **Step 3: Run them and confirm they fail.** Run: `pnpm vitest run tooling/eslint-plugin-sop`. Expected: FAIL (`Cannot find module './no-raw-design-values.js'`).
 
-- [ ] **Step 3: Implement the scaffold and the rule**
-  - **Root `package.json`:** `"private": true`, `"packageManager": "pnpm@10.28.0"`, `"engines": { "node": ">=22" }`, `pnpm.patchedDependencies` (filled in Task 15), and these exact devDependencies: `typescript` `TOOLING_TS`, `vitest` 5.0.5, `@vitest/browser-playwright` 5.0.5, `eslint` 10.14.0, `@eslint/js` 10.0.1, `@eslint/css` 2.0.1, `typescript-eslint` 8.72.1, `eslint-plugin-react-hooks` 7.1.1, `globals` 17.13.0, `@playwright/test` 1.63.0, `pdf-lib` 1.17.1, `jpeg-js` 0.4.4, `@types/node` 22.20.5.
-  - **`pnpm-workspace.yaml`:** `packages: [apps/*, packages/*, tooling/*]` (it excludes `spikes/**`).
-  - **`.npmrc`:** `save-exact=true`.
+- [ ] **Step 4: Implement the rule and the remaining scaffold**
+  - **The rule** `rules/no-raw-design-values.js` and `index.js`: CSS declarations and JSX `style` objects; message ids as tested.
+  - **`tsconfig.base.json`**, plus a `tsconfig.json` and `src/index.ts` in each package.
   - **`vitest.config.ts`:** two projects. `unit` runs in environment `node`, includes `**/*.test.{ts,js}` and excludes `*.browser.test.*` and `spikes/**`. `browser` includes `**/*.browser.test.{ts,tsx}`, with `browser: { enabled: true, provider: playwright(), headless: true, instances: [{ browser: 'chromium' }] }` and `server.fs.allow` set to the repo root.
   - **`eslint.config.mjs`:** typed rules for `**/*.{ts,tsx}`, `@eslint/css` for `**/*.css`, and the plugin `sop` with `sop/no-raw-design-values: 'error'`.
-  - **`scripts/fixtures/build.mjs`:** runs `fetch-classifier.mjs` (manifest `docs/research/classifier-fixtures/manifest.json`, `SOP_FIXTURE_SRC` first, then `url`, sha256 verified) and `make-paper50.mjs`. Later tasks append their generators to this list.
-  - **`apps/cloud/package.json`:** `{ "name": "@sop/cloud", "private": true, "description": "Release 2 Cloudflare Worker; not started" }`.
+  - **`scripts/fixtures/build.mjs`:** runs `fetch-classifier.mjs`, then `make-paper50.mjs`. Later tasks append their generators to this list. `fetch-classifier.mjs` reads the manifest `docs/research/classifier-fixtures/manifest.json` and fills the repo-relative cache `test-assets/classifier/<path>`. A missing file is downloaded from its manifest `url`, or copied from the optional `SOP_FIXTURE_SRC` folder when that variable is set (it has no default). Every file is checked against its `sha256`, and a mismatch exits non-zero. This download is temporary: the Phase 3 plan moves the fixtures to the test-assets release with its licence list.
 
-- [ ] **Step 4: Add the CI workflow.** `.github/workflows/ci.yml` runs on push and pull_request on `ubuntu-latest`, in this order: `actions/checkout@v4`, `pnpm/action-setup@v4`, `actions/setup-node@v4` (Node 22, `cache: pnpm`); `pnpm install --frozen-lockfile`; `pnpm typecheck`, `pnpm lint`, `pnpm test`; `actions/cache@v4` on `test-assets/`, keyed on `hashFiles('scripts/fixtures/**', 'docs/research/classifier-fixtures/manifest.json')`; `pnpm fixtures`; `pnpm exec playwright install --with-deps chromium` (CI runner only); `pnpm test:browser`, `pnpm e2e`; and `actions/upload-artifact@v4` with `playwright-report/` when a step fails.
+- [ ] **Step 5: Add the CI workflow.** `.github/workflows/ci.yml` runs on push and pull_request. Its one job, `checks`, runs on `ubuntu-latest` and has no e2e step: Task 12 adds the `e2e` job together with the `pnpm e2e` script. Every action is pinned to a full commit SHA with its version in a comment:
+```yaml
+- uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1        # v7.0.1
+- uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413      # v6.1.0
+- uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1     # v7.1.0 (node-version: 22, cache: pnpm)
+- run: pnpm install --frozen-lockfile
+- run: pnpm typecheck && pnpm lint && pnpm test
+- uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9          # v6.1.0 (path: test-assets/, key: hashFiles('scripts/fixtures/**', 'docs/research/classifier-fixtures/manifest.json'))
+- run: pnpm fixtures
+- run: pnpm exec playwright install --with-deps chromium                 # CI runner only
+- run: pnpm test:browser
+- uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2 (if: failure(), path: .vitest-attachments/)
+```
 
-- [ ] **Step 5: Run everything and confirm it passes.** Run: `pnpm vitest run tooling/eslint-plugin-sop && pnpm lint && pnpm typecheck && pnpm fixtures`. Expected: PASS. `test-assets/paper-50.pdf` exists with 50 pages.
+- [ ] **Step 6: Run everything and confirm it passes.** Run: `pnpm vitest run tooling/eslint-plugin-sop && pnpm lint && pnpm typecheck && pnpm fixtures`. Expected: PASS. `test-assets/paper-50.pdf` exists with 50 pages, and `test-assets/classifier/learning/nber-w29000.pdf` matches its manifest `sha256`.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 ```bash
 git add package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc tsconfig.base.json vitest.config.ts eslint.config.mjs .github tooling packages apps/cloud scripts .gitignore
 git commit -m "chore: pnpm monorepo, lint with design-token rule, vitest projects, fixtures, CI"
 ```
 
-### Task 12: Extension manifest, stable key, Playwright extension fixture and network gate
+### Task 12: Extension manifest, stable key, viewer URLs, test hooks, Playwright extension fixture and network gate
 
 **Files:**
 - Create: `apps/extension/{package.json,tsconfig.json,wxt.config.ts,extension-key.pub.txt}`, `apps/extension/scripts/{gen-key.mjs,make-icons.mjs,extension-id.mjs,extension-id.test.ts}`, `apps/extension/public/icon/{16,32,48,128}.png`
-- Create: `apps/extension/src/entrypoints/background.ts`, `src/entrypoints/viewer/{index.html,main.tsx}`, `src/entrypoints/offscreen/{index.html,main.ts}`, `src/viewer/test-hooks.ts`
-- Create: `e2e/playwright.config.ts`, `e2e/support/{launch.ts,seed-profile.ts,netlog.ts,netlog.test.ts,server.ts,header-cases.ts,test.ts}`, `e2e/smoke.spec.ts`
-- Modify: root `package.json` (add scripts `"e2e": "pnpm -C apps/extension build:e2e && playwright test -c e2e/playwright.config.ts"` and `"build": "pnpm -C apps/extension build"`)
+- Create: `apps/extension/src/entrypoints/background.ts`, `src/entrypoints/viewer/{index.html,main.tsx}`, `src/entrypoints/offscreen/{index.html,main.ts}`
+- Create: `apps/extension/src/shared/{viewer-url.ts,viewer-url.test.ts}`, `apps/extension/src/viewer/runtime.ts`, `apps/extension/src/testing/{test-hooks.ts,test-hooks-boundary.test.ts}`
+- Create: `e2e/playwright.config.ts`, `e2e/support/{launch.ts,seed-profile.ts,netlog.ts,netlog.test.ts,server.ts,header-cases.ts,test.ts}`, `e2e/support/__fixtures__/sample-netlog.json`, `e2e/smoke.spec.ts`
+- Modify: root `package.json` (add scripts `"e2e": "pnpm -C apps/extension build:e2e && playwright test -c e2e/playwright.config.ts"` and `"build": "pnpm -C apps/extension build"`), `.github/workflows/ci.yml` (adds the `e2e` job), `.gitignore` (add `apps/extension/.output/`)
 
 **Interfaces:**
-- Consumes: the workspace (Task 11).
+- Consumes: the workspace and CI (Task 11).
 - Produces:
 ```ts
 // apps/extension/scripts/extension-id.mjs (Node only; the extension itself uses chrome.runtime.id)
 export function extensionIdFromKey(base64Der: string): string;   // sha256(DER)[0..16] hex mapped 0-f → a-p
 export const EXTENSION_ID: string;                               // = extensionIdFromKey(apps/extension/extension-key.pub.txt)
-// apps/extension/src/viewer/test-hooks.ts (fields are added by later tasks)
-export interface SopTestHooks { [k: string]: unknown }
-export function installTestHooks(h: Partial<SopTestHooks>): void; // merges into globalThis.__sopTest; no-op unless MODE === 'test'
+// apps/extension/src/shared/viewer-url.ts (consumed by Tasks 16, 17 and 20, and by openViewer below)
+export interface ViewerParams { source: string | null; back: string | null; page: number | null }
+export const VIEWER_PATH = 'viewer.html';
+export function parseViewerUrl(href: string): ViewerParams;          // handles "?DNR:<raw url>" and "?file=<enc>&back=<enc>#page=N"
+export function buildViewerUrl(p: ViewerParams, base?: string): string;   // base defaults to chrome.runtime.getURL(VIEWER_PATH); Node callers pass it
+// apps/extension/src/viewer/runtime.ts (production; module-local state, no global; later tasks add fields)
+export interface ViewerRuntime {}
+export function publishRuntime(p: Partial<ViewerRuntime>): void;     // merges into the module-local registry
+export function readRuntime(): Partial<ViewerRuntime>;
+// apps/extension/src/testing/test-hooks.ts (test-only; imports only ../viewer/runtime)
+export type SopTestHooks = ViewerRuntime;                            // importing the module sets globalThis.__sopTest, whose reads return readRuntime()[key]
+// e2e/support/launch.ts
+export const TEST_BUILD_DIR: string;   // <repo>/apps/extension/.output/chrome-mv3-test (what every spec loads)
+export const PROD_BUILD_DIR: string;   // <repo>/apps/extension/.output/chrome-mv3
 // e2e/support/test.ts
 export const test: TestType<{
   context: BrowserContext; sw: Worker; server: FixtureServer;
-  openViewer(source: string, opts?: { back?: string; page?: number }): Promise<Page>;   // buildViewerUrl, then waits for the viewer root
+  openViewer(source: string, opts?: { back?: string; page?: number }): Promise<Page>;   // buildViewerUrl(…, `chrome-extension://${EXTENSION_ID}/${VIEWER_PATH}`), then waits for the viewer root
 }, { profile: 'seeded' | 'bare' }>;
-export function hooks(page: Page): { eval<T>(fn: (h: SopTestHooks) => T | Promise<T>): Promise<T> };
+export function hooks(page: Page): { eval<T, A = undefined>(fn: (h: SopTestHooks, arg: A) => T | Promise<T>, arg?: A): Promise<T> };
 export interface FixtureServer {   // 127.0.0.1, random port; /f/<name> serves test-assets/<name> as application/pdf; /h/* serves HEADER_CASES and the pages tasks add
   origin: string; url(path: string): string; requests(path: string): number;
-  serveSequence(path: string, bodies: Uint8Array[]): void;   // successive GETs get successive bodies (Task 30)
+  serveSequence(path: string, bodies: Uint8Array[]): void;   // successive GETs get successive bodies (added in Task 30)
 }
-// e2e helpers in e2e/support/test.ts, each added by the first task that uses it:
-// css(page, sel), box(page, sel), clickMenu(page, menu, item), steadyScroll(page, o), copyFixture(name, dest),
-// sha256File(path), opfsList(page, dir): Promise<string[]>, grepOpfs(page, dir, needle): Promise<boolean>
+export function startFixtureServer(): Promise<FixtureServer & { close(): Promise<void> }>;   // e2e/support/server.ts; also used by Vitest (Task 20)
+// e2e helpers in e2e/support/test.ts, each added (and listed in Files) by the first task that uses it:
+// Task 16: the `tmp` fixture (a fresh temp dir per test), copyFixture(name, dest): Promise<string>
+// Task 21: steadyScroll(page, o), inkBox(page, canvasSelector): Promise<{ left; top; width; height }>   (fractions of the canvas)
+// Task 23: css(page, sel), box(page, sel), clickMenu(page, menu, item), sha256File(path)
+// Task 26: cornerLuminance(page, sel): Promise<number>   (mean 0–255 of a 20×20 screenshot patch at the element's top-left)
+// Task 29: grepOpfs(page, dir, needle): Promise<boolean>, probeIdb(page, name, needle), seedSecret(page, value)
+// Task 30: opfsList(page, dir): Promise<string[]>
 // e2e/support/netlog.ts
 export function netlogExternalUrls(netlogPath: string, allowedOrigin: string): Promise<string[]>;
 ```
@@ -946,6 +1074,22 @@ test('extensionIdFromKey maps sha256 hex to a-p', () => {
 test('EXTENSION_ID derives from the committed public key', () => {
   expect(EXTENSION_ID).toMatch(/^[a-p]{32}$/);
   expect(EXTENSION_ID).toBe(extensionIdFromKey(readFileSync('apps/extension/extension-key.pub.txt', 'utf8').trim()));
+});
+// apps/extension/src/shared/viewer-url.test.ts
+test('viewer URLs', () => {
+  expect(parseViewerUrl('chrome-extension://id/viewer.html?DNR:https://a.org/x.pdf?y=1&z=2')).toEqual({ source: 'https://a.org/x.pdf?y=1&z=2', back: null, page: null });
+  const p = { source: 'file:///C:/a b/c%23d.pdf', back: 'https://moodle.x/course/view.php?id=3', page: 3 };
+  expect(parseViewerUrl(buildViewerUrl(p, 'chrome-extension://id/viewer.html'))).toEqual(p);
+  expect(buildViewerUrl({ source: 'https://a.org/x.pdf', back: null, page: null }, 'chrome-extension://id/viewer.html')).toBe('chrome-extension://id/viewer.html?file=https%3A%2F%2Fa.org%2Fx.pdf');
+});
+// apps/extension/src/testing/test-hooks-boundary.test.ts (Node; reads the source tree)
+test('no production module imports src/testing/** or mentions __sopTest', () => {
+  const offenders = sourceFiles('apps/extension/src').filter((f) => !f.includes('/src/testing/'))
+    .filter((f) => importsOf(f).some((i) => /(^|\/)testing\//.test(i)) || readFileSync(f, 'utf8').includes('__sopTest'));
+  expect(offenders).toEqual([]);
+});
+test('the test hooks import only the runtime registry', () => {
+  expect(importsOf('apps/extension/src/testing/test-hooks.ts')).toEqual(['../viewer/runtime']);
 });
 // e2e/support/netlog.test.ts
 test('netlogExternalUrls reports only non-allowed http(s)/ws(s) URLs', async () => {
@@ -972,31 +1116,54 @@ test('eval is blocked in extension pages', async ({ context }) => {
   const p = await context.newPage(); await p.goto(`chrome-extension://${EXTENSION_ID}/viewer.html`);
   expect(await p.evaluate(() => { try { eval('1'); return 'ran'; } catch { return 'blocked'; } })).toBe('blocked');
 });
-test('production build contains no test hooks', () => {
-  execSync('pnpm -C apps/extension build');
-  expect(execSync('grep -rl __sopTest apps/extension/.output/chrome-mv3 || true').toString().trim()).toBe('');
+test('the e2e build exposes __sopTest in the viewer', async ({ context }) => {
+  const p = await context.newPage(); await p.goto(`chrome-extension://${EXTENSION_ID}/viewer.html`);
+  expect(await p.evaluate(() => typeof (globalThis as any).__sopTest)).toBe('object');
+});
+test('production build contains no test hooks and does not touch the e2e build', () => {
+  const testManifest = join(TEST_BUILD_DIR, 'manifest.json'); const before = statSync(testManifest).mtimeMs;
+  execFileSync('pnpm', ['-C', 'apps/extension', 'build'], { stdio: 'inherit', shell: process.platform === 'win32' });
+  expect(filesContaining(PROD_BUILD_DIR, '__sopTest')).toEqual([]);
+  expect(filesContaining(TEST_BUILD_DIR, '__sopTest').length).toBeGreaterThan(0);   // the probe finds it where it belongs
+  expect(statSync(testManifest).mtimeMs).toBe(before);                               // the folder every spec loads was not rebuilt
 });
 ```
+  `filesContaining(dir, needle)` is a Node directory walk, not `grep`, so it also runs on Windows.
+
   `e2e/support/test.ts` adds a network gate to **every** e2e test. After the test, the context closes, then: `expect(await netlogExternalUrls(netlogPath, server.origin)).toEqual([])`.
 
-- [ ] **Step 2: Run them and confirm they fail.** Run: `pnpm vitest run apps/extension/scripts/extension-id.test.ts e2e/support/netlog.test.ts && pnpm e2e e2e/smoke.spec.ts`. Expected: FAIL (`extension-id.mjs` is missing; the WXT project is missing).
+- [ ] **Step 2: Run them and confirm they fail.** Run: `pnpm vitest run apps/extension/scripts/extension-id.test.ts apps/extension/src/shared apps/extension/src/testing e2e/support/netlog.test.ts && pnpm e2e e2e/smoke.spec.ts`. Expected: FAIL (`extension-id.mjs` and `viewer-url.ts` are missing; the WXT project is missing).
 
 - [ ] **Step 3: Generate the key and implement**
   - **Key.** `node apps/extension/scripts/gen-key.mjs` runs `crypto.generateKeyPairSync('rsa', { modulusLength: 2048 })`. It writes the private key PEM to `~/.config/sickofpdfs/extension-key.pem` (mode 600, never in the repo) and the base64 SPKI DER of the public key to `apps/extension/extension-key.pub.txt`, then prints the ID.
   - **Icons.** `make-icons.mjs` renders Material Symbol `menu_book` (white, FILL 1) on a `#0b57d0` rounded tile with Playwright, at 16/32/48/128 px, into `public/icon/`.
-  - **`wxt.config.ts`:** `srcDir: 'src'`, `modules: ['@wxt-dev/module-react']` (exact `@wxt-dev/module-react` 1.2.2), and the manifest: `name: 'sickofpdfs'`, `key`, `minimum_chrome_version: '128'`, `incognito: 'split'`, the permissions and `host_permissions` asserted above, the CSP, `web_accessible_resources` and `icons`.
-  - **Scripts:** `apps/extension` gets `"build": "wxt build"`, `"build:e2e": "wxt build --mode test"`, `"typecheck": "tsc --noEmit"`.
+  - **`apps/extension/package.json`:** exact dependencies `wxt` 0.21.5, `@wxt-dev/module-react` 1.2.2, `react` 19.3.1 and `react-dom` 19.3.1, and exact devDependencies `@types/react` 19.3.0 and `@types/react-dom` 19.3.0. Scripts: `"build": "wxt build"`, `"build:e2e": "wxt build --mode test"`, `"typecheck": "tsc --noEmit"`.
+  - **`wxt.config.ts`:**
+    - `srcDir: 'src'` and `modules: ['@wxt-dev/module-react']`;
+    - `outDirTemplate: '{{browser}}-mv{{manifestVersion}}{{modeSuffix}}'`, so that `wxt build` writes `.output/chrome-mv3` and `wxt build --mode test` writes `.output/chrome-mv3-test`. The two never share a folder; the smoke test above proves it;
+    - the manifest: `name: 'sickofpdfs'`, `key`, `minimum_chrome_version: '128'`, `incognito: 'split'`, the permissions and `host_permissions` asserted above, the CSP, `web_accessible_resources` and `icons`;
+    - `vite: (env) => ({ plugins: env.mode === 'test' ? [sopTestHooks()] : [] })`. The inline plugin `sopTestHooks` has a `transform` hook that prepends `import '@/testing/test-hooks';` to `src/entrypoints/viewer/main.tsx`. This is the only way the test module enters a build, so production modules never reference it.
+  - **`viewer-url.ts`:** `buildViewerUrl` writes `?file=<enc>[&back=<enc>][#page=N]`. `parseViewerUrl` also reads the DNR form `?DNR:<raw url>`, where everything after `DNR:` is the source, unencoded.
+  - **`runtime.ts` and `test-hooks.ts`:**
+    - `publishRuntime` and `readRuntime` keep one module-local object; nothing is written to `globalThis`;
+    - `test-hooks.ts` defines `globalThis.__sopTest` as a `Proxy` whose `get` returns `readRuntime()[key]`;
+    - `test-hooks.ts` imports nothing else, in particular not the secrets store (Task 29 adds that rule to its import-boundary test).
   - **e2e launch:**
-    - `launch.ts` calls `chromium.launchPersistentContext(copyOfSeededProfile, { headless: true, args: ['--disable-extensions-except=…/chrome-mv3', '--load-extension=…/chrome-mv3', '--log-net-log=<testInfo.outputPath("netlog.json")>', '--disable-component-update', '--no-pings', '--disable-domain-reliability'] })`.
+    - `launch.ts` calls `chromium.launchPersistentContext(copyOfSeededProfile, { channel: 'chromium', headless: true, viewport, deviceScaleFactor, args: ['--disable-extensions-except=<TEST_BUILD_DIR>', '--load-extension=<TEST_BUILD_DIR>', '--log-net-log=<testInfo.outputPath("netlog.json")>', '--disable-component-update', '--no-pings', '--disable-domain-reliability'] })`;
+    - `channel: 'chromium'` is the full build in new headless mode, never the headless shell. Pass `executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome'` when Playwright cannot resolve it;
+    - the `context` fixture reads Playwright's built-in `viewport` and `deviceScaleFactor` options, so a spec's `test.use({ viewport, deviceScaleFactor })` reaches the browser (Review Focus 4);
+    - the `sw` fixture waits up to 10 s for the extension's service worker and fails with `extension did not load` otherwise.
     - `seed-profile.ts` runs once per worker. It opens `chrome://extensions/?id=${EXTENSION_ID}` and clicks the `cr-toggle` inside `extensions-toggle-row` with the text "Allow access to file URLs", and the one for "Allow in Incognito". It waits for the service worker to restart and then confirms with `isAllowedFileSchemeAccess()`.
     - The `profile: 'bare'` option skips seeding.
+  - **`__fixtures__/sample-netlog.json`:** a trimmed real netlog holding a request to `http://127.0.0.1:4100/f/a.pdf`, one to `chrome-extension://…/pdf/pdfium.wasm`, and one to `https://cdn.jsdelivr.net/npm/x.wasm`.
+  - **CI.** `ci.yml` gains the job `e2e` (`needs: checks`, `ubuntu-latest`). It uses the same SHA-pinned actions as Task 11: checkout `3d3c42e5aac5ba805825da76410c181273ba90b1` # v7.0.1, pnpm/action-setup `ea17c68df8912ef543352723c149a84f56e3d413` # v6.1.0, setup-node `949feb2413d6458794dcd2491c4babbbce0c15c1` # v7.1.0, and cache `55cc8345863c7cc4c66a329aec7e433d2d1c52a9` # v6.1.0 on `test-assets/`. Then it runs `pnpm install --frozen-lockfile`, `pnpm fixtures`, `pnpm exec playwright install --with-deps chromium` and `pnpm e2e`, and uploads `playwright-report/` with upload-artifact `cf430e030ddbb5b0abf93d22962f4752f3646cd9` # v7.0.2 when a step fails.
 
-- [ ] **Step 4: Run them again and confirm they pass.** Run: `pnpm vitest run apps/extension/scripts/extension-id.test.ts e2e/support/netlog.test.ts && pnpm e2e e2e/smoke.spec.ts`. Expected: PASS, including the network gate in teardown.
+- [ ] **Step 4: Run them again and confirm they pass.** Run: `pnpm vitest run apps/extension/scripts/extension-id.test.ts apps/extension/src/shared apps/extension/src/testing e2e/support/netlog.test.ts && pnpm e2e e2e/smoke.spec.ts`. Expected: PASS, including the network gate in teardown. `apps/extension/.output/` holds both `chrome-mv3` and `chrome-mv3-test`.
 
 - [ ] **Step 5: Commit**
 ```bash
-git add apps/extension e2e package.json pnpm-lock.yaml
-git commit -m "feat(extension): MV3 manifest with stable key, Playwright extension fixture, network gate"
+git add apps/extension e2e package.json pnpm-lock.yaml .github/workflows/ci.yml .gitignore
+git commit -m "feat(extension): MV3 manifest with stable key, viewer URLs, test-only hooks, Playwright extension fixture, network gate"
 ```
 
 ### Task 13: Design tokens, fonts and icons (`packages/ui`)
@@ -1005,13 +1172,17 @@ git commit -m "feat(extension): MV3 manifest with stable key, Playwright extensi
 - Create: `packages/ui/src/tokens/{tokens.css,tokens-dark.css,tokens.test.ts}`, `packages/ui/src/base.css`
 - Create: `packages/ui/src/fonts/{register.ts,fonts.browser.test.ts}`
 - Create: `packages/ui/src/icons/{Icon.tsx,names.ts,file-pdf-box.ts,FileTypeIcon.tsx,Icon.browser.test.tsx}`, `packages/ui/scripts/extract-mdi.mjs`
-- Modify: `packages/ui/package.json` (exact deps `react` 19.3.1, `radix-ui` 1.8.1, `material-symbols` 0.48.2, `@fontsource-variable/google-sans` 5.3.2, `@fontsource-variable/google-sans-flex` 5.3.2; devDependency `@iconify-json/mdi` 1.2.3)
+- Create: `packages/ui/test/render.tsx`. It holds `render(el)`, built on `react-dom/client` `createRoot` plus `act` from `react`, and returns the first rendered element, so no extra React test renderer is needed.
+- Modify: `packages/ui/package.json`. Exact deps: `react` 19.3.1, `react-dom` 19.3.1, `radix-ui` 1.8.1, `material-symbols` 0.48.2, `@fontsource-variable/google-sans` 5.3.2 and `@fontsource-variable/google-sans-flex` 5.3.2. Exact devDependencies: `@iconify-json/mdi` 1.2.3, `@types/react` 19.3.0 and `@types/react-dom` 19.3.0.
 
 **Interfaces:**
 - Consumes: the ESLint rule (Task 11).
 - Produces:
 ```ts
 export function registerFonts(): Promise<void>;        // FontFace for "Google Sans", "Google Sans Text", "Google Sans Flex", "Material Symbols Outlined"
+export function fontFaceSource(face: FontFace): string; // the bundled file URL a registered FontFace came from
+// packages/ui/test/render.tsx (test helper)
+export function render(el: ReactElement): HTMLElement;  // createRoot + act; returns the first rendered element
 export const ICON_NAMES: readonly [...];                // every Material Symbol used in Phase 1 (list below)
 export type IconName = (typeof ICON_NAMES)[number];
 export function Icon(p: { name: IconName; size?: 20 | 24; filled?: boolean; className?: string }): JSX.Element;
@@ -1052,10 +1223,16 @@ test('bundled families load with no network fetch', async () => {
   for (const f of ['Google Sans', 'Google Sans Text', 'Google Sans Flex', 'Material Symbols Outlined']) expect(document.fonts.check(`14px "${f}"`)).toBe(true);
   expect(performance.getEntriesByType('resource').filter((e) => /fonts\.(googleapis|gstatic)\.com/.test(e.name))).toEqual([]);
 });
-test('"Google Sans Text" at 14 px matches Google Sans at opsz 17 and differs from opsz 18', async () => {
-  const w = (style: string) => measureSpan('Handgloves Illustrated', style);
-  expect(w('font: 14px "Google Sans Text"')).toBeCloseTo(w('font: 14px "Google Sans"; font-variation-settings: "opsz" 17'), 2);
-  expect(w('font: 14px "Google Sans Text"')).not.toBeCloseTo(w('font: 14px "Google Sans"; font-variation-settings: "opsz" 18'), 2);
+test('"Google Sans Text" is Google Sans at opsz 17: same files, and base.css sets opsz 17 for text and 18 for display', async () => {
+  await registerFonts();
+  const faces = [...document.fonts].filter((f) => f.family.replace(/"/g, '') === 'Google Sans' || f.family.replace(/"/g, '') === 'Google Sans Text');
+  const srcs = (family: string) => faces.filter((f) => f.family.replace(/"/g, '') === family).map((f) => fontFaceSource(f)).sort();
+  expect(srcs('Google Sans Text')).toEqual(srcs('Google Sans'));          // registerFonts records each FontFace's file URL
+  expect(srcs('Google Sans')).toHaveLength(4);                           // latin-full normal/italic + latin-ext normal/italic
+  const text = render(<p className="sop-text-role">x</p>);
+  const display = render(<h1 className="sop-display-role">x</h1>);
+  expect(getComputedStyle(text).fontVariationSettings).toBe('"opsz" 17');
+  expect(getComputedStyle(display).fontVariationSettings).toBe('"opsz" 18');
 });
 // Icon.browser.test.tsx
 test('Icon renders Material Symbols Outlined at weight 400, FILL 0 by default', async () => {
@@ -1092,7 +1269,8 @@ test('every ICON_NAMES entry resolves to a single glyph', async () => {
     - add "Google Sans Flex" (`weight: '1 1000'`);
     - add "Material Symbols Outlined" (`weight: '100 700'`).
 
-    `base.css` sets `font-variation-settings: "opsz" 17` on `--font-text` roles and `"opsz" 18` on `--font-display` roles.
+    `register.ts` also exports `fontFaceSource(face): string`, the file URL each registered `FontFace` was built from, read by the test. `base.css` sets `font-variation-settings: "opsz" 17` on `--font-text` roles (class `sop-text-role`, and `body`) and `"opsz" 18` on `--font-display` roles (`sop-display-role`, `h1`–`h3`).
+  - **Dark menu height (ruling R15).** `--menu-dark-item-h` stays 36 px. That is Drive's measured dark viewer menu (research 02 §4.10). The spec's 32 px row (`--menu-item-h`) is the light library menu.
   - **`ICON_NAMES`:** `open_in_new, download, link, print, library_add, library_add_check, rotate_right, rotate_left, zoom_in, zoom_out, remove, add, arrow_drop_down, auto_stories, slideshow, dark_mode, photo_library, toc, find_in_page, pageview, keyboard, info, arrow_back, close, keyboard_arrow_up, keyboard_arrow_down, left_panel_close, left_panel_open, lock, error, check, undo`.
   - **`extract-mdi.mjs`** writes `file-pdf-box.ts` (`export const FILE_PDF_BOX = { body: '<path …/>', width: 24, height: 24 }`) from `@iconify-json/mdi/icons.json`.
 
@@ -1126,7 +1304,7 @@ export function Tooltip(p: { label: string; shortcut?: string; children: ReactEl
 export function Chip(p: { label: string; icon?: IconName; tone: 'neutral' | 'saved' | 'attention'; tooltip?: string; onClick?: () => void; disabled?: boolean }): JSX.Element;
 export function Dialog(p: { open: boolean; title: string; children: ReactNode; actions: { label: string; onClick: () => void; primary?: boolean }[]; onOpenChange(open: boolean): void }): JSX.Element;
 export function Banner(p: { message: string; actions?: { label: string; onClick: () => void }[]; onDismiss?: () => void }): JSX.Element;
-export const TextField: ForwardRefExoticComponent<{ value: string; onChange(v: string): void; label: string; type?: 'text' | 'password'; width?: number; invalid?: boolean; onEnter?(e: KeyboardEvent): void } & RefAttributes<HTMLInputElement>>;
+export const TextField: ForwardRefExoticComponent<{ value: string; onChange(v: string): void; label: string; type?: 'text' | 'search' | 'password'; width?: number; invalid?: boolean; onEnter?(e: KeyboardEvent): void } & RefAttributes<HTMLInputElement>>;   // type="search" gives role searchbox (Task 25)
 export function PillToolbar(p: { label: string; children: ReactNode }): JSX.Element;               // role="toolbar"
 export function ToolbarSeparator(): JSX.Element;
 ```
@@ -1143,22 +1321,50 @@ test('dark menu matches the Drive viewer File menu (02 §4.10)', async () => {
   expect(m.separator(0).getBoundingClientRect().height).toBe(17);
   expect(css(m.trigger)).toMatchObject({ backgroundColor: 'rgb(55, 57, 59)', borderRadius: '4px 4px 0px 0px', height: '24px' });
 });
-test('menubar keyboard: ArrowRight moves to the next menu, Escape closes and refocuses the trigger', async () => { /* File open → ArrowRight → View trigger aria-expanded=true; Escape → no open menu and document.activeElement is the View trigger */ });
-test('pill toolbar and icon buttons', async () => {
-  const t = render(<PillToolbar label="Document"><IconButton icon="download" label="Download" /></PillToolbar>);
-  expect(css(t.root)).toMatchObject({ height: '48px', backgroundColor: 'rgb(51, 53, 55)' });
-  expect(t.button.getBoundingClientRect()).toMatchObject({ width: 32, height: 32 });
-  await userEvent.hover(t.button);
-  expect(css(t.button).backgroundColor).toBe('rgb(62, 64, 65)');
-  expect(t.button.getAttribute('aria-label')).toBe('Download');
+test('menubar keyboard: ArrowRight moves to the next menu, Escape closes and refocuses the trigger', async () => {
+  const m = await openMenuBar([{ id: 'file', label: 'File', items: FILE_ITEMS }, { id: 'view', label: 'View', items: VIEW_ITEMS }], 'File');
+  await userEvent.keyboard('{ArrowRight}');
+  expect(m.triggerFor('View').getAttribute('aria-expanded')).toBe('true');
+  expect(m.triggerFor('File').getAttribute('aria-expanded')).toBe('false');
+  await userEvent.keyboard('{Escape}');
+  expect(document.querySelectorAll('[role="menu"]')).toHaveLength(0);
+  expect(document.activeElement).toBe(m.triggerFor('View'));
 });
-test('tooltips: light #303030 on #f2f2f2 text, dark #e3e3e3 on #303030 text, 12px', async () => { /* light: backgroundColor rgb(48, 48, 48), color rgb(242, 242, 242); dark: backgroundColor rgb(227, 227, 227), color rgb(48, 48, 48); fontSize 12px; top ≥ anchor.bottom + 4 */ });
-test('chip tones and focus ring', async () => { /* saved/neutral/attention colours from tokens; focus-visible outline 2px var(--drive-focus-ring) light, var(--viewer-focus) dark */ });
+test('pill toolbar and icon buttons', async () => {
+  const root = render(<PillToolbar label="Document"><IconButton icon="download" label="Download" /></PillToolbar>);
+  const button = root.querySelector('button')!;
+  expect(css(root)).toMatchObject({ height: '48px', backgroundColor: 'rgb(51, 53, 55)' });
+  expect(button.getBoundingClientRect()).toMatchObject({ width: 32, height: 32 });
+  await userEvent.hover(button);
+  expect(css(button).backgroundColor).toBe('rgb(62, 64, 65)');
+  expect(button.getAttribute('aria-label')).toBe('Download');
+});
+test('tooltips: light #303030 on #f2f2f2 text, dark #e3e3e3 on #303030 text, 12px', async () => {
+  for (const [theme, bg, fg] of [['light', 'rgb(48, 48, 48)', 'rgb(242, 242, 242)'], ['dark', 'rgb(227, 227, 227)', 'rgb(48, 48, 48)']] as const) {
+    const t = await showTooltip(theme, 'Download', 'Ctrl+S');   // hovers an IconButton inside <div data-theme={theme}>, resolves when role=tooltip is visible
+    expect(css(t.tooltip)).toMatchObject({ backgroundColor: bg, color: fg, fontSize: '12px' });
+    expect(t.tooltip.getBoundingClientRect().top).toBeGreaterThanOrEqual(t.anchor.getBoundingClientRect().bottom + 4);
+    await t.dismiss();
+  }
+});
+test('chip tones and focus ring (dark viewer header; GM3 chip 32 px, radius var(--shape-chip) 8px)', async () => {
+  const chips = render(<div data-theme="dark"><Chip label="Saved to library" tone="saved" /><Chip label="Not sure: Save?" tone="attention" /><Chip label="Not saved" tone="neutral" /></div>).querySelectorAll('button');
+  expect(css(chips[0])).toMatchObject({ height: '32px', borderRadius: '8px', backgroundColor: 'rgb(0, 74, 119)', color: 'rgb(194, 231, 255)' });
+  expect(css(chips[1])).toMatchObject({ backgroundColor: 'rgba(0, 0, 0, 0)', borderColor: 'rgb(142, 145, 143)', color: 'rgb(168, 199, 250)' });
+  expect(css(chips[2])).toMatchObject({ backgroundColor: 'rgba(0, 0, 0, 0)', borderColor: 'rgb(142, 145, 143)', color: 'rgb(196, 199, 197)' });
+  await userEvent.tab();                                                           // keyboard focus → :focus-visible
+  expect(css(chips[0])).toMatchObject({ outlineStyle: 'solid', outlineWidth: '2px', outlineColor: 'rgb(168, 199, 250)' });   // var(--viewer-focus)
+  const light = render(<Chip label="Saved to library" tone="saved" />);
+  light.focus({ focusVisible: true } as FocusOptions);
+  expect(css(light)).toMatchObject({ outlineWidth: '2px', outlineColor: 'rgb(11, 87, 208)' });                                 // var(--drive-focus-ring)
+});
 test('visual baselines', async () => {
+  for (const theme of ['dark', 'light'] as const) render(<Gallery theme={theme} />);   // test-file component: every component in every state, inside <div data-testid={`gallery-${theme}`} data-theme={theme}>
   await expect.element(page.getByTestId('gallery-dark')).toMatchScreenshot('ui-gallery-dark');
   await expect.element(page.getByTestId('gallery-light')).toMatchScreenshot('ui-gallery-light');
 });
 ```
+  Test-file helpers: `openMenuBar(menus, open)` renders a `MenuBar`, clicks the `open` trigger and returns `{ content, trigger, triggerFor(label), item(i), itemLabel(i), shortcut(i), separator(i) }`, where `trigger` is the opened menu's trigger. `showTooltip` is described above. `css(el)` is `getComputedStyle(el)`.
 
 - [ ] **Step 2: Run them and confirm they fail.** Run: `pnpm vitest run --project browser packages/ui/src/components`. Expected: FAIL (missing exports).
 
@@ -1169,7 +1375,12 @@ test('visual baselines', async () => {
   - the separator is `var(--menu-separator-gap)` margins plus a 1px `var(--gm3-sys-color-outline-variant)` rule;
   - the pill uses `border-radius: var(--shape-full)` and `background: var(--gm3-sys-color-surface-container-highest)`;
   - icon-button hover is `var(--viewer-icon-hover)`;
-  - tooltip text uses `var(--type-tooltip)`.
+  - tooltip text uses `var(--type-tooltip)`;
+  - `Chip` is the GM3 chip: height 32 px, `border-radius: var(--shape-chip)`, and a focus-visible outline of 2 px `var(--drive-focus-ring)` (light) or `var(--viewer-focus)` (dark). Its tones are:
+    - `saved`: background `var(--gm3-sys-color-secondary-container)`, text `var(--gm3-sys-color-on-secondary-container)`;
+    - `attention`: a transparent background, a 1px `var(--gm3-sys-color-outline)` border and `var(--gm3-sys-color-primary)` text;
+    - `neutral`: the same border, with `var(--gm3-sys-color-on-surface-variant)` text.
+  - The dark menu item height is `var(--menu-dark-item-h)` = 36 px (ruling R15; see Task 13).
 
   Dialogs trap focus and close on Esc. `Banner` uses `role="status"`.
 
@@ -1185,13 +1396,14 @@ git commit -m "feat(ui): Drive menus, menubar, pill toolbar, buttons, chips, dia
 
 **Files:**
 - Create: `patches/@embedpdf__engines@2.15.1.patch` (ported from the spike), root `package.json` `pnpm.patchedDependencies`
-- Create: `packages/viewer/src/backend/{types.ts,errors.ts,forms.ts}`
-- Create: `packages/viewer/src/backend/embedpdf/{sop-native.ts,engine.worker.ts,rpc.ts,fonts.ts,backend.ts,backend.browser.test.ts}`
-- Create: `scripts/fixtures/{make-objects.mjs,make-tagged.mjs,make-password.py}`, `packages/viewer/test/fixtures/password-secret.pdf`
-- Modify: `packages/viewer/package.json` (exact `@embedpdf/engines` / `pdfium` / `models` 2.15.1, `@embedpdf/fonts-latin` 1.0.0, `@embedpdf/fonts-sc` 1.0.0), `apps/extension/wxt.config.ts` (`build:publicAssets` copies `pdf/pdfium.wasm`, the 4 NotoSans files and `NotoSansHans-Regular.otf` into `pdf/`), `scripts/fixtures/build.mjs`
+- Create: `packages/viewer/src/backend/{types.ts,errors.ts,forms.ts,engine-config.ts,engine-config.test.ts}`
+- Create: `packages/viewer/src/backend/embedpdf/{sop-native.ts,engine.worker.ts,rpc.ts,fonts.ts,assets.ts,backend.ts,backend.browser.test.ts}`
+- Create: `scripts/fixtures/{make-objects.mjs,make-tagged.mjs,make-password.py,requirements.txt}`, `packages/viewer/test/fixtures/password-secret.pdf`
+- Create: `apps/extension/scripts/copy-engine-assets.mjs`. At build time it copies `pdfium.wasm`, the 4 NotoSans files and `NotoSansHans-Regular.otf` from the installed packages into the extension's static assets folder `apps/extension/public/pdf/`, which WXT copies to the build's `pdf/`.
+- Modify: `packages/viewer/package.json` (exact `@embedpdf/engines` / `pdfium` / `models` 2.15.1, `@embedpdf/fonts-latin` 1.0.0, `@embedpdf/fonts-sc` 1.0.0), `apps/extension/package.json` (script `"assets": "node scripts/copy-engine-assets.mjs"`; `build` and `build:e2e` now run `node scripts/copy-engine-assets.mjs && wxt build[ --mode test]`), `.gitignore` (add `apps/extension/public/pdf/` and `.venv-fixtures/`), `scripts/fixtures/build.mjs`
 
 **Interfaces:**
-- Consumes: `ENGINE` and `ENGINE_WORKERS` (Task 10); the spike's `SpikeNative` methods (Tasks 1, 3, 5, 7).
+- Consumes: `ENGINE` and `ENGINE_WORKERS` (Task 10's Decision section); the spike's `SpikeNative` methods (Tasks 1, 3, 5, 7).
 - Produces (every later viewer task uses these; Phase 2 adds `getGlyphOutlines`):
 ```ts
 export type DocHandle = string & { readonly __doc: unique symbol };
@@ -1214,6 +1426,7 @@ export interface PageObjectInfo { type: PageObjectType; bounds: PdfRect; formDep
   image?: { pixelWidth: number; pixelHeight: number; filters: string[] }; path?: { segmentCount: number; filled: boolean; stroked: boolean } }
 export interface PageObjectList { objects: PageObjectInfo[]; truncated: boolean }
 export interface StructElement { type: string; altText: string | null; actualText: string | null; markedContentIds: number[]; children: StructElement[] }
+export interface TextRun { text: string; rect: PdfRect; fontSize: number; charStart: number; charCount: number }   // same field names as the spike's getPageTextRuns (Task 5)
 export interface PdfBackend {
   open(bytes: ArrayBuffer, opts?: { password?: string }): Promise<OpenResult>;   // bytes are transferred to the worker
   close(doc: DocHandle): Promise<void>;
@@ -1227,37 +1440,73 @@ export interface PdfBackend {
   getFormInfo(doc: DocHandle): Promise<FormInfo>;
   listPageObjects(doc: DocHandle, pageIndex: number, opts?: { recurseForms?: boolean; maxObjects?: number; budgetMs?: number }): Promise<PageObjectList>;
   getStructTree(doc: DocHandle, pageIndex: number): Promise<StructElement[]>;
+  getTextRuns(doc: DocHandle, pageIndex: number): Promise<TextRun[]>;           // the figure detector's lines (Phase 2)
 }
 export function hasFillableFields(info: FormInfo): boolean;
 export class PdfPasswordError extends Error { readonly wrongPassword: boolean }
 export class PdfFormatError extends Error {}
+// backend/engine-config.ts: the Phase 0 decision as code; Tasks 20 and 21 import it from @sop/viewer
+export const ENGINE_WORKERS: 1 | 2;
 export interface EngineAssets { wasmUrl: string; fontBaseUrl: string }
-export function createEmbedPdfBackend(assets: EngineAssets, opts?: { workers?: 1 | 2 }): PdfBackend;
+// backend/embedpdf/assets.ts: the extension passes chrome.runtime.getURL; tests pass a URL for apps/extension/public/
+export function engineAssets(resolve: (path: string) => string): EngineAssets;   // { wasmUrl: resolve('pdf/pdfium.wasm'), fontBaseUrl: resolve('pdf/') }
+export function createEmbedPdfBackend(assets: EngineAssets, opts?: { workers?: 1 | 2 }): PdfBackend;   // workers defaults to ENGINE_WORKERS
 ```
 
 - [ ] **Step 1: Generate the fixtures**
 
-  `make-objects.mjs` and `make-tagged.mjs` are ported from the spike. `make-password.py` runs once with `python3 -I` (pypdf): it writes `password-secret.pdf`, 2 pages, AES-256, user password `secret`, and that file is committed. `build.mjs` now also writes `test-assets/{objects,tagged}.pdf`.
+  `make-objects.mjs` and `make-tagged.mjs` are ported from the spike. `build.mjs` now also writes `test-assets/{objects,tagged}.pdf`.
+
+  `make-password.py` runs once. It writes `password-secret.pdf` (2 pages, AES-256, user password `secret`), and that file is committed. pdf-lib cannot encrypt, so this one generator stays in Python, with exact pins in `scripts/fixtures/requirements.txt`: `pypdf==6.21.4` and `cryptography==50.0.2`. Run it with `python3 -I -m venv .venv-fixtures && .venv-fixtures/bin/python -I -m pip install -r scripts/fixtures/requirements.txt && .venv-fixtures/bin/python -I scripts/fixtures/make-password.py`. `.venv-fixtures/` is gitignored.
 
 - [ ] **Step 2: Write the failing tests**
 ```ts
 // backend.browser.test.ts; fixtureBytes(name) fetches /@fs/<repo>/test-assets/<name>
-const be = createEmbedPdfBackend({ wasmUrl: pdfiumWasmUrl, fontBaseUrl: '/@fs/<repo>/node_modules/@embedpdf/fonts-latin/fonts/' });
+// The engine files are the ones the extension ships: copied into apps/extension/public/pdf/ by `pnpm -C apps/extension assets`
+// (the extension resolves the same files with chrome.runtime.getURL). Nothing is read from node_modules at run time.
+const be = createEmbedPdfBackend(engineAssets((p) => `/@fs/${REPO_ROOT}/apps/extension/public/${p}`), { workers: 1 });
+let doc: DocHandle, attention: DocHandle, thinkpython: DocHandle, objects: DocHandle, tagged: DocHandle;
+beforeAll(async () => {
+  [doc, attention, thinkpython, objects, tagged] = await Promise.all(['paper-50.pdf', 'classifier/learning/arxiv-1706.03762-attention.pdf', 'classifier/learning/textbook-thinkpython2.pdf', 'objects.pdf', 'tagged.pdf'].map(openFixture));
+});
 test('open paper-50', async () => {
   const r = await be.open(await fixtureBytes('paper-50.pdf'));
   expect(r.pageCount).toBe(50);
   expect(r.pages[0]).toEqual({ width: expect.closeTo(612, 0.5), height: expect.closeTo(792, 0.5), rotation: 0 });
 });
-test('renderTile at scale 4/3 gives an 816×1056 bitmap with ink', async () => { /* width 816 ±1, ink > 2% */ });
+test('renderTile at scale 4/3 gives an 816×1056 bitmap with ink', async () => {
+  const bmp = await be.renderTile(doc, { pageIndex: 0, scale: 4 / 3, viewRotation: 0, withAnnotations: true });
+  expect(Math.abs(bmp.width - 816)).toBeLessThanOrEqual(1);
+  expect(Math.abs(bmp.height - 1056)).toBeLessThanOrEqual(1);
+  expect(inkFraction(bmp)).toBeGreaterThan(0.02);   // share of pixels with luminance < 200
+});
 test('glyphs, page text and ranges', async () => {
-  expect((await be.getPageText(doc, 0))).toContain('Household Wealth');
+  expect(await be.getPageText(doc, 0)).toContain('HOUSEHOLD WEALTH');   // NBER w29000 page 1 title is upper case in the PDF
   const g = await be.getPageGlyphs(doc, 0); expect(g.glyphs.length).toBeGreaterThan(1000);
   expect(await be.getTextRange(doc, 0, g.runs[0].start, g.runs[0].end - g.runs[0].start)).toBe(g.glyphs.slice(g.runs[0].start, g.runs[0].end).map((x) => x.text).join(''));
 });
-test('searchPage finds "wealth" with rects', async () => { expect((await be.searchPage(doc, 0, 'wealth', { matchCase: false, wholeWord: false })).length).toBeGreaterThan(0); });
+test('searchPage finds "wealth" with rects', async () => {
+  const hits = await be.searchPage(doc, 0, 'wealth', { matchCase: false, wholeWord: false });
+  expect(hits.length).toBeGreaterThan(0);
+  expect(hits[0].rects.length).toBeGreaterThan(0);
+});
 test('links and outline', async () => {
-  expect((await be.getLinks(attention, 0)).some((l) => l.target.kind === 'page')).toBe(true);
-  expect((await be.getOutline(thinkpython)).length).toBeGreaterThanOrEqual(10);
+  // attention page index 0 has no links; index 1 has 30 GoTo citation links, the first to the references on page index 10
+  const links = await be.getLinks(attention, 1);
+  expect(links.filter((l) => l.target.kind === 'page')).toHaveLength(30);
+  expect(links[0].target).toMatchObject({ kind: 'page', pageIndex: 10 });
+  expect(await be.getLinks(attention, 0)).toEqual([]);
+  const outline = await be.getOutline(thinkpython);
+  expect(outline).toHaveLength(22);
+  expect(outline[1]).toMatchObject({ title: 'The way of the program', target: { kind: 'page', pageIndex: 22 } });
+  expect(outline[1].children[1]).toMatchObject({ title: 'Running Python', target: { kind: 'page', pageIndex: 23 } });
+});
+test('getTextRuns keeps the spike field names', async () => {
+  const cap = (await be.getTextRuns(objects, 0)).find((r) => r.text.startsWith('Figure 1: A photo.'))!;
+  expect(Math.abs(cap.rect.x - 72)).toBeLessThanOrEqual(1);
+  expect(cap.rect.y).toBeGreaterThanOrEqual(236);
+  expect(cap.rect.y).toBeLessThanOrEqual(248);
+  expect(cap.charCount).toBe(cap.text.length);
 });
 test('form info (P0-7 vectors)', async () => {
   for (const f of NOT_FORMS) expect(hasFillableFields(await be.getFormInfo(await openFixture(f)))).toBe(false);
@@ -1278,32 +1527,46 @@ test('password: wrong then right', async () => {
 test('a corrupt file rejects with PdfFormatError', async () => {
   await expect(be.open(new TextEncoder().encode('<html>login</html>').buffer)).rejects.toBeInstanceOf(PdfFormatError);
 });
-test('only same-origin requests (wasm, fonts, fixtures)', () => {
-  expect(performance.getEntriesByType('resource').map((e) => new URL(e.name).origin).every((o) => o === location.origin)).toBe(true);
+test('only same-origin requests (wasm, fonts, fixtures), and none into node_modules', () => {
+  const urls = performance.getEntriesByType('resource').map((e) => new URL(e.name));
+  expect(urls.every((u) => u.origin === location.origin)).toBe(true);
+  expect(urls.filter((u) => u.pathname.includes('/node_modules/'))).toEqual([]);
+  expect(urls.some((u) => u.pathname.endsWith('/apps/extension/public/pdf/pdfium.wasm'))).toBe(true);
+});
+// engine-config.test.ts (Node)
+test('ENGINE_WORKERS matches the Phase 0 decision', () => {
+  const m = readFileSync('docs/spikes/phase0-report.md', 'utf8').match(/^ENGINE_WORKERS\s*=\s*([12])\s*$/m);
+  expect(m).not.toBeNull();
+  expect(ENGINE_WORKERS).toBe(Number(m![1]));
 });
 ```
 
-- [ ] **Step 3: Run them and confirm they fail.** Run: `pnpm fixtures && pnpm vitest run --project browser packages/viewer/src/backend`. Expected: FAIL (missing `createEmbedPdfBackend`).
+- [ ] **Step 3: Run them and confirm they fail.** Run: `pnpm -C apps/extension assets && pnpm fixtures && pnpm vitest run packages/viewer/src/backend/engine-config.test.ts && pnpm vitest run --project browser packages/viewer/src/backend`. Expected: FAIL (missing `createEmbedPdfBackend` and `engine-config.ts`).
 
 - [ ] **Step 4: Implement**
   - **`SopPdfiumNative extends PdfiumNative`** (relies on the protected `pdfiumModule` and `cache` from the patch). It adds:
     - `renderBitmap`: `renderPageRect` → `createImageBitmap(new ImageData(...))`;
-    - `getGlyphs`, `getTextRange`, `getFormInfo`, `listPageObjects` and `getStructTree`, ported from the spike. `getStructTree` reads type, alt text, actual text and marked-content ids recursively to depth 32.
+    - `getGlyphs`, `getTextRange`, `getFormInfo`, `listPageObjects`, `getStructTree` and `getTextRuns`, ported from the spike (`getTextRuns` is the spike's `getPageTextRuns`, with the same `TextRun` fields). `getStructTree` reads type, alt text, actual text and marked-content ids recursively to depth 32.
   - **`engine.worker.ts`:**
     - on init, fetches the wasm, calls `init({ wasmBinary })` and builds the native instance with `fontFallback: bundledFontFallback(fontBaseUrl)` (the spike's mapping);
     - serves `rpc.ts` messages `{ id, method, args }` → `{ id, ok, value | error: { name, message, wrongPassword? } }`, transferring `ImageBitmap` and `ArrayBuffer`.
+  - **`engine-config.ts`:** `export const ENGINE_WORKERS: 1 | 2 = <the value in the Phase 0 Decision section>;`. It is the only place the number is written.
+  - **`engineAssets` and `copy-engine-assets.mjs`:**
+    - the script resolves each file with `createRequire(import.meta.url).resolve('@embedpdf/pdfium/pdfium.wasm')` (and the font packages' `fonts/` files), then copies it into `apps/extension/public/pdf/`;
+    - the viewer builds its assets with `engineAssets((p) => chrome.runtime.getURL(p))`;
+    - no URL in the product or in its tests points into `node_modules`.
   - **`createEmbedPdfBackend`:**
-    - starts `opts.workers` workers with `new Worker(new URL('./engine.worker.ts', import.meta.url), { type: 'module' })`;
+    - starts `opts.workers ?? ENGINE_WORKERS` workers with `new Worker(new URL('./engine.worker.ts', import.meta.url), { type: 'module' })`;
     - with two workers, the document opens in both, and pages are routed by `pageIndex % 2`;
     - maps PDFium error code 4 (`FPDF_ERR_PASSWORD`) to `PdfPasswordError` (`wrongPassword` = a password was supplied), and codes 2 and 3 to `PdfFormatError`;
     - `AbortSignal` drops the reply and the render-queue entry.
   - **`hasFillableFields`:** `info.formType.startsWith('xfa') || info.firstFillablePage !== null`.
 
-- [ ] **Step 5: Run them again and confirm they pass.** Run: `pnpm vitest run --project browser packages/viewer/src/backend`. Expected: PASS.
+- [ ] **Step 5: Run them again and confirm they pass.** Run: `pnpm -C apps/extension assets && pnpm vitest run packages/viewer/src/backend/engine-config.test.ts && pnpm vitest run --project browser packages/viewer/src/backend`. Expected: PASS.
 
 - [ ] **Step 6: Commit**
 ```bash
-git add patches package.json pnpm-lock.yaml packages/viewer scripts/fixtures apps/extension/wxt.config.ts
+git add patches package.json pnpm-lock.yaml packages/viewer scripts/fixtures apps/extension/package.json apps/extension/scripts/copy-engine-assets.mjs .gitignore
 git commit -m "feat(viewer): PdfBackend adapter with EmbedPDF 2.15.1 in our own worker"
 ```
 
@@ -1311,21 +1574,16 @@ git commit -m "feat(viewer): PdfBackend adapter with EmbedPDF 2.15.1 in our own 
 
 **Files:**
 - Create: `apps/extension/src/background/takeover/{rules.ts,rules.test.ts,feature-check.ts,feature-check.test.ts,register.ts,file-fallback.ts,request-log.ts,referer.ts,messages.ts,LICENSE.pdfjs}`
-- Create: `apps/extension/src/shared/{viewer-url.ts,viewer-url.test.ts,messages.ts}`, `apps/extension/src/entrypoints/embed.content/index.ts`
+- Create: `apps/extension/src/shared/messages.ts`, `apps/extension/src/entrypoints/embed.content/index.ts`
 - Create: `e2e/takeover.spec.ts`
-- Modify: `apps/extension/src/entrypoints/background.ts`, `e2e/support/header-cases.ts`, `e2e/support/server.ts`
+- Modify: `apps/extension/src/entrypoints/background.ts`, `e2e/support/header-cases.ts`, `e2e/support/server.ts` (`/h/*` header cases, `/h/post-form`, `/h/post`, `/h/referer-page`, `/h/needs-referer.pdf`), `e2e/support/test.ts` (adds the `tmp` fixture and `copyFixture(name, dest)`)
 
-Every file adapted from `pdf.js/extensions/chromium` (`pdfHandler.js`, `preserve-referer.js`, `contentscript.js`) starts with the pdf.js Apache-2.0 header, followed by `Modified for sickofpdfs, 2026`. `LICENSE.pdfjs` is a copy of pdf.js's `LICENSE`.
+Every file adapted from `pdf.js/extensions/chromium` (`pdfHandler.js`, `preserve-referer.js`, `contentscript.js`) starts with the pdf.js Apache-2.0 header, followed by `Modified for sickofpdfs, 2026`. `LICENSE.pdfjs` is a copy of pdf.js's `LICENSE`. `shared/messages.ts` holds only the `RuntimeMessage` types, which the viewer, content script and service worker share. `background/takeover/messages.ts` is the service worker's `installTakeoverMessages()` handler for them.
 
 **Interfaces:**
-- Consumes: the extension build and the e2e fixtures (Task 12).
+- Consumes: the extension build, the e2e fixtures and `ViewerParams`, `parseViewerUrl`, `buildViewerUrl` (`apps/extension/src/shared/viewer-url.ts`, Task 12).
 - Produces:
 ```ts
-// shared/viewer-url.ts
-export interface ViewerParams { source: string | null; back: string | null; page: number | null }
-export const VIEWER_PATH = 'viewer.html';
-export function parseViewerUrl(href: string): ViewerParams;          // handles "?DNR:<raw url>" and "?file=<enc>&back=<enc>#page=N"
-export function buildViewerUrl(p: ViewerParams): string;
 // shared/messages.ts
 export type RuntimeMessage =
   | { type: 'takeover:prepare-fetch'; url: string }        // → { referer: string | null }
@@ -1366,11 +1624,6 @@ test('feature check: false when the condition throws, false when validation is s
   expect(await isHeaderConditionSupported(fakeDnr({ rejectsEmptyHeaders: true }))).toBe(true);
   expect(lastFake.sessionRuleIds()).toEqual([]); // probe rule 123456 always removed
 });
-test('viewer URLs', () => {
-  expect(parseViewerUrl('chrome-extension://id/viewer.html?DNR:https://a.org/x.pdf?y=1&z=2')).toEqual({ source: 'https://a.org/x.pdf?y=1&z=2', back: null, page: null });
-  const p = { source: 'file:///C:/a b/c%23d.pdf', back: 'https://moodle.x/course/view.php?id=3', page: 3 };
-  expect(parseViewerUrl(buildViewerUrl(p))).toEqual(p);
-});
 ```
 
 - [ ] **Step 2: Write the failing e2e tests**
@@ -1387,7 +1640,16 @@ export const HEADER_CASES = [
   { path: '/h/no-ctype.pdf', ct: null, expect: 'viewer' },           // content-script sniff path
 ] as const;
 // e2e/takeover.spec.ts
-for (const c of HEADER_CASES) test(`header case ${c.path} → ${c.expect}`, async ({ context, server }) => { /* viewer: waitForURL(/viewer\.html/) and parseViewerUrl(url).source === server.url(c.path); download: waitForEvent('download'); chrome: url still server.url(c.path) after 2 s */ });
+for (const c of HEADER_CASES) test(`header case ${c.path} → ${c.expect}`, async ({ context, server }) => {
+  const page = await context.newPage();
+  if (c.expect === 'download') {
+    const [d] = await Promise.all([page.waitForEvent('download'), page.goto(server.url(c.path)).catch(() => null)]);   // goto rejects with "Download is starting"
+    expect(d.suggestedFilename()).toBe('a.pdf');
+  } else {
+    await page.goto(server.url(c.path)).catch(() => null); await page.waitForURL(/viewer\.html/);
+    expect(parseViewerUrl(page.url()).source).toBe(server.url(c.path));
+  }
+});
 test('form POST returning a PDF stays in Chrome\'s viewer, also after 2 s (no sniff redirect)', async ({ context, server }) => {
   const page = await context.newPage(); await page.goto(server.url('/h/post-form')); await page.click('button[type=submit]');
   await page.waitForURL(server.url('/h/post')); await page.waitForTimeout(2000);
@@ -1399,7 +1661,7 @@ test('Referer is preserved on the viewer re-fetch', async ({ context, server }) 
   const status = await page.evaluate(async (u) => { await chrome.runtime.sendMessage({ type: 'takeover:prepare-fetch', url: u }); return (await fetch(u)).status; }, server.url('/h/needs-referer.pdf'));
   expect(status).toBe(200);   // the server answers 403 unless Referer === <origin>/h/referer-page
 });
-test('awkward file names open in the viewer (Review Focus 2)', async ({ context }) => {
+test('awkward file names open in the viewer (Review Focus 2)', async ({ context, tmp }) => {
   for (const name of ['Week 3 – café #2.PDF', 'cafe\u0301 100% done.pdf', 'a b.pdf']) {
     const f = await copyFixture('paper-50.pdf', join(tmp, 'dir with spaces', name));
     const page = await context.newPage(); await page.goto(pathToFileURL(f).href);
@@ -1410,7 +1672,12 @@ test('awkward file names open in the viewer (Review Focus 2)', async ({ context 
 });
 test.describe('without file access', () => {
   test.use({ profile: 'bare' });
-  test('file:// goes to the viewer with ?file= via webNavigation', async ({ context }) => { /* page.url() matches /viewer\.html\?file=file%3A/ */ });
+  test('file:// goes to the viewer with ?file= via webNavigation', async ({ context, tmp }) => {
+    const f = await copyFixture('paper-50.pdf', join(tmp, 'a b.pdf'));
+    const page = await context.newPage(); await page.goto(pathToFileURL(f).href).catch(() => null);
+    await page.waitForURL(/viewer\.html\?file=file%3A/);
+    expect(parseViewerUrl(page.url())).toEqual({ source: pathToFileURL(f).href, back: null, page: null });
+  });
 });
 test('registerTakeover runs once per session and reports dnr', async ({ sw }) => {
   expect(await sw.evaluate(() => chrome.storage.session.get('takeoverMode'))).toEqual({ takeoverMode: 'dnr' });
@@ -1450,9 +1717,10 @@ git commit -m "feat(takeover): DNR redirect rules with Chrome 128 probe, file fa
 - Create: `apps/extension/src/background/takeover/{escape.ts,escape.test.ts,embedded.ts}`, `apps/extension/src/entrypoints/embed.content/style.css`
 - Create: `apps/extension/src/viewer/{frame-escape.ts,back-to-page.ts}`, `e2e/embedded.spec.ts`, `e2e/escape.spec.ts`
 - Modify: `apps/extension/src/entrypoints/embed.content/index.ts`, `apps/extension/src/background/takeover/messages.ts`, `apps/extension/src/entrypoints/viewer/main.tsx`
+- Modify: `e2e/support/server.ts`. It adds the routes `/h/embed-page`, `/h/object-page` and `/h/iframe-page`, each embedding `/h/plain.pdf` with the matching element, and `/h/iframe-attachment-page` (`<iframe src="/h/attachment.pdf">`).
 
 **Interfaces:**
-- Consumes: `buildViewerUrl`, `parseViewerUrl`, `RuntimeMessage` (Task 16).
+- Consumes: `buildViewerUrl`, `parseViewerUrl` (Task 12); `RuntimeMessage` (Task 16); `copyFixture` and `tmp` (Task 16).
 - Produces:
 ```ts
 export function escapeForRegexFilter(url: string): string;                 // RE2-safe, anchored ^…$
@@ -1481,7 +1749,14 @@ test('Open in Chrome\'s viewer uses a one-time allow rule', async ({ openViewer,
   expect((await sw.evaluate(() => chrome.declarativeNetRequest.getSessionRules())).filter((r) => r.action.type === 'allow')).toEqual([]);
   await page.goto(src); await page.waitForURL(/viewer\.html/);                             // the next visit is ours again
 });
-test('the escape hatch works for file:// too', async ({ openViewer }) => { /* the three assertions above with pathToFileURL(copy of paper-50.pdf) */ });
+test('the escape hatch works for file:// too', async ({ openViewer, sw, tmp }) => {
+  const src = pathToFileURL(await copyFixture('paper-50.pdf', join(tmp, 'escape.pdf'))).href; const page = await openViewer(src);
+  await page.evaluate((u) => chrome.runtime.sendMessage({ type: 'takeover:open-in-chrome', url: u }), src);
+  await page.waitForURL(src); await page.waitForTimeout(2000);
+  expect(page.url()).toBe(src);
+  expect((await sw.evaluate(() => chrome.declarativeNetRequest.getSessionRules())).filter((r) => r.action.type === 'allow')).toEqual([]);
+  await page.goto(src).catch(() => null); await page.waitForURL(/viewer\.html/);
+});
 // e2e/embedded.spec.ts
 for (const kind of ['embed', 'object', 'iframe'] as const) test(`${kind}-embedded PDF opens in the full tab with back=page`, async ({ context, server }) => {
   const page = await context.newPage(); await page.goto(server.url(`/h/${kind}-page`));
@@ -1495,7 +1770,13 @@ test('Back to page returns and does not bounce again', async ({ context, server 
   expect(page.url()).toBe(server.url('/h/embed-page'));
   await expect(page.locator('embed[type="application/pdf"]')).toHaveCount(1);
 });
-test('an iframe serving Content-Disposition attachment downloads and leaves the page alone', async ({ context, server }) => { /* waitForEvent('download'); url unchanged */ });
+test('an iframe serving Content-Disposition attachment downloads and leaves the page alone', async ({ context, server }) => {
+  const page = await context.newPage();
+  const [d] = await Promise.all([page.waitForEvent('download'), page.goto(server.url('/h/iframe-attachment-page'))]);
+  expect(d.suggestedFilename()).toBe('a.pdf');
+  await page.waitForTimeout(2000);
+  expect(page.url()).toBe(server.url('/h/iframe-attachment-page'));
+});
 ```
 
 - [ ] **Step 2: Run them and confirm they fail.** Run: `pnpm vitest run apps/extension/src/background/takeover/escape.test.ts && pnpm e2e e2e/embedded.spec.ts e2e/escape.spec.ts`. Expected: FAIL.
@@ -1623,6 +1904,8 @@ test('locationId', async () => {
   - upper-case a drive letter;
   - collapse `//` inside the path.
 
+  `locationId` hashes `${kind}:${canonical}` (ruling R16). The kind prefix keeps a `url` and a `file` location with the same text apart, and it is still "a hash of its canonical link" as the spec asks. The test vector above pins it.
+
 - [ ] **Step 4: Run them again and confirm they pass.** Run: `pnpm vitest run packages/core/src/identity`. Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1634,7 +1917,7 @@ git commit -m "feat(core): streaming SHA-256, canonical links with test vectors,
 ### Task 19: Identity core: download-stamp stripping and alias similarity
 
 **Files:**
-- Create: `packages/core/src/identity/{stamps.ts,stamps.test.ts}`, `e2e/support/stamped-pdf.ts`
+- Create: `packages/core/src/identity/{stamps.ts,stamps.test.ts}`, `packages/core/test/stamp-samples.ts`, `e2e/support/stamped-pdf.ts`
 - Modify: `packages/core/package.json` (exact `diff-match-patch` 1.0.5, `@types/diff-match-patch` 1.0.36)
 
 **Interfaces:**
@@ -1646,6 +1929,8 @@ export function stripStamps(pageText: string): string;
 export function stampedTextSimilarity(a: readonly string[], b: readonly string[]): number; // 0 when page counts differ
 // e2e/support/stamped-pdf.ts
 export function makeStampedPdf(stamp: { ip: string; date: string }, body?: 'jstor-body' | 'other-body'): Promise<Uint8Array>; // 8 pages, same body, different stamp, /ID and CreationDate
+// packages/core/test/stamp-samples.ts (test data; Task 28's store tests reuse it)
+export function pagesWithStamp(ip: string, date: string, o?: { pages?: number; charsPerPage?: number; body?: 'jstor-body' | 'other-body' }): string[];   // defaults: 8 pages × 3,750 chars, 'jstor-body'
 ```
 
 - [ ] **Step 1: Write the failing tests**
@@ -1665,7 +1950,13 @@ test('similarity: one changed word in 30,000 chars still aliases; a different pa
   expect(stampedTextSimilarity(BODY, OTHER_BODY_SAME_PAGE_COUNT)).toBeLessThan(0.5);
 });
 test('similarity: page count differs → 0', () => expect(stampedTextSimilarity(['a'], ['a', 'b'])).toBe(0));
-test('similarity: 300 pages × 3,000 chars compares in < 500 ms', () => { /* performance.now() delta < 500 for two 300-page arrays that differ only by stamps; result ≥ ALIAS_THRESHOLD */ });
+test('similarity: 300 pages × 3,000 chars compares in < 500 ms', () => {
+  const a = pagesWithStamp('158.143.1.1', 'Tue, 31 Oct 2026 10:41:07 UTC', { pages: 300, charsPerPage: 3000 });
+  const b = pagesWithStamp('81.2.3.4', 'Wed, 1 Nov 2026 09:00:00 UTC', { pages: 300, charsPerPage: 3000 });
+  const t0 = performance.now(); const s = stampedTextSimilarity(a, b); const ms = performance.now() - t0;
+  expect(s).toBeGreaterThanOrEqual(ALIAS_THRESHOLD);
+  expect(ms).toBeLessThan(500);
+});
 ```
 
 - [ ] **Step 2: Run them and confirm they fail.** Run: `pnpm vitest run packages/core/src/identity/stamps.test.ts`. Expected: FAIL.
@@ -1696,10 +1987,12 @@ git commit -m "feat(core): download-stamp stripping and 99.5% alias similarity"
 **Files:**
 - Create: `packages/viewer/src/source/{load-source.ts,errors.ts,limits.ts,file-name.ts,file-name.test.ts,load-source.browser.test.ts}`
 - Create: `apps/extension/src/viewer/open-document.ts`, `apps/extension/src/viewer/ui/{LoadErrorCard,PasswordDialog,FileAccessDialog,LargeFileNotice}.tsx`, `e2e/open.spec.ts`
-- Modify: `apps/extension/src/entrypoints/viewer/main.tsx`, `apps/extension/src/viewer/test-hooks.ts`, `e2e/support/server.ts` (adds `once.pdf`, `fake.pdf`, `truncated.pdf`, `huge.pdf`, `password.pdf`)
+- Create: `e2e/support/vitest-global-setup.ts`. It starts the Task 12 fixture server (`startFixtureServer()`) for the Vitest browser project and `provide`s its origin as `fixtureOrigin`.
+- Modify: `apps/extension/src/entrypoints/viewer/main.tsx`, `apps/extension/src/viewer/runtime.ts`, `vitest.config.ts` (browser project `globalSetup: ['e2e/support/vitest-global-setup.ts']`)
+- Modify: `e2e/support/server.ts`. It adds `/h/once.pdf`, `/h/fake.pdf`, `/h/truncated.pdf`, `/h/huge.pdf` and `/h/password.pdf`, plus the `/mock` route and `mockPath()` below. `/f/*` and `/mock` answer CORS for the requesting `Origin` (with `Access-Control-Allow-Credentials: true`), so Vitest's page can fetch them with credentials.
 
 **Interfaces:**
-- Consumes: `createSha256` (Task 18); `PdfBackend`, `PdfPasswordError`, `PdfFormatError` (Task 15); `openInChromeViewer` through `takeover:open-in-chrome` (Task 17); `takeover:prepare-fetch` (Task 16); `MAX_OPEN_BYTES` (Task 10).
+- Consumes: `createSha256` (Task 18); `PdfBackend`, `PdfPasswordError`, `PdfFormatError`, `ENGINE_WORKERS`, `engineAssets` (Task 15); `ViewerParams` (Task 12); `openInChromeViewer` through `takeover:open-in-chrome` (Task 17); `takeover:prepare-fetch` and its reply `{ referer: string | null }` (Task 16); `MAX_OPEN_BYTES` (Task 10); `startFixtureServer` (Task 12).
 - Produces:
 ```ts
 export const MAX_OPEN_BYTES = 1_073_741_824;
@@ -1710,10 +2003,13 @@ export class PdfLoadError extends Error { constructor(readonly code: PdfLoadErro
 export function loadPdfSource(ref: PdfSourceRef, opts: { signal?: AbortSignal; maxBytes?: number }): Promise<LoadedPdf>;
 export function displayNameFor(url: string | null, contentDisposition: string | null, fallback?: string): string;
 // apps/extension/src/viewer/open-document.ts
-export interface OpenedDocument { loaded: LoadedPdf; open: OpenResult; password: string | null }
+export interface OpenedDocument { loaded: LoadedPdf; open: OpenResult; password: string | null; referrer?: string }   // referrer = the takeover:prepare-fetch reply's referer, when non-null (Task 30 uses it for viaPage)
 export type OpenOutcome = { kind: 'ready'; doc: OpenedDocument } | { kind: 'error'; error: PdfLoadError | PdfFormatError } | { kind: 'bounced' };
 export function openDocument(p: ViewerParams, deps: { backend: PdfBackend; askPassword(retry: boolean): Promise<string | null> }): Promise<OpenOutcome>;
-// SopTestHooks gains: backend: PdfBackend; doc(): OpenedDocument | null; viewerState(): 'loading' | 'ready' | 'error' | 'bounced'
+// ViewerRuntime gains (read by e2e as SopTestHooks): backend: PdfBackend; doc(): OpenedDocument | null; viewerState(): 'loading' | 'ready' | 'error' | 'bounced'
+// e2e/support/server.ts
+export interface MockOptions { status?: number; contentType?: string; contentLength?: number; body?: string; chunked?: boolean; bytes?: number }
+export function mockPath(o: MockOptions): string;   // '/mock?…'; the route answers exactly as described (a contentLength with no body sends headers, then holds the socket)
 ```
 
 - [ ] **Step 1: Write the failing tests**
@@ -1726,7 +2022,9 @@ test.each([
   ['https://arxiv.org/pdf/1706.03762', null, '1706.03762.pdf'],
   ['file:///C:/x/r%C3%A9sum%C3%A9.PDF', null, 'résumé.PDF'],
 ])('displayNameFor(%s, %s)', (u, cd, n) => expect(displayNameFor(u, cd)).toBe(n));
-// load-source.browser.test.ts
+// load-source.browser.test.ts: URLs come from the Task 12 fixture server, started by e2e/support/vitest-global-setup.ts
+const fixtureUrl = (name: string) => `${inject('fixtureOrigin')}/f/${name}`;
+const mockUrl = (o: MockOptions) => `${inject('fixtureOrigin')}${mockPath(o)}`;
 test('url source hashes while streaming', async () => {
   const r = await loadPdfSource({ kind: 'url', url: fixtureUrl('classifier/learning/arxiv-1706.03762-attention.pdf') }, {});
   expect(r.sha256).toBe('bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697');
@@ -1735,7 +2033,11 @@ test('url source hashes while streaming', async () => {
 test('Content-Length above the limit aborts before reading the body', async () => {
   await expect(loadPdfSource({ kind: 'url', url: mockUrl({ contentLength: 1_200_000_000 }) }, {})).rejects.toMatchObject({ code: 'too-large', detail: { size: 1_200_000_000 } });
 });
-test('streamed bytes above maxBytes abort when there is no Content-Length', async () => { /* chunked mock, maxBytes 1 MiB */ });
+test('streamed bytes above maxBytes abort when there is no Content-Length', async () => {
+  const p = loadPdfSource({ kind: 'url', url: mockUrl({ chunked: true, contentType: 'application/pdf', bytes: 2 * 1024 * 1024 }) }, { maxBytes: 1024 * 1024 });
+  await expect(p).rejects.toMatchObject({ code: 'too-large' });
+  expect((await p.catch((e: PdfLoadError) => e)).detail.size).toBeGreaterThan(1024 * 1024);
+});
 test('non-PDF body → not-pdf; HTTP 403 → http/403', async () => {
   await expect(loadPdfSource({ kind: 'url', url: mockUrl({ contentType: 'application/pdf', body: '<html>login</html>' }) }, {})).rejects.toMatchObject({ code: 'not-pdf' });
   await expect(loadPdfSource({ kind: 'url', url: mockUrl({ status: 403 }) }, {})).rejects.toMatchObject({ code: 'http', detail: { status: 403 } });
@@ -1761,14 +2063,35 @@ test('Review Focus 1: a truncated PDF reaches ready or error with no uncaught er
   const errors: string[] = []; const page = await openViewer(server.url('/h/truncated.pdf')); page.on('pageerror', (e) => errors.push(e.message));
   await expect.poll(() => hooks(page).eval((h) => h.viewerState())).toMatch(/ready|error/); expect(errors).toEqual([]);
 });
-test('Import this PDF opens a chosen file', async ({ openViewer, server }) => { /* setInputFiles on the card's input → ready */ });
+test('Import this PDF opens a chosen file', async ({ context, server }) => {
+  const page = await context.newPage(); await page.goto(server.url('/h/once.pdf'));   // the takeover used the one good response; the re-fetch fails
+  await expect(page.getByRole('button', { name: 'Import this PDF' })).toBeVisible();
+  await page.locator('input[type=file][accept="application/pdf"]').setInputFiles('test-assets/paper-50.pdf');
+  await expect.poll(() => hooks(page).eval((h) => h.viewerState())).toBe('ready');
+  expect(await hooks(page).eval((h) => [h.doc()!.open.pageCount, h.doc()!.loaded.sourceUrl])).toEqual([50, null]);
+});
+test('the Referer from takeover:prepare-fetch reaches OpenedDocument.referrer', async ({ context, server }) => {
+  const page = await context.newPage(); await page.goto(server.url('/h/referer-page')); await page.click('a#pdf');
+  await page.waitForURL(/viewer\.html/);
+  await expect.poll(() => hooks(page).eval((h) => h.viewerState())).toBe('ready');
+  expect(await hooks(page).eval((h) => h.doc()!.referrer)).toBe(server.url('/h/referer-page'));
+});
 test('a 1.2 GB Content-Length shows the note and bounces to Chrome\'s viewer', async ({ openViewer, server }) => {
   const page = await openViewer(server.url('/h/huge.pdf'));
   await expect(page.getByText(/larger than the 1 GB this viewer opens/)).toBeVisible();
   await page.waitForURL(server.url('/h/huge.pdf'));
 });
 test.describe('bare profile', () => { test.use({ profile: 'bare' });
-  test('file:// without access: dialog with settings button and Choose file', async ({ context }) => { /* dialog text "Allow access to file URLs"; setInputFiles → ready */ });
+  test('file:// without access: dialog with settings button and Choose file', async ({ context, tmp }) => {
+    const f = await copyFixture('paper-50.pdf', join(tmp, 'local.pdf'));
+    const page = await context.newPage(); await page.goto(pathToFileURL(f).href).catch(() => null);
+    await page.waitForURL(/viewer\.html\?file=/);
+    const dialog = page.getByRole('dialog', { name: 'Allow access to file URLs' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Open extension settings' })).toBeVisible();
+    await dialog.locator('input[type=file]').setInputFiles(f);   // behind "Choose file"
+    await expect.poll(() => hooks(page).eval((h) => h.viewerState())).toBe('ready');
+  });
 });
 ```
 
@@ -1780,7 +2103,7 @@ test.describe('bare profile', () => { test.use({ profile: 'bare' });
     - **`file:`:** XHR with `responseType = 'arraybuffer'`. The first `onprogress` total is checked against the limit; a load error means `file-access`.
     - **`File`:** read `file.stream()`.
   - **`openDocument`:**
-    1. `await chrome.runtime.sendMessage({ type: 'takeover:prepare-fetch', url })` for http(s).
+    1. `const { referer } = await chrome.runtime.sendMessage({ type: 'takeover:prepare-fetch', url })` for http(s). The reply is passed through: a non-null `referer` becomes `OpenedDocument.referrer`.
     2. `loadPdfSource`.
     3. `backend.open(await loaded.blob.arrayBuffer(), { password })`, looping on `PdfPasswordError` through `askPassword(retry)`.
     4. On `too-large` with a URL source, show `LargeFileNotice` ("This PDF is {size} GB, larger than the 1 GB this viewer opens. Opening it in Chrome's viewer…") with an "Open now" button. Send `takeover:open-in-chrome` after 2000 ms. Return `bounced`.
@@ -1788,13 +2111,14 @@ test.describe('bare profile', () => { test.use({ profile: 'bare' });
     - `LoadErrorCard` titles are "Couldn't load this PDF" (http/network/damaged) and "This link didn't return a PDF" (not-pdf). Its buttons are "Open in Chrome's viewer" and "Import this PDF", the latter backed by a hidden `<input type=file accept="application/pdf">`.
     - `PasswordDialog` says "This PDF is password protected" with the field label "Password" and the error "Incorrect password. Try again.".
     - `FileAccessDialog` says "Allow access to file URLs", with the buttons "Open extension settings" (`takeover:open-file-settings` → `tabs.create({ url: 'chrome://extensions/?id=' + chrome.runtime.id })`) and "Choose file".
-  - **Backend:** `main.tsx` creates `createEmbedPdfBackend({ wasmUrl: chrome.runtime.getURL('pdf/pdfium.wasm'), fontBaseUrl: chrome.runtime.getURL('pdf/') }, { workers: ENGINE_WORKERS })` once per tab. `performance.mark('sop:first-page')` is set in Task 21.
+  - **Backend:** `main.tsx` creates `createEmbedPdfBackend(engineAssets((p) => chrome.runtime.getURL(p)), { workers: ENGINE_WORKERS })` once per tab, with `ENGINE_WORKERS` imported from `@sop/viewer` (Task 15). It calls `publishRuntime({ backend, doc, viewerState })`. `performance.mark('sop:first-page')` is set in Task 21.
+  - **Fixture server for Vitest:** `vitest-global-setup.ts` calls `startFixtureServer()` and `provide('fixtureOrigin', server.origin)`, and closes it in teardown. The `/mock` route reads `MockOptions` from the query. `chunked` streams `bytes` zero-filled bytes after a `%PDF-1.7` header, with no `Content-Length`.
 
 - [ ] **Step 4: Run them again and confirm they pass.** Run: `pnpm vitest run packages/viewer/src/source && pnpm e2e e2e/open.spec.ts`. Expected: PASS.
 
 - [ ] **Step 5: Commit**
 ```bash
-git add packages/viewer apps/extension e2e
+git add packages/viewer apps/extension e2e vitest.config.ts
 git commit -m "feat(viewer): load PDFs with streaming hash, 1 GB rule, password prompt and error card"
 ```
 
@@ -1804,10 +2128,10 @@ git commit -m "feat(viewer): load PDFs with streaming hash, 1 GB rule, password 
 - Create: `packages/viewer/src/layout/{zoom.ts,zoom.test.ts,page-layout.ts,page-layout.test.ts}`, `packages/viewer/src/render/{scheduler.ts,scheduler.test.ts}`
 - Create: `packages/viewer/src/react/{PageList.tsx,PageView.tsx,viewer-state.ts}`, `apps/extension/src/viewer/{App.tsx,shortcuts.ts,shortcuts.test.ts}`
 - Create: `scripts/fixtures/{make-scan.mjs,make-mixed.mjs}`, `e2e/view-zoom.spec.ts`, `e2e/perf-smoke.spec.ts`
-- Modify: `scripts/fixtures/build.mjs` (writes `scan-120.pdf`, plus `scan-600.pdf` when `SOP_GATE=1`, and `mixed.pdf`)
+- Modify: `scripts/fixtures/build.mjs` (writes `scan-120.pdf`, plus `scan-600.pdf` when `process.env.SOP_GATE === '1'`, and `mixed.pdf`), root `package.json` (exact devDependency `@embedpdf/pdfium` 2.15.1, which `make-scan.mjs` loads in Node), `apps/extension/src/viewer/runtime.ts` (adds `viewer`), `e2e/support/test.ts` (adds `steadyScroll(page, o)` and `inkBox(page, canvasSelector)`)
 
 **Interfaces:**
-- Consumes: `PdfBackend` (Task 15), `ENGINE_WORKERS` (Task 10), `OpenedDocument` (Task 20).
+- Consumes: `PdfBackend` and `ENGINE_WORKERS` (Task 15, `@sop/viewer`), `OpenedDocument` (Task 20).
 - Produces:
 ```ts
 export const ZOOM_STEPS = [0.25, 0.333, 0.5, 0.666, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4] as const; // Chromium presets, 25–400%
@@ -1821,21 +2145,25 @@ export interface PageBox { index: number; top: number; left: number; width: numb
 export interface PageLayout { boxes: PageBox[]; width: number; height: number }
 export function computeLayout(pages: PageSize[], o: { scale: number; viewRotation: Rotation; spread: Spread; viewportWidth: number }): PageLayout;
 export function visibleRange(l: PageLayout, scrollTop: number, viewportHeight: number, overscan: number): { first: number; last: number };
-export class RenderScheduler {
+export class RenderScheduler {   // one per tab, created in App.tsx; PageList and the thumbnail rail (Task 24) share it and its preview cache
   constructor(backend: PdfBackend, doc: DocHandle, o: { concurrency: 1 | 2; previewWidthPx: 160; previewCache: 300 });
   request(pageIndex: number, kind: 'preview' | 'full', scale: number, priority: number, rect?: PdfRect): Promise<ImageBitmap>;
-  retain(range: { first: number; last: number }): void;   // cancels queued work outside the range
+  retain(range: { first: number; last: number }): void;   // cancels queued work outside the range (rejects with AbortError)
 }
 export interface ViewerStore { get(): ViewerSnapshot; set(p: Partial<ViewerSnapshot>): void; subscribe(cb: () => void): () => void }
 export interface ViewerSnapshot { zoom: ZoomMode; scale: number; currentPage: number; viewRotation: Rotation; spread: Spread; darkPages: boolean; railOpen: boolean }
-export function PageList(p: { backend: PdfBackend; doc: OpenedDocument; store: ViewerStore; renderPage?: (box: PageBox) => ReactNode }): JSX.Element;
+export function PageList(p: { backend: PdfBackend; doc: OpenedDocument; store: ViewerStore; scheduler: RenderScheduler; renderPage?: (box: PageBox) => ReactNode }): JSX.Element;
 // shortcuts.ts
 export type KeyCombo = string;    // 'Ctrl+=', 'Ctrl+Alt+S', 'Alt+Shift+Digit5', 'F4', 'Shift+F4', '?'
 export interface ShortcutDef { id: string; keys: KeyCombo[]; run(e: KeyboardEvent): void; enabled?(): boolean }
 export function matchesCombo(e: KeyboardEvent, combo: KeyCombo): boolean;
 export function isTypingTarget(t: EventTarget | null): boolean;
 export function installShortcuts(defs: ShortcutDef[], target?: Window): () => void;  // capture phase, preventDefault on match
-// SopTestHooks gains: viewer: { scale(): number; currentPage(): number; scrollTo(pageIndex: number): Promise<void> }
+// ViewerRuntime gains (read by e2e as SopTestHooks):
+//   viewer: { scale(): number; setScale(s: number): void; currentPage(): number; scrollTo(pageIndex: number): Promise<void>; snapshot(): ViewerSnapshot;
+//             scrollTop(): number; maxScrollTop(): number; viewportHeight(): number; pageBoxes(): PageBox[];
+//             pdfPointAt(x: number, y: number): { pageIndex: number; x: number; y: number } | null;   // client px → page pt (the zoom anchor maths)
+//             clientPointOf(p: { pageIndex: number; x: number; y: number }): { x: number; y: number } }
 ```
 
 - [ ] **Step 1: Write the failing unit tests**
@@ -1858,19 +2186,42 @@ test('Review Focus 3: mixed sizes and /Rotate 90', () => {
   expect(l.boxes[1].width).toBeCloseTo(842 * PT_TO_CSS, 1);                       // A4 landscape
   expect(computeLayout(MIXED, { scale: 1, viewRotation: 90, spread: 'none', viewportWidth: 1400 }).boxes[2].rotation).toBe(180);
 });
-test('two-page spreads pair (1,2),(3,4)', () => { /* boxes 0 and 1 share top; left of box 1 = box0.left + box0.width + 16 */ });
+test('two-page spreads pair (1,2),(3,4)', () => {
+  const l = computeLayout([LETTER, LETTER, LETTER, LETTER], { scale: 1, viewRotation: 0, spread: 'two-page', viewportWidth: 1800 });
+  expect(l.boxes[1].top).toBe(l.boxes[0].top); expect(l.boxes[3].top).toBe(l.boxes[2].top);
+  expect(l.boxes[1].left).toBe(l.boxes[0].left + l.boxes[0].width + 16);
+  expect(l.boxes[2].top).toBe(l.boxes[0].top + 1056 + 16);
+});
 test('fit-width and fit-page', () => {
   expect(resolveScale({ kind: 'fit-width' }, { width: 1232, height: 800 }, [LETTER], { viewRotation: 0, spread: 'none' })).toBeCloseTo((1232 - 32) / 816, 4);
   expect(resolveScale({ kind: 'fit-page' }, { width: 1232, height: 800 }, [LETTER], { viewRotation: 0, spread: 'none' })).toBeCloseTo((800 - 32) / 1056, 4);
 });
-test('scheduler: previews before full, cancels outside the retained range', async () => { /* fake backend records call order */ });
+test('scheduler: previews before full, cancels outside the retained range', async () => {
+  const be = recordingBackend();   // records { pageIndex, scale } per renderTile call; resolveAll() settles them
+  const s = new RenderScheduler(be, DOC, { concurrency: 1, previewWidthPx: 160, previewCache: 300 });
+  const full = s.request(5, 'full', 1.5, 0); const preview = s.request(5, 'preview', 160 / 612, 0); const far = s.request(40, 'full', 1.5, 1);
+  s.retain({ first: 0, last: 10 });
+  await expect(far).rejects.toMatchObject({ name: 'AbortError' });
+  await be.resolveAll(); await preview; await full;
+  expect(be.calls.map((c) => [c.pageIndex, c.scale])).toEqual([[5, 160 / 612], [5, 1.5]]);   // dispatch runs on the next microtask, previews first
+  await s.request(5, 'preview', 160 / 612, 0); expect(be.calls).toHaveLength(2);                // the second preview comes from the cache
+});
 test('shortcuts: zoom keys and the typing guard', () => {
   expect(matchesCombo(key({ key: '=', ctrlKey: true }), 'Ctrl+=')).toBe(true);
   expect(matchesCombo(key({ key: '+', ctrlKey: true, shiftKey: true }), 'Ctrl++')).toBe(true);
   expect(matchesCombo(key({ key: 'ś', ctrlKey: true, altKey: true }), 'Ctrl+Alt+S')).toBe(false);          // Polish AltGr+S
   expect(matchesCombo(key({ key: '%', code: 'Digit5', altKey: true, shiftKey: true }), 'Alt+Shift+Digit5')).toBe(true);
   expect(isTypingTarget(inputEl)).toBe(true);
-  // installShortcuts: Ctrl+Alt+* and single-key combos are skipped while isTypingTarget(e.target); Ctrl+P still fires
+  const fired: string[] = []; const win = fakeWindow();
+  const off = installShortcuts([
+    { id: 'save', keys: ['Ctrl+Alt+S'], run: () => fired.push('save') },
+    { id: 'sheet', keys: ['?'], run: () => fired.push('sheet') },
+    { id: 'print', keys: ['Ctrl+P'], run: () => fired.push('print') },
+  ], win);
+  for (const e of [key({ key: 's', ctrlKey: true, altKey: true, target: inputEl }), key({ key: '?', shiftKey: true, target: inputEl }), key({ key: 'p', ctrlKey: true, target: inputEl })]) win.dispatch(e);
+  expect(fired).toEqual(['print']);                      // Ctrl+Alt+* and single keys are skipped while typing; Ctrl+P still fires
+  win.dispatch(key({ key: '?', shiftKey: true, target: bodyEl })); expect(fired).toEqual(['print', 'sheet']);
+  off();
 });
 ```
 
@@ -1886,38 +2237,91 @@ test('Ctrl+= and Ctrl++ zoom in, Ctrl+− out, Ctrl+0 fits width; the browser zo
   expect(await h.eval((x) => x.viewer.scale())).toBeCloseTo(fit, 6);
   expect(await page.evaluate(() => [window.devicePixelRatio, visualViewport!.scale])).toEqual([1.5, 1]);
 });
-test('Ctrl+wheel and pinch zoom the page, anchored under the pointer', async ({ openViewer, server }) => { /* keyboard.down('Control'); mouse.wheel(0,-200); scale > before; DPR unchanged; the PDF point under the pointer moves < 2 px */ });
-test('scale stays within 25%–400%', async () => { /* 30 × Ctrl+= → 4; 30 × Ctrl+− → 0.25 */ });
-test('keyboard scrolling follows Chromium', async () => { /* ArrowDown +40 px; PageDown + (viewport − 40); Home → 0; End → bottom; ArrowRight → next page when there is no horizontal overflow */ });
-test('Review Focus 3: mixed.pdf renders every page upright with the right box', async ({ openViewer, server }) => { /* page 3 ink bbox wider than tall; boxes match computeLayout */ });
-test('Review Focus 4: canvas backing = round(css × DPR) at 1.25 and 1.5, and re-renders within 500 ms after a DPR change', async ({ openViewer, server }) => {
-  /* CDP Emulation.setDeviceMetricsOverride({ deviceScaleFactor: 2, width: 1366, height: 768, mobile: false }) → canvas.width === Math.round(cssW * 2) within 500 ms */
+test('Ctrl+wheel and pinch zoom the page, anchored under the pointer', async ({ openViewer, server }) => {
+  // Chrome delivers a touchpad pinch as wheel events with ctrlKey set, so this one path covers pinch too
+  const page = await openViewer(server.url('/f/paper-50.pdf')); const h = hooks(page);
+  const before = await h.eval((x) => x.viewer.scale());
+  await page.mouse.move(600, 400); const anchor = (await h.eval((x) => x.viewer.pdfPointAt(600, 400)))!;
+  await page.keyboard.down('Control'); await page.mouse.wheel(0, -200); await page.keyboard.up('Control');
+  await expect.poll(() => h.eval((x) => x.viewer.scale())).toBeGreaterThan(before);
+  const moved = await h.eval((x, p) => x.viewer.clientPointOf(p), anchor);
+  expect(Math.hypot(moved.x - 600, moved.y - 400)).toBeLessThan(2);
+  expect(await page.evaluate(() => [window.devicePixelRatio, visualViewport!.scale])).toEqual([1.5, 1]);
 });
-// e2e/perf-smoke.spec.ts (thresholds tighten with SOP_GATE=1)
-const GATE = !!process.env.SOP_GATE;
+test('scale stays within 25%–400%', async ({ openViewer, server }) => {
+  const page = await openViewer(server.url('/f/paper-50.pdf')); const h = hooks(page);
+  for (let i = 0; i < 30; i++) await page.keyboard.press('Control+Equal');
+  expect(await h.eval((x) => x.viewer.scale())).toBe(4);
+  for (let i = 0; i < 30; i++) await page.keyboard.press('Control+Minus');
+  expect(await h.eval((x) => x.viewer.scale())).toBe(0.25);
+});
+test('keyboard scrolling follows Chromium', async ({ openViewer, server }) => {
+  const page = await openViewer(server.url('/f/paper-50.pdf')); const h = hooks(page);
+  const top = () => h.eval((x) => x.viewer.scrollTop()); const vh = await h.eval((x) => x.viewer.viewportHeight());
+  await page.keyboard.press('ArrowDown'); await expect.poll(top).toBe(40);
+  await page.keyboard.press('PageDown'); await expect.poll(top).toBe(40 + vh - 40);
+  await page.keyboard.press('End'); await expect.poll(top).toBe(await h.eval((x) => x.viewer.maxScrollTop()));
+  await page.keyboard.press('Home'); await expect.poll(top).toBe(0);
+  await page.keyboard.press('ArrowRight'); await expect.poll(() => h.eval((x) => x.viewer.currentPage())).toBe(1);   // fit width: no horizontal overflow
+});
+test('Review Focus 3: mixed.pdf renders every page upright with the right box', async ({ openViewer, server }) => {
+  const page = await openViewer(server.url('/f/mixed.pdf')); const h = hooks(page);
+  const boxes = await h.eval((x) => x.viewer.pageBoxes());
+  expect(boxes.map((b) => Math.round((b.width / b.height) * 100) / 100)).toEqual([0.77, 1.42, 1.29, 1.78, 0.71]);   // 612×792, 842×595, 792×612 (Rotate 90), 960×540, 420×595
+  for (const i of [0, 1, 2, 3, 4]) {
+    await h.eval((x, n) => x.viewer.scrollTo(n), i);
+    const ink = await inkBox(page, `[data-page-index="${i}"] canvas`);   // bbox of dark pixels, fractions of the canvas
+    expect(ink.left).toBeLessThan(0.3); expect(ink.top).toBeLessThan(0.3);
+    expect(ink.width * boxes[i].width).toBeGreaterThan(ink.height * boxes[i].height);   // "Page N" reads left to right only when upright
+  }
+});
+test('Review Focus 4: canvas backing = round(css × DPR) at 1.5, then at 1.25 within 500 ms of a DPR change', async ({ openViewer, server }) => {
+  const page = await openViewer(server.url('/f/paper-50.pdf'));
+  const backingOk = (dpr: number) => page.evaluate((d) => {
+    const c = document.querySelector<HTMLCanvasElement>('[data-page-index="0"] canvas')!; const r = c.getBoundingClientRect();
+    return c.width === Math.round(r.width * d) && c.height === Math.round(r.height * d);
+  }, dpr);
+  await expect.poll(() => backingOk(1.5)).toBe(true);
+  const cdp = await page.context().newCDPSession(page);
+  const t0 = Date.now();
+  await cdp.send('Emulation.setDeviceMetricsOverride', { deviceScaleFactor: 1.25, width: 1366, height: 768, mobile: false });
+  await expect.poll(() => backingOk(1.25), { timeout: 500, intervals: [25] }).toBe(true);
+  expect(Date.now() - t0).toBeLessThan(500);
+});
+// e2e/perf-smoke.spec.ts: CI thresholds; the gate thresholds apply when process.env.SOP_GATE === '1' (set by scripts/gate.mjs, Task 32)
+const GATE = process.env.SOP_GATE === '1';
 test('first page of paper-50 paints in time', async ({ openViewer, server }) => {
   const page = await openViewer(server.url('/f/paper-50.pdf'));
-  const t = await page.evaluate(() => new Promise<number>((r) => { const e = performance.getEntriesByName('sop:first-page')[0]; if (e) r(e.startTime); else new PerformanceObserver((l) => r(l.getEntries()[0].startTime)).observe({ type: 'mark' }); }));
+  const t = await page.evaluate(() => new Promise<number>((resolve) => {
+    const now = performance.getEntriesByName('sop:first-page', 'mark')[0];
+    if (now) return resolve(now.startTime);
+    new PerformanceObserver((l, o) => { const e = l.getEntriesByName('sop:first-page', 'mark')[0]; if (e) { o.disconnect(); resolve(e.startTime); } }).observe({ type: 'mark' });
+  }));   // resolves only on the sop:first-page mark; a missing mark fails by test timeout
+  expect(t).toBeGreaterThan(0);
   expect(t).toBeLessThan(GATE ? 1000 * 1.2 : 3000);
 });
 test('scan steady scroll: no page blank too long', async ({ openViewer, server }) => {
   const page = await openViewer(server.url(GATE ? '/f/scan-600.pdf' : '/f/scan-120.pdf'));
   await steadyScroll(page, { pxPerSec: 3000, seconds: 10 });
-  const worst = await page.evaluate(() => Math.max(...performance.getEntriesByType('measure').filter((m) => m.name.startsWith('sop:blank:')).map((m) => m.duration)));
-  expect(worst).toBeLessThanOrEqual(GATE ? 150 * 1.2 : 500);
+  const durations = await page.evaluate(() => performance.getEntriesByType('measure').filter((m) => m.name.startsWith('sop:blank:')).map((m) => m.duration));
+  expect(durations.length).toBeGreaterThanOrEqual(20);   // 10 s at 3000 px/s crosses well over 20 pages; zero measures fails here
+  expect(Math.max(...durations)).toBeLessThanOrEqual(GATE ? 150 * 1.2 : 500);
 });
 ```
-  `make-scan.mjs` is the spike's synthesiser with the same CLI. `make-mixed.mjs` builds five pages with pdf-lib: Letter portrait; A4 landscape (842×595); Letter with `setRotation(90)`; a 960×540 slide; and A5 (420×595). Each page reads "Page N" at 48 pt in the top-left corner.
+  `make-scan.mjs` is the spike's synthesiser with the same CLI. `make-mixed.mjs` builds five pages with pdf-lib: Letter portrait; A4 landscape (842×595); Letter with `setRotation(degrees(90))`; a 960×540 slide; and A5 (420×595). Each page reads "Page N" at 48 pt so that it shows in the top-left corner when displayed. On the rotated page the label is drawn with `rotate: degrees(90)` near the unrotated bottom-left (x 60, y 24), which `/Rotate 90` displays upright at the top-left.
+
+  `steadyScroll(page, { pxPerSec, seconds })` scrolls the `[role=document]` container by `pxPerSec / 60` per animation frame inside the page. `inkBox(page, sel)` copies the canvas through `createImageBitmap` into an `OffscreenCanvas` and returns the bounding box of pixels with luminance < 128, as fractions.
 
 - [ ] **Step 3: Run them and confirm they fail.** Run: `pnpm vitest run packages/viewer/src/layout packages/viewer/src/render apps/extension/src/viewer/shortcuts.test.ts && pnpm fixtures && pnpm e2e e2e/view-zoom.spec.ts e2e/perf-smoke.spec.ts`. Expected: FAIL.
 
 - [ ] **Step 4: Implement**
+  - **`App.tsx`** creates one `RenderScheduler(backend, doc.open.doc, { concurrency: ENGINE_WORKERS, previewWidthPx: 160, previewCache: 300 })` per tab. It passes it to `PageList` (and, from Task 24, to `ThumbnailRail`), so that there is one queue and one preview cache. It also calls `publishRuntime({ viewer })`.
   - **`PageList`:**
     - one scroll container (`role="document"`, `aria-label` = file name) holding absolutely positioned `PageView`s for `visibleRange(…, overscan 1)`;
     - each `PageView` holds a placeholder (`var(--viewer-page-placeholder)`), a `<canvas>` with backing `Math.round(cssW·dpr) × Math.round(cssH·dpr)` and `box-shadow: var(--shadow-pdf-page)`, and slots for the text and link layers;
     - `performance.mark('sop:blank-start:i')` when the placeholder becomes visible, and `performance.measure('sop:blank:i', start)` on its first paint;
     - `performance.mark('sop:first-page')` on page 0's first full paint.
-  - **Rendering:**
+  - **Rendering** goes through `p.scheduler` only:
     - full renders whose bitmap side would exceed 4096 device px use 1024 px tiles of the visible rect only;
     - re-render on `matchMedia('(resolution: <dpr>dppx)')` change.
   - **Zoom:**
@@ -1934,7 +2338,7 @@ test('scan steady scroll: no page blank too long', async ({ openViewer, server }
 
 - [ ] **Step 6: Commit**
 ```bash
-git add packages/viewer apps/extension scripts/fixtures e2e
+git add packages/viewer apps/extension scripts/fixtures e2e package.json pnpm-lock.yaml
 git commit -m "feat(viewer): virtual page list, preview-first rendering, Chromium zoom steps and keys"
 ```
 
@@ -1943,10 +2347,10 @@ git commit -m "feat(viewer): virtual page list, preview-first rendering, Chromiu
 **Files:**
 - Create: `packages/viewer/src/text-layer/{text-layer.ts,items.ts,items.test.ts,char-map.ts,text-layer.css,LICENSE.pdfjs}`, `packages/viewer/src/react/TextLayer.tsx`
 - Create: `scripts/fixtures/make-textlayer.mjs`, `scripts/fixtures/textlayer-src/*`, `e2e/support/{drag-select.ts,textlayer-fixtures.ts}`, `e2e/text-layer.spec.ts`
-- Modify: `packages/viewer/src/react/PageView.tsx`, `apps/extension/src/viewer/test-hooks.ts`
+- Modify: `packages/viewer/src/react/PageView.tsx`, `apps/extension/src/viewer/runtime.ts`, `scripts/fixtures/build.mjs` (runs `make-textlayer.mjs`, writing `test-assets/tl-{two-column,rotated-table,ligatures,maths,rtl,rotated-page}.pdf`), `packages/ui/src/tokens/tokens.css` (adds `--text-selection: rgba(11,87,208,.3)`)
 
 **Interfaces:**
-- Consumes: `PageGlyphs`, `getTextRange` (Task 15); `PageBox` (Task 21); the spike's text-layer code (Task 3).
+- Consumes: `PageGlyphs`, `getTextRange` (Task 15); `PageBox` (Task 21); the spike's text-layer code (Task 3), whose `buildTextItems` already has the signature below.
 - Produces (used by Find in Task 25, and by marks in Phase 2):
 ```ts
 export interface CharRange { pageIndex: number; start: number; end: number }   // end exclusive
@@ -1957,7 +2361,13 @@ export function renderTextLayer(container: HTMLElement, items: TextItem[], box: 
 export function getSelectionRanges(viewerRoot: HTMLElement): CharRange[];
 export function selectCharRanges(viewerRoot: HTMLElement, ranges: CharRange[]): void;
 export function normalizeCopiedText(s: string): string;   // U+FB00–U+FB06 → letters; U+0000 removed
-// SopTestHooks gains: selectionRanges(): CharRange[]; glyphCenter(pageIndex: number, charIndex: number): { x: number; y: number }
+// ViewerRuntime gains (read by e2e as SopTestHooks): selectionRanges(): CharRange[]; glyphCenter(pageIndex: number, charIndex: number): { x: number; y: number }
+// e2e/support/drag-select.ts
+export function dragSelect(page: Page, pageIndex: number, a: number, b: number): Promise<{ ranges: CharRange[]; domText: string }>;   // mouse down at glyphCenter(a), up at glyphCenter(b)
+export function seededPairs(glyphCount: number, n: number, seed: string): [number, number][];
+export function textLayerAlignment(page: Page, pageIndex: number): Promise<{ maxEdgeErrorPx: number; minVerticalOverlap: number }>;   // per char: Range rects vs PDFium boxes × scale
+// e2e/support/textlayer-fixtures.ts
+export const TEXTLAYER_FIXTURES: { name: string; file: string; page: number; dir: 'ltr' | 'rtl'; truth?: string }[];   // the tl-*.pdf set plus resnet p1 and attention p1
 ```
 
 - [ ] **Step 1: Write the failing tests**
@@ -1976,17 +2386,43 @@ test('ligature expansions share their box equally; RTL runs get dir rtl', () => 
 test('normalizeCopiedText', () => expect(normalizeCopiedText('\ufb01le e\ufb03cient\u0000')).toBe('file efficient'));
 // e2e/text-layer.spec.ts: the P0-4 suite on the real viewer
 test.use({ deviceScaleFactor: 1.5 });                                     // Review Focus 4
+const norm = (s: string) => s.normalize('NFKC').replace(/­/g, '').replace(/\s+/g, ' ').trim();
+async function openAt(openViewer: (s: string) => Promise<Page>, url: string, pageIndex: number, zoom: number) {
+  const page = await openViewer(url); const h = hooks(page);
+  await h.eval((x, z) => x.viewer.setScale(z), zoom); await h.eval((x, p) => x.viewer.scrollTo(p), pageIndex);
+  const glyphCount = await h.eval(async (x, p) => (await x.backend.getPageGlyphs(x.doc()!.open.doc, p)).glyphs.length, pageIndex);
+  return { page, h, glyphCount };
+}
 for (const f of TEXTLAYER_FIXTURES /* incl. tl-rotated-page (Review Focus 3) */) for (const zoom of [1, 2]) {
-  test(`${f.name} @${zoom * 100}% DPR 1.5: drag maps to PDFium chars and copies PDFium text`, async ({ openViewer, server }) => { /* per seeded pair: ranges equal [{ pageIndex, start: min, end: max + 1 }] and norm(domText) === norm(getTextRange(...)) */ });
-  test(`${f.name} @${zoom * 100}% DPR 1.5: glyph edges within 1 px`, async () => { /* maxEdgeErrorPx < 1; minVerticalOverlap ≥ 0.8 */ });
+  test(`${f.name} @${zoom * 100}% DPR 1.5: drag maps to PDFium chars and copies PDFium text`, async ({ openViewer, server }) => {
+    const { page, h, glyphCount } = await openAt(openViewer, server.url(`/f/${f.file}`), f.page, zoom);
+    for (const [a, b] of seededPairs(glyphCount, 20, f.name)) {
+      const sel = await dragSelect(page, f.page, a, b);
+      expect(sel.ranges).toEqual([{ pageIndex: f.page, start: Math.min(a, b), end: Math.max(a, b) + 1 }]);
+      const truth = await h.eval((x, r) => x.backend.getTextRange(x.doc()!.open.doc, r.page, r.start, r.count), { page: f.page, start: Math.min(a, b), count: Math.abs(b - a) + 1 });
+      expect(norm(sel.domText)).toBe(norm(truth));
+    }
+  });
+  test(`${f.name} @${zoom * 100}% DPR 1.5: glyph edges within 1 px`, async ({ openViewer, server }) => {
+    const { page } = await openAt(openViewer, server.url(`/f/${f.file}`), f.page, zoom);
+    const r = await textLayerAlignment(page, f.page);
+    expect(r.maxEdgeErrorPx).toBeLessThan(1);
+    expect(r.minVerticalOverlap).toBeGreaterThanOrEqual(0.8);
+  });
 }
 test('Ctrl+C copies the selection as PDFium text', async ({ context, openViewer, server }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: `chrome-extension://${EXTENSION_ID}` });
-  /* drag, Ctrl+C, navigator.clipboard.readText() === normalizeCopiedText(getTextRange(...)) */
+  const { page, h, glyphCount } = await openAt(openViewer, server.url('/f/tl-ligatures.pdf'), 0, 1);
+  await dragSelect(page, 0, 0, glyphCount - 1); await page.keyboard.press('Control+c');
+  const truth = await h.eval((x, n) => x.backend.getTextRange(x.doc()!.open.doc, 0, 0, n), glyphCount);
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toBe(normalizeCopiedText(truth));
+  expect(copied).toContain('office, fluffy, affine, file');   // the ligatures come out as letters
 });
 test('screen readers see page text', async ({ openViewer, server }) => {
   const page = await openViewer(server.url('/f/paper-50.pdf'));
-  expect(await page.locator('[data-page-index="0"] .sop-text-layer').ariaSnapshot()).toContain('Household Wealth');
+  // NBER w29000 page 1: "…CHANGES IN HOUSEHOLD WEALTH AND UNEARNED INCOME" is upper case in the PDF; spans may split words
+  expect(await page.locator('[data-page-index="0"] .sop-text-layer').ariaSnapshot()).toMatch(/HOUSEHOLD\s+WEALTH/);
 });
 ```
 
@@ -2001,7 +2437,7 @@ test('screen readers see page text', async ({ openViewer, server }) => {
 
   Then:
   - the layer CSS scales with `--total-scale-factor`, as pdf.js does;
-  - text is transparent with `::selection { background: rgba(11,87,208,.3) }` through a token;
+  - text is transparent with `::selection { background: var(--text-selection) }`; the token `--text-selection: rgba(11,87,208,.3)` is added to `tokens.css`;
   - the layer is not `aria-hidden`;
   - the copy handler writes `normalizeCopiedText(getSelection().toString())`;
   - `TextLayer.tsx` builds the layer lazily when a page enters the viewport, after the full render, and destroys it outside the overscan.
@@ -2010,7 +2446,7 @@ test('screen readers see page text', async ({ openViewer, server }) => {
 
 - [ ] **Step 5: Commit**
 ```bash
-git add packages/viewer scripts/fixtures e2e apps/extension/src/viewer/test-hooks.ts
+git add packages/viewer packages/ui/src/tokens/tokens.css scripts/fixtures e2e apps/extension/src/viewer/runtime.ts
 git commit -m "feat(viewer): text layer on PDFium glyph boxes with selection-to-char mapping and copy"
 ```
 
@@ -2018,12 +2454,29 @@ git commit -m "feat(viewer): text layer on PDFium glyph boxes with selection-to-
 
 **Files:**
 - Create: `apps/extension/src/viewer/commands.ts`, `apps/extension/src/viewer/chrome/{Header.tsx,Toolbar.tsx,menus.ts,menus.test.ts,ShortcutsDialog.tsx,AboutDialog.tsx}`, `apps/extension/src/viewer/actions/{download.ts,copy-link.ts,copy-link.test.ts}`, `e2e/viewer-chrome.spec.ts`
-- Modify: `apps/extension/src/viewer/App.tsx` (moves "Back to page" from Task 17 into the header)
+- Create: `packages/viewer/src/contracts.ts` and `packages/core/src/save/types.ts`. These are the shared types module for the `ViewerContext` slots that Tasks 24, 25 and 30 fill; those tasks import the types from here and do not redeclare them.
+- Modify: `apps/extension/src/viewer/App.tsx` (moves "Back to page" from Task 17 into the header), `e2e/support/test.ts` (adds `css(page, sel)`, `box(page, sel)`, `clickMenu(page, menu, item)` and `sha256File(path)`)
 
 **Interfaces:**
-- Consumes: `MenuBar`, `PillToolbar`, `IconButton`, `TextField`, `Tooltip`, `FileTypeIcon` (Tasks 13–14); `ViewerStore`, `stepZoom`, `installShortcuts` (Task 21); `cleanLink` (Task 18); `goBackToPage` (Task 17).
+- Consumes: `MenuBar`, `PillToolbar`, `IconButton`, `TextField`, `Tooltip`, `FileTypeIcon` (Tasks 13–14); `ViewerStore`, `stepZoom`, `installShortcuts`, `KeyCombo`, `RenderScheduler` (Task 21); `cleanLink` (Task 18); `goBackToPage` (Task 17); `@axe-core/playwright` 4.14.0 (root devDependency, Task 11).
 - Produces:
 ```ts
+// packages/core/src/save/types.ts (Task 30's reducer uses it)
+export type SaveState =
+  | { kind: 'checking' } | { kind: 'saved'; documentId: DocumentId; undoable: boolean }
+  | { kind: 'unsure'; reasons: string[] } | { kind: 'not-learning'; reasons: string[] }
+  | { kind: 'asking' } | { kind: 'memory-only' } | { kind: 'incognito' };
+// packages/viewer/src/contracts.ts (implemented by Task 24 createJumpHistory, Task 25 createFindController, Task 30 createSaveController)
+export interface ViewPosition { pageIndex: number; offset: number /* 0–1 of page height */; scale: number }
+export interface JumpHistory { jumpTo(target: LinkTarget & { kind: 'page' }, from: ViewPosition): void; dispose(): void }
+export interface FindState { query: string; hits: SearchHit[]; current: number /* 0-based, −1 none */; complete: boolean }
+export interface FindController {
+  setQuery(q: string): void;            // 150 ms debounce; searches from startPage(), wraps, streams hits; a new query cancels the old one
+  next(): SearchHit | null; previous(): SearchHit | null;
+  readonly state: FindState; subscribe(cb: (s: FindState) => void): () => void; dispose(): void;
+}
+export interface SaveController { readonly state: SaveState; subscribe(cb: (s: SaveState) => void): () => void; start(): Promise<void>; requestSave(): Promise<void>; firstMark(): Promise<void>; undo(): Promise<void>; answerAsk(save: boolean): Promise<void> }
+// apps/extension/src/viewer/commands.ts
 export type ViewerCommandId =
   | 'file.openInChrome' | 'file.download' | 'file.copyLink' | 'file.print' | 'file.saveToLibrary'
   | 'view.fitWidth' | 'view.fitPage' | 'view.zoomIn' | 'view.zoomOut' | 'view.rotateCw' | 'view.rotateCcw'
@@ -2032,13 +2485,14 @@ export type ViewerCommandId =
 export interface ViewerCommand { id: ViewerCommandId; label: string; icon?: IconName; keys: KeyCombo[]; run(): void; enabled(): boolean; checked?(): boolean }
 export function createCommands(ctx: ViewerContext): Map<ViewerCommandId, ViewerCommand>;   // the one source for menus, toolbar, shortcuts and the shortcut sheet
 export function buildMenus(cmds: Map<ViewerCommandId, ViewerCommand>): MenuDef[];
+export function formatCombo(c: KeyCombo): string;            // display form: 'Ctrl+-' → 'Ctrl+−' (U+2212), 'Alt+Shift+Digit5' → 'Alt+Shift+5'
 export function linkForCopy(source: string): string;          // http(s) → cleanLink(source); file: unchanged
 export function downloadOriginal(blob: Blob, fileName: string): void;   // <a download> on an object URL, revoked after 60 s
 export interface ViewerContext {   // built once per tab in App.tsx; later tasks fill the nullable fields
   params: ViewerParams; backend: PdfBackend; opened: OpenedDocument; store: ViewerStore; scheduler: RenderScheduler; root: HTMLElement;
-  jumps: JumpHistory | null;     // Task 24
-  find: FindController | null;   // Task 25
-  save: SaveController | null;   // Task 30
+  jumps: JumpHistory | null;     // filled by Task 24
+  find: FindController | null;   // filled by Task 25
+  save: SaveController | null;   // filled by Task 30
 }
 ```
   Commands that later tasks implement are registered now and filled in there: `view.rotate*`, `view.twoPage`, `view.presentation`, `view.darkPages` (Task 26), `view.toggleRail` (Task 24), `tools.find` (Task 25), `file.print` (Task 27), `file.saveToLibrary` (Task 30). Until its task lands, each one's `enabled()` returns false.
@@ -2068,18 +2522,53 @@ test('header and toolbar match the Drive viewer', async ({ openViewer, server })
   await expect(page.getByText('/ 50')).toBeVisible();
   await expect(page).toHaveScreenshot('viewer-chrome.png', { clip: { x: 0, y: 0, width: 1366, height: 128 } });
 });
-test('Ctrl+G then 37 Enter goes to page 37; 999 reverts', async () => { /* page 37 top at viewport top ±2 px; input value 37; 999 → previous value, aria-invalid true for 1 s */ });
+test('Ctrl+G then 37 Enter goes to page 37; 999 reverts', async ({ openViewer, server }) => {
+  const page = await openViewer(server.url('/f/paper-50.pdf')); const field = page.getByRole('textbox', { name: 'Page' });
+  await page.keyboard.press('Control+g'); await expect(field).toBeFocused();
+  await field.fill('37'); await page.keyboard.press('Enter');
+  await expect.poll(() => hooks(page).eval((h) => h.viewer.currentPage())).toBe(36);
+  expect(Math.abs((await box(page, '[data-page-index="36"]')).y - (await box(page, '[role=document]')).y)).toBeLessThanOrEqual(2);
+  await expect(field).toHaveValue('37');
+  await field.fill('999'); await page.keyboard.press('Enter');
+  await expect(field).toHaveValue('37'); await expect(field).toHaveAttribute('aria-invalid', 'true');
+  await expect(field).not.toHaveAttribute('aria-invalid', 'true', { timeout: 1500 });   // cleared after 1 s
+});
 test('Ctrl+S downloads the original bytes under the file name', async ({ openViewer, server }) => {
   const page = await openViewer(server.url('/f/paper-50.pdf'));
   const [d] = await Promise.all([page.waitForEvent('download'), page.keyboard.press('Control+s')]);
   expect(d.suggestedFilename()).toBe('paper-50.pdf');
   expect(await sha256File(await d.path())).toBe(await sha256File('test-assets/paper-50.pdf'));
 });
-test('File → Copy link puts the cleaned link on the clipboard', async () => { /* clipboard-read permission; value === linkForCopy(source) */ });
-test("File → Open in Chrome's viewer leaves for Chrome's viewer", async () => { /* waitForURL(source) */ });
-test('? opens the shortcut sheet listing every registered shortcut', async () => { /* rows === commands with keys */ });
-test('About shows the version and the last first-page time', async () => { /* dialog contains chrome.runtime.getManifest().version and text matching /First page drawn in \d+ ms/ */ });
-test('page indicator follows scrolling', async () => { /* scrollTo(12) → input value "13" */ });
+test('File → Copy link puts the cleaned link on the clipboard', async ({ context, openViewer, server }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: `chrome-extension://${EXTENSION_ID}` });
+  const page = await openViewer(server.url('/f/paper-50.pdf') + '?utm_source=x&b=2&a=1#page=3');
+  await clickMenu(page, 'File', 'Copy link');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(server.url('/f/paper-50.pdf') + '?a=1&b=2');   // tracking and fragment gone, params sorted
+});
+test("File → Open in Chrome's viewer leaves for Chrome's viewer", async ({ openViewer, server }) => {
+  const src = server.url('/h/plain.pdf'); const page = await openViewer(src);
+  await clickMenu(page, 'File', "Open in Chrome's viewer");
+  await page.waitForURL(src); await page.waitForTimeout(2000);
+  expect(page.url()).toBe(src);
+});
+test('? opens the shortcut sheet listing every registered shortcut', async ({ openViewer, server }) => {
+  const page = await openViewer(server.url('/f/paper-50.pdf')); await page.keyboard.press('?');
+  const sheet = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+  await expect(sheet.getByRole('rowheader')).toHaveText(['Download', 'Print', 'Save to library', 'Fit width', 'Zoom in', 'Zoom out', 'Rotate clockwise', 'Rotate counter-clockwise', 'Thumbnails and outline', 'Find', 'Go to page', 'Keyboard shortcuts']);
+  await expect(sheet.locator('kbd')).toHaveText(['Ctrl+S', 'Ctrl+P', 'Ctrl+Alt+S', 'Ctrl+0', 'Ctrl+=', 'Ctrl++', 'Ctrl+−', 'Ctrl+]', 'Ctrl+[', 'F4', 'Ctrl+F', 'Ctrl+G', '?']);
+});
+test('About shows the version and the last first-page time', async ({ openViewer, server }) => {
+  const page = await openViewer(server.url('/f/paper-50.pdf')); await clickMenu(page, 'Help', 'About sickofpdfs');
+  const about = page.getByRole('dialog', { name: 'About sickofpdfs' });
+  const version = await page.evaluate(() => chrome.runtime.getManifest().version);
+  await expect(about).toContainText(`Version ${version}`);
+  await expect(about).toContainText(/First page drawn in \d+ ms/);
+});
+test('page indicator follows scrolling', async ({ openViewer, server }) => {
+  const page = await openViewer(server.url('/f/paper-50.pdf'));
+  await hooks(page).eval((h) => h.viewer.scrollTo(12));
+  await expect(page.getByRole('textbox', { name: 'Page' })).toHaveValue('13');
+});
 test('no axe violations (WCAG 2.2 AA) in the viewer chrome', async ({ openViewer, server }) => {
   const page = await openViewer(server.url('/f/paper-50.pdf'));
   const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).exclude('.sop-text-layer').analyze();
@@ -2104,13 +2593,14 @@ test('no axe violations (WCAG 2.2 AA) in the viewer chrome', async ({ openViewer
     - zoom out (`remove`), a zoom `DropdownMenu` trigger showing "{round(scale·100)}%" with items Fit width, Fit page, ─, 50%, 75%, 100%, 125%, 150%, 200%, 300%, 400%, and zoom in (`add`).
   - **Keys:** `installShortcuts` from `createCommands`. Ctrl+P, Ctrl+S, Ctrl+F and Ctrl+G call `preventDefault`, so Chrome's own dialogs never open.
   - **`file.openInChrome`** sends `takeover:open-in-chrome` with `source`.
-  - **About** shows `chrome.runtime.getManifest().version` and `Math.round(performance.getEntriesByName('sop:first-page')[0].startTime)`.
+  - **About** shows "Version {chrome.runtime.getManifest().version}" and "First page drawn in {Math.round(performance.getEntriesByName('sop:first-page')[0].startTime)} ms".
+  - **Shortcut sheet** (`ShortcutsDialog`, title "Keyboard shortcuts"): one row per command with keys, in `createCommands` order. The label is a `rowheader` cell, and each key is a `<kbd>` written with `formatCombo`.
 
 - [ ] **Step 4: Run them again and confirm they pass.** Run: `pnpm vitest run apps/extension/src/viewer && pnpm e2e e2e/viewer-chrome.spec.ts`. Expected: PASS. The first run writes the screenshot baseline; commit it.
 
 - [ ] **Step 5: Commit**
 ```bash
-git add apps/extension e2e
+git add apps/extension e2e packages/viewer/src/contracts.ts packages/core/src/save/types.ts
 git commit -m "feat(viewer): Drive-style header, menus, pill toolbar, go to page, download and copy link"
 ```
 
@@ -2118,17 +2608,18 @@ git commit -m "feat(viewer): Drive-style header, menus, pill toolbar, go to page
 
 **Files:**
 - Create: `packages/viewer/src/react/{ThumbnailRail.tsx,OutlinePanel.tsx,LinkLayer.tsx}`, `packages/viewer/src/navigation/{jump-history.ts,jump-history.test.ts}`, `scripts/fixtures/make-links.mjs`, `e2e/navigate.spec.ts`
-- Modify: `apps/extension/src/viewer/App.tsx`, `apps/extension/src/viewer/commands.ts` (`view.toggleRail` = F4), `scripts/fixtures/build.mjs` (`links.pdf`: pdf-lib page with a GoTo link to page 3, a URI link to `https://example.org/` and a `javascript:` URI link)
+- Modify: `apps/extension/src/viewer/App.tsx` (passes the tab's one `RenderScheduler` to `ThumbnailRail`), `apps/extension/src/viewer/commands.ts` (`view.toggleRail` = F4)
+- Modify: `scripts/fixtures/build.mjs`. It runs `make-links.mjs`, which writes `test-assets/links.pdf`: 5 Letter pages, each labelled "Page N".
+  - Page index 0 holds a GoTo link to page index 2 at (72, 72, 200×24), a URI link to `https://example.org/` at (72, 120, 200×24), and a `javascript:alert(1)` URI link at (72, 168, 200×24).
+  - Page index 2 holds a GoTo link to page index 4, and page index 4 a GoTo link to page index 1, both at (72, 72, 200×24).
 
 **Interfaces:**
-- Consumes: `getOutline`, `getLinks`, `LinkTarget` (Task 15); `RenderScheduler` previews (Task 21).
+- Consumes: `getOutline`, `getLinks`, `LinkTarget` (Task 15); the tab's shared `RenderScheduler` and its previews (Task 21; App.tsx passes the same instance that `PageList` uses); `ViewPosition` and `JumpHistory` (declared in `packages/viewer/src/contracts.ts`, Task 23).
 - Produces:
 ```ts
-export interface ViewPosition { pageIndex: number; offset: number /* 0–1 of page height */; scale: number }
-export interface JumpHistory { jumpTo(target: LinkTarget & { kind: 'page' }, from: ViewPosition): void; dispose(): void }
-export function createJumpHistory(win: Pick<Window, 'history' | 'addEventListener' | 'removeEventListener'>, restore: (p: ViewPosition) => void, go: (t: LinkTarget & { kind: 'page' }) => void): JumpHistory;
+export function createJumpHistory(win: Pick<Window, 'history' | 'addEventListener' | 'removeEventListener'>, restore: (p: ViewPosition) => void, go: (t: LinkTarget & { kind: 'page' }) => void): JumpHistory;   // JumpHistory from contracts.ts
 export function ThumbnailRail(p: { scheduler: RenderScheduler; pages: PageSize[]; store: ViewerStore; onSelect(i: number): void }): JSX.Element;
-export function OutlinePanel(p: { items: OutlineItem[]; onSelect(t: LinkTarget): void }): JSX.Element;  // role="tree"
+export function OutlinePanel(p: { items: OutlineItem[]; onSelect(t: LinkTarget): void }): JSX.Element;  // role="tree"; each treeitem has aria-label = its title
 export function LinkLayer(p: { links: PdfLink[]; box: PageBox; onInternal(t: LinkTarget & { kind: 'page' }): void }): JSX.Element;
 ```
 
@@ -2143,11 +2634,22 @@ test('the first jump pushes one entry; later jumps replace it; Back restores the
 });
 // e2e/navigate.spec.ts
 test('internal links jump and Back returns in one press', async ({ openViewer, server }) => {
-  const page = await openViewer(server.url('/f/classifier/learning/arxiv-1706.03762-attention.pdf'));
+  const page = await openViewer(server.url('/f/links.pdf')); const h = hooks(page);
   const before = await page.evaluate(() => history.length);
-  for (let i = 0; i < 3; i++) await page.locator('.sop-link[data-kind=page]').nth(i).click();
+  for (const [from, to] of [[0, 2], [2, 4], [4, 1]]) {
+    await page.locator(`[data-page-index="${from}"] a.sop-link[data-kind=page]`).click();
+    await expect.poll(() => h.eval((x) => x.viewer.currentPage())).toBe(to);
+  }
   expect(await page.evaluate(() => history.length)).toBe(before + 1);
-  await page.goBack(); expect(await hooks(page).eval((h) => h.viewer.currentPage())).toBe(0);
+  await page.goBack(); await expect.poll(() => h.eval((x) => x.viewer.currentPage())).toBe(0);
+});
+test('a citation link in a real paper jumps to its reference', async ({ openViewer, server }) => {
+  // attention: page index 0 has no links; index 1 has 30 GoTo links, the first to page index 10
+  const page = await openViewer(server.url('/f/classifier/learning/arxiv-1706.03762-attention.pdf')); const h = hooks(page);
+  await h.eval((x) => x.viewer.scrollTo(1));
+  await expect(page.locator('[data-page-index="1"] a.sop-link[data-kind=page]')).toHaveCount(30);
+  await page.locator('[data-page-index="1"] a.sop-link[data-kind=page]').first().click();
+  await expect.poll(() => h.eval((x) => x.viewer.currentPage())).toBe(10);
 });
 test('external links are real anchors with rel=noopener; javascript: links are not rendered', async ({ openViewer, server }) => {
   const page = await openViewer(server.url('/f/links.pdf'));
@@ -2161,16 +2663,36 @@ test('F4 toggles the rail; the thumbnail for the current page has the 2px #a8c7f
   await page.keyboard.press('F4'); await expect(page.getByRole('navigation', { name: 'Thumbnails' })).toBeHidden();
   await page.keyboard.press('F4'); await expect(page.getByRole('navigation', { name: 'Thumbnails' })).toBeVisible();
 });
-test('outline: tree keyboard (ArrowDown/Right/Enter) jumps to the target page', async ({ openViewer, server }) => { /* textbook-thinkpython2.pdf: focus the tree, ArrowDown ×2, ArrowRight expands, Enter → currentPage() equals that item's target pageIndex */ });
-test('rail collapses below 1100 px viewport width', async () => { /* setViewportSize(1000, 768) → rail hidden, F4 overlays it */ });
+test('outline: tree keyboard (ArrowDown/Right/Enter) jumps to the target page', async ({ openViewer, server }) => {
+  // thinkpython2 outline: Preface (p.4), The way of the program (p.22) › What is a program? (22), Running Python (23), …
+  const page = await openViewer(server.url('/f/classifier/learning/textbook-thinkpython2.pdf'));
+  await page.getByRole('button', { name: 'Outline' }).click();
+  const item = (name: string) => page.getByRole('tree').getByRole('treeitem', { name, exact: true });
+  await item('Preface').focus();
+  await page.keyboard.press('ArrowDown'); await expect(item('The way of the program')).toBeFocused();
+  await page.keyboard.press('ArrowRight'); await expect(item('The way of the program')).toHaveAttribute('aria-expanded', 'true');
+  await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown'); await expect(item('Running Python')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect.poll(() => hooks(page).eval((h) => h.viewer.currentPage())).toBe(23);
+});
+test.describe('narrow window', () => {
+  test.use({ viewport: { width: 1000, height: 768 } });
+  test('rail collapses below 1100 px viewport width, and F4 overlays it', async ({ openViewer, server }) => {
+    const page = await openViewer(server.url('/f/paper-50.pdf')); const rail = page.getByRole('navigation', { name: 'Thumbnails' });
+    await expect(rail).toBeHidden();
+    const w0 = (await box(page, '[role=document]')).width;
+    await page.keyboard.press('F4'); await expect(rail).toBeVisible();
+    expect((await box(page, '[role=document]')).width).toBe(w0);   // overlay: the pages do not reflow
+  });
+});
 ```
 
-- [ ] **Step 2: Run them and confirm they fail.** Run: `pnpm vitest run packages/viewer/src/navigation && pnpm e2e e2e/navigate.spec.ts`. Expected: FAIL.
+- [ ] **Step 2: Run them and confirm they fail.** Run: `pnpm vitest run packages/viewer/src/navigation && pnpm fixtures && pnpm e2e e2e/navigate.spec.ts`. Expected: FAIL.
 
 - [ ] **Step 3: Implement**
   - **Rail** (`var(--rail-w)`):
     - a toolbar with two 40×40 toggles, "Thumbnails" (`photo_library`, background `var(--gm3-sys-color-surface-container-highest)` when selected) and "Outline" (`toc`), hidden when the PDF has no outline;
-    - thumbnails are previews from the scheduler at 73 px width, each with a page number in a `var(--thumb-num-w)` column;
+    - thumbnails are previews from the tab's shared scheduler (the `scheduler` prop, the same instance `PageList` uses) at 73 px width, each with a page number in a `var(--thumb-num-w)` column;
     - the current page gets `outline: 2px solid var(--viewer-focus); outline-offset: 2px`;
     - a "Hide navigation pane" pill (`left_panel_close`) at the bottom-left;
     - the rail is collapsed by default when `innerWidth < 1100`.
@@ -2197,27 +2719,31 @@ git commit -m "feat(viewer): thumbnails and outline rail, PDF links, collapsed j
 
 **Files:**
 - Create: `packages/viewer/src/find/{find-controller.ts,find-controller.test.ts}`, `packages/viewer/src/react/{FindBar.tsx,FindHighlights.tsx}`, `e2e/find.spec.ts`
-- Modify: `apps/extension/src/viewer/commands.ts` (`tools.find`)
+- Modify: `apps/extension/src/viewer/commands.ts` (`tools.find`), `apps/extension/src/viewer/App.tsx` (mounts `FindBar`, sets `ctx.find`, and handles `onSelectMatch`), `packages/ui/src/tokens/tokens.css` (`--find-hit`, `--find-current`)
 
 **Interfaces:**
-- Consumes: `searchPage` (Task 15), `selectCharRanges` (Task 22), `JumpHistory` (Task 24).
+- Consumes: `searchPage` (Task 15); `selectCharRanges(viewerRoot: HTMLElement, ranges: CharRange[]): void` (Task 22); `createJumpHistory` (Task 24); `FindState` and `FindController` (declared in `packages/viewer/src/contracts.ts`, Task 23); `TextField` with `type="search"` (Task 14).
 - Produces:
 ```ts
-export interface FindState { query: string; hits: SearchHit[]; current: number /* 0-based, −1 none */; complete: boolean }
-export class FindController {
-  constructor(backend: PdfBackend, doc: DocHandle, pageCount: number, startPage: () => number);
-  setQuery(q: string): void;            // 150 ms debounce; searches from startPage(), wraps, streams hits; a new query cancels the old one
-  next(): SearchHit | null; previous(): SearchHit | null;
-  get state(): FindState; subscribe(cb: (s: FindState) => void): () => void; dispose(): void;
-}
+export function createFindController(backend: PdfBackend, doc: DocHandle, pageCount: number, startPage: () => number): FindController;   // FindController from contracts.ts
 export function FindBar(p: { controller: FindController; onJump(h: SearchHit): void; onSelectMatch(h: SearchHit): void; onClose(): void }): JSX.Element;
 ```
 
 - [ ] **Step 1: Write the failing tests**
 ```ts
-test('hits are ordered by page then start, starting from the current page and wrapping', async () => { /* fake backend: page 3 current → state.hits[0].pageIndex === 3; after completion hits sorted by (page,start) */ });
+test('hits are ordered by page then start, starting from the current page and wrapping', async () => {
+  const be = fakeSearchBackend({ 1: [10], 3: [5, 40], 7: [2] });   // pageIndex → hit starts for any query
+  const fc = createFindController(be, DOC, 10, () => 3);
+  const firstSeen: number[] = []; fc.subscribe((s) => { if (s.hits.length && !firstSeen.length) firstSeen.push(s.hits[0].pageIndex); });
+  fc.setQuery('x'); await settled(fc);
+  expect(be.searchedPages()).toEqual([3, 4, 5, 6, 7, 8, 9, 0, 1, 2]);
+  expect(firstSeen).toEqual([3]);                                     // streaming starts at the current page
+  expect(fc.state.hits.map((h) => [h.pageIndex, h.start])).toEqual([[1, 10], [3, 5], [3, 40], [7, 2]]);
+  expect(fc.state.current).toBe(1);                                   // the first hit at or after the current page
+  expect(fc.state.complete).toBe(true);
+});
 test('a new query cancels the old search', async () => {
-  const be = slowFakeBackend(); const fc = new FindController(be, DOC, 100, () => 0);
+  const be = slowFakeBackend(); const fc = createFindController(be, DOC, 100, () => 0);
   fc.setQuery('alpha'); await sleep(200); fc.setQuery('beta'); await settled(fc);
   expect(be.queriesAfterFirst('beta')).not.toContain('alpha'); expect(fc.state.query).toBe('beta');
 });
@@ -2246,7 +2772,8 @@ test('no match shows "0 of 0"; Esc clears highlights', async ({ openViewer, serv
   - `FindBar` is a dark surface (`var(--gm3-sys-color-surface-container)`, radius `var(--shape-menu)`) under the toolbar on the right. It holds a `TextField` (`type="search"`, label "Find in document"), the count "{current+1} of {total}", previous and next `IconButton`s (`keyboard_arrow_up`, `keyboard_arrow_down`) and close (`close`).
   - `FindHighlights` draws hit rects with `var(--find-hit)` and `var(--find-current)`. Add these tokens to `tokens.css`: `--find-hit: rgba(251,188,4,.4); --find-current: rgba(251,188,4,.8)`.
   - Every `next()` or `previous()` jump goes through `JumpHistory`.
-  - Alt+Enter calls `selectCharRanges([{ pageIndex, start, end: start + count }])`, closes the bar and focuses the document.
+  - Alt+Enter calls `onSelectMatch(hit)`. In `App.tsx` that runs `selectCharRanges(ctx.root, [{ pageIndex: hit.pageIndex, start: hit.start, end: hit.start + hit.count }])`, closes the bar and focuses the document.
+  - `App.tsx` creates `createFindController(backend, opened.open.doc, opened.open.pageCount, () => store.get().currentPage)` on the first Ctrl+F and stores it in `ctx.find`.
 
 - [ ] **Step 4: Run them again and confirm they pass.** Run: `pnpm vitest run packages/viewer/src/find && pnpm e2e e2e/find.spec.ts`. Expected: PASS.
 
@@ -2260,10 +2787,10 @@ git commit -m "feat(viewer): find with count, next/previous and Alt+Enter select
 
 **Files:**
 - Create: `packages/viewer/src/view/{view-state.ts,view-state.test.ts}`, `apps/extension/src/viewer/presentation.ts`, `e2e/views.spec.ts`
-- Modify: `packages/viewer/src/react/{PageList.tsx,PageView.tsx}`, `apps/extension/src/viewer/commands.ts`, `packages/ui/src/tokens/tokens.css` (`--dark-pages-filter: invert(1) hue-rotate(180deg)`)
+- Modify: `packages/viewer/src/react/{PageList.tsx,PageView.tsx}`, `apps/extension/src/viewer/commands.ts`, `packages/ui/src/tokens/tokens.css` (`--dark-pages-filter: invert(1) hue-rotate(180deg)`), `e2e/support/test.ts` (adds `cornerLuminance(page, sel)`: it takes a 20×20 screenshot patch 4 px inside the element's top-left and decodes it in the page with `createImageBitmap`, so no PNG library is needed)
 
 **Interfaces:**
-- Consumes: `ViewerStore`, `computeLayout` (Task 21); commands (Task 23).
+- Consumes: `ViewerStore`, `computeLayout` (Task 21); commands, `clickMenu`, `box` and `css` (Task 23); `dragSelect` (Task 22).
 - Produces:
 ```ts
 export function rotate(r: Rotation, dir: 1 | -1): Rotation;                // 90° steps, view rotation only (the file is never changed)
@@ -2274,7 +2801,15 @@ export function enterPresentation(ctx: { store: ViewerStore; root: HTMLElement }
 ```ts
 test('rotate cycles 0→90→180→270→0 and back', () => { expect(rotate(270, 1)).toBe(0); expect(rotate(0, -1)).toBe(270); });
 // e2e/views.spec.ts
-test('Ctrl+] rotates the view clockwise; selection still maps to chars', async () => { /* box width/height swap; dragSelect → expected range */ });
+test('Ctrl+] rotates the view clockwise; selection still maps to chars', async ({ openViewer, server }) => {
+  const page = await openViewer(server.url('/f/tl-two-column.pdf')); const h = hooks(page);
+  const b0 = await box(page, '[data-page-index="0"]');
+  await page.keyboard.press('Control+BracketRight');
+  await expect.poll(() => h.eval((x) => x.viewer.snapshot().viewRotation)).toBe(90);
+  const b1 = await box(page, '[data-page-index="0"]');
+  expect(b1.width / b1.height).toBeCloseTo(b0.height / b0.width, 2);
+  expect((await dragSelect(page, 0, 10, 40)).ranges).toEqual([{ pageIndex: 0, start: 10, end: 41 }]);
+});
 test('two-page view pairs pages and the indicator shows the left page', async ({ openViewer, server }) => {
   const page = await openViewer(server.url('/f/paper-50.pdf')); await clickMenu(page, 'View', 'Two-page view');
   const [b0, b1] = [await box(page, '[data-page-index="0"]'), await box(page, '[data-page-index="1"]')];
@@ -2282,13 +2817,27 @@ test('two-page view pairs pages and the indicator shows the left page', async ({
   await hooks(page).eval((h) => h.viewer.scrollTo(3)); await expect(page.getByRole('textbox', { name: 'Page' })).toHaveValue('3');
 });
 test('presentation mode: fullscreen, fit page, arrows and space step pages, Esc restores the previous zoom and scroll', async ({ openViewer, server }) => {
-  const page = await openViewer(server.url('/f/classifier/learning/slides-cs50-2023-lecture0.pdf'));
+  const page = await openViewer(server.url('/f/classifier/learning/slides-cs50-2023-lecture0.pdf')); const h = hooks(page);   // 192 slides, 720×405
+  const before = await h.eval((x) => ({ scale: x.viewer.scale(), page: x.viewer.currentPage(), top: x.viewer.scrollTop() }));
   await clickMenu(page, 'View', 'Presentation mode');
   expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(true);
-  await page.keyboard.press('ArrowRight'); await page.keyboard.press('Space'); expect(await hooks(page).eval((h) => h.viewer.currentPage())).toBe(2);
-  await page.keyboard.press('Escape'); expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(false);
+  expect(await h.eval((x) => x.viewer.snapshot().zoom)).toEqual({ kind: 'fit-page' });
+  await page.keyboard.press('ArrowRight'); await page.keyboard.press('Space');
+  await expect.poll(() => h.eval((x) => x.viewer.currentPage())).toBe(2);
+  await page.keyboard.press('Escape');
+  await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(false);
+  expect(await h.eval((x) => ({ scale: x.viewer.scale(), page: x.viewer.currentPage(), top: x.viewer.scrollTop() }))).toEqual(before);
 });
-test('dark pages invert the page canvases only', async () => { /* white page pixel luminance < 40 after toggle; the header is unchanged; toggling again restores */ });
+test('dark pages invert the page canvases only', async ({ openViewer, server }) => {
+  const page = await openViewer(server.url('/f/paper-50.pdf'));
+  const headerBg = (await css(page, 'header')).backgroundColor;
+  expect(await cornerLuminance(page, '[data-page-index="0"] canvas')).toBeGreaterThan(240);   // white page margin
+  await clickMenu(page, 'View', 'Dark pages');
+  expect(await cornerLuminance(page, '[data-page-index="0"] canvas')).toBeLessThan(40);
+  expect((await css(page, 'header')).backgroundColor).toBe(headerBg);
+  await clickMenu(page, 'View', 'Dark pages');
+  expect(await cornerLuminance(page, '[data-page-index="0"] canvas')).toBeGreaterThan(240);
+});
 ```
 
 - [ ] **Step 2: Run them and confirm they fail.** Run: `pnpm vitest run packages/viewer/src/view && pnpm e2e e2e/views.spec.ts`. Expected: FAIL.
@@ -2299,7 +2848,7 @@ test('dark pages invert the page canvases only', async () => { /* white page pix
     - hides the header, toolbar and rail;
     - the page area becomes `var(--gm3-sys-color-scrim)`, with zoom fit-page and a single page;
     - ArrowRight, PageDown, Space and a click go forward; ArrowLeft, PageUp and Shift+Space go back;
-    - `fullscreenchange` to null exits and restores the snapshot.
+    - `enterPresentation` saves the `ViewerSnapshot` and `scrollTop` first. Esc calls `document.exitFullscreen()` (Chrome may also exit on Esc itself), and `fullscreenchange` to null restores both exactly.
   - **Dark pages:** apply `filter: var(--dark-pages-filter)` to page canvases and thumbnails. The setting is per tab in Phase 1, and Settings persists it in Phase 3.
 
 - [ ] **Step 4: Run them again and confirm they pass.** Run: `pnpm vitest run packages/viewer/src/view && pnpm e2e e2e/views.spec.ts`. Expected: PASS.
@@ -2313,24 +2862,38 @@ git commit -m "feat(viewer): rotate, two-page view, presentation mode and dark p
 ### Task 27: Print (Ctrl+P) through a PDFium-rendered print copy
 
 **Files:**
-- Create: `apps/extension/src/viewer/print/{print.ts,print.css,PrintProgressDialog.tsx}`, `e2e/print.spec.ts`
+- Create: `apps/extension/src/viewer/print/{print.ts,print.test.ts,print.css,PrintProgressDialog.tsx}`, `e2e/print.spec.ts`
 - Modify: `apps/extension/src/viewer/commands.ts` (`file.print`)
 
 **Interfaces:**
 - Consumes: `renderTile` (Task 15), `PageSize` (Task 15), `Dialog` (Task 14).
 - Produces (the Phase 2 plan adds marks to the copy):
 ```ts
+export function printPageRules(pages: PageSize[]): { css: string; pageNames: string[] };   // one `@page p-N { size: <w>pt <h>pt; margin: 0 }` per distinct displayed size; pageNames[i] is sheet i's `page:` name
 export interface PrintCopy { root: HTMLElement; dispose(): void }
 export function preparePrintCopy(backend: PdfBackend, doc: DocHandle, pages: PageSize[], o: { dpi: 200; signal: AbortSignal; onProgress(done: number, total: number): void }): Promise<PrintCopy>;
 export function printDocument(ctx: ViewerContext): Promise<void>;   // dialog → prepare → window.print() → dispose on afterprint
 ```
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing tests**
 ```ts
+// print.test.ts (Node)
+test('printPageRules: one named page per distinct size, in displayed (rotated) orientation', () => {
+  const { css, pageNames } = printPageRules([
+    { width: 612, height: 792, rotation: 0 }, { width: 842, height: 595, rotation: 0 }, { width: 612, height: 792, rotation: 90 },
+    { width: 960, height: 540, rotation: 0 }, { width: 420, height: 595, rotation: 0 }, { width: 612, height: 792, rotation: 0 },
+  ]);
+  expect(pageNames).toEqual(['p-0', 'p-1', 'p-2', 'p-3', 'p-4', 'p-0']);
+  expect(css.match(/@page p-\d+ \{[^}]*\}/g)).toEqual([
+    '@page p-0 { size: 612pt 792pt; margin: 0 }', '@page p-1 { size: 842pt 595pt; margin: 0 }', '@page p-2 { size: 792pt 612pt; margin: 0 }',
+    '@page p-3 { size: 960pt 540pt; margin: 0 }', '@page p-4 { size: 420pt 595pt; margin: 0 }',
+  ]);
+  expect(css).not.toContain('landscape');
+});
+// e2e/print.spec.ts
 test('Ctrl+P prints one sheet per page with the right size and orientation', async ({ context, openViewer, server }) => {
   const page = await openViewer(server.url('/f/mixed.pdf'));
-  await page.addInitScript(() => { (window as any).print = () => { (window as any).__printed = true; }; });
-  await page.evaluate(() => { (window as any).print = () => { (window as any).__printed = true; }; });
+  await page.evaluate(() => { (window as any).print = () => { (window as any).__printed = true; }; });   // the only print stub (the page is already loaded)
   await page.keyboard.press('Control+p');
   await expect(page.getByText('Preparing to print…')).toBeVisible();
   await page.waitForFunction(() => (window as any).__printed === true);
@@ -2346,18 +2909,18 @@ test('browser-menu print without preparation shows the hint page', async ({ open
 });
 ```
 
-- [ ] **Step 2: Run it and confirm it fails.** Run: `pnpm e2e e2e/print.spec.ts`. Expected: FAIL.
+- [ ] **Step 2: Run them and confirm they fail.** Run: `pnpm vitest run apps/extension/src/viewer/print && pnpm e2e e2e/print.spec.ts`. Expected: FAIL.
 
 - [ ] **Step 3: Implement**
   - **Rendering:** render each page upright at `200/72` device px per pt (`viewRotation` 0, with annotations) to a canvas, then `toBlob('image/png')`, then an `<img>` sized `width: {w/72}in; height: {h/72}in` inside `#sop-print-root`. Wait for `img.decode()` on all of them, then call `window.print()`.
-  - **`print.css`:**
+  - **`print.css` and the page rules:**
     - `@media print` hides `#sop-app` and shows `#sop-print-root`;
-    - images use `break-after: page`;
-    - landscape pages get `page: sop-landscape` with `@page sop-landscape { size: landscape; margin: 0 }`, and the default is `@page { margin: 0 }`;
+    - each sheet is a block holding one `<img>`, with `break-after: page`;
+    - every sheet gets its own page size through CSS named pages. `preparePrintCopy` inserts a `<style>` with `printPageRules(pages).css`: one `@page p-N { size: <w>pt <h>pt; margin: 0 }` per distinct displayed size (width and height swapped for `/Rotate` 90 or 270). Each sheet gets `style="page: p-N"` from `pageNames[i]`. `size: landscape` is not used, because it falls back to the default paper size. The default is `@page { margin: 0 }`;
     - `#sop-print-hint` holds "Use Ctrl+P or File → Print to print this PDF." and shows only when no print root exists.
   - **Progress:** the dialog says "Preparing to print… {done} / {total}" with Cancel (aborts and disposes).
 
-- [ ] **Step 4: Run it again and confirm it passes.** Run: `pnpm e2e e2e/print.spec.ts`. Expected: PASS.
+- [ ] **Step 4: Run them again and confirm they pass.** Run: `pnpm vitest run apps/extension/src/viewer/print && pnpm e2e e2e/print.spec.ts`. Expected: PASS.
 
 - [ ] **Step 5: Commit**
 ```bash
@@ -2370,11 +2933,12 @@ git commit -m "feat(viewer): print via a PDFium-rendered print copy"
 **Files:**
 - Create: `packages/core/src/{hlc.ts,hlc.test.ts}`, `packages/core/src/model/{anchor.ts,rows.ts}`
 - Create: `apps/extension/src/store/{schema.ts,migrate.ts,schema.test.ts,store-api.ts,store-api.test.ts,protocol.ts,store-worker.ts,store-worker.browser.test.ts,client.ts,transport.ts,change-bus.ts}`
-- Create: `apps/extension/src/background/{offscreen.ts,store-broker.ts}`, `e2e/store.spec.ts`
-- Modify: `apps/extension/src/entrypoints/offscreen/main.ts`, `apps/extension/src/entrypoints/background.ts`, `apps/extension/package.json` (exact `@sqlite.org/sqlite-wasm` 3.54.1-build1), `apps/extension/src/viewer/test-hooks.ts`
+- Create: `apps/extension/src/background/{offscreen.ts,store-broker.ts}`, `apps/extension/src/viewer/incognito.ts`, `e2e/store.spec.ts`, `e2e/support/store-samples.ts` (`SAMPLE_INPUT: SaveDocumentInput`, id `'ab'.repeat(32)`)
+- Modify: `apps/extension/src/entrypoints/offscreen/main.ts`, `apps/extension/src/entrypoints/background.ts`, `apps/extension/package.json` (exact `@sqlite.org/sqlite-wasm` 3.54.1-build1)
+- Modify: `apps/extension/src/viewer/App.tsx` and `apps/extension/src/viewer/runtime.ts`. The viewer connects to the store and publishes it here, so this task's e2e tests and Task 29's run without Task 30, which then only adds the save flow.
 
 **Interfaces:**
-- Consumes: `STORE_TRANSPORT` (Task 10); `canonicalLocation`, `locationId`, `stampedTextSimilarity`, `ALIAS_THRESHOLD`, `Sha256`, `DocumentId` (Tasks 18–19).
+- Consumes: `STORE_TRANSPORT` (Task 10); `canonicalLocation`, `locationId`, `stampedTextSimilarity`, `ALIAS_THRESHOLD`, `Sha256`, `DocumentId`, `pagesWithStamp` (Tasks 18–19); `publishRuntime` (Task 12).
 - Produces:
 ```ts
 // packages/core/src/hlc.ts
@@ -2414,7 +2978,7 @@ export interface StoreApi {
   touchLocation(input: TouchLocationInput): Promise<LocationRow>;
   listLocations(documentId: DocumentId): Promise<LocationRow[]>;
   recordOpen(documentId: DocumentId, at: number): Promise<void>;
-  forgetDocument(documentId: DocumentId): Promise<void>;                    // hard delete, cascades
+  forgetDocument(documentId: DocumentId): Promise<void>;                    // hard delete, cascades, and deletes every outbox row for it (privacy; see Step 4)
   searchPages(query: string, limit: number): Promise<PageHit[]>;
 }
 export type Sqlite3Database = import('@sqlite.org/sqlite-wasm').Database;   // the oo1 DB (OpfsSAHPoolDb in the worker, :memory: in Node tests)
@@ -2430,7 +2994,8 @@ export const DB_DIRECTORY = '.sop-db', DB_FILE = '/library.sqlite3';
 // background
 export function ensureOffscreen(): Promise<void>;        // getContexts(OFFSCREEN_DOCUMENT) check + createDocument(reason WORKERS), one shared promise
 export function installStoreBroker(): void;              // SW 'message' {type:'store:connect'} + ports[0] → ensureOffscreen → offscreen client.postMessage(…, [port])
-// SopTestHooks gains: store: StoreClient | null
+export function isIncognito(): boolean;                  // apps/extension/src/viewer/incognito.ts: chrome.extension.inIncognitoContext
+// ViewerRuntime gains (read by e2e as SopTestHooks): store: StoreClient | null
 ```
 
 - [ ] **Step 1: Write the schema (normative v1) in `schema.ts` as `SCHEMA_V1`**
@@ -2519,12 +3084,12 @@ CREATE VIRTUAL TABLE documents_fts USING fts5(document_id UNINDEXED, title, auth
 CREATE VIRTUAL TABLE comments_fts USING fts5(comment_id UNINDEXED, document_id UNINDEXED, body, tokenize="unicode61 remove_diacritics 2");
 ```
   `migrate` behaves as follows:
-  - pragmas `foreign_keys=ON`, `journal_mode=DELETE`, `synchronous=FULL`;
+  - pragmas `foreign_keys=ON`, `journal_mode=TRUNCATE`, `synchronous=FULL`, `secure_delete=ON`. Deleted rows are overwritten in the file, and the journal is truncated rather than left in a free OPFS slot, so a forgotten PDF leaves no bytes behind (ruling R13);
   - when `user_version` is 0, it runs `SCHEMA_V1` plus the generated triggers in one transaction, then sets `user_version = 1`.
 
   Generated triggers:
   - `SYNCED_TABLES = ['documents', 'aliases', 'locations', 'marks', 'threads', 'comments', 'history', 'settings']`;
-  - `outboxTriggers(table, pk)` emits AFTER INSERT, UPDATE and DELETE triggers. They insert `(table, pk, 'upsert' | 'delete', OLD.rev or 0, NEW.hlc or OLD.hlc, CAST(unixepoch('subsec') * 1000 AS INTEGER))`. For `comments`, the trigger has `WHEN NEW.draft_of_tab IS NULL`.
+  - `outboxTriggers(table, pk)` emits AFTER INSERT, UPDATE and DELETE triggers. They insert `(table, pk, 'upsert' | 'delete', OLD.rev or 0, NEW.hlc or OLD.hlc, CAST(unixepoch('subsec') * 1000 AS INTEGER))`. For `comments`, the INSERT and UPDATE triggers have `WHEN NEW.draft_of_tab IS NULL`, and the DELETE trigger has `WHEN OLD.draft_of_tab IS NULL` (`NEW` does not exist in a DELETE trigger).
   - FTS sync triggers: `page_text` → `page_text_fts` (the external-content insert/delete/update trio); `documents` → `documents_fts`; `comments` (non-draft only) → `comments_fts`.
 
 - [ ] **Step 2: Write the failing tests**
@@ -2552,7 +3117,18 @@ test('outbox: base_rev follows rev; drafts, page text and caches never enter it'
   sendDraft(db); expect(outbox(db, 'comments')).toEqual([['upsert', 0]]);
   insertPageText(db); insertFigures(db); expect(outboxTables(db)).not.toContain('page_text');
 });
-test('FTS stays in step and delete cascades', () => { /* MATCH finds inserted page text; forget → page_text, locations, aliases, history gone; FTS empty */ });
+test('FTS stays in step and delete cascades', () => {
+  insertDoc(db, D1); insertPageText(db, D1.id, 0, 'household wealth'); insertAlias(db, { documentId: D1.id, similarity: 0.998 }); insertLocation(db, D1.id); insertHistory(db, D1.id);
+  expect(db.selectValue("SELECT count(*) FROM page_text_fts WHERE page_text_fts MATCH 'wealth'")).toBe(1);
+  db.exec({ sql: 'DELETE FROM documents WHERE id = ?', bind: [D1.id] });
+  expect(['page_text', 'locations', 'aliases', 'history'].map((t) => db.selectValue(`SELECT count(*) FROM ${t}`))).toEqual([0, 0, 0, 0]);
+  expect(db.selectValue("SELECT count(*) FROM page_text_fts WHERE page_text_fts MATCH 'wealth'")).toBe(0);
+  expect(db.selectValue('SELECT count(*) FROM documents_fts')).toBe(0);
+});
+test('migrate turns on secure delete and a truncating journal', () => {
+  migrate(db);
+  expect([db.selectValue('PRAGMA secure_delete'), db.selectValue('PRAGMA journal_mode'), db.selectValue('PRAGMA foreign_keys')]).toEqual([1, 'truncate', 1]);
+});
 // store-api.test.ts (Node, in-memory)
 test('saveDocument writes document + history + location in one transaction and is idempotent', async () => {
   const r1 = await api.saveDocument(INPUT); const r2 = await api.saveDocument(INPUT);
@@ -2568,7 +3144,16 @@ test('resolveFingerprint covers documents and aliases', async () => {
   await api.saveDocument(INPUT); await api.addAlias(SHA2, INPUT.id, 0.998);
   expect([await api.resolveFingerprint(INPUT.id), await api.resolveFingerprint(SHA2), await api.resolveFingerprint(SHA3)]).toEqual([INPUT.id, INPUT.id, null]);
 });
-test('findStampAlias: stamped variant matches, other text and other page counts do not, and it writes nothing', async () => { /* stats unchanged */ });
+test('findStampAlias: stamped variant matches, other text and other page counts do not, and it writes nothing', async () => {
+  const a = pagesWithStamp('158.143.197.12', 'Tue, 31 Oct 2026 10:41:07 UTC');                 // packages/core/test/stamp-samples.ts (Task 19): 8 pages
+  await api.saveDocument({ ...INPUT, pageCount: 8 }); await api.putPageText(INPUT.id, a.map((text, pageIndex) => ({ pageIndex, text })));
+  const before = await api.stats();
+  const hit = await api.findStampAlias(8, pagesWithStamp('81.2.69.160', 'Wed, 1 Nov 2026 09:02:11 UTC'));
+  expect(hit?.documentId).toBe(INPUT.id); expect(hit!.similarity).toBeGreaterThanOrEqual(ALIAS_THRESHOLD);
+  expect(await api.findStampAlias(8, pagesWithStamp('81.2.69.160', 'Wed, 1 Nov 2026 09:02:11 UTC', { body: 'other-body' }))).toBeNull();
+  expect(await api.findStampAlias(9, [...a, 'one more page'])).toBeNull();
+  expect(await api.stats()).toEqual(before);
+});
 test('touchLocation canonicalises, keeps first_seen and re-points to a new document', async () => {
   const l = await api.touchLocation({ documentId: D1, kind: 'url', raw: 'http://www.jstor.org/stable/pdf/1234.pdf?utm_source=x', viaPage: null, at: 1 });
   expect(l).toMatchObject({ id: '40ea1921427eaadca817d8e9a12e07dcbc9b4e336569adcdbfc273158dd81626', canonical: 'https://jstor.org/stable/pdf/1234.pdf', firstSeen: 1 });
@@ -2579,8 +3164,28 @@ test('searchPages ranks with bm25 and returns <b> snippets; forgotten documents 
   expect(hits[0]).toMatchObject({ documentId: INPUT.id, pageIndex: 0 }); expect(hits[0].snippet).toContain('<b>household</b>');
   await api.forgetDocument(INPUT.id); expect(await api.searchPages('household', 10)).toEqual([]);
 });
+test('Privacy (R13): after forgetDocument no row in any table mentions the fingerprint, an alias or a location id', async () => {
+  await api.saveDocument(INPUT); await api.addAlias(SHA2, INPUT.id, 0.998);
+  await api.putPageText(INPUT.id, [{ pageIndex: 0, text: 'household wealth' }]);
+  await api.touchLocation({ documentId: INPUT.id, kind: 'file', raw: 'file:///C:/Users/Rex/a.pdf', viaPage: null, at: 2 }); await api.recordOpen(INPUT.id, 3);
+  const locationIds = (await api.listLocations(INPUT.id)).map((l) => l.id);
+  expect(locationIds).toHaveLength(2);
+  expect(rowsMentioning(db, INPUT.id).length).toBeGreaterThan(0);          // the probe finds the outbox, history and location rows before the forget
+  await api.forgetDocument(INPUT.id);
+  for (const needle of [INPUT.id, SHA2, ...locationIds]) expect(rowsMentioning(db, needle)).toEqual([]);
+  expect(await api.stats()).toEqual({ documents: 0, aliases: 0, locations: 0, pageText: 0, history: 0, outbox: 0 });
+  expect(publish).toHaveBeenCalledWith({ table: 'documents', ids: [INPUT.id], op: 'delete' });
+});
+// rowsMentioning(db, needle): for every table in sqlite_schema (FTS shadow tables included), every row where instr(CAST(col AS TEXT), needle) > 0 for some column → [table, rowid][]
 // store-worker.browser.test.ts (Vitest browser: real OPFS sahpool on localhost)
-test('data survives a worker restart', async () => { /* spawn, save, terminate, respawn, getDocument → row */ });
+test('data survives a worker restart', async () => {
+  let w = await spawnStoreWorker();                                          // new Worker(store-worker.ts) + a MessageChannel port speaking protocol.ts
+  await w.call('saveDocument', INPUT); w.terminate();
+  w = await spawnStoreWorker();
+  expect(await w.call('schemaVersion')).toBe(1);
+  expect(await w.call('getDocument', INPUT.id)).toMatchObject({ id: INPUT.id, pageCount: INPUT.pageCount, byteSize: INPUT.byteSize });
+  w.terminate();
+});
 // e2e/store.spec.ts
 test('viewer connects through the SW broker', async ({ openViewer, server }) => {
   expect(await hooks(await openViewer(server.url('/f/paper-50.pdf'))).eval((h) => h.store!.schemaVersion())).toBe(1);
@@ -2590,7 +3195,15 @@ test('Review Focus 5: the offscreen document is re-created and the call is repla
   await sw.evaluate(() => chrome.offscreen.closeDocument());
   const t0 = Date.now(); expect(await hooks(page).eval((h) => h.store!.schemaVersion())).toBe(1); expect(Date.now() - t0).toBeLessThan(5000);
 });
-test('a change in one tab reaches another tab within 500 ms', async () => { /* tab B onChange receives { table: 'documents' } */ });
+test('a change in one tab reaches another tab within 500 ms', async ({ openViewer, server }) => {
+  const [a, b] = [await openViewer(server.url('/f/paper-50.pdf')), await openViewer(server.url('/f/paper-50.pdf'))];
+  await hooks(b).eval((h) => { (globalThis as any).__changes = []; h.store!.onChange((c) => (globalThis as any).__changes.push({ ...c, at: Date.now() })); });
+  const sentAt = await hooks(a).eval(async (h, input) => { const t = Date.now(); await h.store!.saveDocument(input); return t; }, SAMPLE_INPUT);
+  await expect.poll(() => b.evaluate(() => (globalThis as any).__changes.filter((c: any) => c.table === 'documents').length)).toBe(1);
+  const [c] = await b.evaluate(() => (globalThis as any).__changes.filter((x: any) => x.table === 'documents'));
+  expect(c).toMatchObject({ table: 'documents', ids: [SAMPLE_INPUT.id], op: 'upsert' });
+  expect(c.at - sentAt).toBeLessThan(500);
+});
 ```
 
 - [ ] **Step 3: Run them and confirm they fail.** Run: `pnpm vitest run packages/core/src/hlc.test.ts apps/extension/src/store && pnpm e2e e2e/store.spec.ts`. Expected: FAIL.
@@ -2598,7 +3211,7 @@ test('a change in one tab reaches another tab within 500 ms', async () => { /* t
 - [ ] **Step 4: Implement**
   - **`store-worker.ts`:**
     - `sqlite3InitModule()`, then `installOpfsSAHPoolVfs({ name: 'sop', directory: DB_DIRECTORY, initialCapacity: 8 })`, then `new pool.OpfsSAHPoolDb(DB_FILE)`, then `migrate`;
-    - the `deviceId` comes from `openLocalOnlyStore().ensureMeta('deviceId')` (Task 29). In this task, inject a random id;
+    - the `deviceId` comes from `ensureDeviceId()` (`store/device-id.ts`, Task 29). The store worker never imports the secrets store (ruling R14). In this task, inject a random id;
     - it serves `protocol.ts` requests `{ id, method, args }` → `{ id, ok, value | error }` on every attached port, one at a time (single owner, serialised);
     - it posts `StoreChange` events on `BroadcastChannel(CHANGES_CHANNEL)`.
   - **Offscreen `main.ts`:** spawns the worker and forwards `{ type: 'store:port' }` ports from `navigator.serviceWorker.onmessage` to it.
@@ -2607,7 +3220,13 @@ test('a change in one tab reaches another tab within 500 ms', async () => { /* t
     - `openStorePort` = a new `MessageChannel`, with `port2` sent through `(await navigator.serviceWorker.ready).active!.postMessage({ type: 'store:connect' }, [port2])`;
     - on a 3000 ms timeout it reconnects once and replays the pending requests;
     - `onChange` subscribes to `CHANGES_CHANNEL`.
-  - **Incognito:** the viewer calls `connectStore()` unless it is incognito (Task 30).
+  - **Viewer wiring** (moved here from Task 30, so the store e2e tests have a connected viewer). After `openDocument` is ready, `App.tsx` calls `connectStore()` unless `isIncognito()`, then `publishRuntime({ store })`, with `store: null` in Incognito. Task 30 only adds the save flow on top.
+  - **`forgetDocument`** runs one transaction:
+    1. collect the ids that mention the document: its id, its alias `sha256`s, its location ids, and its mark, thread and comment ids;
+    2. `DELETE FROM documents WHERE id = ?`, which cascades to `aliases`, `locations`, `page_text`, `marks`, `threads`, `comments`, `history` and `page_figures`, with the FTS triggers clearing `page_text_fts`, `documents_fts` and `comments_fts`;
+    3. `DELETE FROM outbox WHERE row_id IN (<collected ids>)`, which also removes the rows that the cascade's own DELETE triggers just queued.
+
+    Phase 1 has no sync, so nothing needs a tombstone. The Phase 5 plan decides how a forget reaches the cloud without keeping the fingerprint locally.
 
 - [ ] **Step 5: Run them again and confirm they pass.** Run: `pnpm vitest run packages/core/src/hlc.test.ts apps/extension/src/store && pnpm e2e e2e/store.spec.ts`. Expected: PASS.
 
@@ -2620,11 +3239,13 @@ git commit -m "feat(store): offscreen SQLite owner, schema v1, StoreClient over 
 ### Task 29: OPFS blob store and the local-only (secrets) store
 
 **Files:**
-- Create: `apps/extension/src/store/{blob-store.ts,blob-store.browser.test.ts,local-only.ts,local-only.browser.test.ts}`, `e2e/secrets.spec.ts`
-- Modify: `apps/extension/src/store/store-worker.ts` (device id from `ensureMeta('deviceId')`), `apps/extension/src/viewer/test-hooks.ts`
+- Create: `apps/extension/src/store/{blob-store.ts,blob-store.browser.test.ts,device-id.ts,device-id.browser.test.ts,import-boundary.test.ts}`
+- Create: `apps/extension/src/local-only/{secrets-store.ts,secrets-store.browser.test.ts}`, `e2e/secrets.spec.ts`
+- Modify: `apps/extension/src/store/store-worker.ts` (device id from `ensureDeviceId()`), `eslint.config.mjs` (`no-restricted-imports` for the boundary below), `vitest.config.ts` (the browser instance launches Chromium with `--enable-precise-memory-info`)
+- Modify: `e2e/support/test.ts` (adds `grepOpfs(page, dir, needle)`, `probeIdb(page, name, needle)` and `seedSecret(page, value)`), `e2e/support/server.ts` (adds `/h/plain-page`, a plain HTML page)
 
 **Interfaces:**
-- Consumes: `createSha256`, `Sha256` (Task 18).
+- Consumes: `createSha256`, `Sha256` (Task 18); `SAMPLE_INPUT` (Task 28).
 - Produces:
 ```ts
 export function blobPath(sha256: Sha256): string;                    // 'pdf/ab/<sha>.pdf'
@@ -2634,19 +3255,23 @@ export interface BlobStore {
   get(sha256: Sha256): Promise<File | null>; has(sha256: Sha256): Promise<boolean>; delete(sha256: Sha256): Promise<void>;
 }
 export function openBlobStore(): Promise<BlobStore>;
+// apps/extension/src/store/device-id.ts (store side; its own IndexedDB "sop-device", never in backups, so a restored install gets a new id)
+export function ensureDeviceId(): Promise<string>;                   // random 128-bit hex, created once
+// apps/extension/src/local-only/secrets-store.ts (opened only by viewer and settings code: Phase 3 Settings, Phase 4 @Claude)
+export const LOCAL_ONLY_DB = 'sop-local';
 export type SecretName = 'anthropic_api_key' | 'cloud_token';
-export type MetaKey = 'deviceId' | 'filterSalt';
+export type MetaKey = 'filterSalt';
 export interface LocalOnlyStore {   // IndexedDB "sop-local" v1: secrets, meta, never_save, filter_reports, handles
   getSecret(n: SecretName): Promise<string | null>; setSecret(n: SecretName, v: string): Promise<void>; deleteSecret(n: SecretName): Promise<void>;
   getMeta(k: MetaKey): Promise<string | null>; ensureMeta(k: MetaKey): Promise<string>;   // random 128-bit hex when missing
 }
 export function openLocalOnlyStore(): Promise<LocalOnlyStore>;
-// SopTestHooks gains: blobStore: BlobStore | null; localOnly: LocalOnlyStore | null
+// ViewerRuntime gains nothing here. The test hooks never reach the secrets store (ruling R19), and Task 30 publishes blobStore.
 ```
 
 - [ ] **Step 1: Write the failing tests**
 ```ts
-// blob-store.browser.test.ts (real OPFS)
+// blob-store.browser.test.ts (real OPFS; beforeEach empties the OPFS root)
 test('put streams, hashes and dedupes', async () => {
   const bytes = randomBytes(3 << 20); const s = await openBlobStore();
   const a = await s.put(new Blob([bytes])); expect(a).toMatchObject({ sha256: await sha256Hex(bytes), size: 3 << 20, created: true });
@@ -2654,30 +3279,69 @@ test('put streams, hashes and dedupes', async () => {
   expect(new Uint8Array(await (await s.get(a.sha256))!.arrayBuffer())).toEqual(bytes);
   expect(blobPath(a.sha256)).toBe(`pdf/${a.sha256.slice(0, 2)}/${a.sha256}.pdf`);
 });
-test('wrong expected hash throws and leaves no file or temp', async () => { /* BlobHashMismatchError; pdf/ and tmp/ empty */ });
-test('a 200 MB stream stays within 64 MB of JS heap growth', async () => { /* performance.memory.usedJSHeapSize delta */ });
-// local-only.browser.test.ts
+test('wrong expected hash throws and leaves no file or temp', async () => {
+  const s = await openBlobStore();
+  await expect(s.put(new Blob([randomBytes(1 << 20)]), '0'.repeat(64) as Sha256)).rejects.toBeInstanceOf(BlobHashMismatchError);
+  expect(await listOpfs('pdf')).toEqual([]);
+  expect(await listOpfs('tmp')).toEqual([]);
+});
+test('a 200 MB stream stays within 64 MB of JS heap growth', async () => {
+  const s = await openBlobStore(); const mem = () => (performance as any).memory.usedJSHeapSize as number;   // precise with --enable-precise-memory-info
+  const before = mem(); let peak = before; const probe = setInterval(() => { peak = Math.max(peak, mem()); }, 10);
+  const r = await s.put(seededStream(200 << 20));   // 1 MiB chunks generated on demand
+  clearInterval(probe);
+  expect(r.size).toBe(200 << 20);
+  expect(peak - before).toBeLessThan(64 << 20);
+});
+// device-id.browser.test.ts
+test('ensureDeviceId creates one id and keeps it, in its own database', async () => {
+  const id = await ensureDeviceId();
+  expect(id).toMatch(/^[0-9a-f]{32}$/); expect(await ensureDeviceId()).toBe(id);
+  expect((await indexedDB.databases()).map((d) => d.name)).toContain('sop-device');
+});
+// secrets-store.browser.test.ts
 test('object stores and secrets round-trip', async () => {
   const l = await openLocalOnlyStore(); await l.setSecret('anthropic_api_key', 'sk-ant-test-0123456789');
   expect(await l.getSecret('anthropic_api_key')).toBe('sk-ant-test-0123456789');
-  expect(await objectStoreNames('sop-local')).toEqual(['filter_reports', 'handles', 'meta', 'never_save', 'secrets']);
-  expect(await l.ensureMeta('deviceId')).toMatch(/^[0-9a-f]{32}$/); expect(await l.ensureMeta('deviceId')).toBe(await l.getMeta('deviceId'));
+  expect(await objectStoreNames(LOCAL_ONLY_DB)).toEqual(['filter_reports', 'handles', 'meta', 'never_save', 'secrets']);
+  expect(await l.ensureMeta('filterSalt')).toMatch(/^[0-9a-f]{32}$/); expect(await l.ensureMeta('filterSalt')).toBe(await l.getMeta('filterSalt'));
+  await l.deleteSecret('anthropic_api_key'); expect(await l.getSecret('anthropic_api_key')).toBeNull();
+});
+// import-boundary.test.ts (Node; follows static imports through the source tree)
+const FORBIDDEN_IMPORTERS = ['apps/extension/src/store/store-worker.ts', 'apps/extension/src/entrypoints/offscreen/main.ts', 'apps/extension/src/entrypoints/background.ts', 'apps/extension/src/testing/test-hooks.ts'];
+test('the store worker, offscreen document, service worker and test hooks never reach the secrets store', () => {
+  for (const entry of FORBIDDEN_IMPORTERS) expect(transitiveImports(entry).filter((f) => f.includes('/src/local-only/'))).toEqual([]);
+});
+test('the probe works: a module that imports the secrets store is caught', () => {
+  expect(transitiveImports('apps/extension/src/local-only/secrets-store.browser.test.ts').some((f) => f.endsWith('/src/local-only/secrets-store.ts'))).toBe(true);
+});
+test('ESLint forbids the import under src/store, src/background, src/entrypoints/offscreen and src/testing', async () => {
+  const [r] = await new ESLint().lintText("import { openLocalOnlyStore } from '../local-only/secrets-store';\n", { filePath: 'apps/extension/src/store/x.ts' });
+  expect(r.messages.map((m) => m.ruleId)).toContain('no-restricted-imports');
 });
 // e2e/secrets.spec.ts
 test('the secret never reaches the SQLite files', async ({ openViewer, server, sw }) => {
   const page = await openViewer(server.url('/f/paper-50.pdf')); const h = hooks(page);
-  await h.eval((x) => x.localOnly!.setSecret('anthropic_api_key', 'sk-ant-test-0123456789'));
-  await h.eval((x) => x.store!.saveDocument(SAMPLE_INPUT));
+  await seedSecret(page, 'sk-ant-test-0123456789');                    // writes sop-local/secrets in the viewer origin, the way secrets-store.ts does
+  expect(await probeIdb(page, 'sop-local', 'sk-ant-test-0123456789')).toMatchObject({ existed: true, containsNeedle: true });   // positive control
+  await h.eval((x, input) => x.store!.saveDocument(input), SAMPLE_INPUT);
   await sw.evaluate(() => chrome.offscreen.closeDocument());          // releases the sahpool access handles
   expect(await grepOpfs(page, '.sop-db', 'sk-ant-test-0123456789')).toBe(false);
 });
-test('web pages and content scripts cannot open the extension store', async ({ context, server }) => {
+test('web pages and content scripts cannot read the secret', async ({ context, openViewer, server, sw }) => {
+  const viewer = await openViewer(server.url('/f/paper-50.pdf'));
+  await seedSecret(viewer, 'sk-ant-test-0123456789');
   const p = await context.newPage(); await p.goto(server.url('/h/plain-page'));
-  expect(await p.evaluate(async () => (await indexedDB.databases()).map((d) => d.name))).not.toContain('sop-local');
+  // content scripts use the page origin's IndexedDB, so this one probe covers both
+  expect(await probeIdb(p, 'sop-local', 'sk-ant-test-0123456789')).toEqual({ existed: false, stores: [], containsNeedle: false });
+  expect((await p.evaluate(() => indexedDB.databases())).map((d) => d.name)).not.toContain('sop-local');
+  // the only extension storage a content script can read is chrome.storage.local
+  expect(JSON.stringify(await sw.evaluate(() => chrome.storage.local.get(null)))).not.toContain('sk-ant-test');
 });
 ```
+  `probeIdb(page, name, needle)` runs in the page. It opens `name` without a version, and if `onupgradeneeded` fires with `oldVersion` 0 it aborts that transaction, so nothing is created, and reports `existed: false`. Otherwise it lists the object stores and scans every value for `needle`. It resolves to `{ existed, stores, containsNeedle }`. `seedSecret` opens `sop-local` v1, creating the five stores as `secrets-store.ts` does, and puts `{ name: 'anthropic_api_key', value }` into `secrets`. It is test code, so the viewer's test hooks never touch the store.
 
-- [ ] **Step 2: Run them and confirm they fail.** Run: `pnpm vitest run --project browser apps/extension/src/store && pnpm e2e e2e/secrets.spec.ts`. Expected: FAIL.
+- [ ] **Step 2: Run them and confirm they fail.** Run: `pnpm vitest run apps/extension/src/store/import-boundary.test.ts && pnpm vitest run --project browser apps/extension/src/store apps/extension/src/local-only && pnpm e2e e2e/secrets.spec.ts`. Expected: FAIL.
 
 - [ ] **Step 3: Implement**
   - **`put`:**
@@ -2685,48 +3349,54 @@ test('web pages and content scripts cannot open the extension store', async ({ c
     2. On a mismatch against `expected`, remove the temp file and throw.
     3. If the target exists, remove the temp file and return `created: false`.
     4. Otherwise call `tmpHandle.move(dirHandle('pdf/<ab>'), '<sha>.pdf')`.
-  - **`local-only.ts`** uses plain `indexedDB.open('sop-local', 1)`, whose `onupgradeneeded` creates the five stores. Backup, export and sync code (Phases 3 and 5) must never import this module. Phase 3's backup test checks every backup for the key.
+  - **`secrets-store.ts`** uses plain `indexedDB.open('sop-local', 1)`, whose `onupgradeneeded` creates the five stores. It lives in `src/local-only/`, outside `src/store/`, and only viewer and settings code may import it.
+  - **The boundary (ruling R14).**
+    - The store worker, the offscreen document, the service worker, backup, export and sync code (Phases 3 and 5) and the test hooks never import `src/local-only/**`. `import-boundary.test.ts` checks the static import graph.
+    - `eslint.config.mjs` adds `no-restricted-imports` (`patterns: ['**/local-only/**']`) for `apps/extension/src/{store,background,entrypoints/offscreen,testing}/**`. Phases 3 and 5 add their backup, export and sync folders to that list.
+    - Phase 3's backup test checks every backup for the key.
+  - **`device-id.ts`:** IndexedDB `sop-device` v1, store `meta`, key `deviceId`. `store-worker.ts` calls `ensureDeviceId()` in place of Task 28's injected random id.
 
-- [ ] **Step 4: Run them again and confirm they pass.** Run: `pnpm vitest run --project browser apps/extension/src/store && pnpm e2e e2e/secrets.spec.ts`. Expected: PASS.
+- [ ] **Step 4: Run them again and confirm they pass.** Run: `pnpm vitest run apps/extension/src/store/import-boundary.test.ts && pnpm vitest run --project browser apps/extension/src/store apps/extension/src/local-only && pnpm lint && pnpm e2e e2e/secrets.spec.ts`. Expected: PASS.
 
 - [ ] **Step 5: Commit**
 ```bash
-git add apps/extension e2e
-git commit -m "feat(store): OPFS blob store with streaming SHA-256; local-only secrets store"
+git add apps/extension e2e eslint.config.mjs vitest.config.ts
+git commit -m "feat(store): OPFS blob store with streaming SHA-256; separate local-only secrets store with an import boundary"
 ```
 
 ### Task 30: The save decision: stand-in filter, identity resolution, status chip, Ctrl+Alt+S, Incognito view-only
 
 **Files:**
 - Create: `packages/core/src/filter/{types.ts,stand-in.ts,stand-in.test.ts}`, `packages/core/src/save/{save-machine.ts,save-machine.test.ts}`
-- Create: `apps/extension/src/viewer/identity/{resolve-identity.ts,resolve-identity.test.ts}`, `apps/extension/src/viewer/save/{save-controller.ts,save-controller.test.ts,StatusChip.tsx,SaveAskDialog.tsx}`, `apps/extension/src/viewer/incognito.ts`, `e2e/save.spec.ts`
-- Modify: `apps/extension/src/viewer/{App.tsx,commands.ts,test-hooks.ts}` (`file.saveToLibrary` = Ctrl+Alt+S; the chip goes in the header slot)
+- Create: `apps/extension/src/viewer/identity/{resolve-identity.ts,resolve-identity.test.ts}`, `apps/extension/src/viewer/save/{save-controller.ts,save-controller.test.ts,StatusChip.tsx,SaveAskDialog.tsx}`, `e2e/save.spec.ts`
+- Modify: `apps/extension/src/viewer/{App.tsx,commands.ts,runtime.ts}` (`file.saveToLibrary` = Ctrl+Alt+S; the chip goes in the header slot)
+- Modify: `e2e/support/test.ts` (adds `opfsList(page, dir)`), `e2e/support/server.ts` (implements `FixtureServer.serveSequence`)
 
 **Interfaces:**
-- Consumes: `StoreClient` (Task 28), `BlobStore` (Task 29), `OpenedDocument` (Task 20), `getPageText` (Task 15), `canonicalLink` (Task 18), `getRequestInfo` through `takeover:prepare-fetch` (its reply carries `referer`, used for `viaPage`).
+- Consumes:
+  - `StoreClient`, `StoreApi`, `TouchLocationInput`, `isIncognito` and the viewer's store connection (Task 28; the viewer is already connected there);
+  - `BlobStore` and `openBlobStore` (Task 29);
+  - `OpenedDocument` with `referrer` (Task 20; the `takeover:prepare-fetch` reply's `referer`, used for `viaPage`);
+  - `getPageText` (Task 15) and `canonicalLink`, `cleanLink` (Task 18);
+  - `SaveState` (`packages/core/src/save/types.ts`, Task 23) and `SaveController` (`packages/viewer/src/contracts.ts`, Task 23).
 - Produces (Phase 2 calls `firstMark()`; Phase 3 swaps the filter):
 ```ts
 export type FilterVerdict = 'learning' | 'not-learning' | 'unsure';
 export interface FilterInput { url: string | null; fileName: string; pageCount: number; pageSizes: PageSize[]; metadata: PdfMetadata; sampleText: string[] }
 export interface FilterDecision { verdict: FilterVerdict; reasons: string[] }
 export function standInFilter(input: FilterInput): FilterDecision;   // { verdict: 'unsure', reasons: ['No filter yet: your first mark saves it'] }
-export type SaveState =
-  | { kind: 'checking' } | { kind: 'saved'; documentId: DocumentId; undoable: boolean }
-  | { kind: 'unsure'; reasons: string[] } | { kind: 'not-learning'; reasons: string[] }
-  | { kind: 'asking' } | { kind: 'memory-only' } | { kind: 'incognito' };
 export type SaveEvent =
   | { type: 'identified'; documentId: DocumentId } | { type: 'classified'; decision: FilterDecision }
   | { type: 'save-requested' } | { type: 'first-mark' } | { type: 'saved'; documentId: DocumentId; undoable: boolean }
   | { type: 'ask-answered'; save: boolean } | { type: 'undo-requested' } | { type: 'undone' } | { type: 'undo-expired' } | { type: 'incognito' };
 export type SaveEffect = { kind: 'save'; undoable: boolean } | { kind: 'forget' } | { kind: 'ask' };
-export function reduceSave(s: SaveState, e: SaveEvent): { state: SaveState; effect: SaveEffect | null };
+export function reduceSave(s: SaveState, e: SaveEvent): { state: SaveState; effect: SaveEffect | null };   // SaveState from Task 23
 export type IdentityResult = { kind: 'known'; documentId: DocumentId; via: 'fingerprint' | 'alias' } | { kind: 'unknown' };
-export function resolveIdentity(i: { sha256: Sha256; pageCount: number; pageTexts(): Promise<string[]>; location: Omit<TouchLocationInput, 'documentId'> }, store: StoreApi): Promise<IdentityResult>;
-export interface SaveController { readonly state: SaveState; subscribe(cb: (s: SaveState) => void): () => void; requestSave(): Promise<void>; firstMark(): Promise<void>; undo(): Promise<void>; answerAsk(save: boolean): Promise<void> }
-export function createSaveController(d: { opened: OpenedDocument; backend: PdfBackend; store: StoreClient | null; blobs: BlobStore | null; filter: (i: FilterInput) => FilterDecision; incognito: boolean; location: { kind: LocationKind; raw: string; viaPage: string | null } | null; now(): number }): SaveController;
-export function isIncognito(): boolean;                              // chrome.extension.inIncognitoContext
-// SopTestHooks gains: save: { state(): SaveState; documentId(): DocumentId | null; firstMark(): Promise<void> }
+export function resolveIdentity(i: { sha256: Sha256; pageCount: number; pageTexts(): Promise<string[]> }, store: StoreApi): Promise<IdentityResult>;   // reads, plus addAlias for a stamp alias; never touchLocation or recordOpen
+export function createSaveController(d: { opened: OpenedDocument; backend: PdfBackend; store: StoreClient | null; blobs: BlobStore | null; filter: (i: FilterInput) => FilterDecision; incognito: boolean; location: { kind: LocationKind; raw: string; viaPage: string | null } | null; now(): number }): SaveController;   // SaveController from Task 23
+// ViewerRuntime gains (read by e2e as SopTestHooks): blobStore: BlobStore | null; save: { state(): SaveState; documentId(): DocumentId | null; firstMark(): Promise<void> }
 ```
+  `touchLocation` and `recordOpen` have exactly one call site: `SaveController.start()`, when identity resolves to a known document. `saveDocument` writes the first location and history row itself, for a new document.
 
 - [ ] **Step 1: Write the failing unit tests**
 ```ts
@@ -2750,18 +3420,71 @@ test.each([
   [{ kind: 'incognito' }, { type: 'save-requested' }, { kind: 'incognito' }, null],
   [{ kind: 'incognito' }, { type: 'first-mark' }, { kind: 'incognito' }, null],
 ])('reduceSave %#', (s, e, state, effect) => expect(reduceSave(s as SaveState, e as SaveEvent)).toEqual({ state, effect }));
-// resolve-identity.test.ts (recording fake store)
+// resolve-identity.test.ts (recording fake store: calls[] names, args(name) argument lists)
 test('unknown PDFs cause reads only', async () => {
   const s = recordingStore({ known: [], sameCount: 0 });
   expect(await resolveIdentity(INPUT, s)).toEqual({ kind: 'unknown' });
-  expect(s.calls.every((c) => ['resolveFingerprint', 'countDocumentsWithPageCount', 'findStampAlias'].includes(c))).toBe(true);
+  expect(s.calls).toEqual(['resolveFingerprint', 'countDocumentsWithPageCount']);
 });
-test('a stamped re-download becomes an alias, then touches its location and records the open', async () => { /* calls include addAlias, touchLocation, recordOpen */ });
-test('page texts are extracted only when a same-page-count document exists', async () => { /* pageTexts not called when count is 0 */ });
-// save-controller.test.ts
-test('save effect: blob first, then document, then page text in batches of 50', async () => { /* call order on fakes; 120 pages → 3 putPageText calls */ });
-test('incognito never touches store or blobs and shows the incognito state', async () => { /* store/blobs null; state.kind === 'incognito' */ });
-test('Undo after a first-mark save forgets the document and deletes the blob; Undo expires after 10 s', async () => { /* firstMark → saved, undoable; undo → forgetDocument(id) and blobs.delete(sha256) called, state unsure; a second run with fake timers: +10,000 ms → undoable false */ });
+test('a known fingerprint resolves with one read', async () => {
+  const s = recordingStore({ known: [INPUT.sha256], sameCount: 0 });
+  expect(await resolveIdentity(INPUT, s)).toEqual({ kind: 'known', documentId: INPUT.sha256, via: 'fingerprint' });
+  expect(s.calls).toEqual(['resolveFingerprint']);
+});
+test('a stamped re-download becomes an alias, and identity writes nothing else', async () => {
+  const s = recordingStore({ known: [], sameCount: 1, stampAlias: { documentId: D1, similarity: 0.998 } });
+  expect(await resolveIdentity(INPUT, s)).toEqual({ kind: 'known', documentId: D1, via: 'alias' });
+  expect(s.calls).toEqual(['resolveFingerprint', 'countDocumentsWithPageCount', 'findStampAlias', 'addAlias']);
+  expect(s.args('addAlias')).toEqual([[INPUT.sha256, D1, 0.998]]);
+});
+test('page texts are extracted only when a same-page-count document exists', async () => {
+  const pageTexts = vi.fn(async () => ['page one']);
+  await resolveIdentity({ ...INPUT, pageTexts }, recordingStore({ known: [], sameCount: 0 }));
+  expect(pageTexts).not.toHaveBeenCalled();
+  await resolveIdentity({ ...INPUT, pageTexts }, recordingStore({ known: [], sameCount: 2 }));
+  expect(pageTexts).toHaveBeenCalledTimes(1);
+});
+// save-controller.test.ts (fakes(o) records every store and blob call; writes() lists only the writing ones)
+test('save effect: blob first, then document, then page text in batches of 50', async () => {
+  const f = fakes({ pageCount: 120 }); const c = createSaveController(f.deps);
+  await c.start(); await c.requestSave();
+  expect(f.writes()).toEqual(['blobs.put', 'saveDocument', 'putPageText', 'putPageText', 'putPageText']);
+  expect(f.argsOf('putPageText').map(([, pages]) => pages.length)).toEqual([50, 50, 20]);
+  expect(f.argsOf('blobs.put')).toEqual([[f.deps.opened.loaded.blob, f.sha256]]);
+  expect(c.state).toEqual({ kind: 'saved', documentId: f.sha256, undoable: false });
+});
+test('a known PDF touches its location and records the open exactly once', async () => {
+  const f = fakes({ known: true }); const c = createSaveController(f.deps);
+  await c.start();
+  expect(f.writes()).toEqual(['touchLocation', 'recordOpen']);
+  expect(f.argsOf('touchLocation')).toEqual([[{ documentId: f.sha256, ...f.deps.location!, at: f.now }]]);
+  expect(c.state).toEqual({ kind: 'saved', documentId: f.sha256, undoable: false });
+});
+test('an unknown PDF writes nothing until a save (privacy)', async () => {
+  const f = fakes({}); const c = createSaveController(f.deps);
+  await c.start();
+  expect(f.writes()).toEqual([]);
+  expect(c.state).toEqual({ kind: 'unsure', reasons: STAND_IN_REASONS });
+});
+test('incognito never touches store or blobs and shows the incognito state', async () => {
+  const f = fakes({}); const c = createSaveController({ ...f.deps, store: null, blobs: null, incognito: true });
+  await c.start(); await c.requestSave(); await c.firstMark();
+  expect(c.state).toEqual({ kind: 'incognito' });
+  expect(f.calls).toEqual([]);
+});
+test('Undo after a first-mark save forgets the document and deletes the blob; Undo expires after 10 s', async () => {
+  vi.useFakeTimers();
+  const f = fakes({}); const c = createSaveController(f.deps); await c.start(); await c.firstMark();
+  expect(c.state).toEqual({ kind: 'saved', documentId: f.sha256, undoable: true });
+  await c.undo();
+  expect(f.writes().slice(-2)).toEqual(['forgetDocument', 'blobs.delete']);
+  expect([f.argsOf('forgetDocument'), f.argsOf('blobs.delete')]).toEqual([[[f.sha256]], [[f.sha256]]]);
+  expect(c.state).toEqual({ kind: 'unsure', reasons: STAND_IN_REASONS });
+  const g = fakes({}); const c2 = createSaveController(g.deps); await c2.start(); await c2.firstMark();
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect(c2.state).toEqual({ kind: 'saved', documentId: g.sha256, undoable: false });
+  vi.useRealTimers();
+});
 ```
 
 - [ ] **Step 2: Write the failing e2e tests**
@@ -2777,7 +3500,7 @@ test('clicking the chip saves: blob, rows and searchable text', async ({ openVie
   await expect(page.getByRole('button', { name: 'Saved to library' })).toBeVisible();
   const h = hooks(page);
   expect(await h.eval((x) => x.store!.stats())).toMatchObject({ documents: 1, locations: 1, history: 1, pageText: 50 });
-  expect((await h.eval((x) => x.store!.searchPages('household wealth', 5)))[0].pageIndex).toBe(0);
+  expect((await h.eval((x) => x.store!.searchPages('household wealth', 5)))[0].pageIndex).toBe(0);   // FTS5 unicode61 is case-insensitive; page 1 reads "HOUSEHOLD WEALTH"
   expect(await h.eval((x) => x.blobStore!.has(x.save.documentId()!))).toBe(true);
 });
 test('reopening the same link shows "Saved to library" with the same document id', async ({ openViewer, server }) => {
@@ -2786,7 +3509,7 @@ test('reopening the same link shows "Saved to library" with the same document id
   const b = await openViewer(server.url('/f/paper-50.pdf'));
   await expect(b.getByRole('button', { name: 'Saved to library' })).toBeVisible();
   expect(await hooks(b).eval((h) => h.save.documentId())).toBe(id);
-  expect((await hooks(b).eval((h) => h.store!.stats())).documents).toBe(1);
+  expect(await hooks(b).eval((h) => h.store!.stats())).toMatchObject({ documents: 1, locations: 1, history: 1 });   // the reopen touched the same location once
 });
 test('JSTOR-style stamps: one link served three times with different stamps → one document, two aliases', async ({ openViewer, server }) => {
   server.serveSequence('/jstor/stable/pdf/12345.pdf', [
@@ -2804,15 +3527,39 @@ test('JSTOR-style stamps: one link served three times with different stamps → 
   }
   expect(new Set(ids).size).toBe(1);
 });
-test('a different paper with the same page count is not an alias', async () => { /* makeStampedPdf(…, 'other-body') → "Not sure: Save?" */ });
-test('a moved and renamed file keeps its identity and gains a location', async ({ openViewer }) => {
-  /* save file:///…/dir with spaces/Week 3 – café #2.PDF; copy to …/other/renamed.pdf; open → "Saved to library", same id, listLocations().length === 2 */
+test('a different paper with the same page count is not an alias', async ({ openViewer, server }) => {
+  server.serveSequence('/jstor/stable/pdf/999.pdf', [
+    await makeStampedPdf({ ip: '158.143.197.12', date: 'Tue, 31 Oct 2026 10:41:07 UTC' }),
+    await makeStampedPdf({ ip: '81.2.69.160', date: 'Wed, 1 Nov 2026 09:02:11 UTC' }, 'other-body'),
+  ]);
+  const a = await openViewer(server.url('/jstor/stable/pdf/999.pdf')); await a.getByRole('button', { name: 'Not sure: Save?' }).click();
+  await expect(a.getByRole('button', { name: 'Saved to library' })).toBeVisible();
+  const b = await openViewer(server.url('/jstor/stable/pdf/999.pdf'));
+  await expect(b.getByRole('button', { name: 'Not sure: Save?' })).toBeVisible();
+  expect(await hooks(b).eval((h) => h.store!.stats())).toMatchObject({ documents: 1, aliases: 0 });
 });
-test('first mark on an unsure PDF saves with Undo; Undo forgets it', async ({ openViewer, server }) => {
-  const page = await openViewer(server.url('/f/paper-50.pdf')); await hooks(page).eval((h) => h.save.firstMark());
+test('a moved and renamed file keeps its identity and gains a location', async ({ openViewer, tmp }) => {
+  const f1 = await copyFixture('paper-50.pdf', join(tmp, 'dir with spaces', 'Week 3 – café #2.PDF'));
+  const a = await openViewer(pathToFileURL(f1).href); await a.getByRole('button', { name: 'Not sure: Save?' }).click();
+  await expect(a.getByRole('button', { name: 'Saved to library' })).toBeVisible();
+  const id = await hooks(a).eval((h) => h.save.documentId()!);
+  const f2 = join(tmp, 'other', 'renamed.pdf'); await mkdir(dirname(f2), { recursive: true }); await rename(f1, f2);
+  const b = await openViewer(pathToFileURL(f2).href);
+  await expect(b.getByRole('button', { name: 'Saved to library' })).toBeVisible();
+  expect(await hooks(b).eval((h) => h.save.documentId())).toBe(id);
+  expect(await hooks(b).eval((h, d) => h.store!.listLocations(d), id)).toHaveLength(2);
+});
+test('first mark on an unsure PDF saves with Undo; Undo forgets it and leaves no trace (R13)', async ({ openViewer, server, sw }) => {
+  const page = await openViewer(server.url('/f/paper-50.pdf')); const h = hooks(page);
+  await h.eval((x) => x.save.firstMark());
+  await expect(page.getByRole('button', { name: 'Saved to library' })).toBeVisible();
+  const id = await h.eval((x) => x.save.documentId()!);
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect(page.getByRole('button', { name: 'Not sure: Save?' })).toBeVisible();
-  expect((await hooks(page).eval((h) => h.store!.stats())).documents).toBe(0);
+  expect(await h.eval((x) => x.store!.stats())).toEqual({ documents: 0, aliases: 0, locations: 0, pageText: 0, history: 0, outbox: 0 });
+  expect(await opfsList(page, 'pdf')).toEqual([]);
+  await sw.evaluate(() => chrome.offscreen.closeDocument());          // releases the sahpool handles so the files can be read
+  expect(await grepOpfs(page, '.sop-db', id)).toBe(false);            // secure_delete + truncated journal (Task 28)
 });
 test('Ctrl+Alt+S saves while reading but not while typing in the find box', async ({ openViewer, server }) => {
   const page = await openViewer(server.url('/f/paper-50.pdf'));
@@ -2834,20 +3581,25 @@ test('Review Focus 5: closing the offscreen document mid-save still saves', asyn
   expect((await hooks(page).eval((h) => h.store!.stats())).documents).toBe(1);
 });
 ```
+  `opfsList(page, dir)` lists file paths under `dir` in the extension's OPFS, recursively. `serveSequence(path, bodies)` answers successive GETs with successive bodies, and the last one repeats.
 
 - [ ] **Step 3: Run them and confirm they fail.** Run: `pnpm vitest run packages/core/src/filter packages/core/src/save apps/extension/src/viewer/identity apps/extension/src/viewer/save && pnpm e2e e2e/save.spec.ts`. Expected: FAIL.
 
 - [ ] **Step 4: Implement**
-  - **Open flow** (in `App.tsx`, after `openDocument` is ready):
-    1. If `isIncognito()`, dispatch `incognito`. Otherwise `connectStore()` and `openBlobStore()`.
-    2. `resolveIdentity(...)`. When the result is known: `identified`, `touchLocation` and `recordOpen`. When unknown: `classified(standInFilter(...))`.
-    3. The location is `{ kind: source.startsWith('file:') ? 'file' : 'url', raw: cleanLink(source) or the file URL, viaPage: canonicalLink(back ?? referer) or null }`.
+  - **Open flow** (`App.tsx`, after `openDocument` is ready; Task 28 has already connected `store`, or set it to null in Incognito):
+    1. `const blobs = isIncognito() ? null : await openBlobStore()`.
+    2. `const save = createSaveController({ … })`, then `publishRuntime({ blobStore: blobs, save: { state: () => save.state, documentId, firstMark: () => save.firstMark() } })`.
+    3. `await save.start()`. This is the only place that starts identity, and `App.tsx` makes no store call of its own.
+    4. The location is `{ kind: source.startsWith('file:') ? 'file' : 'url', raw: cleanLink(source) or the file URL, viaPage: canonicalLink(back ?? opened.referrer) or null }`.
+  - **`SaveController.start()`:**
+    - in Incognito, dispatch `incognito`;
+    - otherwise `resolveIdentity({ sha256, pageCount, pageTexts })`. When the result is known: `store.touchLocation({ documentId, ...location, at: now() })` and `store.recordOpen(documentId, now())`, which are the codebase's only call sites, then dispatch `identified`. When it is unknown: dispatch `classified(standInFilter(...))`, and nothing is written.
   - **Save effect:**
     1. `blobs.put(loaded.blob, loaded.sha256)`.
     2. `store.saveDocument({ id: sha256, byteSize, pageCount, title: metadata.title, authors: [], pdfId: metadata.pdfId, hasText: (any page text non-empty), encrypted, blobStored: true, saveReasons: decision.reasons, location, openedAt })`. Phase 3 adds full metadata extraction.
     3. `putPageText` in batches of 50 pages (it reuses texts already extracted for the alias check).
     4. Dispatch `saved`.
-  - **Forget effect:** `store.forgetDocument(id)` then `blobs.delete(sha256)`.
+  - **Forget effect** (Undo; Phase 3's "Forget this PDF" reuses it): `store.forgetDocument(id)`, which deletes the document's rows everywhere including the outbox (Task 28), then `blobs.delete(sha256)`, then dispatch `undone`. Nothing about the PDF is left.
   - **Chip copy, in the header slot:**
 
     | State | Label | Notes |
@@ -2877,7 +3629,7 @@ git commit -m "feat(viewer): save decision with stand-in filter, identity and al
 - Modify: `apps/extension/src/viewer/App.tsx`, `e2e/support/server.ts` (`/h/form.pdf` = HMRC SA100, `/h/form-once.pdf`, `/h/hyperref.pdf` = NBER)
 
 **Interfaces:**
-- Consumes: `getFormInfo` and `hasFillableFields` (Task 15); `SaveController` (Task 30); `takeover:open-in-chrome` (Task 17); `takeover:prepare-fetch` (Task 16).
+- Consumes: `getFormInfo` and `hasFillableFields` (Task 15); `SaveController` (Task 23's contract, created in Task 30); `takeover:open-in-chrome` (Task 17); `takeover:prepare-fetch` (Task 16); `copyFixture` and `tmp` (Task 16).
 - Produces:
 ```ts
 export type FormBounceAction = 'stay' | 'bounce' | 'stay-with-banner';
@@ -2907,7 +3659,13 @@ test('a hyperref AcroForm paper stays in our viewer', async ({ openViewer, serve
 test('a form that cannot be fetched again stays, with a banner', async ({ openViewer, server }) => {
   await expect((await openViewer(server.url('/h/form-once.pdf'))).getByText("This PDF has fillable fields. Chrome's viewer can't reopen it from this link, so it stays here.")).toBeVisible();
 });
-test('a local form file bounces to its file URL', async () => { /* file:// copy of the HMRC fixture */ });
+test('a local form file bounces to its file URL', async ({ context, tmp }) => {
+  const url = pathToFileURL(await copyFixture('classifier/not-learning/tax-form-hmrc-sa100-2026.pdf', join(tmp, 'sa100.pdf'))).href;
+  const page = await context.newPage(); await page.goto(url).catch(() => null);
+  await expect(page.getByText("This PDF has fillable fields. Opening it in Chrome's viewer so you can fill it in…")).toBeVisible();
+  await page.waitForURL(url); await page.waitForTimeout(2000);
+  expect(page.url()).toBe(url);
+});
 ```
 
 - [ ] **Step 2: Run them and confirm they fail.** Run: `pnpm vitest run apps/extension/src/viewer/forms && pnpm e2e e2e/forms.spec.ts`. Expected: FAIL.
@@ -2928,17 +3686,67 @@ git add apps/extension e2e
 git commit -m "feat(viewer): fillable-form PDFs reopen in Chrome's viewer via a one-time allow rule"
 ```
 
-### Task 32: Phase 1 gate: the Windows checklist and the gate list
+### Task 32: Phase 1 gate: the speed-budget job, the Windows checklist and the gate list
 
 **Files:**
+- Create: `scripts/gate.mjs`, `scripts/repo-hygiene.test.ts`, `.github/workflows/perf-gate.yml`, `e2e/support/launch-chrome.ts`
 - Create: `docs/checklists/phase1-windows.md`, `docs/checklists/phase1-gate.md`
-- Modify: root `package.json` (add `"gate:phase1": "SOP_GATE=1 pnpm fixtures && SOP_GATE=1 pnpm e2e"`)
+- Modify: root `package.json` (add `"gate:phase1": "node scripts/gate.mjs phase1"` and `"gate:perf": "node scripts/gate.mjs perf"`), `e2e/playwright.config.ts` (adds the project `perf-gate`, which uses `launch-chrome.ts` and runs `perf-smoke.spec.ts` only)
 
 **Interfaces:**
-- Consumes: the Windows hand-offs W-B1 to W-B3 (Task 8); every Phase 1 test.
-- Produces: the signed checklist and the gate results that open Phase 2.
+- Consumes: the Windows hand-offs W-B1 to W-B3 (Task 8); every Phase 1 test; `TEST_BUILD_DIR` and `EXTENSION_ID` (Task 12); `e2e/perf-smoke.spec.ts` (Task 21).
+- Produces:
+```js
+// scripts/gate.mjs: no POSIX `VAR=value` prefixes, so the same command runs on Windows
+export function gateEnv(name) {}      // 'phase1' → { SOP_GATE: '1' }; 'perf' → { SOP_GATE: '1', SOP_BROWSER: 'chrome' }
+export function gateSteps(name) {}    // the pnpm argument lists, run in order with spawnSync(…, { stdio: 'inherit', env: { ...process.env, ...gateEnv(name) }, shell: process.platform === 'win32' })
+// e2e/support/launch-chrome.ts (perf gate only)
+export function launchStableChrome(o: { profileDir: string; netlogPath: string }): Promise<BrowserContext>;
+```
+  The signed checklist and the gate results open Phase 2.
 
-- [ ] **Step 1: Write `docs/checklists/phase1-windows.md`**
+- [ ] **Step 1: Write the failing hygiene tests**
+```ts
+// scripts/repo-hygiene.test.ts (Node, Vitest project unit)
+const pkgs = globSync('{package.json,apps/*/package.json,packages/*/package.json,tooling/*/package.json}').map((f) => [f, JSON.parse(readFileSync(f, 'utf8'))] as const);
+test('no script uses a POSIX env prefix (gates run on Windows)', () => {
+  const bad = pkgs.flatMap(([f, p]) => Object.entries(p.scripts ?? {}).filter(([, s]) => /(^|&&|\|\||;)\s*[A-Z][A-Z0-9_]*=\S*\s/.test(s as string)).map(([k]) => `${f}:${k}`));
+  expect(bad).toEqual([]);
+});
+test('every dependency is pinned exactly', () => {
+  const bad = pkgs.flatMap(([f, p]) => Object.entries({ ...p.dependencies, ...p.devDependencies }).filter(([, v]) => !/^(\d+\.\d+\.\d+(-[\w.]+)?|workspace:\*)$/.test(v as string)).map(([k, v]) => `${f}:${k}@${v}`));
+  expect(bad).toEqual([]);
+  expect(readFileSync('scripts/fixtures/requirements.txt', 'utf8').trim().split('\n').every((l) => /^[\w-]+==\d+(\.\d+)+$/.test(l))).toBe(true);
+});
+test('every workflow action is pinned to a full commit SHA with its version in a comment', () => {
+  const uses = globSync('.github/workflows/*.yml').flatMap((f) => readFileSync(f, 'utf8').split('\n').filter((l) => /^\s*-?\s*uses:/.test(l)));
+  expect(uses.length).toBeGreaterThan(0);
+  expect(uses.filter((l) => !/uses:\s*[\w.-]+\/[\w.-]+@[0-9a-f]{40}\s+#\s*v\d+\.\d+\.\d+/.test(l))).toEqual([]);
+});
+test('gate.mjs sets the environment inside Node', async () => {
+  const { gateEnv, gateSteps } = await import('./gate.mjs');
+  expect(gateEnv('phase1')).toEqual({ SOP_GATE: '1' });
+  expect(gateEnv('perf')).toEqual({ SOP_GATE: '1', SOP_BROWSER: 'chrome' });
+  expect(gateSteps('phase1')).toEqual([['fixtures'], ['e2e']]);
+  expect(gateSteps('perf')).toEqual([['fixtures'], ['-C', 'apps/extension', 'build:e2e'], ['exec', 'playwright', 'test', '-c', 'e2e/playwright.config.ts', '--project', 'perf-gate']]);
+});
+```
+
+- [ ] **Step 2: Run them and confirm they fail.** Run: `pnpm vitest run scripts/repo-hygiene.test.ts`. Expected: FAIL (`gate.mjs` is missing).
+
+- [ ] **Step 3: Implement the gate script, the perf-gate job and the stable-Chrome launch**
+  - **`scripts/gate.mjs`** exports `gateEnv` and `gateSteps` as tested. When run as a script (`node scripts/gate.mjs <name>`), it runs each step with `spawnSync('pnpm', step, …)` and exits with the first non-zero status. No `package.json` script and no workflow step sets a variable with a `VAR=value` prefix, and `cross-env` is not needed.
+  - **`e2e/support/launch-chrome.ts` (ruling R17):**
+    - `chromium.launchPersistentContext(profileDir, { channel: 'chrome', headless: true, viewport: null, args: ['--force-device-scale-factor=1.5', '--window-size=1366,768', '--enable-unsafe-extension-debugging', '--log-net-log=<netlogPath>'] })`;
+    - then `const cdp = await context.browser()!.newBrowserCDPSession(); const { id } = await cdp.send('Extensions.loadUnpacked', { path: TEST_BUILD_DIR })`, and it throws unless `id === EXTENSION_ID`. Branded Chrome 137+ ignores `--load-extension`; `Extensions.loadUnpacked` needs `--enable-unsafe-extension-debugging` and the pipe transport that Playwright uses by default;
+    - the job fails loudly if the extension does not load, and it never falls back to Chromium;
+    - the `perf-gate` project in `e2e/playwright.config.ts` uses this launcher when `process.env.SOP_BROWSER === 'chrome'`. Its first check asserts `devicePixelRatio === 1.5` and that `browser.version()` is a stable Chrome version.
+  - **`.github/workflows/perf-gate.yml`:** the reference laptop for speed budgets.
+    - It runs `on: { workflow_dispatch: {}, push: { tags: ['phase-*-gate'] } }`, as manual dispatch and at every phase gate.
+    - Its one job, `perf-gate`, runs on `windows-latest`, which ships stable Google Chrome. Steps, all SHA-pinned: `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1` # v7.0.1, `pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413` # v6.1.0, `actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1` # v7.1.0 (Node 22, `cache: pnpm`), `pnpm install --frozen-lockfile`, `actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9` # v6.1.0 on `test-assets/`, `pnpm gate:perf`, and `actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9` # v7.0.2 (`if: always()`, `playwright-report/`).
+    - Budgets, with 20% tolerance: first page ≤ 1200 ms on `paper-50.pdf`; worst `sop:blank:*` ≤ 180 ms on `scan-600.pdf`. Headless Linux runs (CI and local) are smoke only.
+
+- [ ] **Step 4: Write `docs/checklists/phase1-windows.md`**
 
   The user runs it on their PC with the Phase 1 build (Load unpacked, `apps/extension/.output/chrome-mv3`) and fills a "Result / notes" column for every item:
   - **W1 Double-click chain.** Settings → Apps → Default apps → `.pdf` → Google Chrome. Double-click `Downloads\paper-50.pdf` in File Explorer. Our viewer opens in the same tab; the address starts with `chrome-extension://<EXTENSION_ID>/viewer.html`.
@@ -2946,27 +3754,27 @@ git commit -m "feat(viewer): fillable-form PDFs reopen in Chrome's viewer via a 
   - **W3 Spaces and non-ASCII.** `Documents\Week 3 – Économie #2.PDF`, `Documents\Читання\论文.pdf` and `Documents\100% notes.pdf` all open. Save one, rename it and move it to another folder; reopening shows "Saved to library".
   - **W4 OneDrive placeholders.** Mark a PDF in OneDrive "Free up space" (cloud icon). A double-click downloads it and opens the viewer. Note the seconds it takes.
   - **W5 ZIP.** Open a PDF inside a `.zip` from Explorer (Windows extracts it to Temp). The viewer opens. Save it, then open another copy of the same file: "Saved to library".
-  - **W6 Backup-folder permission after restart (W-B1).** Use the Phase 0 spike build's `backup-folder` page: pick a folder, restart Chrome, reopen the page. Note `queryPermission` and whether the "Allow on every visit" prompt appears.
+  - **W6 Backup-folder permission after restart (W-B1).** Use the Phase 0 spike build's `spike.html?check=backup-folder` page and its "Pick backup folder" and "Check permission" buttons (Task 8): pick a folder, restart Chrome, reopen the page. Note `queryPermission` and whether the "Allow on every visit" prompt appears.
   - **W7 Writing into Google Drive for desktop (W-B2).** Pick `G:\My Drive\sickofpdfs-test`. `backup-probe.txt` appears on drive.google.com within 2 minutes.
   - **W8 OneDrive folder (W-B3).** The same as W7 for `OneDrive\sickofpdfs-test`.
-  - **W9 Speed at 150% scaling.** Help → About shows "First page drawn in N ms" for `paper-50.pdf`, which must be under 1200 (1 s + 20%). Scroll `scan-600.pdf` quickly with the wheel for 10 s: no blank page lasts noticeably long. The `sop:blank:*` maximum in DevTools → Performance must be under 180 ms.
+  - **W9 Speed feel at your own scaling.** Help → About shows "First page drawn in N ms" for `paper-50.pdf`. Scroll `scan-600.pdf` quickly with the wheel for 10 s, and note whether any page stays blank noticeably long. This is a feel check on your PC. The budget gate itself is the `perf-gate` job (Step 3).
   - **W10 Keys on your layout.** Ctrl+= and Ctrl++ zoom in, Ctrl+− zooms out, Ctrl+0 fits the width, and Ctrl+wheel and touchpad pinch zoom the page, never the browser. Ctrl+F finds. Ctrl+P prints. Ctrl+S downloads.
   - **W11 Moodle.** A Moodle page with an embedded PDF opens it in the full tab with "Back to page". Back returns to the page and does not bounce again.
   - **W12 Forms.** The HMRC SA100 from gov.uk opens in Chrome's viewer and is fillable.
   - **W13 Incognito.** Allow the extension in Incognito and open a PDF link there. The chip reads "Incognito: view only". In a normal window, the same link still shows "Not sure: Save?".
 
-- [ ] **Step 2: Write `docs/checklists/phase1-gate.md`**
+- [ ] **Step 5: Write `docs/checklists/phase1-gate.md`**
 
   The automated gates, all green on CI and locally:
   - `pnpm typecheck`;
-  - `pnpm lint` (including `sop/no-raw-design-values`);
-  - `pnpm test` and `pnpm test:browser`;
+  - `pnpm lint` (including `sop/no-raw-design-values` and the secrets import boundary);
+  - `pnpm test` (including `scripts/repo-hygiene.test.ts`) and `pnpm test:browser`;
   - `pnpm e2e`, with the network gate on every test;
   - the screenshot baselines unchanged, or approved;
   - the axe scan clean;
   - the CI-threshold perf smoke.
 
-  On the reference laptop (pinned Windows, stable Chrome, 150% scaling, 20% tolerance): `pnpm gate:phase1`. It must report first page ≤ 1200 ms and a worst blank ≤ 180 ms.
+  The speed budgets: run the `perf-gate` workflow, by manual dispatch or by pushing the tag `phase-1-gate`. That job is the reference laptop: windows-latest, stable Chrome, `--force-device-scale-factor=1.5`, 20% tolerance. It must report first page ≤ 1200 ms and a worst blank ≤ 180 ms. Record the run URL and the numbers in `phase1-gate.md`.
 
   Critics: four fresh critic agents (visual, experience, code and security, student) review the spec, the build and the screenshots. The gate needs zero critical and zero major findings. The visual critic compares the viewer with `docs/research/drive-refs/live-09…16` and `crop-34/35`.
 
@@ -2974,10 +3782,35 @@ git commit -m "feat(viewer): fillable-form PDFs reopen in Chrome's viewer via a 
 
   Not yet gated (they belong to later phases): the crash test (Phase 2), keyboard layouts UK/US/DE/PL (Phase 2), the filter sets (Phase 3).
 
-- [ ] **Step 3: Run the gate.** Run: `pnpm typecheck && pnpm lint && pnpm test && pnpm test:browser && pnpm e2e`. Expected: PASS. Then `pnpm gate:phase1` on the reference laptop; record the numbers in `phase1-gate.md`.
+- [ ] **Step 6: Run the gate.** Run: `pnpm vitest run scripts/repo-hygiene.test.ts && pnpm typecheck && pnpm lint && pnpm test && pnpm test:browser && pnpm e2e`. Expected: PASS. Then run `pnpm gate:phase1` (the same command works on Windows, Linux and macOS), and dispatch the `perf-gate` workflow. Record its numbers in `phase1-gate.md`.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 7: Commit**
 ```bash
-git add docs/checklists package.json
-git commit -m "docs: Phase 1 Windows checklist and gate list"
+git add docs/checklists package.json scripts/gate.mjs scripts/repo-hygiene.test.ts .github/workflows/perf-gate.yml e2e
+git commit -m "docs: Phase 1 Windows checklist, gate list and the perf-gate job"
 ```
+
+## Amendments
+
+Pre-flight rulings (`.superpowers/sdd/2026-10-31-release1-phase0-1/preflight-rulings.md`), applied 2026-10-31:
+
+- **R1:** the real `iou` helper and test (Task 5); the spike's `getPageTextRuns` (Task 5) and `PdfBackend.getTextRuns` (Task 15), with the same `TextRun` fields.
+- **R2:** NBER page 1 asserts the upper-case `HOUSEHOLD WEALTH` (Tasks 15, 22, 30). Link tests use attention page index 1 (30 links) and a generated `links.pdf` (Tasks 15, 24). `fontBaseUrl` comes from fonts copied into `apps/extension/public/pdf/` and resolved with `chrome.runtime.getURL` (`engineAssets`, Tasks 15, 20).
+- **R3:** `launchPersistentContext(…, { channel: 'chromium', headless: true, … })` with the `executablePath` fallback, never the headless shell, forwarding viewport and DPR (Conventions, Tasks 1, 12). Separate `.output/chrome-mv3` and `.output/chrome-mv3-test` builds, and the production smoke test proves the e2e folder is untouched (Task 12).
+- **R4:** print uses one CSS named page per distinct size (`printPageRules`, Task 27).
+- **R5:** the `buildTextItems(g, measure, scale)` order (Tasks 3, 22); one `selectCharRanges(viewerRoot, ranges)` (Tasks 22, 25); `TextField` `type: 'text' | 'search' | 'password'` (Tasks 14, 25); `OpenedDocument.referrer` (Tasks 20, 30); `PageList` takes the shared `scheduler` (Tasks 21, 24); struct-tree fields (Tasks 5, 15); `ENGINE_WORKERS` exported from `engine-config.ts` (Tasks 10, 15, 20, 21).
+- **R6:** every spike run builds first and runs its fixture script (`fixtures:scan|textlayer|objects|big`) (Tasks 2–8, 10).
+- **R7:** manifests are created before `pnpm install` (Task 11; the same fix in Task 9).
+- **R8:** Files lists completed: e2e helpers (Tasks 16, 21, 23, 26, 29, 30), server routes (Tasks 16, 17, 20, 29, 30), `build.mjs` and `tokens.css` (Tasks 22, 25), `App.tsx` (Tasks 25, 28), `sample-netlog.json` (Task 12), the spike's `tests/fixtures.ts` (Tasks 3, 5, 7) and the backup-folder page (Tasks 1, 8).
+- **R9:** `mockUrl` and `fixtureUrl` use the Task 12 fixture server through `vitest-global-setup.ts` (Task 20).
+- **R10:** `scripts/gate.mjs` sets the environment in Node; no POSIX prefixes remain; a hygiene test enforces this (Conventions, Tasks 21, 32).
+- **R11:** the default cache is `test-assets/`, and `SOP_FIXTURE_SRC` is an optional override only; manifest-URL fetches are temporary until Phase 3 (Conventions, Tasks 1, 11).
+- **R12:** exact pins for `@fontsource/*` (Task 3), pdfjs and v3 fallbacks (Tasks 1, 2), `@axe-core/playwright` (Task 11), `wxt` and `react-dom` (Tasks 12, 13), pypdf via `requirements.txt` (Task 15), and `@embedpdf/pdfium` at the root (Task 21); Actions pinned by SHA (Tasks 11, 12, 32); a hygiene test (Task 32).
+- **R13:** `forgetDocument` deletes the document's outbox rows; `secure_delete` and a truncating journal; a test that no row mentions the id; the Undo e2e test checks stats, blob and OPFS bytes (Global Constraints, Tasks 28, 30).
+- **R14:** the secrets store moved to `src/local-only/`; the device id lives in its own `store/device-id.ts`; an import-boundary test and an ESLint rule (Global Constraints, Tasks 28, 29).
+- **R15:** the dark menu item stays 36 px, with a note (Tasks 13, 14).
+- **R16:** `locationId` stays `${kind}:${canonical}`, with a note (Task 18).
+- **R17:** the `perf-gate` job (windows-latest, stable Chrome over CDP `Extensions.loadUnpacked`, 150%, 20%) on manual dispatch and phase-gate tags (Global Constraints, Task 32).
+- **R18:** concrete assertions replace every comment-only body; P0-6e asserts its values; the perf smoke fails on zero measures and waits for the named mark only; the IndexedDB probe uses a positive control (Tasks 5, 6, 13–17, 19–31); one `touchLocation` and `recordOpen` call site (Task 30); one print stub (Task 27).
+- **R19:** `__sopTest` is installed by the test-only `src/testing/test-hooks.ts`, injected into `--mode test` builds by a Vite plugin. Production code publishes to `viewer/runtime.ts`. Tests cover the boundary and the build (Conventions, Tasks 12, 29).
+- **R20:** `viewer-url.ts` moved to Task 12; the e2e CI job moved to Task 12; the shared `contracts.ts` and `save/types.ts` are created in Task 23 and imported by Tasks 24, 25, 30; the viewer's store wiring and `isIncognito` moved to Task 28.
