@@ -13,7 +13,7 @@ It ships in three releases, each finished and critic-tested before the next: **R
 **Release 1 is done when:**
 
 1. Clicking a PDF link, opening a PDF embedded in a page (such as Moodle), or double-clicking a local PDF opens it in our viewer in the same tab. PDFs loaded by a form post, and PDFs with fillable forms, stay in Chrome's viewer. A 50-page paper shows its first page in under 1 second on the reference laptop.
-2. Highlight, underline, bold, strikethrough and comment each take one keystroke or one click on a selection. A mark appears in under 50 ms and the note box in under 100 ms.
+2. Highlight, underline, bold, strikethrough and comment each take one keystroke, or a right-click and one click, on a selection. A mark appears in under 50 ms and the note box in under 100 ms.
 3. Reopening the same link, or the same file after it is moved, renamed or copied, shows the same notes. A note being typed on a saved PDF survives a crash. Re-downloads that differ only by a download stamp keep their notes.
 4. Learning PDFs are saved automatically. On the research test set and a separate held-out set, zero non-learning PDFs (receipts, statements, payslips, tax forms, tickets) are saved.
 5. Typing @Claude in a thread returns a streamed answer with clickable page citations, plus web sources when it searched. A typical question sends only the relevant passages, not the whole PDF.
@@ -47,7 +47,7 @@ Every request so far is mapped to one decision below. Anything not in this table
 | Orchestrated build with harsh critics | Build agents write the code. Independent critic agents and automated screenshot checks gate every phase (the gauntlet loop). |
 | Any PDF, not just arXiv; scanned PDFs too | Any PDF link or file. Scans open and take page and area notes from Release 1; text recognition (OCR) makes them selectable and searchable in Release 3. |
 | Build off Google's PDF reader | PDFium, Google's PDF engine, plus behaviour reused from Chromium's open-source viewer. |
-| Highlight, underline, bold, strikethrough and comments, all seamless | A Google-Docs-style toolbar on every selection, one shortcut per mark, no tool modes. |
+| Highlight, underline, bold, strikethrough and comments, all seamless | Right-click a selection for the mark-up menu, or use one shortcut per mark. Nothing pops up on its own, and there are no tool modes. |
 | Keep it simple first | Three releases, each finished and tested before the next. |
 
 ## How it feels to use
@@ -57,7 +57,7 @@ Nine everyday moments, start to finish. Each becomes an end-to-end test; the two
 1. **You click any PDF link.** It could be a journal article, a Moodle reading, lecture slides or a textbook chapter. The tab shows our viewer, not Chrome's. A chip in the top bar reads "Saved to library" (reasons on hover, such as "References section, DOI, 40 pages"). If you have read it before, it opens where you stopped.
 2. **You double-click a PDF in File Explorer.** Chrome opens it (it is your default PDF app) and the extension takes over. If that file was seen before, even in another folder or under another name, your notes appear.
 3. **You open a scanned PDF.** A photographed chapter or an old journal scan has no real text. From Release 1 you can add page and area notes on it. From Release 3, text recognition runs on your computer, visible pages first, so you can select, mark up and search it like any other PDF.
-4. **You mark up and comment.** Select text and a small toolbar appears beside it, as in Google Docs. Highlight (H), underline (Ctrl+U), bold (Ctrl+B), strikethrough (Alt+Shift+5) and comment (Ctrl+Alt+M) apply instantly, with no tool to pick first. For a comment, a note box opens in the right margin, level with the line. Type, then press Enter. Shift+Enter adds a new line, and Esc closes without losing text. With nothing selected, Ctrl+Alt+M makes a note where the pointer is, or for the page.
+4. **You mark up and comment.** Select text, then right-click for the mark-up menu, or use a shortcut directly: highlight (H), underline (Ctrl+U), bold (Ctrl+B), strikethrough (Alt+Shift+5) and comment (Ctrl+Alt+M) apply instantly, with no tool to pick first. For a comment, a note box opens in the right margin, level with the line. Type, then press Enter. Shift+Enter adds a new line, and Esc closes without losing text. With nothing selected, Ctrl+Alt+M makes a note where the pointer is, or for the page.
 5. **You ask Claude.** In a note or reply, type "@Claude why does this assumption matter?" Claude's answer streams into the thread with page links such as "p. 4" that jump to the passage.
 6. **You look something up next week.** Press Ctrl+K in any viewer or library tab and type "parallel trends". Results show readings, matching pages and your notes; Enter jumps to the exact passage.
 7. **You ask claude.ai (Release 2).** "What did I note about difference-in-differences this term?" The connector searches your library and Claude answers with sources. "Add a comment on page 3 summarising this" appears in the viewer as a comment from Claude.
@@ -136,13 +136,11 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 
 **Text layer.** We port pdf.js's text-layer code (Apache-2.0) and feed it PDFium's glyph boxes and reading order. It must handle two-column papers, rotated tables, ligatures, inline maths and right-to-left text. Phase 0 checks this with a selection test suite, including copy-paste matching Chrome's viewer. Selections map back to PDFium character ranges.
 
-**Keyboard selection.** Ctrl+F finds a phrase; Enter and Shift+Enter move between matches, and Alt+Enter selects the current one. Shift+arrow keys then extend it. With the mark shortcuts and the area tool, nothing needs the mouse.
-
-**Marks.** Select text and a small toolbar appears beside it, as in Google Docs: highlight (with colour), underline, bold, strikethrough, comment, Ask Claude, Search and copy. Search opens Google or Google Scholar for the selected words in a new tab; on a reference in a bibliography it finds that paper (Google Scholar, DOI or arXiv). Each applies instantly from the toolbar or its shortcut, with no tool to pick first.
+**Marks.** Select text, then right-click: a small menu opens at the pointer with highlight (with colour), underline, bold, strikethrough, comment, Ask Claude, Search and copy. Search opens Google or Google Scholar for the selected words in a new tab; on a reference in a bibliography it finds that paper (Google Scholar, DOI or arXiv). Nothing pops up on its own while you read. Each mark applies instantly from the menu or its shortcut, with no tool to pick first. The keyboard's menu key and Shift+F10 open the menu too, and Shift+right-click shows Chrome's usual menu.&#32;
 
 - One passage can carry several styles at once, such as highlight plus underline.
 - Applying a style that already covers the whole selection removes it from that selection, splitting the mark if needed. Comments are separate from styles, so removing or splitting a style never removes a comment.
-- Colours apply to highlight, underline and strikethrough: yellow = key point, blue = definition, green = evidence, pink = question, grey = to do. Keys 1 to 5 recolour; your last colour is remembered.
+- Colours apply to highlight, underline and strikethrough:&#32;
 - Bold draws the covered glyphs' own outlines (taken from PDFium) again in the overlay, filled and stroked slightly heavier. It works per character, stays crisp at any zoom and must fit the 50 ms budget, which Phase 0 measures. If it looks wrong, bold becomes a "strong" style (dark underline plus heavier highlight), and you are asked first.
 - **Area marks:** Alt+drag (links are ignored while Alt is held), or the area tool in the toolbar, draws a rectangle around a figure, an equation image or part of a scan; then comment on it.
 - Marks live in our database and draw as an SVG overlay; printing "with marks" draws the same overlay onto each page. They are written into a PDF only when you export.
@@ -203,6 +201,7 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 | Save to library | Ctrl+Alt+S | Reading |
 | Export notes as Markdown | Ctrl+Shift+E | Reading |
 | Shortcut sheet | ? | Reading |
+| Open the mark-up menu | Right-click, menu key or Shift+F10 | Text selected |
 
 Jumps inside a document (links, search results, next note) are kept in the page's history state and collapsed, so Back returns to where you were without needing many presses to leave.
 
@@ -342,7 +341,7 @@ Claude works in two places: inside comment threads while you read (Release 1), a
 
 **1. @Claude in comment threads**
 
-- Start a comment with @Claude, picked from autocomplete, or press Ask Claude in the selection toolbar, which does the same.
+- Start a comment with @Claude, picked from autocomplete, or choose Ask Claude from the right-click menu, which does the same.
 - **Claude reads only what it needs.** A question sends the marked passage and its paragraph, a short map of the document (title, abstract, headings) and the five passages local search ranks most relevant: usually 2,000 to 5,000 tokens, not the whole PDF. If that isn't enough, Claude can ask the viewer for specific pages or run another search inside the document, and only those pages are sent. "Ask about the whole document" (for summaries) sends everything, with a cost estimate first.
 - On an area mark or a page with no text, Claude gets the cropped page image instead.
 - **Claude can search the web** when a question needs outside knowledge, such as a definition, background or newer work. Answers cite web sources next to page citations. At most 3 searches per question, about 1 cent each; switch it off in Settings.
@@ -438,7 +437,7 @@ The library takes Google Drive's Material 3 look and feel, and the viewer takes 
 | Comment cards | Docs margin cards | 282 px wide, 12 px corners, 10 px apart; active card turns white, lifts, and shifts 12 px left |
 | Notes panel | Docs comments sidebar | 320 px wide, 16 px corners, All and Mine tabs, thread cards with reply box |
 
-Our additions (Comment, colour, Ask Claude, the library status chip) reuse Drive's own button and chip styles, such as the signed-in viewer's "Comment" text button. The library also follows Windows dark mode using Drive's dark tokens.
+Our additions (Comment, colour, Ask Claude, the library status chip) reuse Drive's own button, menu and chip styles (the right-click menu matches Drive's file menu), such as the signed-in viewer's "Comment" text button. The library also follows Windows dark mode using Drive's dark tokens.
 
 **Viewer specifics.** Comment cards on the viewer's dark canvas use Drive's dark-theme surface colours, and the active card turns light. At narrow widths, such as a laptop at 125 to 150% Windows scaling, the thumbnail rail collapses first, then cards fold into the notes panel. The signed-in library references come from official Google images, so they are a guide rather than a measurement.
 
