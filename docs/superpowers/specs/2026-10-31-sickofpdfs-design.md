@@ -145,9 +145,8 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 - **Area marks:** Alt+drag (links are ignored while Alt is held), or the area tool in the toolbar, draws a rectangle around a figure, an equation image or part of a scan; then comment on it.
 - Marks live in our database and draw as an SVG overlay; printing "with marks" draws the same overlay onto each page. They are written into a PDF only when you export.
 
-**What a note is made of:**
+**What a note is made of**
 
-- **Mark:** a style decoration with style, colour and anchor. A text anchor holds the page boxes it covers (one set per page, so it can span pages), the exact quote, 32 characters before and after, and its character position. An area anchor holds the page and rectangle.
 - **Comment thread:** has its own anchor in the same format, or sits on a point, a page or the whole document. Making a comment also adds a highlight, but the two are independent: if a commented passage loses every style, the thread shows a dotted underline. A thread holds comments, each with author (you or Claude), Markdown body, and created and edited times.
 - **Re-anchoring on open:** the stored position is used only if the quote still matches there; next comes the quote on the same page; then a fuzzy match across the document scoring at least 0.8 on a quote of at least 12 characters. Anything else goes to "Couldn't place", never onto doubtful text.
 - **One schema:** the implementation plan defines the single normative data schema. It replaces the research draft, which lacks bold, area marks and separate comment anchors.
@@ -155,12 +154,11 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 **The Ctrl+Alt+M flow:**
 
 1. With text selected, Ctrl+Alt+M creates a comment on the selection, shown with a highlight in under 50 ms, and opens a note box in the right margin, level with the selection, never covering it.
-2. Type plain text or light Markdown (Ctrl+B and Ctrl+I format the note), including maths written as `$x^2$`. On a saved PDF the draft saves locally every 300 ms, so a crash loses nothing; on a PDF judged not learning it stays in memory until you choose Save.
-3. Enter or Ctrl+Enter saves; Shift+Enter adds a new line. Esc or clicking away also saves typed text. An empty new note cancels its highlight; emptying an existing note keeps the highlight.
-4. No selection: a note at the pointer if it is over a page, otherwise on the most visible page. Ctrl+Alt+Shift+M opens the single "my takeaways" note for the document.
-5. A selection over an existing comment opens that thread (the most recent, if several overlap) instead of stacking a duplicate.
-6. Cards line up with their marks down the margin, like Google Docs. The active card moves left and its mark darkens.
-7. The same document open in two tabs stays in step; a draft belongs to the tab where it was started.
+2. Type plain text or light Markdown (Ctrl+B and Ctrl+I format the note). On a saved PDF the draft saves locally, so a crash loses nothing; on a PDF judged not learning it stays in memory until you choose Save.
+3. Shift+Enter adds a new line. Esc or clicking away also saves typed text. An empty new note cancels its highlight; emptying an existing note keeps the highlight.
+4. A selection over an existing comment opens that thread (the most recent, if several overlap) instead of stacking a duplicate.
+5. Cards line up with their marks down the margin, like Google Docs. The active card moves left and its mark darkens.
+6. The same document open in two tabs stays in step; a draft belongs to the tab where it was started.
 
 **Reading basics, at least as good as Chrome's viewer (Release 1):**
 
