@@ -1,4 +1,4 @@
-<!-- Canonical, commentable version: https://claude.ai/artifact/X5hCQYmpfh8QM5Zg4A9SEJ . This file is an export for build agents; keep it in sync with the doc. -->
+<!-- This repo file is NORMATIVE for build agents. Discussion and comments happen in the Claude Doc (https://claude.ai/artifact/X5hCQYmpfh8QM5Zg4A9SEJ); every doc change is exported here. -->
 
 # sickofpdfs — Design Spec v1
 
@@ -14,12 +14,12 @@ It ships in three releases, each finished and critic-tested before the next: **R
 
 1. Clicking a PDF link, opening a PDF embedded in a page (such as Moodle), or double-clicking a local PDF opens it in our viewer in the same tab. PDFs loaded by a form post, and PDFs with fillable forms, stay in Chrome's viewer. A 50-page paper shows its first page in under 1 second on the reference laptop.
 2. Highlight, underline, bold, strikethrough and comment each take one keystroke or one click on a selection. A mark appears in under 50 ms and the note box in under 100 ms.
-3. Reopening the same link, or the same file after it is moved, renamed or copied, shows the same notes. A note being typed survives a crash.
-4. Learning PDFs are saved automatically. On the research test set and a separate held-out set, zero receipts, invoices or statements are saved.
+3. Reopening the same link, or the same file after it is moved, renamed or copied, shows the same notes. A note being typed on a saved PDF survives a crash. Re-downloads that differ only by a download stamp keep their notes.
+4. Learning PDFs are saved automatically. On the research test set and a separate held-out set, zero non-learning PDFs (receipts, statements, payslips, tax forms, tickets) are saved.
 5. Typing @Claude in a thread returns a streamed answer with clickable page citations.
 6. Print, find, zoom, rotate, links, outline, thumbnails and password-protected PDFs work at least as well as in Chrome's viewer.
 7. The library and viewer clearly feel like Google Drive, as judged by the visual critic.
-8. A full backup (PDFs and notes) is written automatically to a folder you choose.
+8. A full backup (PDFs and notes) is written automatically to a folder you choose while it is connected, and restoring from it on a fresh install brings everything back.
 
 **Release 2 is done when** everything marked as synced restores after a reinstall (the library shows how many items are still unsynced), the web library works from any computer, and a comment Claude adds in claude.ai appears in the viewer.
 
@@ -59,12 +59,12 @@ Ten everyday moments, start to finish. Each becomes an end-to-end test; the two 
 1. **You click any PDF link.** It could be a journal article, a Moodle reading, lecture slides or a textbook chapter. The tab shows our viewer, not Chrome's. A chip in the top bar reads "Saved to library" (reasons on hover, such as "References section, DOI, 40 pages"). If you have read it before, it opens where you stopped.
 2. **You double-click a PDF in File Explorer.** Chrome opens it (it is your default PDF app) and the extension takes over. If that file was seen before, even in another folder or under another name, your notes appear.
 3. **You open a scanned PDF.** A photographed chapter or an old journal scan has no real text. From Release 1 you can add page and area notes on it. From Release 3, text recognition runs on your computer, visible pages first, so you can select, mark up and search it like any other PDF.
-4. **You mark up and comment.** Select text and a small toolbar appears beside it, as in Google Docs. Highlight (H), underline (Ctrl+U), bold (Ctrl+B), strikethrough (Alt+Shift+5) and comment (Ctrl+Alt+M) apply instantly, with no tool to pick first. For a comment, a note box opens in the right margin, level with the line. Type, then press Enter. Shift+Enter adds a new line, and Esc closes without losing text. With nothing selected, Ctrl+Alt+M makes a note for the page.
+4. **You mark up and comment.** Select text and a small toolbar appears beside it, as in Google Docs. Highlight (H), underline (Ctrl+U), bold (Ctrl+B), strikethrough (Alt+Shift+5) and comment (Ctrl+Alt+M) apply instantly, with no tool to pick first. For a comment, a note box opens in the right margin, level with the line. Type, then press Enter. Shift+Enter adds a new line, and Esc closes without losing text. With nothing selected, Ctrl+Alt+M makes a note where the pointer is, or for the page.
 5. **You ask Claude.** In a note or reply, type "@Claude why does this assumption matter?" Claude's answer streams into the thread with page links such as "p. 4" that jump to the passage.
 6. **You look something up next week.** Press Ctrl+K in any viewer or library tab and type "parallel trends". Results show readings, matching pages and your notes; Enter jumps to the exact passage.
 7. **You ask claude.ai (Release 2).** "What did I note about difference-in-differences this term?" The connector searches your library and Claude answers with sources. "Add a comment on page 3 summarising this" appears in the viewer as a comment from Claude.
-8. **You move, rename or re-download a file.** Same contents, same fingerprint, same notes. The library records the new location.
-9. **Your professor uploads a new version to the same link.** Your notes are copied onto the new version and re-attach by matching the quoted text; the old version keeps its notes. Any that cannot be placed are listed under "Couldn't place" with their quote, never deleted.
+8. **You move, rename or re-download a file.** Same contents, same fingerprint, same notes. Re-downloads that differ only by a download stamp, as JSTOR adds, are recognised by their text. The library records the new location.
+9. **Your professor uploads a new version to the same link.** Your notes carry over to the new version and re-attach by matching the quoted text; the old version keeps its own placement. Any that cannot be placed are listed under "Couldn't place" with their quote, never deleted.
 10. **You open a receipt.** It displays normally with the chip "Not saved: looks like a receipt". Nothing is stored, indexed or uploaded. If the filter is wrong, one click on the chip saves it.
 
 ## Architecture
@@ -95,7 +95,7 @@ The viewer is the hub: it reads PDFs, writes to the local store, and calls Claud
 | --- | --- | --- |
 | Takeover | Extension background (service worker) | Spots PDFs on web pages and local files and sends the tab to our viewer. Logic adapted from Mozilla's pdf.js extension. |
 | Viewer | Extension page, one per tab | Draws pages with PDFium, adds the invisible text layer, highlights, margin comment cards and @Claude. |
-| Library | Extension page | Google-Drive-style home: Home, Library, Recent, Starred, Courses, Notes, Trash, and search. |
+| Library | Extension page | Google-Drive-style home: Home, My library, Recent, Starred, Notes, Trash, Settings and search (Courses in Release 3). |
 | Local store | Hidden offscreen page plus a worker | The only owner of the local database (SQLite with full-text search); it also runs backups and sync, so they never need an open tab. Tabs write PDF files straight to private file storage and send database changes over a direct message channel. |
 | Learning filter | Inside the viewer, in memory | Decides "learning or not" before anything is written anywhere. |
 | Sync server | Cloudflare Worker | Release 2: login, sync API, PDF uploads, web library pages. |
@@ -117,7 +117,7 @@ docs/              this spec, research reports, reference screenshots
 
 | Area | Choice |
 | --- | --- |
-| Extension framework | WXT 0.21.5, Vite 8.3, React 19.3, TypeScript 6 for tooling (TypeScript 7 tried in Phase 0) |
+| Extension framework | WXT 0.21.5, Vite 8.3, React 19.3, TypeScript 6 for tooling (TypeScript 7 tried in Phase 0); needs Chrome 128 or newer |
 | PDF engine | EmbedPDF @embedpdf/\* 2.15.1 (PDFium compiled to WebAssembly), pinned, small patches. Version 3 if Phase 0 shows it is better. |
 | Takeover | Vendored from mozilla/pdf.js extensions/chromium |
 | Anchoring | Vendored Hypothesis match-quote plus approx-string-match |
@@ -139,30 +139,31 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 
 **Text layer.** We port pdf.js's text-layer code (Apache-2.0) and feed it PDFium's glyph boxes and reading order. It must handle two-column papers, rotated tables, ligatures, inline maths and right-to-left text. Phase 0 checks this with a selection test suite, including copy-paste matching Chrome's viewer. Selections map back to PDFium character ranges.
 
-**Keyboard selection.** Ctrl+F finds a phrase and Enter selects the match; Shift+arrow keys then extend it. With the mark shortcuts, nothing needs the mouse.
+**Keyboard selection.** Ctrl+F finds a phrase; Enter and Shift+Enter move between matches, and Alt+Enter selects the current one. Shift+arrow keys then extend it. With the mark shortcuts and the area tool, nothing needs the mouse.
 
 **Marks.** Select text and a small toolbar appears beside it, as in Google Docs: highlight (with colour), underline, bold, strikethrough, comment, Ask Claude and copy. Each applies instantly from the toolbar or its shortcut, with no tool to pick first.
 
 - One passage can carry several styles at once, such as highlight plus underline.
-- Applying a style that already covers the whole selection removes it from that selection, splitting the mark if needed.
+- Applying a style that already covers the whole selection removes it from that selection, splitting the mark if needed. Comments are separate from styles, so removing or splitting a style never removes a comment.
 - Colours apply to highlight, underline and strikethrough: yellow = key point, blue = definition, green = evidence, pink = question, grey = to do. Keys 1 to 5 recolour; your last colour is remembered.
-- Bold redraws the covered text heavier using PDFium's fill-and-stroke text mode, so it stays crisp at any zoom. If Phase 0 shows it looks wrong, bold becomes a "strong" style (dark underline plus heavier highlight), and you are asked first.
-- **Area marks:** Alt+drag a rectangle around a figure, an equation image or part of a scan, then comment on it.
-- Marks live in our database and draw as an SVG overlay. They are written into a PDF only when you export.
+- Bold draws the covered glyphs' own outlines (taken from PDFium) again in the overlay, filled and stroked slightly heavier. It works per character, stays crisp at any zoom and must fit the 50 ms budget, which Phase 0 measures. If it looks wrong, bold becomes a "strong" style (dark underline plus heavier highlight), and you are asked first.
+- **Area marks:** Alt+drag (links are ignored while Alt is held), or the area tool in the toolbar, draws a rectangle around a figure, an equation image or part of a scan; then comment on it.
+- Marks live in our database and draw as an SVG overlay; printing "with marks" draws the same overlay onto each page. They are written into a PDF only when you export.
 
 **What a note is made of:**
 
-- **Mark:** style, colour and anchor. A text anchor holds the page boxes it covers (one set per page, so it can span pages), the exact quote, 32 characters before and after, and its character position. An area anchor holds the page and rectangle.
-- **Thread:** belongs to one mark, a point on a page, a page, or the whole document. It holds comments, each with author (you or Claude), Markdown body, and created and edited times.
+- **Mark:** a style decoration with style, colour and anchor. A text anchor holds the page boxes it covers (one set per page, so it can span pages), the exact quote, 32 characters before and after, and its character position. An area anchor holds the page and rectangle.
+- **Comment thread:** has its own anchor in the same format, or sits on a point, a page or the whole document. Making a comment also adds a highlight, but the two are independent: if a commented passage loses every style, the thread shows a dotted underline. A thread holds comments, each with author (you or Claude), Markdown body, and created and edited times.
 - **Re-anchoring on open:** the stored position is used only if the quote still matches there; next comes the quote on the same page; then a fuzzy match across the document scoring at least 0.8 on a quote of at least 12 characters. Anything else goes to "Couldn't place", never onto doubtful text.
+- **One schema:** the implementation plan defines the single normative data schema. It replaces the research draft, which lacks bold, area marks, separate comment anchors and readings.
 
 **The Ctrl+Alt+M flow:**
 
-1. With text selected, Ctrl+Alt+M creates a highlight in under 50 ms and opens a note box in the right margin, level with the selection, never covering it.
+1. With text selected, Ctrl+Alt+M creates a comment on the selection, shown with a highlight in under 50 ms, and opens a note box in the right margin, level with the selection, never covering it.
 2. Type plain text or light Markdown (Ctrl+B and Ctrl+I format the note), including maths written as `$x^2$`. The draft saves locally every 300 ms, so a crash loses nothing.
 3. Enter or Ctrl+Enter saves; Shift+Enter adds a new line. Esc or clicking away also saves typed text. An empty new note cancels its highlight; emptying an existing note keeps the highlight.
 4. No selection: a note at the pointer if it is over a page, otherwise on the most visible page. Ctrl+Alt+Shift+M opens the single "my takeaways" note for the document.
-5. A selection over an existing mark opens that mark's thread instead of stacking a duplicate.
+5. A selection over an existing comment opens that thread (the most recent, if several overlap) instead of stacking a duplicate.
 6. Cards line up with their marks down the margin, like Google Docs. The active card moves left and its mark darkens.
 7. The same document open in two tabs stays in step; a draft belongs to the tab where it was started.
 
@@ -175,14 +176,15 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 | Find | Ctrl+F with match count, next and previous |
 | Navigate | Thumbnails, outline, go to page, links inside the PDF (contents, citations) and out to the web |
 | Rotate and views | Rotate 90°, two-page view, presentation mode for slides, dark (inverted) pages |
-| Password PDFs | Asks for the password; the library keeps the encrypted original and asks again next time |
-| Forms | PDFs with fillable fields open in Chrome's own viewer, which fills and saves them |
+| Password PDFs | Asks for the password; the library keeps the encrypted original and asks again next time; its page text is indexed like any saved PDF unless you switch that off for it |
+| Forms | PDFs with real fillable fields (text boxes, choices or checkboxes listed as form fields, or XFA) are classified first and saved if they are learning PDFs, then reopen in Chrome's own viewer to be filled. Link boxes that LaTeX adds to papers do not count. If the link can't be fetched again, our view stays, with a banner |
 | Escape hatch | File → "Open in Chrome's viewer", always available |
 | Save | Ctrl+S downloads the original; File → "Copy link" |
-| Large files | Up to 1 GB opens normally; larger files open in Chrome's viewer with a note |
+| Large files | Up to 1 GB opens normally; larger files (size read from the download header) open in Chrome's viewer with a note. Phase 0 confirms the limit |
 | Accessibility | WCAG 2.2 AA for the interface; the text layer is readable by screen readers |
+| Embedded PDFs | A PDF shown inside a page (such as Moodle) opens in the full tab, with a "Back to page" button |
 
-**Shortcuts.** Single-key and Ctrl+Alt shortcuts never fire while you are typing, because on some keyboards Ctrl+Alt is AltGr. Keys are matched by physical position, so Alt+Shift+5 works on any layout. All are rebindable in Settings, and Ctrl+U only acts when text is selected.
+**Shortcuts.** Single-key and Ctrl+Alt shortcuts never fire while you are typing, because on some keyboards Ctrl+Alt is AltGr. Letters and symbols are matched by the character they type, so shortcuts follow your keyboard layout; only the number row (Alt+Shift+5, 1 to 5) is matched by position. Ctrl+= and Ctrl++ both zoom in. All are rebindable in Settings, and Ctrl+U only acts when text is selected.
 
 | Action | Keys | When |
 | --- | --- | --- |
@@ -194,7 +196,7 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 | Next / previous note | Ctrl+Alt+N / Ctrl+Alt+P | Reading |
 | Move between marks | Tab / Shift+Tab | A mark is focused |
 | Recolour / delete | 1 to 5 / Delete | A mark is focused |
-| Undo / redo | Ctrl+Z / Ctrl+Y | Anywhere |
+| Undo / redo | Ctrl+Z / Ctrl+Y | Reading (the note box keeps its own undo) |
 | Go anywhere: library, notes, commands | Ctrl+K | Anywhere |
 | Find / go to page | Ctrl+F / Ctrl+G | Reading |
 | Zoom in / out / fit width | Ctrl+= / Ctrl+− / Ctrl+0 | Reading |
@@ -207,7 +209,7 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 
 Jumps inside a document (links, search results, next note) are kept in the page's history state and collapsed, so Back returns to where you were without needing many presses to leave.
 
-**Export and import.** Release 1: "Export notes" writes Markdown with quotes, page numbers and links back, and annotations already inside a PDF always display. Release 3: "Download with notes" writes standard PDF annotations (highlights, underlines, strikethroughs, bold marks with their own appearance, comments and reply threads) using PDFium's incremental save. Existing annotations then import as editable notes, de-duplicated by their PDF ids, so re-opening an exported copy never doubles notes. Your original file is never modified.
+**Export and import.** Release 1: "Export notes" writes Markdown with quotes, page numbers and links back, and annotations already inside a PDF always display. Release 3: "Download with notes" writes standard PDF annotations (highlights, underlines, strikethroughs, bold marks as square annotations with their own appearance, labelled Bold, comments and reply threads) using PDFium's incremental save. Existing annotations then import as editable notes, de-duplicated by their PDF ids, so re-opening an exported copy never doubles notes. Your original file is never modified.
 
 **Scanned PDFs.** Release 1: scans open normally and take page, point and area notes. Release 3: text recognition (OCR) runs in the hidden background page, so it keeps going after the tab closes, visible pages first, and only for saved PDFs. English comes first, with French and German packs. Results are stored per page with the engine name and version; marks on recognised text anchor to that text, and an engine upgrade re-runs recognition and re-anchors by quote.
 
@@ -219,10 +221,14 @@ A PDF is known by what it contains, not where it lives. Links and file paths are
 
 **Identity rules:**
 
-1. **A document is its fingerprint:** the SHA-256 of the file's bytes, computed while it streams in. The same bytes from any link or folder are the same document with the same notes. Every device derives the same id, so sync never creates duplicates.
-2. **Same link, new bytes = a new version of the same reading.** This covers a professor updating a file. Your notes are copied onto the new version and re-anchored; the old version keeps its own notes and still opens.
-3. **Different link and different bytes = a separate reading.** From Release 3, a new version is linked automatically only when the arXiv id in the link or file name matches, or the DOI in the PDF's own metadata matches. Weaker hints (the PDF's internal ID, similar first pages) only prompt: "Looks like a new version of X. Link notes?"
-4. **A reading** is a synced record that groups versions, so every device groups them the same way.
+1. **A document is its fingerprint:** the SHA-256 of the file's bytes, computed while it streams in. The same bytes from any link or folder are the same document with the same notes.
+2. **Same text, new bytes = still the same document.** Many sites stamp each download (JSTOR prints "This content downloaded from \<IP> on \<date>" on every page). If new bytes have the same page count and their page text matches a known document at 99.5% or more after stamp lines, IP addresses and dates are removed, the new fingerprint becomes an alias: same notes, nothing copied.
+3. **Same link, changed content = a new version of the same reading** (Release 1). A "link" is the canonical link: tracking and token parameters removed, http made https, library-proxy hosts mapped back, and Moodle's revision number removed, with the Moodle page that led to the file recorded too. Local file paths never count as links; a known path with new content asks instead.
+4. **Notes belong to the reading, not to one file.** Each note keeps one anchor per version, so nothing is duplicated. The library opens the newest version first, with a version picker.
+5. **Different link and different content = a separate reading.** From Release 3, a new version is linked automatically only when the arXiv id in the link or file name matches, or the DOI in the PDF's own metadata matches. Weaker hints (the PDF's internal ID, similar first pages) only prompt: "Looks like a new version of X. Link notes?"
+6. **Ids never duplicate across devices.** A reading's id is the fingerprint of its first version (if two devices disagree, the smaller id wins and the other becomes an alias), and a location's id is a hash of its canonical link. Notes get a random id once, when created.
+
+The exact canonical-link function, the stamp-stripping rules and their test cases are written in the implementation plan.
 
 Each document keeps its locations (links and file paths, first and last seen). Learning PDFs are also copied into the library, so a dead link or deleted file still opens.
 
@@ -240,10 +246,10 @@ Each document keeps its locations (links and file paths, first and last seen). L
 | Starred | Readings you starred | 1 |
 | Notes | Every note and thread across all readings, newest first, searchable | 1 |
 | Trash | Removed readings and notes, kept 30 days | 1 |
-| Settings | Shortcuts, filter rules, Claude key and model, backup folder, cloud | 1 |
+| Settings | Shortcuts, filter rules, Claude key and model, backup folder and restore, and cloud (Release 2) | 1 |
 | Courses | Groups by course code found in the link, folder or first page (such as EC1A1); rename or merge freely | 3 |
 
-The "+ New" button offers Upload PDF, Open file and Paste link. In an Incognito window the extension only views PDFs and never saves anything.
+The "+ New" button offers Upload PDF, Open file and Paste link. In an Incognito window the extension only views PDFs: no marks, notes or saving.
 
 ## Learning filter and privacy
 
@@ -251,18 +257,21 @@ The filter runs on your computer, in memory, before anything is stored. It glanc
 
 **Steps (stop at the first that decides):**
 
-1. **Your rules:** a per-file choice, then deny lists, then allow lists for sites and folders (for example, always save from moodle.lse.ac.uk).
-2. **Hard block:** a card number (16 digits, valid checksum, known card prefix), or two or more of IBAN, sort code with account number, National Insurance number, passport line or boarding-pass code. This blocks saving unless the academic evidence is overwhelming (a score of 8 or more, such as a paper quoting an example IBAN).
-3. **Force save:** an arXiv id plus a References section, or a DOI plus an Abstract plus References.
-4. **Score** from cheap signals in under 150 ms: the link, file name, PDF metadata, page count and shape, and text from the first and last 5 pages. 3 or more saves; 0 or less does not; anything between is "not sure".
-5. **Not sure:** a small bundled model (MiniLM, about 20 ms) nudges the score. If still unsure, the chip asks you.
-6. **Scans with no text:** saved automatically only from scholarly sites or course pages; otherwise the chip asks. They are never OCR'd to decide.
+1. **Score** from cheap signals in under 150 ms: the link, file name, PDF metadata, page count and shape, and text from the first and last 5 pages. The score starts at −1, so an unknown PDF needs evidence.
+2. **Rules, in this order; the first that applies decides:**
+   1. Your choice for this exact file.
+   2. Hard block: a card number (16 digits, valid checksum, known card prefix), or any two of IBAN, sort code with account number, National Insurance number, US Social Security number, UK tax reference (UTR), passport line or boarding-pass code. Only positive evidence of 8 or more on its own overrides it, such as a paper quoting an example IBAN.
+   3. Your deny and allow lists for sites and folders.
+   4. Force save: an arXiv id plus a References section, or a DOI plus an Abstract plus References.
+   5. The score: 3 or more saves; 0 or less does not; anything between is "not sure".
+3. **Not sure:** a small bundled model (MiniLM, about 20 ms) nudges the score. If still unsure, the chip asks you.
+4. **Scans with no text** are never saved automatically. From scholarly sites or course pages the chip asks; otherwise they are not saved. They are never OCR'd to decide.
 
-The score starts at −1, so an unknown PDF needs evidence. Rules and weights are ported exactly from the research prototype, whose expected outputs become the test; it scored 43 of 44 with zero false saves.
+One reference implementation in TypeScript, with its test cases, defines these rules and weights. It replaces the research prototype, which scored 43 of 44 with zero false saves but had no hard block, force save or MiniLM. Expected results are regenerated from PDFium's text, and any decision that differs from the prototype's is reviewed by hand.
 
 | Signal | Weight |
 | --- | --- |
-| arXiv id in text or file name | +4 (file name +3) |
+| arXiv id in text or file name | +4 in text, +3 in file name (they add up) |
 | Scholarly site (arXiv, JSTOR, SSRN, NBER, Springer, ScienceDirect, OpenStax, about 40 more) | +3 |
 | References or Bibliography heading | +2.5 |
 | Long document: 100+ / 30+ / 8+ pages; 2 or fewer pages | +2.5 / +2 / +1; −1 |
@@ -287,22 +296,23 @@ The score starts at −1, so an unknown PDF needs evidence. Rules and weights ar
 | Library data, notes and PDFs | Your Cloudflare | From Release 2, only for saved learning PDFs |
 | A DOI or arXiv id | arXiv or Crossref | Only for saved PDFs, and only the id |
 | Anything else | Nobody | No code, fonts or models are downloaded; a build test fails on any other request |
+| Saved PDFs and their notes | Your backup folder, and wherever it syncs (such as Google Drive) | From Release 1; never keys, sign-in tokens or unsaved PDFs |
 
 **Local traces.** A PDF that isn't saved leaves no history row, thumbnail, search entry or log line. Two exceptions: choosing "Never save this file" keeps a salted fingerprint on this computer only, and Chrome's own history lists the viewer address as it does for any page. Incognito avoids both, and there the extension never saves.
 
 **Notes on a PDF that isn't saved:**
 
 - Your first mark or note on a "not sure" PDF saves it to the library, with an Undo chip.
-- Marks on a PDF judged not learning go to a local pending area: kept 7 days, never indexed or synced, and you are offered Save.
+- Your first mark on a PDF judged not learning asks: "Save this PDF to keep your notes?" Yes saves it. No keeps the notes in memory only, until the tab closes, and nothing is stored.
 
 **When the filter is wrong:**
 
 - The chip in the top bar always shows the decision; click it, or press Ctrl+Alt+S, to save. Saving back-fills the history.
 - "Not sure" PDFs show a quiet banner after 20 seconds: Save, Not now, Never for this file, or Always for this site.
 - "Forget this PDF" removes it completely, including from your cloud, with an option to never save it again.
-- Settings has the allow and deny lists, pre-filled with suggestions such as moodle.lse.ac.uk.
+- Settings has the allow and deny lists, with suggestions such as moodle.lse.ac.uk that you switch on yourself.
 
-**Tests.** The research set and a separate held-out set run on every build, and any receipt, invoice or statement saved fails it. Test PDFs are pinned by checksum in a test-assets release, and only openly licensed files are published. A PDF you report as misjudged joins a private test set that stays on your computer.
+**Tests.** Two sets run on every build: the openly licensed research fixtures, committed with a licence list, and a held-out set of at least 20 more public PDFs gathered by an agent that never sees the weights. Saving any non-learning PDF fails the build; the remaining research fixtures run locally where their licences allow. A PDF you report as misjudged is remembered only as your label and a salted fingerprint, never the file.
 
 ## Storage, sync and backup
 
@@ -315,11 +325,11 @@ Everything is written locally first, so reading and noting work offline. Release
 - **Tabs in step:** a broadcast channel tells every open tab when something changes.
 - **Safety:** unlimited storage, and a fixed extension key we generate ourselves (no Web Store account needed), so the extension's identity and data survive updates and folder moves.
 
-**Backups (Release 1).** Every night, and after each session with new notes, a backup goes to a folder you pick, such as one inside Google Drive for desktop or OneDrive: PDFs, notes as Markdown, and the data as JSON. If Chrome needs you to reconnect the folder, the extension icon shows a badge. "Export library" saves the same as a zip at any time.
+**Backups (Release 1).** Every night, and after each session with new notes, a backup goes to a folder you pick, such as one inside Google Drive for desktop or OneDrive: saved PDFs, notes as Markdown, and the library data as JSON. It never includes your API key, sign-in tokens, the never-save list or anything from unsaved PDFs; secrets live in a separate store that backups, export and sync cannot read, and a test checks every backup for the key. Chrome may ask you to re-allow the folder after a restart; Phase 0 tests this, and the extension icon shows a badge whenever a backup is waiting for your click. "Restore from backup" in Settings rebuilds the library on a fresh install, merging by fingerprint and id. "Export library" saves the same as a zip at any time.
 
 **Sync rules (Release 2):**
 
-- Documents are keyed by fingerprint; other records have random ids.
+- Documents are keyed by fingerprint, readings by the fingerprint of their first version, and locations by their canonical link, so two devices never create duplicates. Notes get a random id once and are never copied.
 - Every change carries the revision it was based on and a hybrid clock, not the computer's wall clock, which can be wrong. If two devices changed the same record, the later change wins, and the other version of a note's text is added to its thread as a reply marked "edited on another device".
 - An edit beats a delete: if one device deletes a note that another edited, the note comes back.
 - Sync and uploads run in the hidden background page, so they never need an open tab. Each PDF uploads once per fingerprint, in 32 MB parts.
@@ -335,7 +345,7 @@ Claude works in two places: inside comment threads while you read (Release 1), a
 **1. @Claude in comment threads**
 
 - Start a comment with @Claude, picked from autocomplete, or press Ask Claude in the selection toolbar, which does the same.
-- Claude receives the thread, the marked quote and the document text. Documents up to about 100,000 tokens (roughly 150 pages) go in whole; for longer ones, Claude gets the pages around the passage plus the most relevant pages found by local search, up to about 40,000 tokens.
+- Claude receives the thread, the marked quote and the document text. Documents up to about 100,000 tokens (roughly 150 pages) go in whole; for longer ones, Claude gets the pages around the passage plus the most relevant pages found by local search, up to about 40,000 tokens. On an area mark or a page with no text, Claude gets the cropped page image instead. For a long PDF that isn't saved, a temporary in-memory search picks the pages.
 - The answer streams into the thread as a comment from Claude, with page citations such as "p. 4" that jump to the passage.
 - On a PDF that isn't in your library, Claude asks before any text is sent.
 - Cost on the default model, Claude Opus 5.5: a 30-page paper costs about $0.16 for the first question (the text is cached for an hour), then about 2 to 4 cents per follow-up, including Claude's thinking. An estimate appears before any request over $0.25. Settings can switch to Sonnet 5.5 or Haiku 5.5 to spend less.
@@ -372,13 +382,13 @@ Release 2. One Cloudflare Worker on your free account serves the sync API, the C
 | Login | GitHub sign-in, locked to your GitHub account's numeric id; any other account is refused |
 | Connector | MCP over Streamable HTTP (`agents` 0.32 `createMcpHandler`, `@modelcontextprotocol/server` 2.4) with OAuth from `@cloudflare/workers-oauth-provider` 1.2.4, using Claude's published client identity |
 | Extension sign-in | The same GitHub login in a Chrome pop-up; the token stays in the extension's private database |
-| Deploys | Build agents deploy only to a separate staging Worker with its own databases. Your production Worker updates only from tagged releases, after a database snapshot. |
+| Deploys | Build agents deploy only to a separate staging Worker with its own small databases and its own GitHub OAuth app. Your production Worker updates only from tagged releases, after a restore point is recorded. Cloudflare's free limits are shared across the account, so staging has a hard budget of 10,000 database writes a day and production's meter assumes 75,000. |
 
-**Web library.** It signs in with the same GitHub login and holds a secure session cookie, with cross-site request checks on every change. It is online-only and shows "Saving…" or "Offline, not saved". PDFs uploaded there run the same filter and text extraction in your browser, and large PDFs load from R2 in ranges.
+**Web library.** It signs in with the same GitHub login and holds a secure session cookie, with cross-site request checks on every change. It is online-only and shows "Saving…" or "Offline, not saved". PDFs uploaded there run the same filter and text extraction in your browser, and large PDFs download from R2 with a progress bar.
 
 **What goes to the cloud:** only PDFs marked learning. The server checks the extension's label as a safeguard, not a guarantee. Links are cleaned of tokens and local paths are reduced to file names. PDF upload is on by default, with a global switch and a per-document "keep local" option; without R2 turned on, notes and text still sync.
 
-**Cloud backup:** a nightly snapshot of the database goes to R2 and is kept 30 days. Your local backup folder from Release 1 keeps running as an independent second copy.
+**Cloud backup:** a nightly GitHub Actions job pages through an authenticated export endpoint, skips the search tables (they can be rebuilt), and writes JSON to R2, kept 30 days. Before every production database change, a D1 Time Travel restore point is recorded (kept 7 days on the free plan). Your local backup folder keeps running as an independent second copy.
 
 **Cost for about 2,000 PDFs (about 10 GB):** free, with three tight spots.
 
@@ -386,7 +396,7 @@ Release 2. One Cloudflare Worker on your free account serves the sync API, the C
 | --- | --- | --- |
 | R2 storage 10 GB | Roughly the size of the library | $0.015 per GB per month (15 GB is about $0.08) |
 | D1 100,000 rows written per day | The first full-text indexing of a big library takes 5 to 8 days | Indexing slows; notes still sync first |
-| Worker 10 ms CPU per request | Connector calls estimated at 2 to 3 ms, to be checked on Cloudflare | Workers Paid ($5 a month) lifts all three limits |
+| Worker 10 ms CPU per request | Connector calls estimated at 2 to 3 ms, to be checked on Cloudflare | Workers Paid ($5 a month) lifts the D1 and CPU limits; R2 storage is billed separately |
 
 Turning on R2 needs a one-time checkout in the Cloudflare dashboard, which may ask for a card even though usage stays free.
 
@@ -442,7 +452,7 @@ Our additions (Comment, colour, Ask Claude, the library status chip) reuse Drive
 No piece of work counts as done until it survives the gauntlet. Builders never grade their own work.
 
 1. **Build.** A build agent writes the tests first, then the code, on its own branch.
-2. **Automated gates**, all green: type check, lint (including the design-token rule), unit tests, end-to-end tests in Chromium with the extension loaded, the 44-PDF filter test, speed smoke tests, screenshot checks that catch unintended visual changes, a network test (during the filter run nothing may leave except the PDF itself), and a crash test (kill the tab mid-note; the note must survive).
+2. **Automated gates**, all green: type check, lint (including the design-token rule), unit tests, end-to-end tests in Chromium with the extension loaded, the 44-PDF filter test, speed smoke tests, screenshot checks that catch unintended visual changes, a network test (during every end-to-end run nothing may leave except the PDF itself and allowed calls), and a crash test (kill the tab mid-note; the note must survive).
 3. **Critics.** Four critic agents start fresh. They get the spec, the running build and screenshots, but never the builder's reasoning. Every defect must come with evidence and a rating: critical, major or minor.
 4. **Fix and repeat.** The builder fixes; every gate and critic runs again.
 5. **Pass** = zero critical, zero major, all automated gates green. After three failed rounds the task is re-planned (split smaller or approached differently), not forced through.
@@ -464,7 +474,9 @@ A fix moves up a tier only after passing the one below.
 
 **At the end of each phase** you get a short demo (screenshots and a screen recording) and the list of what passed.
 
-**Checked by hand:** double-clicking a PDF in File Explorer and keyboard layouts (UK, US, German) on your PC after Phase 1; the claude.ai connector screens in Release 2; Foxit and Acrobat display in Release 3. Speed budgets are measured on a fixed reference laptop at each gate. Build agents never touch your production cloud; they deploy to staging only.
+**Checked by hand:** double-clicking a PDF in File Explorer on your PC after Phase 1; keyboard layouts (UK, US, German, Polish) after Phase 2 and again at Phase 4; the claude.ai connector screens in Release 2; Foxit and Acrobat display in Release 3.
+
+**Gates per phase.** Each phase has its own gate list in the implementation plan, because some tests (such as the filter test) only exist from a later phase. Speed budgets are measured on the reference laptop: a pinned Windows test machine running stable Chrome at 150% scaling, with 20% tolerance. @Claude is tested against recorded replies in CI and against the real API once per phase gate. Build agents never touch your production cloud; they deploy to staging only.
 
 ## Build phases
 
@@ -474,8 +486,8 @@ Three releases and nine phases, each closed by a gauntlet gate and a short demo 
 flowchart TB
   subgraph R1[Release 1 · Reader, marks, comments, library, @Claude]
     p0["Phase 0 · Engine proof<br/>PDFium in an extension: speed, selection, bold, big files"] --> g0{"Engine passes<br/>otherwise switch to pdf.js"}
-    g0 --> p1["Phase 1 · Foundations<br/>Takeover with embeds, reading basics, local store, identity"] --> g1{"You try it on Windows<br/>checklist incl. keyboard layouts"}
-    g1 --> p2["Phase 2 · Marks and comments<br/>Toolbar, all marks, area notes, threads, re-anchoring"] --> g2{"No lost text<br/>marks under 50 ms, crash test passes"}
+    g0 --> p1["Phase 1 · Foundations<br/>Takeover with embeds, reading basics, local store, identity"] --> g1{"You try it on Windows<br/>double-click checklist on your PC"}
+    g1 --> p2["Phase 2 · Marks and comments<br/>Toolbar, all marks, area notes, threads, re-anchoring"] --> g2{"No lost text<br/>crash test, your keyboard layouts"}
     g2 --> p3["Phase 3 · Library and filter<br/>Filter, history, Drive-style library, search, backups"] --> g3{"Zero false saves<br/>Drive look signed off by critic"}
     g3 --> p4["Phase 4 · @Claude and Release 1<br/>Claude in threads, polish, setup guide, release on GitHub"] --> g4{"Release 1 criteria met<br/>you sign off"}
   end
@@ -491,9 +503,9 @@ flowchart TB
   g6 --> p7
 ```
 
-**Phase 0 checks the riskiest unknowns before anything is built on them:** PDFium inside a Chrome extension (workers, bundled files), scrolling a 600-page scan within budget, the selection test suite for the text layer, how bold renders, moving 300 MB files between tabs and the background page, and TypeScript 7 tooling. Release 2 opens with its own short test of the claude.ai sign-in and D1's write counting; Release 3 opens with the text-recognition bake-off and a Foxit/Acrobat round-trip.
+**Phase 0 checks the riskiest unknowns before anything is built on them:** PDFium inside a Chrome extension (workers, bundled files), scrolling a 600-page scan within budget, the selection test suite, bold's glyph-outline overlay and its speed, moving 300 MB files between tabs and the background page, the 1 GB file limit, form-field detection on LaTeX papers, whether Chrome keeps backup-folder permission across restarts, and TypeScript 7 tooling. Release 2 opens with its own short test of the claude.ai sign-in and D1's write counting; Release 3 opens with the text-recognition bake-off and a Foxit/Acrobat round-trip.
 
-**Every feature has a home:** the local store and fingerprint identity are in Phase 1, because comments depend on them. Find, outline, thumbnails, print and password PDFs are also Phase 1. Settings, Markdown export and the backup folder are in Phase 3.
+**Every feature has a home:** the implementation plan holds a full feature-to-phase table. The local store, fingerprint identity and the save decision come in Phase 1, because comments depend on them; a stand-in filter treats every PDF as "not sure" until then, so the first mark saves. Find, outline, thumbnails, print and password PDFs are also Phase 1. The real filter replaces the stand-in in Phase 3, alongside Settings, Markdown export, the backup folder and restore.
 
 ## Risks
 
@@ -519,7 +531,7 @@ The riskiest unknowns are tested first, in Phase 0, before anything is built on 
 
 ## One-time setup for you
 
-Release 1 needs about 10 minutes and no new accounts. Release 2 adds about 40 minutes of account setup, with no developer tools on your PC. A step-by-step guide with screenshots ships in the repo as SETUP.md.
+Release 1 needs about 10 minutes and no new accounts, apart from an Anthropic API key if you want @Claude. Release 2 adds about 40 minutes of account setup, with no developer tools on your PC. A step-by-step guide with screenshots ships in the repo as SETUP.md.
 
 **Release 1 (10 minutes)**
 
@@ -532,10 +544,10 @@ Release 1 needs about 10 minutes and no new accounts. Release 2 adds about 40 mi
 
 **Release 2 (about 40 minutes)**
 
-- [ ] Cloudflare: you chose the account already connected to this session. Pick its workers.dev subdomain and turn on R2. Nothing is created there without your OK.
+- [ ] Cloudflare: use your existing Cloudflare account (or a new free one). Pick its workers.dev subdomain and turn on R2. Nothing is created there without your OK.
 - [ ] Create a Cloudflare API token with the bootstrap permissions listed in SETUP.md, and copy your Account ID.
-- [ ] GitHub: create an OAuth App with the callback address from SETUP.md.
-- [ ] In rexheng/sickofpdfs → Settings → Secrets → Actions, add CLOUDFLARE\_API\_TOKEN, CLOUDFLARE\_ACCOUNT\_ID, GITHUB\_CLIENT\_ID, GITHUB\_CLIENT\_SECRET, ALLOWED\_GITHUB\_ID and SESSION\_SECRET.
+- [ ] GitHub: create two OAuth Apps, one for production and one for staging, with the callback addresses from SETUP.md.
+- [ ] In rexheng/sickofpdfs → Settings → Secrets → Actions, add CLOUDFLARE\_API\_TOKEN, CLOUDFLARE\_ACCOUNT\_ID, ALLOWED\_GITHUB\_ID and SESSION\_SECRET, plus a client id and secret for each of the two OAuth Apps (SETUP.md gives the exact names).
 - [ ] Run the "Bootstrap cloud" workflow once from the Actions tab. It creates the databases, bucket and Workers. Then swap the token for the narrower deploy token SETUP.md describes.
 - [ ] Extension → Settings → Cloud → Connect, and sign in with GitHub.
 - [ ] In claude.ai: Settings → Connectors → Add custom connector. Name it "My readings", use the address ending in /mcp, choose "Use Claude's published identity", and sign in with GitHub.
