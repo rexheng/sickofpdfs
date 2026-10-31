@@ -454,6 +454,14 @@ No piece of work counts as done until it survives the gauntlet. Builders never g
 | Code and security | Correctness, data-loss paths, the privacy rule, API key handling, Chrome's no-remote-code rule, licences | File and line for each finding |
 | Student | "Would I switch from Foxit and Chrome's viewer?" using real readings end to end | Ranked list of frictions |
 
+**Cheap first, expensive last.** Checks run in three tiers so most problems are caught quickly and cheaply:
+
+1. **Automated tests on every change:** Vitest and Playwright, free and done in seconds.
+2. **A quick critic on every fix:** a small, fast model (Claude Haiku, or a Groq-hosted model) reviews the diff and screenshots against the spec.
+3. **The four full critics only at phase gates,** on the strongest model.
+
+A fix moves up a tier only after passing the one below.
+
 **At the end of each phase** you get a short demo (screenshots and a screen recording) and the list of what passed.
 
 **Checked by hand:** double-clicking a PDF in File Explorer and keyboard layouts (UK, US, German) on your PC after Phase 1; the claude.ai connector screens in Release 2; Foxit and Acrobat display in Release 3. Speed budgets are measured on a fixed reference laptop at each gate. Build agents never touch your production cloud; they deploy to staging only.
