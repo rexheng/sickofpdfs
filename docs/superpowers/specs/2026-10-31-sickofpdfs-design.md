@@ -16,7 +16,7 @@ It ships in three releases, each finished and critic-tested before the next: **R
 2. Highlight, underline, bold, strikethrough and comment each take one keystroke or one click on a selection. A mark appears in under 50 ms and the note box in under 100 ms.
 3. Reopening the same link, or the same file after it is moved, renamed or copied, shows the same notes. A note being typed on a saved PDF survives a crash. Re-downloads that differ only by a download stamp keep their notes.
 4. Learning PDFs are saved automatically. On the research test set and a separate held-out set, zero non-learning PDFs (receipts, statements, payslips, tax forms, tickets) are saved.
-5. Typing @Claude in a thread returns a streamed answer with clickable page citations.
+5. Typing @Claude in a thread returns a streamed answer with clickable page citations, plus web sources when it searched. A typical question sends only the relevant passages, not the whole PDF.
 6. Print, find, zoom, rotate, links, outline, thumbnails and password-protected PDFs work at least as well as in Chrome's viewer.
 7. The library and viewer clearly feel like Google Drive, as judged by the visual critic.
 8. A full backup (PDFs and notes) is written automatically to a folder you choose while it is connected, and restoring from it on a fresh install brings everything back.
@@ -138,7 +138,7 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 
 **Keyboard selection.** Ctrl+F finds a phrase; Enter and Shift+Enter move between matches, and Alt+Enter selects the current one. Shift+arrow keys then extend it. With the mark shortcuts and the area tool, nothing needs the mouse.
 
-**Marks.** Select text and a small toolbar appears beside it, as in Google Docs: highlight (with colour), underline, bold, strikethrough, comment, Ask Claude and copy. Each applies instantly from the toolbar or its shortcut, with no tool to pick first.
+**Marks.** Select text and a small toolbar appears beside it, as in Google Docs: highlight (with colour), underline, bold, strikethrough, comment, Ask Claude, Search and copy. Search opens Google or Google Scholar for the selected words in a new tab; on a reference in a bibliography it finds that paper (Google Scholar, DOI or arXiv). Each applies instantly from the toolbar or its shortcut, with no tool to pick first.
 
 - One passage can carry several styles at once, such as highlight plus underline.
 - Applying a style that already covers the whole selection removes it from that selection, splitting the mark if needed. Comments are separate from styles, so removing or splitting a style never removes a comment.
@@ -288,7 +288,9 @@ One reference implementation in TypeScript, with its test cases, defines these r
 | Data | Goes to | When |
 | --- | --- | --- |
 | The PDF request itself | The site it came from | Every time you open a PDF, exactly as in Chrome |
-| Document text | Anthropic | Only when you ask Claude; on a PDF not in your library, only after you confirm |
+| Passages you ask Claude about (the whole text only if you ask) | Anthropic | Only when you ask Claude; on a PDF not in your library, only after you confirm |
+| Words you select and press Search on | Google or Google Scholar, in a new tab | Only when you press Search |
+| Claude's web search queries | Anthropic's web search | Only while answering an @Claude question that needs the web; can be switched off |
 | Library data, notes and PDFs | Your Cloudflare | From Release 2, only for saved learning PDFs |
 | A DOI or arXiv id | arXiv or Crossref | Only for saved PDFs, and only the id |
 | Anything else | Nobody | No code, fonts or models are downloaded; a build test fails on any other request |
@@ -341,10 +343,13 @@ Claude works in two places: inside comment threads while you read (Release 1), a
 **1. @Claude in comment threads**
 
 - Start a comment with @Claude, picked from autocomplete, or press Ask Claude in the selection toolbar, which does the same.
-- Claude receives the thread, the marked quote and the document text. Documents up to about 100,000 tokens (roughly 150 pages) go in whole; for longer ones, Claude gets the pages around the passage plus the most relevant pages found by local search, up to about 40,000 tokens. On an area mark or a page with no text, Claude gets the cropped page image instead. For a long PDF that isn't saved, a temporary in-memory search picks the pages.
+- **Claude reads only what it needs.** A question sends the marked passage and its paragraph, a short map of the document (title, abstract, headings) and the five passages local search ranks most relevant: usually 2,000 to 5,000 tokens, not the whole PDF. If that isn't enough, Claude can ask the viewer for specific pages or run another search inside the document, and only those pages are sent. "Ask about the whole document" (for summaries) sends everything, with a cost estimate first.
+- On an area mark or a page with no text, Claude gets the cropped page image instead.
+- **Claude can search the web** when a question needs outside knowledge, such as a definition, background or newer work. Answers cite web sources next to page citations. At most 3 searches per question, about 1 cent each; switch it off in Settings.
 - The answer streams into the thread as a comment from Claude, with page citations such as "p. 4" that jump to the passage.
 - On a PDF that isn't in your library, Claude asks before any text is sent.
-- Cost on the default model, Claude Opus 5.5: a 30-page paper costs about $0.16 for the first question (the text is cached for an hour), then about 2 to 4 cents per follow-up, including Claude's thinking. An estimate appears before any request over $0.25. Settings can switch to Sonnet 5.5 or Haiku 5.5 to spend less.
+- **Model and cost.** You choose the default model at setup. Recommended: Claude Haiku 5.5 for everyday questions (well under 1 cent each), with a "Think harder" button that re-asks with Claude Opus 5.5 (about 3 to 4 cents). Sonnet 5.5 sits in between. The document map and the thread are cached, so follow-ups cost less. An estimate appears before any request over $0.25, and Settings has a monthly cap.
+- **Free with your Claude plan (Release 2).** "Answer with my Claude plan" opens claude.ai with the question ready; Claude reads the thread through the connector and posts its reply into your PDF, using your subscription instead of the API key.
 - Your API key sits in the extension's private database, which content scripts and web pages cannot read. Calls go straight from the viewer tab to Anthropic.
 - The web library shows Claude's replies, but new @Claude requests need the extension, because the key never leaves your computer.
 
