@@ -13,10 +13,10 @@ It ships in three releases, each finished and critic-tested before the next: **R
 **Release 1 is done when:**
 
 1. Clicking a PDF link, opening a PDF embedded in a page (such as Moodle), or double-clicking a local PDF opens it in our viewer in the same tab. PDFs loaded by a form post, and PDFs with fillable forms, stay in Chrome's viewer. A 50-page paper shows its first page in under 1 second on the reference laptop.
-2. Highlight, underline, bold, strikethrough and comment each take one keystroke, or a right-click and one click, on a selection. A mark appears in under 50 ms and the note box in under 100 ms.
+2. Highlight, underline, bold, strikethrough and comment each take one keystroke, or a right-click and one click, on a selection. A mark appears in under 50 ms and the note box in under 100 ms. Clicking a figure selects it, and Ctrl+Alt+M comments on it.
 3. Reopening the same link, or the same file after it is moved, renamed or copied, shows the same notes. A note being typed on a saved PDF survives a crash. Re-downloads that differ only by a download stamp keep their notes.
 4. Learning PDFs are saved automatically. On the research test set and a separate held-out set, zero non-learning PDFs (receipts, statements, payslips, tax forms, tickets) are saved.
-5. Typing @Claude in a thread returns a streamed answer with clickable page citations, plus web sources when it searched. A typical question sends only the relevant passages, not the whole PDF.
+5. Typing @Claude in a thread returns a streamed answer with clickable page citations, plus web sources when it searched. A typical question sends only the relevant passages, not the whole PDF. Asking about a figure sends the figure image with its caption and the text that mentions it.
 6. Print, find, zoom, rotate, links, outline, thumbnails and password-protected PDFs work at least as well as in Chrome's viewer.
 7. The library and viewer clearly feel like Google Drive, as judged by the visual critic.
 8. A full backup (PDFs and notes) is written automatically to a folder you choose while it is connected, and restoring from it on a fresh install brings everything back.
@@ -49,20 +49,22 @@ Every request so far is mapped to one decision below. Anything not in this table
 | Build off Google's PDF reader | PDFium, Google's PDF engine, plus behaviour reused from Chromium's open-source viewer. |
 | Highlight, underline, bold, strikethrough and comments, all seamless | Right-click a selection for the mark-up menu, or use one shortcut per mark. Nothing pops up on its own, and there are no tool modes. |
 | Keep it simple first | Three releases, each finished and tested before the next. |
+| Comment on figures, charts and photos, and ask Claude about them | Figures are found automatically and outlined on hover. Click one to comment or ask Claude; Claude sees the figure image, its caption and the text that cites it. |
 
 ## How it feels to use
 
-Nine everyday moments, start to finish. Each becomes an end-to-end test; the two that need Windows File Explorer or claude.ai (2 and 7) are checked by hand.
+Ten everyday moments, start to finish. Each becomes an end-to-end test; the two that need Windows File Explorer or claude.ai (2 and 7) are checked by hand.
 
 1. **You click any PDF link.** It could be a journal article, a Moodle reading, lecture slides or a textbook chapter. The tab shows our viewer, not Chrome's. A chip in the top bar reads "Saved to library" (reasons on hover, such as "References section, DOI, 40 pages"). If you have read it before, it opens where you stopped.
 2. **You double-click a PDF in File Explorer.** Chrome opens it (it is your default PDF app) and the extension takes over. If that file was seen before, even in another folder or under another name, your notes appear.
 3. **You open a scanned PDF.** A photographed chapter or an old journal scan has no real text. From Release 1 you can add page and area notes on it. From Release 3, text recognition runs on your computer, visible pages first, so you can select, mark up and search it like any other PDF.
 4. **You mark up and comment.** Select text, then right-click for the mark-up menu, or use a shortcut directly: highlight (H), underline (Ctrl+U), bold (Ctrl+B), strikethrough (Alt+Shift+5) and comment (Ctrl+Alt+M) apply instantly, with no tool to pick first. For a comment, a note box opens in the right margin, level with the line. Type, then press Enter. Shift+Enter adds a new line, and Esc closes without losing text. With nothing selected, Ctrl+Alt+M makes a note where the pointer is, or for the page.
 5. **You ask Claude.** In a note or reply, type "@Claude why does this assumption matter?" Claude's answer streams into the thread with page links such as "p. 4" that jump to the passage.
-6. **You look something up next week.** Press Ctrl+K in any viewer or library tab and type "parallel trends". Results show readings, matching pages and your notes; Enter jumps to the exact passage.
-7. **You ask claude.ai (Release 2).** "What did I note about difference-in-differences this term?" The connector searches your library and Claude answers with sources. "Add a comment on page 3 summarising this" appears in the viewer as a comment from Claude.
-8. **You move, rename or re-download a file.** Same contents, same fingerprint, same notes. Re-downloads that differ only by a download stamp, as JSTOR adds, are recognised by their text. The library records the new location.
-9. **You open a receipt.** It displays normally with the chip "Not saved: looks like a receipt". Nothing is stored, indexed or uploaded. If the filter is wrong, one click on the chip saves it.
+6. **You click a chart.** It gets a blue outline. Right-click it for Comment, Ask Claude, Explain this figure or Copy image. You type "@Claude what does the dip at year −1 mean?" and Claude answers with links to the caption and to the paragraph that discusses it.
+7. **You look something up next week.** Press Ctrl+K in any viewer or library tab and type "parallel trends". Results show readings, matching pages and your notes; Enter jumps to the exact passage.
+8. **You ask claude.ai (Release 2).** "What did I note about difference-in-differences this term?" The connector searches your library and Claude answers with sources. "Add a comment on page 3 summarising this" appears in the viewer as a comment from Claude.
+9. **You move, rename or re-download a file.** Same contents, same fingerprint, same notes. Re-downloads that differ only by a download stamp, as JSTOR adds, are recognised by their text. The library records the new location.
+10. **You open a receipt.** It displays normally with the chip "Not saved: looks like a receipt". Nothing is stored, indexed or uploaded. If the filter is wrong, one click on the chip saves it.
 
 ## Architecture
 
@@ -120,13 +122,14 @@ docs/              this spec, research reports, reference screenshots
 | Anchoring | Vendored Hypothesis match-quote plus approx-string-match |
 | Local database | @sqlite.org/sqlite-wasm 3.54.1 with FTS5, stored in the origin private file system |
 | UI building blocks | Radix UI primitives, Material Symbols Outlined, Google Sans fonts bundled locally |
-| Claude | @anthropic-ai/sdk 1.3.0; default model claude-opus-5-5, changeable in Settings |
+| Claude | @anthropic-ai/sdk 1.3.0; default model chosen at setup (Haiku 5.5 suggested, Opus 5.5 for Think harder) |
 | Filter tie-breaker | transformers.js with the MiniLM model (23 MB) bundled, no downloads at run time |
 | Cloud | Cloudflare Workers, D1, R2, Workers Static Assets, Workers OAuth Provider, MCP server SDK |
 | Tests | Vitest, Playwright driving Chromium with the extension loaded, pixelmatch for screenshot diffs |
 | Text layer | pdf.js text-layer code (Apache-2.0), fed with PDFium glyph boxes |
 | Fingerprints | hash-wasm streaming SHA-256 |
 | Text recognition (Release 3) | tesseract.js or a PaddleOCR model on onnxruntime-web, chosen by a bake-off; every file bundled |
+| Figure detection | PDFium page objects and caption rules in Release 1; the PP-DocLayout-S layout model (4.8 MB, Apache-2.0) on onnxruntime-web in Release 3, bundled |
 
 ## Viewer and commenting
 
@@ -142,14 +145,15 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 - Applying a style that already covers the whole selection removes it from that selection, splitting the mark if needed. Comments are separate from styles, so removing or splitting a style never removes a comment.
 - Colours apply to highlight, underline and strikethrough:&#32;
 - Bold draws the covered glyphs' own outlines (taken from PDFium) again in the overlay, filled and stroked slightly heavier. It works per character, stays crisp at any zoom and must fit the 50 ms budget, which Phase 0 measures. If it looks wrong, bold becomes a "strong" style (dark underline plus heavier highlight), and you are asked first.
-- **Area marks:** Alt+drag (links are ignored while Alt is held), or the area tool in the toolbar, draws a rectangle around a figure, an equation image or part of a scan; then comment on it.
+- **Figures and areas:** figures, charts, photos, tables and equation images are found on each page. Hovering one gives it a faint outline (nothing pops up); a click selects it, and Ctrl+Alt+M, or right-click → Comment, comments on it. With nothing selected, Ctrl+Alt+M over a figure drops a numbered pin at that spot. Alt+drag (links are ignored while Alt is held), or the area tool in the toolbar, draws any rectangle, such as one panel of a chart or part of a scan. A figure comment shows an outline, not a highlight.
 - Marks live in our database and draw as an SVG overlay; printing "with marks" draws the same overlay onto each page. They are written into a PDF only when you export.
 
 **What a note is made of**
 
 - **Comment thread:** has its own anchor in the same format, or sits on a point, a page or the whole document. Making a comment also adds a highlight, but the two are independent: if a commented passage loses every style, the thread shows a dotted underline. A thread holds comments, each with author (you or Claude), Markdown body, and created and edited times.
-- **Re-anchoring on open:** the stored position is used only if the quote still matches there; next comes the quote on the same page; then a fuzzy match across the document scoring at least 0.8 on a quote of at least 12 characters. Anything else goes to "Couldn't place", never onto doubtful text.
+- **Re-anchoring on open:** the stored position is used only if the quote still matches there; next comes the quote on the same page; then a fuzzy match across the document scoring at least 0.8 on a quote of at least 12 characters. A figure comment stays put while its fingerprint matches; otherwise it follows its caption, then its image. Anything else goes to "Couldn't place", never onto doubtful text.
 - **One schema:** the implementation plan defines the single normative data schema. It replaces the research draft, which lacks bold, area marks and separate comment anchors.
+- **Figure and area anchor:** the page and a rectangle in page units from 0 to 1. A figure anchor also keeps a fingerprint: its caption label and quote, a hash of the embedded image and a hash of how the region looks. Pins and sub-areas are stored relative to the figure.
 
 **The Ctrl+Alt+M flow:**
 
@@ -167,7 +171,7 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 | Print | Ctrl+P renders pages through PDFium into a print-only copy, with or without your marks |
 | Zoom | Fit width, fit page, 25 to 400%; Ctrl+= / Ctrl+− / Ctrl+0, Ctrl+wheel and pinch zoom the page, not the browser |
 | Find | Ctrl+F with match count, next and previous |
-| Navigate | Thumbnails, outline, go to page, links inside the PDF (contents, citations) and out to the web |
+| Navigate | Thumbnails, outline, a Figures tab listing every figure and table, go to page, links inside the PDF (contents, citations) and out to the web |
 | Rotate and views | Rotate 90°, two-page view, presentation mode for slides, dark (inverted) pages |
 | Password PDFs | Asks for the password; the library keeps the encrypted original and asks again next time; its page text is indexed like any saved PDF unless you switch that off for it |
 | Forms | PDFs with real fillable fields (text boxes, choices or checkboxes listed as form fields, or XFA) are classified first and saved if they are learning PDFs, then reopen in Chrome's own viewer to be filled, through a one-time allow rule for that link and tab. Link boxes that LaTeX adds to papers do not count. If the link can't be fetched again, our view stays, with a banner |
@@ -200,14 +204,16 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 | Export notes as Markdown | Ctrl+Shift+E | Reading |
 | Shortcut sheet | ? | Reading |
 | Open the mark-up menu | Right-click, menu key or Shift+F10 | Text selected |
+| Select a figure | Click | Reading |
+| Copy a figure as an image | Ctrl+C | A figure is selected |
 
 Jumps inside a document (links, search results, next note) are kept in the page's history state and collapsed, so Back returns to where you were without needing many presses to leave.
 
 **Export and import.** Release 1: "Export notes" writes Markdown with quotes, page numbers and links back, and annotations already inside a PDF always display. Release 3: "Download with notes" writes standard PDF annotations (highlights, underlines, strikethroughs, bold marks as square annotations with their own appearance, labelled Bold, comments and reply threads) using PDFium's incremental save. Existing annotations then import as editable notes, de-duplicated by their PDF ids, so re-opening an exported copy never doubles notes. Your original file is never modified.
 
-**Scanned PDFs.** Release 1: scans open normally and take page, point and area notes. Release 3: text recognition (OCR) runs in the hidden background page, so it keeps going after the tab closes, visible pages first, and only for saved PDFs. English comes first, with French and German packs. Results are stored per page with the engine name and version; marks on recognised text anchor to that text, and an engine upgrade re-runs recognition and re-anchors by quote.
+**Scanned PDFs.** Release 1: scans open normally and take page, point and area notes. Release 3: text recognition (OCR) runs in the hidden background page, so it keeps going after the tab closes, visible pages first, and only for saved PDFs. Layout detection runs first, so figures on scans can be clicked too. English comes first, with French and German packs. Results are stored per page with the engine name and version; marks on recognised text anchor to that text, and an engine upgrade re-runs recognition and re-anchors by quote.
 
-**Speed budgets:** first page under 1 s for a 50-page paper; a 600-page scanned textbook scrolls without a blank page showing for more than 150 ms; any mark under 50 ms; note box under 100 ms. They are measured on a fixed reference laptop at each phase gate; CI runs looser smoke versions so random slowness never blocks work.
+**Speed budgets:** first page under 1 s for a 50-page paper; a 600-page scanned textbook scrolls without a blank page showing for more than 150 ms; any mark under 50 ms; note box under 100 ms; figure outline under 100 ms after hovering, and figure detection never delays drawing a page. They are measured on a fixed reference laptop at each phase gate; CI runs looser smoke versions so random slowness never blocks work.
 
 ## Library and knowledge base
 
@@ -227,7 +233,7 @@ Each document keeps its locations (links and file paths, first and last seen). L
 
 **What the history records per reading:** title, authors, year, DOI or arXiv id, locations, first and last opened, total reading time, last position (opening resumes there), pages visited, note count and starred. Metadata comes from the PDF itself, its first page and its ids. Optional lookups (arXiv, Crossref) run only for saved PDFs and send only the id.
 
-**One search box (Ctrl+K)** covers titles, authors, full page text, your notes and Claude's replies, ranked by relevance with highlighted snippets. Enter jumps to the exact page and passage. Filters: starred, has notes, date read, and type (paper, book, slides or other, guessed from page count, page shape and headings).
+**One search box (Ctrl+K)** covers titles, authors, full page text, figure captions, your notes and Claude's replies (including its figure explanations), ranked by relevance with highlighted snippets. Enter jumps to the exact page and passage. Filters: starred, has notes, date read, and type (paper, book, slides or other, guessed from page count, page shape and headings).
 
 **Library pages, laid out like Google Drive:**
 
@@ -285,7 +291,7 @@ One reference implementation in TypeScript, with its test cases, defines these r
 | Data | Goes to | When |
 | --- | --- | --- |
 | The PDF request itself | The site it came from | Every time you open a PDF, exactly as in Chrome |
-| Passages you ask Claude about (the whole text only if you ask) | Anthropic | Only when you ask Claude; on a PDF not in your library, only after you confirm |
+| Passages and figure images you ask Claude about (the whole text only if you ask) | Anthropic | Only when you ask Claude; on a PDF not in your library, only after you confirm |
 | Words you select and press Search on | Google or Google Scholar, in a new tab | Only when you press Search |
 | Claude's web search queries | Anthropic's web search | Only while answering an @Claude question that needs the web; can be switched off |
 | Library data, notes and PDFs | Your Cloudflare | From Release 2, only for saved learning PDFs |
@@ -341,11 +347,11 @@ Claude works in two places: inside comment threads while you read (Release 1), a
 
 - Start a comment with @Claude, picked from autocomplete, or choose Ask Claude from the right-click menu, which does the same.
 - **Claude reads only what it needs.** A question sends the marked passage and its paragraph, a short map of the document (title, abstract, headings) and the five passages local search ranks most relevant: usually 2,000 to 5,000 tokens, not the whole PDF. If that isn't enough, Claude can ask the viewer for specific pages or run another search inside the document, and only those pages are sent. "Ask about the whole document" (for summaries) sends everything, with a cost estimate first.
-- On an area mark or a page with no text, Claude gets the cropped page image instead.
+- Figures. On a figure, area or scanned page, Claude gets the region as an image rendered on your computer, sized so small text stays legible (usually 1,000 to 1,600 image tokens, sharper on Think harder). It also gets the caption, the exact text inside the figure (axis labels, legend), up to three paragraphs that mention it, and the document map with its list of figures. "Compare Figure 2 and 3" attaches both. Claude can't cite an image, so the answer carries a link to the figure. Explain this figure, in the right-click menu, asks a fixed question about it.
 - **Claude can search the web** when a question needs outside knowledge, such as a definition, background or newer work. Answers cite web sources next to page citations. At most 3 searches per question, about 1 cent each; switch it off in Settings.
 - The answer streams into the thread as a comment from Claude, with page citations such as "p. 4" that jump to the passage.
 - On a PDF that isn't in your library, Claude asks before any text is sent.
-- **Model and cost.** You choose the default model at setup. Recommended: Claude Haiku 5.5 for everyday questions (well under 1 cent each), with a "Think harder" button that re-asks with Claude Opus 5.5 (about 3 to 4 cents). Sonnet 5.5 sits in between. The document map and the thread are cached, so follow-ups cost less. An estimate appears before any request over $0.25, and Settings has a monthly cap.
+- **Model and cost.** You choose the default model at setup. Recommended: Claude Haiku 5.5 for everyday questions (well under 1 cent each), with a "Think harder" button that re-asks with Claude Opus 5.5 (about 3 to 4 cents). Sonnet 5.5 sits in between. A figure question costs about 0.1 cent on Haiku 5.5 and about 5 cents on Opus 5.5. The document map and the thread are cached, so follow-ups cost less. An estimate appears before any request over $0.25, and Settings has a monthly cap.
 - **Free with your Claude plan (Release 2).** "Answer with my Claude plan" opens claude.ai with the question ready; Claude reads the thread through the connector and posts its reply into your PDF, using your subscription instead of the API key.
 - Your API key sits in the extension's private database, which content scripts and web pages cannot read. Calls go straight from the viewer tab to Anthropic.
 - The web library shows Claude's replies, but new @Claude requests need the extension, because the key never leaves your computer.
@@ -485,9 +491,9 @@ flowchart TB
   subgraph R1[Release 1 · Reader, marks, comments, library, @Claude]
     p0["Phase 0 · Engine proof<br/>PDFium in an extension: speed, selection, bold, big files"] --> g0{"Engine passes<br/>otherwise switch to pdf.js"}
     g0 --> p1["Phase 1 · Foundations<br/>Takeover with embeds, reading basics, local store, identity"] --> g1{"You try it on Windows<br/>double-click checklist on your PC"}
-    g1 --> p2["Phase 2 · Marks and comments<br/>Toolbar, all marks, area notes, threads, re-anchoring"] --> g2{"No lost text<br/>crash test, your keyboard layouts"}
+    g1 --> p2["Phase 2 · Marks and comments<br/>Right-click menu, all marks, figures, areas, threads"] --> g2{"No lost text<br/>crash test, your keyboard layouts"}
     g2 --> p3["Phase 3 · Library and filter<br/>Filter, history, Drive-style library, search, backups"] --> g3{"Zero false saves<br/>Drive look signed off by critic"}
-    g3 --> p4["Phase 4 · @Claude and Release 1<br/>Claude in threads, polish, setup guide, release on GitHub"] --> g4{"Release 1 criteria met<br/>you sign off"}
+    g3 --> p4["Phase 4 · @Claude and Release 1<br/>Claude in threads and on figures, polish, release on GitHub"] --> g4{"Release 1 criteria met<br/>you sign off"}
   end
   subgraph R2[Release 2 · Your cloud and the claude.ai connector]
     p5["Phase 5 · Cloud sync<br/>Worker, GitHub login, sync, restore, staging and production"] --> g5{"Restore works<br/>after a full reinstall"}
@@ -501,7 +507,7 @@ flowchart TB
   g6 --> p7
 ```
 
-**Phase 0 checks the riskiest unknowns before anything is built on them:** PDFium inside a Chrome extension (workers, bundled files), scrolling a 600-page scan within budget, the selection test suite, bold's glyph-outline overlay and its speed, moving 300 MB files between tabs and the background page, the 1 GB file limit, form-field detection on LaTeX papers, whether Chrome keeps backup-folder permission across restarts and can write into a Google Drive for desktop folder, and TypeScript 7 tooling. Release 2 opens with its own short test of the claude.ai sign-in and D1's write counting; Release 3 opens with the text-recognition bake-off and a Foxit/Acrobat round-trip.
+**Phase 0 checks the riskiest unknowns before anything is built on them:** PDFium inside a Chrome extension (workers, bundled files), scrolling a 600-page scan within budget, the selection test suite, bold's glyph-outline overlay and its speed, moving 300 MB files between tabs and the background page, the 1 GB file limit, form-field detection on LaTeX papers, whether Chrome keeps backup-folder permission across restarts and can write into a Google Drive for desktop folder, listing PDFium page objects to find figures within 20 ms a page, and TypeScript 7 tooling. Release 2 opens with its own short test of the claude.ai sign-in and D1's write counting; Release 3 opens with the text-recognition bake-off and a Foxit/Acrobat round-trip.
 
 **Every feature has a home:** the implementation plan holds a full feature-to-phase table. The local store, fingerprint identity and the save decision come in Phase 1, because comments depend on them; a stand-in filter treats every PDF as "not sure" until then, so the first mark saves. Find, outline, thumbnails, print and password PDFs are also Phase 1. The real filter replaces the stand-in in Phase 3, alongside Settings, Markdown export, the backup folder and restore.
 
@@ -526,6 +532,8 @@ The riskiest unknowns are tested first, in Phase 0, before anything is built on 
 | D1's daily write limit | Indexing stalls | Server-side metering, notes first; Workers Paid if needed |
 | Text recognition slow or inaccurate (Release 3) | Some words hard to find | Visible pages first, cached; a bake-off picks the engine; area marks always work |
 | Foxit or Acrobat ignore our threads (Release 3) | Export less useful | Round-trip test; fall back to folding replies into the comment text |
+| Wrong figure outlines | A click selects the wrong thing | Outline only confident figures; a labelled test set; Alt+drag always works |
+| Claude misreads chart values | Wrong numbers in an answer | The exact text inside the figure is sent too; Think harder sends a sharper image |
 
 ## One-time setup for you
 
