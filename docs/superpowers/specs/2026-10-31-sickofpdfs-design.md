@@ -25,7 +25,7 @@ It ships in three releases, each finished and critic-tested before the next: **R
 
 **Release 3 is done when** scanned pages can be selected and searched like normal text, notes can be linked across versions of a reading, and an exported PDF shows our marks and threads in Foxit and Acrobat.
 
-Checked by hand: double-clicking in File Explorer, keyboard layouts, the claude.ai connector screens, and Foxit and Acrobat display. Everything else is an automated test.
+Checked by hand: double-clicking in File Explorer, keyboard layouts, the claude.ai connector screens, and Foxit and Acrobat display. The Drive look (criterion 7) is judged by the visual critic. Everything else is an automated test.
 
 ## Requirements and decisions
 
@@ -135,7 +135,7 @@ docs/              this spec, research reports, reference screenshots
 
 Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewer. An invisible text layer on top makes selecting, double-clicking and copying work like any web page, and marks draw instantly as an overlay.
 
-**Engine.** All engine calls go through one `PdfBackend` adapter: open, render tiles, glyph geometry, search, links, annotations, export. Pages scroll in a virtual list, render in a worker, and re-render sharply at any zoom or Windows scaling. Zoom steps, fit modes and keyboard scrolling follow Chromium's open-source viewer (BSD). Two differences from Chrome remain: a different rasteriser (AGG instead of Skia) and no system fonts, so Latin, Greek and Cyrillic fallback fonts are bundled and non-embedded Chinese, Japanese and Korean text uses one smaller bundled fallback. Every engine file, font and model ships inside the extension; nothing is downloaded. pdf.js stays the fallback engine, with its own export path.
+**Engine.** All engine calls go through one `PdfBackend` adapter: open, render tiles, glyph geometry, search, links, annotations, export. Pages scroll in a virtual list, render in a worker, and re-render sharply at any zoom or Windows scaling. Zoom steps, fit modes and keyboard scrolling follow Chromium's open-source viewer (BSD). Two differences from Chrome remain: a different rasteriser (AGG instead of Skia) and no system fonts, so Latin, Greek and Cyrillic fallback fonts are bundled and non-embedded Chinese, Japanese and Korean text uses one smaller bundled fallback. Every engine file, font and model ships inside the extension; nothing is downloaded. pdf.js stays the fallback engine, with its own export path; with it, bold uses the "strong" style.
 
 **Text layer.** We port pdf.js's text-layer code (Apache-2.0) and feed it PDFium's glyph boxes and reading order. It must handle two-column papers, rotated tables, ligatures, inline maths and right-to-left text. Phase 0 checks this with a selection test suite, including copy-paste matching Chrome's viewer. Selections map back to PDFium character ranges.
 
@@ -160,7 +160,7 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 **The Ctrl+Alt+M flow:**
 
 1. With text selected, Ctrl+Alt+M creates a comment on the selection, shown with a highlight in under 50 ms, and opens a note box in the right margin, level with the selection, never covering it.
-2. Type plain text or light Markdown (Ctrl+B and Ctrl+I format the note), including maths written as `$x^2$`. The draft saves locally every 300 ms, so a crash loses nothing.
+2. Type plain text or light Markdown (Ctrl+B and Ctrl+I format the note), including maths written as `$x^2$`. On a saved PDF the draft saves locally every 300 ms, so a crash loses nothing; on a PDF judged not learning it stays in memory until you choose Save.
 3. Enter or Ctrl+Enter saves; Shift+Enter adds a new line. Esc or clicking away also saves typed text. An empty new note cancels its highlight; emptying an existing note keeps the highlight.
 4. No selection: a note at the pointer if it is over a page, otherwise on the most visible page. Ctrl+Alt+Shift+M opens the single "my takeaways" note for the document.
 5. A selection over an existing comment opens that thread (the most recent, if several overlap) instead of stacking a duplicate.
@@ -177,7 +177,7 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 | Navigate | Thumbnails, outline, go to page, links inside the PDF (contents, citations) and out to the web |
 | Rotate and views | Rotate 90°, two-page view, presentation mode for slides, dark (inverted) pages |
 | Password PDFs | Asks for the password; the library keeps the encrypted original and asks again next time; its page text is indexed like any saved PDF unless you switch that off for it |
-| Forms | PDFs with real fillable fields (text boxes, choices or checkboxes listed as form fields, or XFA) are classified first and saved if they are learning PDFs, then reopen in Chrome's own viewer to be filled. Link boxes that LaTeX adds to papers do not count. If the link can't be fetched again, our view stays, with a banner |
+| Forms | PDFs with real fillable fields (text boxes, choices or checkboxes listed as form fields, or XFA) are classified first and saved if they are learning PDFs, then reopen in Chrome's own viewer to be filled, through a one-time allow rule for that link and tab. Link boxes that LaTeX adds to papers do not count. If the link can't be fetched again, our view stays, with a banner |
 | Escape hatch | File → "Open in Chrome's viewer", always available |
 | Save | Ctrl+S downloads the original; File → "Copy link" |
 | Large files | Up to 1 GB opens normally; larger files (size read from the download header) open in Chrome's viewer with a note. Phase 0 confirms the limit |
@@ -263,9 +263,9 @@ The filter runs on your computer, in memory, before anything is stored. It glanc
    2. Hard block: a card number (16 digits, valid checksum, known card prefix), or any two of IBAN, sort code with account number, National Insurance number, US Social Security number, UK tax reference (UTR), passport line or boarding-pass code. Only positive evidence of 8 or more on its own overrides it, such as a paper quoting an example IBAN.
    3. Your deny and allow lists for sites and folders.
    4. Force save: an arXiv id plus a References section, or a DOI plus an Abstract plus References.
-   5. The score: 3 or more saves; 0 or less does not; anything between is "not sure".
+   5. The score, for PDFs with text: 3 or more saves; 0 or less does not; anything between is "not sure".
 3. **Not sure:** a small bundled model (MiniLM, about 20 ms) nudges the score. If still unsure, the chip asks you.
-4. **Scans with no text** are never saved automatically. From scholarly sites or course pages the chip asks; otherwise they are not saved. They are never OCR'd to decide.
+4. **Scans with no text** are never saved automatically, and the score is not used for them. From scholarly sites or course pages the chip asks; otherwise they are not saved. They are never OCR'd to decide.
 
 One reference implementation in TypeScript, with its test cases, defines these rules and weights. It replaces the research prototype, which scored 43 of 44 with zero false saves but had no hard block, force save or MiniLM. Expected results are regenerated from PDFium's text, and any decision that differs from the prototype's is reviewed by hand.
 
@@ -298,7 +298,7 @@ One reference implementation in TypeScript, with its test cases, defines these r
 | Anything else | Nobody | No code, fonts or models are downloaded; a build test fails on any other request |
 | Saved PDFs and their notes | Your backup folder, and wherever it syncs (such as Google Drive) | From Release 1; never keys, sign-in tokens or unsaved PDFs |
 
-**Local traces.** A PDF that isn't saved leaves no history row, thumbnail, search entry or log line. Two exceptions: choosing "Never save this file" keeps a salted fingerprint on this computer only, and Chrome's own history lists the viewer address as it does for any page. Incognito avoids both, and there the extension never saves.
+**Local traces.** A PDF that isn't saved leaves no history row, thumbnail, search entry or log line. Three exceptions: choosing "Never save this file" keeps a salted fingerprint on this computer only; reporting a misjudged PDF keeps your label with a salted fingerprint, never the file; and Chrome's own history lists the viewer address as it does for any page. Incognito avoids the browser-history trace, and there the extension never saves.
 
 **Notes on a PDF that isn't saved:**
 
@@ -312,7 +312,7 @@ One reference implementation in TypeScript, with its test cases, defines these r
 - "Forget this PDF" removes it completely, including from your cloud, with an option to never save it again.
 - Settings has the allow and deny lists, with suggestions such as moodle.lse.ac.uk that you switch on yourself.
 
-**Tests.** Two sets run on every build: the openly licensed research fixtures, committed with a licence list, and a held-out set of at least 20 more public PDFs gathered by an agent that never sees the weights. Saving any non-learning PDF fails the build; the remaining research fixtures run locally where their licences allow. A PDF you report as misjudged is remembered only as your label and a salted fingerprint, never the file.
+**Tests.** Two sets run on every build: the openly licensed research fixtures, committed with a licence list, and a held-out set of at least 20 more public PDFs (10 learning, 10 not) gathered by an agent that never sees the weights and stored in the same test-assets release. Saving any non-learning PDF fails the build; the remaining research fixtures run locally where their licences allow. A PDF you report as misjudged is remembered only as your label and a salted fingerprint, never the file.
 
 ## Storage, sync and backup
 
@@ -320,7 +320,7 @@ Everything is written locally first, so reading and noting work offline. Release
 
 **On your computer (inside Chrome):**
 
-- **Database:** SQLite with full-text search, owned by one hidden background page that Chrome recreates on demand. Tables: readings, documents, locations, page text, marks, threads, comments, history, settings, pending notes, and an outbox of changes to sync.
+- **Database:** SQLite with full-text search, owned by one hidden background page that Chrome recreates on demand. Tables: readings, documents, locations, page text, marks, threads, comments, history, settings, and an outbox of changes to sync.
 - **PDF copies:** tabs write them straight into the extension's private file storage, named by fingerprint, so duplicates are stored once. Large data never travels through Chrome's extension messages (limited to about 64 MB); it goes through a direct channel or the file storage.
 - **Tabs in step:** a broadcast channel tells every open tab when something changes.
 - **Safety:** unlimited storage, and a fixed extension key we generate ourselves (no Web Store account needed), so the extension's identity and data survive updates and folder moves.
@@ -382,11 +382,11 @@ Release 2. One Cloudflare Worker on your free account serves the sync API, the C
 | Login | GitHub sign-in, locked to your GitHub account's numeric id; any other account is refused |
 | Connector | MCP over Streamable HTTP (`agents` 0.32 `createMcpHandler`, `@modelcontextprotocol/server` 2.4) with OAuth from `@cloudflare/workers-oauth-provider` 1.2.4, using Claude's published client identity |
 | Extension sign-in | The same GitHub login in a Chrome pop-up; the token stays in the extension's private database |
-| Deploys | Build agents deploy only to a separate staging Worker with its own small databases and its own GitHub OAuth app. Your production Worker updates only from tagged releases, after a restore point is recorded. Cloudflare's free limits are shared across the account, so staging has a hard budget of 10,000 database writes a day and production's meter assumes 75,000. |
+| Deploys | Build agents deploy only to a separate staging Worker with its own small databases and its own GitHub OAuth app. Your production Worker updates only from tagged releases, after a restore point is recorded. Cloudflare's free limits are shared across the account, so staging has a hard budget of 10,000 database writes a day and production's meter assumes 75,000. Databases: production uses 1 plus up to 4 text shards and staging 1 plus 1, within the free limit of 10. |
 
 **Web library.** It signs in with the same GitHub login and holds a secure session cookie, with cross-site request checks on every change. It is online-only and shows "Saving…" or "Offline, not saved". PDFs uploaded there run the same filter and text extraction in your browser, and large PDFs download from R2 with a progress bar.
 
-**What goes to the cloud:** only PDFs marked learning. The server checks the extension's label as a safeguard, not a guarantee. Links are cleaned of tokens and local paths are reduced to file names. PDF upload is on by default, with a global switch and a per-document "keep local" option; without R2 turned on, notes and text still sync.
+**What goes to the cloud:** only PDFs marked learning. The server checks the extension's label as a safeguard, not a guarantee. Links are stored in the same canonical form used for identity, which already removes tokens, and local paths are reduced to file names. PDF upload is on by default, with a global switch and a per-document "keep local" option; without R2 turned on, notes and text still sync.
 
 **Cloud backup:** a nightly GitHub Actions job pages through an authenticated export endpoint, skips the search tables (they can be rebuilt), and writes JSON to R2, kept 30 days. Before every production database change, a D1 Time Travel restore point is recorded (kept 7 days on the free plan). Your local backup folder keeps running as an independent second copy.
 
@@ -452,7 +452,7 @@ Our additions (Comment, colour, Ask Claude, the library status chip) reuse Drive
 No piece of work counts as done until it survives the gauntlet. Builders never grade their own work.
 
 1. **Build.** A build agent writes the tests first, then the code, on its own branch.
-2. **Automated gates**, all green: type check, lint (including the design-token rule), unit tests, end-to-end tests in Chromium with the extension loaded, the 44-PDF filter test, speed smoke tests, screenshot checks that catch unintended visual changes, a network test (during every end-to-end run nothing may leave except the PDF itself and allowed calls), and a crash test (kill the tab mid-note; the note must survive).
+2. **Automated gates** for that phase, all green, for example: type check, lint (including the design-token rule), unit tests, end-to-end tests in Chromium with the extension loaded, the filter test sets (from Phase 3), speed smoke tests, screenshot checks that catch unintended visual changes, a network test (during every end-to-end run nothing may leave except the PDF itself and allowed calls), and a crash test (kill the tab mid-note; the note must survive).
 3. **Critics.** Four critic agents start fresh. They get the spec, the running build and screenshots, but never the builder's reasoning. Every defect must come with evidence and a rating: critical, major or minor.
 4. **Fix and repeat.** The builder fixes; every gate and critic runs again.
 5. **Pass** = zero critical, zero major, all automated gates green. After three failed rounds the task is re-planned (split smaller or approached differently), not forced through.
@@ -503,7 +503,7 @@ flowchart TB
   g6 --> p7
 ```
 
-**Phase 0 checks the riskiest unknowns before anything is built on them:** PDFium inside a Chrome extension (workers, bundled files), scrolling a 600-page scan within budget, the selection test suite, bold's glyph-outline overlay and its speed, moving 300 MB files between tabs and the background page, the 1 GB file limit, form-field detection on LaTeX papers, whether Chrome keeps backup-folder permission across restarts, and TypeScript 7 tooling. Release 2 opens with its own short test of the claude.ai sign-in and D1's write counting; Release 3 opens with the text-recognition bake-off and a Foxit/Acrobat round-trip.
+**Phase 0 checks the riskiest unknowns before anything is built on them:** PDFium inside a Chrome extension (workers, bundled files), scrolling a 600-page scan within budget, the selection test suite, bold's glyph-outline overlay and its speed, moving 300 MB files between tabs and the background page, the 1 GB file limit, form-field detection on LaTeX papers, whether Chrome keeps backup-folder permission across restarts and can write into a Google Drive for desktop folder, and TypeScript 7 tooling. Release 2 opens with its own short test of the claude.ai sign-in and D1's write counting; Release 3 opens with the text-recognition bake-off and a Foxit/Acrobat round-trip.
 
 **Every feature has a home:** the implementation plan holds a full feature-to-phase table. The local store, fingerprint identity and the save decision come in Phase 1, because comments depend on them; a stand-in filter treats every PDF as "not sure" until then, so the first mark saves. Find, outline, thumbnails, print and password PDFs are also Phase 1. The real filter replaces the stand-in in Phase 3, alongside Settings, Markdown export, the backup folder and restore.
 
@@ -523,7 +523,7 @@ The riskiest unknowns are tested first, in Phase 0, before anything is built on 
 | The double-click chain on Windows is untested | Local PDFs open in Chrome's viewer | Your checklist after Phase 1; the library's "Open file" works regardless |
 | Some PDFs cannot be re-fetched (form posts, expiring links) | Viewer shows an error | Our error page offers "Import this PDF" and "Open in Chrome's viewer" |
 | Filter mistakes on new kinds of PDF | A reading not saved, or a private PDF saved | Asymmetric thresholds, a held-out test set, one-click fixes |
-| Ctrl+Alt+M on AltGr keyboards (UK, German, Polish) | Shortcut misfires or never fires | Never fires while typing; physical keys; layout check on your PC; rebindable |
+| Ctrl+Alt+M on AltGr keyboards (UK, German, Polish) | Shortcut misfires or never fires | Never fires while typing; letters follow your layout; checked on UK, US, German and Polish layouts; rebindable |
 | API key in the browser | Key misuse if the PC is compromised | Extension-private database only, spend limit, one-click delete |
 | D1's daily write limit | Indexing stalls | Server-side metering, notes first; Workers Paid if needed |
 | Text recognition slow or inaccurate (Release 3) | Some words hard to find | Visible pages first, cached; a bake-off picks the engine; area marks always work |
@@ -548,7 +548,7 @@ Release 1 needs about 10 minutes and no new accounts, apart from an Anthropic AP
 - [ ] Create a Cloudflare API token with the bootstrap permissions listed in SETUP.md, and copy your Account ID.
 - [ ] GitHub: create two OAuth Apps, one for production and one for staging, with the callback addresses from SETUP.md.
 - [ ] In rexheng/sickofpdfs → Settings → Secrets → Actions, add CLOUDFLARE\_API\_TOKEN, CLOUDFLARE\_ACCOUNT\_ID, ALLOWED\_GITHUB\_ID and SESSION\_SECRET, plus a client id and secret for each of the two OAuth Apps (SETUP.md gives the exact names).
-- [ ] Run the "Bootstrap cloud" workflow once from the Actions tab. It creates the databases, bucket and Workers. Then swap the token for the narrower deploy token SETUP.md describes.
+- [ ] Run the "Bootstrap cloud" workflow once from the Actions tab. It creates the databases, bucket and Workers, and commits their ids to the repo's configuration. Then swap the token for the narrower deploy token SETUP.md describes.
 - [ ] Extension → Settings → Cloud → Connect, and sign in with GitHub.
 - [ ] In claude.ai: Settings → Connectors → Add custom connector. Name it "My readings", use the address ending in /mcp, choose "Use Claude's published identity", and sign in with GitHub.
 
