@@ -31,7 +31,8 @@ export default defineConfig({
   outDirTemplate: '{{browser}}-mv{{manifestVersion}}{{modeSuffix}}',
   manifest: {
     name: 'sickofpdfs',
-    description: 'Opens every PDF in a calm reader of its own, with highlights, comments and a library.',
+    // What this build does, in plain words (Help → About shows it too); say more as more ships.
+    description: 'A PDF reader that replaces Chrome’s, with highlights and comments.',
     key,
     minimum_chrome_version: '128',
     incognito: 'split',

@@ -16,6 +16,7 @@ import {
   pagePointToContent,
   type PdfBackend,
   type PdfRect,
+  type ScanDetector,
   type SearchHit,
   selectCharRanges,
   type ViewerStore,
@@ -53,6 +54,8 @@ interface FindDeps {
   /** The jump history (Task 24); null before it exists, and the view then just scrolls. */
   jumps: JumpHistory | null;
   root: RefObject<HTMLElement | null>;
+  /** The scan check: when the document is a scan, the bar says so as it opens (not after searching every page). */
+  scans: ScanDetector;
 }
 
 /** The union of rects. */
@@ -97,7 +100,7 @@ function scrollFor(scroller: HTMLElement, box: PageBox, page: PageSize, r: PdfRe
 }
 
 /** The find bar, its highlights and its moves, for one open document. */
-export function useReaderFind({ backend, doc, store, api, pageText, textLayers, jumps, root }: FindDeps): ReaderFind {
+export function useReaderFind({ backend, doc, store, api, pageText, textLayers, jumps, root, scans }: FindDeps): ReaderFind {
   const pages = doc.open.pages;
   const [controller, setController] = useState<FindController | null>(null);
   const made = useRef<FindController | null>(null);
@@ -123,6 +126,22 @@ export function useReaderFind({ backend, doc, store, api, pageText, textLayers, 
     const timer = setTimeout(() => setLinger(null), LINGER_MS);
     return () => clearTimeout(timer);
   }, [linger]);
+
+  // Is this document a scan? Asked when the bar opens: the page in view (the scan hint has usually asked already), the
+  // first and the last page are all pictures with no text. A few quick engine calls, so the bar can say it at once.
+  const [scanned, setScanned] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    const sample = [...new Set([store.get().currentPage, 0, doc.open.pageCount - 1])];
+    Promise.all(sample.map((i) => scans.isScannedPage(i))).then(
+      (answers) => live && setScanned(answers.every(Boolean)),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [open, scans, store, doc]);
 
   const scroller = useCallback(() => root.current?.querySelector<HTMLElement>('[role="document"]') ?? null, [root]);
 
@@ -215,6 +234,7 @@ export function useReaderFind({ backend, doc, store, api, pageText, textLayers, 
           onSelectMatch={selectMatch}
           onClose={onClose}
           onWrap={onWrap}
+          scanned={scanned}
         />
       )}
       <Snackbar note={note} />

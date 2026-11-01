@@ -17,7 +17,7 @@ export function FileAccessDialog({ open, onOpenChange, onOpenSettings, onChooseF
   return (
     <Dialog
       open={open}
-      title="Allow access to file URLs"
+      title="Let this viewer open files from your computer"
       onOpenChange={onOpenChange}
       actions={[
         { label: 'Open extension settings', onClick: onOpenSettings },

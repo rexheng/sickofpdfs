@@ -58,7 +58,23 @@
   margin-block-start: var(--space-4);
 }
 
+/* A field's visible name, above it (the password dialog's "Password"). */
+.fieldLabel {
+  display: block;
+  margin-block-end: var(--space-1);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-docs-comment-time);
+  font-weight: 500;
+}
+
+/* A field that runs the width of its card or dialog, flush with the title and the buttons. */
+.fullWidth {
+  inline-size: 100%;
+}
+
+/* Its one line is kept even while empty, so the card or dialog does not move when an error appears. */
 .error {
+  min-block-size: var(--space-5); /* one 20 px line of --type-body */
   margin: var(--space-2) 0 0;
   color: var(--gm3-sys-color-error);
   font: var(--type-body);

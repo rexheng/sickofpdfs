@@ -21,7 +21,7 @@ export function EngineStoppedCard({ onReload, onOpenInChrome }: EngineStoppedCar
         </h1>
         <p className={styles.body}>Reload the page.</p>
         <div className={styles.actions}>
-          {onOpenInChrome !== null && <TextButton label="Open in Chrome's viewer" icon="open_in_new" onClick={onOpenInChrome} />}
+          {onOpenInChrome !== null && <TextButton label="Open in Chrome’s viewer" icon="open_in_new" onClick={onOpenInChrome} />}
           <TextButton label="Reload page" onClick={onReload} />
         </div>
       </section>

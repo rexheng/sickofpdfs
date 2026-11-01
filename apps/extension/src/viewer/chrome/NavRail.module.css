@@ -70,6 +70,20 @@
   isolation: isolate;
 }
 
+/*
+ * The reading area's focus ring, over the pages (an outline on the scroller itself is painted under them). Shown only
+ * while the keyboard brought the focus there (Tab), not after a click or a toolbar button handed it back, so mouse
+ * readers never see it and keyboard readers always do (App.tsx, useKeyboardFocusMark).
+ */
+.pages:has(> [role='document'][data-keyboard-focus])::after {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border: var(--focus-ring-width) solid var(--focus-ring-color);
+  pointer-events: none;
+  content: "";
+}
+
 .beside {
   inset-inline-start: var(--rail-w);
 }

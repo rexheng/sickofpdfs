@@ -1,5 +1,5 @@
 import { Icon, TextButton } from '@sop/ui';
-import { MAX_OPEN_BYTES, type PdfFormatError, PdfLoadError } from '@sop/viewer';
+import { type PdfFormatError, PdfLoadError } from '@sop/viewer';
 import styles from './cards.module.css';
 import { useFilePicker } from './FilePicker';
 
@@ -18,29 +18,33 @@ export function gigabytes(bytes: number): string {
   return (bytes / 1e9).toFixed(1);
 }
 
-/** Why a file is too large: over the 1 GB limit, or under it but more than the engine's memory holds. */
+/**
+ * Why a file is too large: over the 1 GB limit, or under it but more than the engine's memory holds. Either way it
+ * says one number, not two to compare (TB1 student critic).
+ */
 export function tooLargeText(bytes: number): string {
-  return bytes > MAX_OPEN_BYTES
-    ? `This PDF is ${gigabytes(bytes)} GB, larger than the 1 GB this viewer opens.`
-    : `This PDF is ${gigabytes(bytes)} GB, too big for this viewer to open.`;
+  return `This PDF is too big for this viewer (${gigabytes(bytes)} GB).`;
 }
 
+/** The card's words. Plain and short; a status code is named "code", not "error". */
 function copyFor(error: PdfLoadError | PdfFormatError, sourceUrl: string | null): { title: string; lines: string[] } {
-  const couldNot = "Couldn't load this PDF";
+  const couldNot = 'Couldn’t load this PDF';
   if (!(error instanceof PdfLoadError)) return { title: couldNot, lines: ['The file is damaged or incomplete.'] };
   switch (error.code) {
     case 'not-pdf':
-      return { title: "This link didn't return a PDF", lines: ['The site sent a web page instead.', 'You may need to sign in to the site first.'] };
+      // An empty file has no bytes to be a web page: say what it is.
+      if (error.detail.size === 0) return { title: couldNot, lines: ['This file is empty.'] };
+      return { title: 'This link didn’t return a PDF', lines: ['The site sent a web page instead.', 'You may need to sign in to the site first.'] };
     case 'http': {
       const status = error.detail.status;
-      if (status === 401 || status === 403) return { title: couldNot, lines: [`The site said no (error ${status}).`, 'You may need to sign in to the site first.'] };
-      if (status === 404 || status === 410) return { title: couldNot, lines: [`The site couldn't find this file (error ${status}).`, 'The link may have expired.'] };
-      return { title: couldNot, lines: [`The site sent an error (error ${status ?? 'unknown'}).`] };
+      if (status === 401 || status === 403) return { title: couldNot, lines: [`The site wouldn’t let us open it (code ${status}).`, 'You may need to sign in first.'] };
+      if (status === 404 || status === 410) return { title: couldNot, lines: [`The site couldn’t find this file (code ${status}).`, 'The link may have expired.'] };
+      return { title: couldNot, lines: [status === undefined ? 'The site had a problem.' : `The site had a problem (code ${status}).`, 'Try again later.'] };
     }
     case 'too-large':
       return { title: couldNot, lines: [tooLargeText(error.detail.size ?? 0)] };
     case 'file-access':
-      return { title: couldNot, lines: ["Chrome isn't letting this viewer read files on your computer."] };
+      return { title: couldNot, lines: ['Chrome isn’t letting this viewer read files on your computer.'] };
     case 'aborted':
       return { title: couldNot, lines: ['Opening was cancelled.', 'Reload the page to try again.'] };
     case 'network':
@@ -52,7 +56,8 @@ function copyFor(error: PdfLoadError | PdfFormatError, sourceUrl: string | null)
 
 /**
  * Why the PDF did not open, with the two ways forward (spec: "Our error page offers 'Import this PDF' and 'Open in
- * Chrome's viewer'"). "Open in Chrome's viewer" shows when there is an address to open.
+ * Chrome's viewer'"; the first is worded "Choose a file from your computer", TB1 wording ruling). "Open in Chrome's
+ * viewer" shows when there is an address to open, as the main (tonal) button.
  */
 export function LoadErrorCard({ error, sourceUrl, onOpenInChrome, onImport, onTryAgain }: LoadErrorCardProps) {
   const { title, lines } = copyFor(error, sourceUrl);
@@ -72,8 +77,8 @@ export function LoadErrorCard({ error, sourceUrl, onOpenInChrome, onImport, onTr
         ))}
         <div className={styles.actions}>
           {onTryAgain !== undefined && <TextButton label="Try again" onClick={onTryAgain} />}
-          {canOpen && <TextButton label="Open in Chrome's viewer" icon="open_in_new" onClick={() => onOpenInChrome(sourceUrl)} />}
-          <TextButton label="Import this PDF" onClick={picker.open} />
+          <TextButton label="Choose a file from your computer" onClick={picker.open} />
+          {canOpen && <TextButton label="Open in Chrome’s viewer" icon="open_in_new" variant="tonal" onClick={() => onOpenInChrome(sourceUrl)} />}
         </div>
         {picker.input}
       </section>

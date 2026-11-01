@@ -23,8 +23,9 @@ const LAYOUT: { id: string; label: string; items: (ViewerCommandId | typeof SEPA
 ];
 
 /**
- * The menus as they are now: each item's greyed-out state and check are read when this is called, so build them again
- * when the view changes. A command that is not registered is left out, and so is a separator it leaves dangling.
+ * The menus as they are now: each item's greyed-out state, its reason and its check are read when this is called, so
+ * build them again when the view changes. A command that is not registered, or not built yet (`built` false: rotate,
+ * two-page view and presentation mode until Task 26), is left out, and so is a separator it leaves dangling.
  */
 export function buildMenus(cmds: ViewerCommands): MenuDef[] {
   return LAYOUT.map((menu) => {
@@ -35,8 +36,10 @@ export function buildMenus(cmds: ViewerCommands): MenuDef[] {
         continue;
       }
       const cmd = cmds.get(entry);
-      if (cmd === undefined) continue;
+      if (cmd === undefined || !cmd.built) continue;
       const checked = cmd.checked?.();
+      const enabled = cmd.enabled();
+      const why = enabled ? undefined : cmd.disabledReason?.();
       items.push({
         kind: 'item',
         id: cmd.id,
@@ -44,7 +47,8 @@ export function buildMenus(cmds: ViewerCommands): MenuDef[] {
         ...(cmd.icon !== undefined ? { icon: cmd.icon } : {}),
         ...(cmd.keys[0] !== undefined ? { shortcut: formatCombo(cmd.keys[0]) } : {}),
         ...(checked !== undefined ? { checked } : {}),
-        disabled: !cmd.enabled(),
+        disabled: !enabled,
+        ...(why !== undefined ? { disabledReason: why } : {}),
         onSelect: () => {
           if (cmd.enabled()) cmd.run();
         },
@@ -56,8 +60,9 @@ export function buildMenus(cmds: ViewerCommands): MenuDef[] {
 }
 
 /**
- * A combo as people read it: `Ctrl+-` → `Ctrl+−` (a real minus sign), `Alt+Shift+Digit5` → `Alt+Shift+5`,
- * `Ctrl+Alt+KeyS` → `Ctrl+Alt+S`, `Ctrl+s` → `Ctrl+S`.
+ * A combo as people read it: `Ctrl+=` and `Ctrl++` → `Ctrl+Plus` (the key marked + on every keyboard; "=" puzzled
+ * people), `Ctrl+-` → `Ctrl+Minus`, `Alt+Shift+Digit5` → `Alt+Shift+5`, `Ctrl+Alt+KeyS` → `Ctrl+Alt+S`,
+ * `Ctrl+s` → `Ctrl+S`.
  */
 export function formatCombo(c: KeyCombo): string {
   const plusKey = c === '+' || c.endsWith('++');
@@ -68,7 +73,8 @@ export function formatCombo(c: KeyCombo): string {
 }
 
 function keyName(key: string): string {
-  if (key === '-') return '−';
+  if (key === '-' || key === '_') return 'Minus';
+  if (key === '+' || key === '=') return 'Plus';
   if (key === 'ContextMenu') return 'Menu key';
   if (/^Digit\d$/u.test(key)) return key.slice('Digit'.length);
   if (/^Key[A-Z]$/u.test(key)) return key.slice('Key'.length);

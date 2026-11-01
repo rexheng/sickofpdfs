@@ -1,7 +1,11 @@
-/* The scan hint's place at the right end of the toolbar pill. A narrow window cuts its words short (ellipsis). */
+/*
+ * The scan hint's place at the right end of the toolbar pill. A narrow window cuts its words short (ellipsis). The
+ * 8 px at its end keep it off the pill's round end.
+ */
 .hint {
   display: flex;
   min-inline-size: 0;
+  margin-inline-end: var(--space-2);
 }
 
 .chip {

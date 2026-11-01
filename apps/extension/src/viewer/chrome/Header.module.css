@@ -19,8 +19,20 @@
   color: var(--gm3-sys-color-on-surface);
 }
 
+/*
+ * "Back to page", in words with its arrow: a 32 px text button in the header's own muted colour (not the primary
+ * blue of a call to action), its 8 px hover layer, and the 10 px gap to the PDF tile that Drive leaves after its close
+ * button.
+ */
 .back {
-  margin-inline-end: var(--viewer-back-gap);
+  block-size: var(--icon-btn);
+  margin-inline: calc(-1 * var(--space-2)) var(--viewer-back-gap);
+  padding-inline: var(--space-2) var(--space-3);
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.back:hover:not(:disabled) {
+  background-color: var(--icon-btn-hover);
 }
 
 /* FileTypeIcon size 32 draws a 24 px tile with 4 px of air around it; the air is taken back so the tile sits at 16. */

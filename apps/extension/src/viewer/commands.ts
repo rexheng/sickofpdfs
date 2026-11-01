@@ -1,6 +1,7 @@
 // The viewer's commands: the one source for the header menus, the toolbar pill, the keyboard shortcuts and the
 // shortcut sheet. Each command has a label, an icon, its keys, and what it does in this tab (ViewerContext).
 import type { IconName } from '@sop/ui';
+import type { SaveState } from '@sop/core';
 import {
   type FindController,
   type JumpHistory,
@@ -43,12 +44,26 @@ export interface ViewerCommand {
   enabled(): boolean;
   /** Set for a command that is on or off (a menu shows a check). */
   checked?(): boolean;
+  /**
+   * Why it is greyed out, for a command that is off for a real reason ("400% is the largest size"): the tooltip and
+   * the menu row say it after the label. Read when enabled() is false.
+   */
+  disabledReason?(): string | undefined;
+  /**
+   * False for a command whose task has not landed yet (rotate, two-page view, presentation mode: Task 26), or that
+   * this tab does not have (the marks in Incognito). It is left out of the menus, the toolbar and the shortcut sheet,
+   * rather than greyed out with no reason; its keys do nothing.
+   */
+  built: boolean;
 }
 
 /** What the commands ask of the viewer's interface (App.tsx owns the dialogs, the page box and the notices). */
 export interface ViewerUi {
-  /** The escape hatch: this address in Chrome's own viewer (App shows Chrome's refusal, if it comes). */
-  openInChrome(url: string): void;
+  /**
+   * The escape hatch: this address in Chrome's own viewer (App shows Chrome's refusal, if it comes), at `page`
+   * (1-based, `#page=N`) when given, so the reader keeps their place.
+   */
+  openInChrome(url: string, page?: number): void;
   /** Puts the focus in the toolbar's page box, with its number selected (Ctrl+G). */
   focusPageField(): void;
   showShortcuts(): void;
@@ -95,7 +110,7 @@ interface CommandSpec {
  * registered and no menu shows it.
  */
 const SPECS: [ViewerCommandId, CommandSpec][] = [
-  ['file.openInChrome', { label: "Open in Chrome's viewer", icon: 'open_in_new', keys: [] }],
+  ['file.openInChrome', { label: 'Open in Chrome’s viewer', icon: 'open_in_new', keys: [] }],
   ['file.download', { label: 'Download', icon: 'download', keys: ['Ctrl+S'] }],
   ['file.copyLink', { label: 'Copy link', icon: 'link', keys: [] }],
   ['file.print', { label: 'Print', icon: 'print', keys: ['Ctrl+P'] }],
@@ -110,7 +125,8 @@ const SPECS: [ViewerCommandId, CommandSpec][] = [
   ['view.presentation', { label: 'Presentation mode', icon: 'slideshow', keys: [] }],
   ['view.toggleRail', { label: 'Thumbnails and outline', icon: 'photo_library', keys: ['F4'] }],
   ['tools.find', { label: 'Find', icon: 'find_in_page', keys: ['Ctrl+F'] }],
-  ['tools.goToPage', { label: 'Go to page', icon: 'pageview', keys: ['Ctrl+G'] }],
+  // Not 'pageview' (a page and a magnifier), which looks like Find's icon beside it in the Tools menu.
+  ['tools.goToPage', { label: 'Go to page', icon: 'move_down', keys: ['Ctrl+G'] }],
   ['help.shortcuts', { label: 'Keyboard shortcuts', icon: 'keyboard', keys: ['?'] }],
   ['help.about', { label: 'About sickofpdfs', icon: 'info', keys: [] }],
   // Phase 2. The mark keys act on the selected text. Alt+Shift+5 is matched by position (the number row); the letters
@@ -132,10 +148,10 @@ const SPECS: [ViewerCommandId, CommandSpec][] = [
 ];
 
 /** What a command does in this tab. Features (wire.ts) hand these in for the commands they own. */
-export type CommandBehaviour = Pick<ViewerCommand, 'run' | 'enabled'> & Partial<Pick<ViewerCommand, 'checked'>>;
+export type CommandBehaviour = Pick<ViewerCommand, 'run' | 'enabled'> & Partial<Pick<ViewerCommand, 'checked' | 'disabledReason'>>;
 type Behaviour = CommandBehaviour;
 
-/** A command whose task has not landed yet: shown, greyed out, and its keys do nothing. */
+/** A command whose task has not landed yet: not shown anywhere (`built` false), and its keys do nothing. */
 const LATER: Behaviour = { run: () => {}, enabled: () => false };
 
 const always = () => true;
@@ -144,8 +160,21 @@ const always = () => true;
 const LIMIT_EPSILON = 1e-3;
 
 function assemble(behaviours: Partial<Record<ViewerCommandId, Behaviour>>): ViewerCommands {
-  return new Map(SPECS.map(([id, spec]): [ViewerCommandId, ViewerCommand] => [id, { id, ...spec, ...(behaviours[id] ?? LATER) }]));
+  return new Map(
+    SPECS.map(([id, spec]): [ViewerCommandId, ViewerCommand] => {
+      const behaviour = behaviours[id];
+      return [id, { id, ...spec, ...(behaviour ?? LATER), built: behaviour !== undefined }];
+    }),
+  );
 }
+
+/** A command that is off for as long as `reason` says (the PDF is still opening, or did not open). */
+function offBecause(reason: string): Behaviour {
+  return { run: () => {}, enabled: () => false, disabledReason: () => reason };
+}
+
+/** The reason a command with no web address to use is off. */
+const NO_ADDRESS = 'this PDF has no web address';
 
 /** The link "Copy link" copies: the address the PDF was opened from. A file picked from disk has none. */
 function linkOf(ctx: Pick<ViewerContext, 'params' | 'opened'>): string | null {
@@ -166,9 +195,26 @@ function fitPage(pages: PageListApi | null, store: ViewerStore): void {
 /** The save states the chip and Ctrl+Alt+S can save from: the PDF is not in the library, and not in Incognito. */
 const SAVABLE = new Set(['unsure', 'not-learning', 'memory-only', 'asking']);
 
+/** Why Save to library is off in each state it cannot save from. */
+const NOT_SAVABLE: Partial<Record<SaveState['kind'], string>> = {
+  checking: 'still checking this PDF',
+  saved: 'it’s in your library already',
+  incognito: 'nothing is saved in an Incognito window',
+};
+
 /** Ctrl+Alt+S and File → Save to library (Task 30). A failed save is told by the App's note, so it is not rethrown. */
 function saveToLibrary(save: SaveController | null): Behaviour {
-  return { run: () => void save?.requestSave().catch(() => {}), enabled: () => save !== null && SAVABLE.has(save.state.kind) };
+  return {
+    run: () => void save?.requestSave().catch(() => {}),
+    enabled: () => save !== null && SAVABLE.has(save.state.kind),
+    disabledReason: () => (save === null ? 'the PDF is still opening' : NOT_SAVABLE[save.state.kind]),
+  };
+}
+
+/** True fit width (Ctrl+0), not the capped one the document opens at (ruling R61). */
+function isFitWidth(store: ViewerStore): boolean {
+  const zoom = store.get().zoom;
+  return zoom.kind === 'fit-width' && zoom.max === undefined;
 }
 
 /**
@@ -182,15 +228,16 @@ export function createCommands(ctx: ViewerContext, extra: Partial<Record<ViewerC
   const scale = () => ctx.store.get().scale;
   return assemble({
     ...extra,
-    'file.openInChrome': { run: () => source !== null && ctx.ui.openInChrome(source), enabled: () => source !== null },
+    // The page in view goes with it (#page=N), so Chrome's viewer opens where the reader was.
+    'file.openInChrome': { run: () => source !== null && ctx.ui.openInChrome(source, ctx.store.get().currentPage + 1), enabled: () => source !== null, disabledReason: () => NO_ADDRESS },
     'file.download': { run: () => downloadOriginal(ctx.opened.loaded.blob, ctx.opened.loaded.displayName), enabled: always },
-    'file.copyLink': { run: () => link !== null && ctx.ui.copyLink(link), enabled: () => link !== null },
+    'file.copyLink': { run: () => link !== null && ctx.ui.copyLink(link), enabled: () => link !== null, disabledReason: () => NO_ADDRESS },
     'file.saveToLibrary': saveToLibrary(ctx.save),
     'file.print': { run: () => void printDocument(ctx), enabled: always },
-    'view.fitWidth': { run: () => pages()?.zoomTo({ kind: 'fit-width' }), enabled: always },
-    'view.fitPage': { run: () => fitPage(pages(), ctx.store), enabled: always },
-    'view.zoomIn': { run: () => pages()?.zoomStep(1), enabled: () => scale() < MAX_SCALE - LIMIT_EPSILON },
-    'view.zoomOut': { run: () => pages()?.zoomStep(-1), enabled: () => scale() > MIN_SCALE + LIMIT_EPSILON },
+    'view.fitWidth': { run: () => pages()?.zoomTo({ kind: 'fit-width' }), enabled: always, checked: () => isFitWidth(ctx.store) },
+    'view.fitPage': { run: () => fitPage(pages(), ctx.store), enabled: always, checked: () => ctx.store.get().zoom.kind === 'fit-page' },
+    'view.zoomIn': { run: () => pages()?.zoomStep(1), enabled: () => scale() < MAX_SCALE - LIMIT_EPSILON, disabledReason: () => '400% is the largest size' },
+    'view.zoomOut': { run: () => pages()?.zoomStep(-1), enabled: () => scale() > MIN_SCALE + LIMIT_EPSILON, disabledReason: () => '25% is the smallest size' },
     'view.toggleRail': { run: () => ctx.store.set({ railOpen: !ctx.store.get().railOpen }), enabled: always, checked: () => ctx.store.get().railOpen },
     'tools.find': { run: () => ctx.openFind?.(), enabled: () => ctx.openFind !== undefined },
     'tools.goToPage': { run: () => ctx.ui.focusPageField(), enabled: always },
@@ -199,15 +246,28 @@ export function createCommands(ctx: ViewerContext, extra: Partial<Record<ViewerC
   });
 }
 
+/** The commands that need an open document: while there is none, they are greyed out and say why. */
+const DOCUMENT_COMMANDS: ViewerCommandId[] = [
+  'file.download', 'file.print', 'file.saveToLibrary', 'view.fitWidth', 'view.fitPage', 'view.zoomIn', 'view.zoomOut', 'view.toggleRail',
+  'tools.find', 'tools.goToPage',
+];
+
 /**
  * The commands while no document is open (loading, an error card, the large-file note): the escape hatch, the link
- * and Help work; the rest are greyed out.
+ * and Help work; the reading commands are greyed out with `reason` ("the PDF is still opening"); the marks are not
+ * shown.
  */
-export function createIdleCommands(o: { source: string | null; canOpenInChrome: boolean; ui: ViewerUi }): ViewerCommands {
+export function createIdleCommands(o: { source: string | null; canOpenInChrome: boolean; ui: ViewerUi; reason: string }): ViewerCommands {
   const { source, ui } = o;
+  const off = offBecause(o.reason);
   return assemble({
-    'file.openInChrome': { run: () => source !== null && ui.openInChrome(source), enabled: () => source !== null && o.canOpenInChrome },
-    'file.copyLink': { run: () => source !== null && ui.copyLink(source), enabled: () => source !== null },
+    ...Object.fromEntries(DOCUMENT_COMMANDS.map((id) => [id, off])),
+    'file.openInChrome': {
+      run: () => source !== null && ui.openInChrome(source),
+      enabled: () => source !== null && o.canOpenInChrome,
+      disabledReason: () => (source === null ? NO_ADDRESS : 'Chrome can’t open this file from here'),
+    },
+    'file.copyLink': { run: () => source !== null && ui.copyLink(source), enabled: () => source !== null, disabledReason: () => NO_ADDRESS },
     'help.shortcuts': { run: () => ui.showShortcuts(), enabled: always },
     'help.about': { run: () => ui.showAbout(), enabled: always },
   });

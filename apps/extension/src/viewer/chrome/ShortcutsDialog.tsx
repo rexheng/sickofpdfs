@@ -1,6 +1,6 @@
 import { Dialog } from '@sop/ui';
 import { Fragment } from 'react';
-import type { ViewerCommandId, ViewerCommands } from '../commands';
+import type { ViewerCommands } from '../commands';
 import { formatCombo } from './menus';
 import styles from './ShortcutsDialog.module.css';
 
@@ -10,8 +10,9 @@ export interface ShortcutsDialogProps {
   commands: ViewerCommands;
 }
 
-/** The sheet's groups, named as the header's menus, then the marks and notes (Phase 2) and undo. */
+/** The sheet's groups: reading first, then as the header's menus, then the marks and notes (Phase 2) and undo. */
 const GROUPS: { title: string; prefix: string; also?: string[] }[] = [
+  { title: 'Reading', prefix: 'reading.' },
   { title: 'File', prefix: 'file.' },
   { title: 'View', prefix: 'view.' },
   { title: 'Tools', prefix: 'tools.' },
@@ -20,15 +21,37 @@ const GROUPS: { title: string; prefix: string; also?: string[] }[] = [
   { title: 'Help', prefix: 'help.' },
 ];
 
-const inGroup = (id: ViewerCommandId, g: (typeof GROUPS)[number]) => [g.prefix, ...(g.also ?? [])].some((p) => id.startsWith(p));
+const inGroup = (id: string, g: (typeof GROUPS)[number]) => [g.prefix, ...(g.also ?? [])].some((p) => id.startsWith(p));
+
+interface Row {
+  id: string;
+  label: string;
+  /** As people read them (formatCombo), each once. */
+  keys: string[];
+}
+
+/** The keys that move the pages (App.tsx readerShortcuts), as Chrome's viewer has them. They work while reading. */
+const READING: Row[] = [
+  { id: 'reading.down', label: 'Down a screen', keys: ['Space', 'Page Down'] },
+  { id: 'reading.up', label: 'Up a screen', keys: ['Shift+Space', 'Page Up'] },
+  { id: 'reading.lines', label: 'Scroll a little', keys: ['↓', '↑'] },
+  { id: 'reading.ends', label: 'First page, last page', keys: ['Home', 'End'] },
+  { id: 'reading.zoom', label: 'Zoom with the mouse wheel', keys: ['Ctrl+wheel'] },
+];
 
 /**
- * "?" and Help → Keyboard shortcuts: every command that has keys, in command order, grouped as the menus are. Each row
- * is the command's name (a row header) and its keys, each in a <kbd>.
+ * "?" and Help → Keyboard shortcuts: the reading keys, then every command that has keys and works (`built`), in
+ * command order, grouped as the menus are. Each row is the command's name (a row header) and its keys, each in a
+ * <kbd>. Two keys that read the same (Ctrl+= and Ctrl++ are both "Ctrl+Plus") show once.
  */
 export function ShortcutsDialog({ open, onOpenChange, commands }: ShortcutsDialogProps) {
-  const withKeys = [...commands.values()].filter((c) => c.keys.length > 0);
-  const groups = GROUPS.map((g) => ({ ...g, rows: withKeys.filter((c) => inGroup(c.id, g)) })).filter((g) => g.rows.length > 0);
+  const rows: Row[] = [
+    ...READING,
+    ...[...commands.values()]
+      .filter((c) => c.built && c.keys.length > 0)
+      .map((c) => ({ id: c.id, label: c.label, keys: [...new Set(c.keys.map(formatCombo))] })),
+  ];
+  const groups = GROUPS.map((g) => ({ ...g, rows: rows.filter((r) => inGroup(r.id, g)) })).filter((g) => g.rows.length > 0);
   return (
     <Dialog open={open} title="Keyboard shortcuts" onOpenChange={onOpenChange} actions={[{ label: 'Close', onClick: () => onOpenChange(false) }]}>
       <div className={styles.sheet}>
@@ -48,7 +71,7 @@ export function ShortcutsDialog({ open, onOpenChange, commands }: ShortcutsDialo
                       {c.keys.map((k, i) => (
                         <Fragment key={k}>
                           {i > 0 && <span className={styles.or}>or</span>}
-                          <kbd className={styles.kbd}>{formatCombo(k)}</kbd>
+                          <kbd className={styles.kbd}>{k}</kbd>
                         </Fragment>
                       ))}
                     </td>

@@ -19,7 +19,7 @@ export function ScanHint({ shown, onOpenInChrome }: ScanHintProps) {
         <Chip
           tone="neutral"
           icon="document_scanner"
-          label="This is a scan – open in Chrome's viewer to select text"
+          label="Scanned page: open in Chrome to select text"
           onClick={onOpenInChrome}
           className={styles.chip}
         />

@@ -27,10 +27,14 @@
   font-variation-settings: "opsz" 17;
 }
 
-/* Loading: a thin indeterminate bar along the top, like Chrome's viewer. It appears only if loading takes a while. */
+/*
+ * Loading: a thin indeterminate bar, like Chrome's viewer, along the bottom edge of the header (the toolbar pill is
+ * already in place below it). It appears only if loading takes a while.
+ */
 .progress {
   position: absolute;
-  inset: 0 0 auto;
+  inset: calc(-1 * var(--space-1)) 0 auto;
+  z-index: 3;
   block-size: var(--space-1);
   overflow: hidden;
   opacity: 0;

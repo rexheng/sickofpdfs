@@ -1,4 +1,4 @@
-import { FileTypeIcon, IconButton, MenuBar, type MenuDef } from '@sop/ui';
+import { FileTypeIcon, IconButton, MenuBar, type MenuDef, TextButton, Tooltip } from '@sop/ui';
 import type { ReactNode } from 'react';
 import styles from './Header.module.css';
 
@@ -14,18 +14,25 @@ export interface HeaderProps {
   chromeRefused: boolean;
   /** The library status chip (Task 30). */
   status?: ReactNode;
+  /** Where the focus goes after a menu was used with the pointer: the pages (App.tsx). */
+  returnFocus?: () => void;
 }
 
 /**
  * Drive's PDF preview header (02 section 4.10), 64 px on the viewer canvas: "Back to page" where Drive has its close
- * button (a 32 px button with a 24 px icon), the 24 px PDF tile, the file name in Google Sans 18 with the File, View,
- * Tools and Help menus under it, and at the right the status chip and "Open in Chrome's viewer" where Drive has
- * "Open in new tab". The spec's escape hatch "is always there": File → Open in Chrome's viewer and this button.
+ * button (in words, with its arrow: an arrow alone read as the browser's own Back), the 24 px PDF tile, the file name
+ * in Google Sans 18 with the File, View, Tools and Help menus under it, and at the right the status chip and
+ * "Open in Chrome's viewer" where Drive has "Open in new tab". The spec's escape hatch "is always there":
+ * File → Open in Chrome's viewer and this button.
  */
-export function Header({ name, onBack, menus, onOpenInChrome, chromeRefused, status }: HeaderProps) {
+export function Header({ name, onBack, menus, onOpenInChrome, chromeRefused, status, returnFocus }: HeaderProps) {
   return (
     <header className={styles.header} data-theme="dark" data-viewer-chrome="">
-      {onBack !== null && <IconButton icon="arrow_back" label="Back to page" size={32} iconSize={24} onClick={onBack} className={styles.back} />}
+      {onBack !== null && (
+        <Tooltip label="Go back to the web page this PDF was in">
+          <TextButton icon="arrow_back" label="Back to page" onClick={onBack} className={styles.back} />
+        </Tooltip>
+      )}
       <span className={styles.tile}>
         <FileTypeIcon kind="pdf" size={32} />
       </span>
@@ -34,18 +41,18 @@ export function Header({ name, onBack, menus, onOpenInChrome, chromeRefused, sta
           {name}
         </h1>
         <div className={styles.menus}>
-          <MenuBar menus={menus} />
+          <MenuBar menus={menus} {...(returnFocus !== undefined ? { returnFocus } : {})} />
         </div>
       </div>
       <div className={styles.end}>
         {chromeRefused && (
           <p role="alert" className={styles.alert}>
-            Chrome cannot open this file. For a local file, turn on “Allow access to file URLs” for sickofpdfs.
+            Chrome can’t open this file. For a file on your computer, turn on “Allow access to file URLs” for sickofpdfs.
           </p>
         )}
         {status}
         {onOpenInChrome !== null && (
-          <IconButton icon="open_in_new" label="Open in Chrome's viewer" size={40} iconSize={20} onClick={onOpenInChrome} />
+          <IconButton icon="open_in_new" label="Open in Chrome’s viewer" size={40} iconSize={20} onClick={onOpenInChrome} />
         )}
       </div>
     </header>

@@ -8,7 +8,8 @@
 .row {
   position: absolute;
   inset: 0 0 auto;
-  z-index: 1;
+  /* Above the rail (1), so the page box's note can hang below the pill over it. */
+  z-index: 2;
   box-sizing: border-box;
   block-size: var(--viewer-pill-h);
   padding-inline: var(--space-4);
@@ -55,8 +56,23 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.zoom:hover {
+.zoom:hover:not(:disabled) {
   background-color: var(--icon-btn-hover);
+}
+
+/* While the pointer presses it: the 10% pressed layer on top of the hover layer, as the icon buttons have. */
+.zoom:active:not(:disabled) {
+  background-color: color-mix(
+    in srgb,
+    var(--gm3-sys-color-on-surface-variant) calc((var(--gm3-state-hover) + var(--gm3-state-pressed)) * 100%),
+    transparent
+  );
+}
+
+/* While the PDF is still opening: "–", greyed out like the buttons beside it. */
+.zoom:disabled {
+  cursor: default;
+  opacity: var(--sop-disabled-content);
 }
 
 /* Keyboard focus, and while its list is open: Drive's 2 px #a8c7fa ring, flush with the box. */
@@ -83,6 +99,48 @@
 /* Open, the arrow points up, as Drive's does. */
 .zoom[data-state='open'] .zoomArrow {
   transform: rotate(180deg);
+}
+
+/* The page box, and under it the note that says where a number past either end went. */
+.pageField {
+  position: relative;
+  display: inline-flex;
+}
+
+.pageNote {
+  position: absolute;
+  inset-block-start: calc(100% + var(--space-3));
+  inset-inline-start: calc(-1 * var(--space-2));
+  z-index: var(--z-tooltip);
+  pointer-events: none;
+}
+
+/* The tooltip's look (Drive's inverse surface, 12/16), so it reads as a short note about the box above it. */
+.pageNoteText {
+  display: block;
+  box-sizing: border-box;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--shape-tooltip);
+  background-color: var(--gm3-sys-color-inverse-surface);
+  color: var(--gm3-sys-color-inverse-on-surface);
+  font: var(--type-tooltip);
+  font-variation-settings: "opsz" 17;
+  letter-spacing: var(--tracking-tight);
+  white-space: nowrap;
+  animation: appear 120ms ease-out;
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pageNoteText {
+    animation: none;
+  }
 }
 
 /* The right end of the pill: the scan hint. */

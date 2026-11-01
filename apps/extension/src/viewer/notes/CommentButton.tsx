@@ -12,13 +12,15 @@ export function CommentButton() {
   const cmd = cmds?.['marks.comment'];
   const spec = NOTE_COMMANDS['marks.comment'];
   if (isIncognito()) return null; // Incognito only views PDFs: no marks, no notes
+  // Off only for a moment, while the PDF's notes load: the tooltip says so rather than leave it greyed with no reason.
+  const off = cmd === undefined || !cmd.enabled();
   return (
-    <Tooltip label="Add a comment" shortcut={spec.keys[0]}>
+    <Tooltip label={off ? 'Add a comment: wait for the PDF to open' : 'Add a comment'} {...(off ? {} : { shortcut: spec.keys[0] })}>
       <TextButton
         label={spec.label}
         icon={spec.icon}
         className={styles.button}
-        disabled={cmd === undefined || !cmd.enabled()}
+        disabled={off}
         // Keep the text selection: pressing the button must not clear what the note is about.
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => cmd?.run()}

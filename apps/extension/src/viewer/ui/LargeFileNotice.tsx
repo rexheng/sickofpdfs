@@ -15,7 +15,7 @@ export function LargeFileNotice({ size, onOpenNow }: LargeFileNoticeProps) {
       <section className={styles.card} role="status">
         <Icon name="info" className={styles.icon} />
         <p className={styles.body}>
-          {`${tooLargeText(size)} Opening it in Chrome's viewer…`}
+          {`${tooLargeText(size)} Opening it in Chrome’s viewer…`}
         </p>
         <div className={styles.actions}>
           <TextButton label="Open now" onClick={onOpenNow} />

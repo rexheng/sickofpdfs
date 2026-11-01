@@ -1,5 +1,5 @@
 import { Dialog, TextField } from '@sop/ui';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import styles from './cards.module.css';
 
 export interface PasswordDialogProps {
@@ -12,14 +12,23 @@ export interface PasswordDialogProps {
 
 /**
  * Asks for the password of an encrypted PDF. It cannot be dismissed (there is nothing behind it to go back to), as in
- * Chrome's viewer. The dialog is named by a title attribute, so the field alone is labelled "Password".
+ * Chrome's viewer. The dialog is named by a title attribute, so the field alone is labelled "Password". The field has
+ * a visible "Password" label and runs the full width of the dialog; the line under it is kept for the error from the
+ * start, so the dialog does not move when "Incorrect password" appears.
  */
 export function PasswordDialog({ retry, attempt, onSubmit }: PasswordDialogProps) {
   const [value, setValue] = useState('');
-  useEffect(() => setValue(''), [attempt]);
+  const [empty, setEmpty] = useState(false);
+  const id = useId();
+  useEffect(() => {
+    setValue('');
+    setEmpty(false);
+  }, [attempt]);
   const submit = () => {
-    if (value !== '') onSubmit(value);
+    if (value === '') setEmpty(true);
+    else onSubmit(value);
   };
+  const error = empty ? 'Type the password first.' : retry ? 'Incorrect password. Try again.' : null;
   return (
     <Dialog
       open
@@ -30,13 +39,27 @@ export function PasswordDialog({ retry, attempt, onSubmit }: PasswordDialogProps
     >
       <p className={styles.body}>Enter the password to open it.</p>
       <div className={styles.field}>
-        <TextField type="password" label="Password" value={value} onChange={setValue} onEnter={submit} autoFocus invalid={retry} />
+        <label htmlFor={id} className={styles.fieldLabel}>
+          Password
+        </label>
+        <TextField
+          id={id}
+          type="password"
+          label="Password"
+          value={value}
+          onChange={(v) => {
+            setValue(v);
+            setEmpty(false);
+          }}
+          onEnter={submit}
+          autoFocus
+          invalid={error !== null}
+          className={styles.fullWidth}
+        />
       </div>
-      {retry && (
-        <p role="alert" className={styles.error}>
-          Incorrect password. Try again.
-        </p>
-      )}
+      <p role="alert" className={styles.error}>
+        {error}
+      </p>
     </Dialog>
   );
 }

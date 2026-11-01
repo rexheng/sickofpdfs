@@ -14,6 +14,6 @@
 }
 
 .button:disabled {
-  opacity: 0.38;
+  opacity: var(--sop-disabled-content);
   cursor: default;
 }

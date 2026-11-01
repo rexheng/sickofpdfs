@@ -21,6 +21,7 @@ import {
   PdfLoadError,
   RenderScheduler,
   ScanDetector,
+  START_ZOOM,
   useViewerState,
   type ViewerSnapshot,
   type ViewerStore,
@@ -58,7 +59,7 @@ import {
 } from './open-document';
 import { notesPanelFeature } from './notes-panel/feature';
 import { publishRuntime, type ViewerHooks, type ViewerState } from './runtime';
-import { openInChrome } from './open-in-chrome';
+import { atPage, openInChrome } from './open-in-chrome';
 import type { SaveControllerImpl } from './save/save-controller';
 import { SaveAskDialog } from './save/SaveAskDialog';
 import { StatusChip, useSaveView } from './save/StatusChip';
@@ -199,7 +200,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
   }, [params, deps, show]);
 
   useEffect(() => {
-    document.title = view.kind === 'ready' ? view.doc.loaded.displayName : displayNameFor(params.source, null);
+    document.title = view.kind === 'ready' ? tabTitle(view.doc) : displayNameFor(params.source, null);
   }, [view, params]);
 
   /**
@@ -235,10 +236,13 @@ function TabViewer({ params }: { params: ViewerParams }) {
     [deps, show],
   );
 
-  /** The escape hatch: this address in Chrome's own viewer, once. Chrome refuses a local file without file access. */
-  const escape = useCallback((url: string) => {
+  /**
+   * The escape hatch: this address in Chrome's own viewer, once, at the page the reader is on (`page`, 1-based).
+   * Chrome refuses a local file without file access.
+   */
+  const escape = useCallback((url: string, page?: number) => {
     setChromeRefused(false);
-    void openInChrome(url).then((ok) => setChromeRefused(!ok));
+    void openInChrome(atPage(url, page)).then((ok) => setChromeRefused(!ok));
   }, []);
   const fileAccess = view.kind === 'error' && view.error instanceof PdfLoadError && view.error.code === 'file-access';
   const back = backTarget(backPage);
@@ -247,6 +251,8 @@ function TabViewer({ params }: { params: ViewerParams }) {
 
   // The chrome: dialogs, the page box (Ctrl+G), the copy-link note, and the commands everything runs.
   const root = useRef<HTMLDivElement>(null);
+  const focusPages = useFocusBackToPages(root);
+  useKeyboardFocusMark();
   const pageField = useRef<HTMLInputElement>(null);
   const [dialog, setDialog] = useState<'shortcuts' | 'about' | null>(null);
   const [note, setNote] = useState<{ text: string } | null>(null);
@@ -277,7 +283,11 @@ function TabViewer({ params }: { params: ViewerParams }) {
   const [reader, setReader] = useState<ReaderChrome | null>(null);
   // Not for a local file the tab was not seen opening: one click must not show it in Chrome's viewer either.
   const canEscape = source !== null && view.kind !== 'refused';
-  const idleCommands = useMemo(() => createIdleCommands({ source, canOpenInChrome: canEscape, ui }), [source, canEscape, ui]);
+  const idleReason = view.kind === 'loading' ? 'wait for the PDF to open' : 'no PDF is open';
+  const idleCommands = useMemo(
+    () => createIdleCommands({ source, canOpenInChrome: canEscape, ui, reason: idleReason }),
+    [source, canEscape, ui, idleReason],
+  );
   const live = view.kind === 'ready' ? reader : null;
   const commands = live?.commands ?? idleCommands;
   useEffect(() => installShortcuts(commandShortcuts(commands)), [commands]);
@@ -293,9 +303,10 @@ function TabViewer({ params }: { params: ViewerParams }) {
         onBack={back === null ? null : () => void goBackToPage(back)}
         menus={menus}
         // The error and stopped cards carry their own "Open in Chrome's viewer"; one is enough on screen.
-        onOpenInChrome={!canEscape || view.kind === 'error' || view.kind === 'stopped' ? null : () => escape(source)}
+        onOpenInChrome={!canEscape || view.kind === 'error' || view.kind === 'stopped' ? null : () => escape(source, (live?.store.get().currentPage ?? 0) + 1)}
         chromeRefused={chromeRefused}
         status={save !== null && <StatusChip save={save} />}
+        returnFocus={focusPages}
       />
       <div className={styles.content}>
         {view.kind === 'ready' && (
@@ -310,8 +321,11 @@ function TabViewer({ params }: { params: ViewerParams }) {
             save={save}
             onChrome={setReader}
             onEngineStopped={onEngineStopped}
+            returnFocus={focusPages}
           />
         )}
+        {/* The pill is there from the start, in its place, so it does not pop in when the PDF arrives. */}
+        {view.kind === 'loading' && <Toolbar commands={idleCommands} view={null} />}
         {view.kind === 'ready' && form.notice !== null && <FormBanner kind={form.notice} onDismiss={form.dismiss} />}
         {view.kind === 'loading' && prompt === null && (
           <div role="progressbar" aria-label="Loading the PDF" className={styles.progress} />
@@ -324,7 +338,14 @@ function TabViewer({ params }: { params: ViewerParams }) {
             onImport={importFile}
             // Fetched without the owner's sign-in: "Try again" sends the tab to the address itself, as a click on the
             // link would, and the takeover then opens it with the sign-in (or the site shows its own sign-in page).
-            onTryAgain={view.signedOut && source !== null && /^https?:/i.test(source) ? () => location.replace(source) : undefined}
+            onTryAgain={
+              view.signedOut && source !== null && /^https?:/i.test(source)
+                ? () => location.replace(source)
+                : // The download stopped part way: one more try may work ("Check your connection, then try again").
+                  view.error instanceof PdfLoadError && view.error.code === 'network' && source !== null
+                  ? () => location.reload()
+                  : undefined
+            }
           />
         )}
         {view.kind === 'refused' && <LocalFileCard onChooseFile={importFile} />}
@@ -342,6 +363,80 @@ function TabViewer({ params }: { params: ViewerParams }) {
       <Snackbar note={note} />
     </div>
   );
+}
+
+/**
+ * The tab's title, as Chrome's viewer names it: the PDF's own Title (its document properties) when it has one with a
+ * letter or a digit in it, else the file name. The header keeps the file name, as Drive's does.
+ */
+function tabTitle(doc: OpenedDocument): string {
+  const title = doc.open.metadata.title?.trim() ?? '';
+  return /[\p{L}\p{N}]/u.test(title) ? title : doc.loaded.displayName;
+}
+
+/**
+ * Gives the focus back to the pages after the pointer used the chrome: a header or toolbar button clicked, or a menu
+ * closed with the pointer (MenuBar's and DropdownMenu's `returnFocus`). The button would otherwise keep the focus:
+ * Space would press it again, the arrows would not scroll, and a ring would be left on it. A button pressed from the
+ * keyboard keeps the focus and its ring. The find bar keeps its own focus (its buttons step through the hits).
+ * Returns the function that moves the focus, for the menus.
+ */
+function useFocusBackToPages(root: RefObject<HTMLDivElement | null>): () => void {
+  const focusPages = useCallback(() => {
+    const pages = root.current?.querySelector<HTMLElement>('[role="document"]');
+    if (pages) pages.focus({ preventScroll: true });
+    else if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); // no pages yet: the page itself
+  }, [root]);
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (e.detail === 0) return; // Enter or Space on the button: the keyboard keeps its place
+      const button = e.target instanceof Element ? e.target.closest('button') : null;
+      if (button === null || button.closest('[data-viewer-chrome]') === null || button.closest('[role="search"]') !== null) return;
+      // After the button's own action, which may have moved the focus itself (a dialog, the page box, a menu).
+      setTimeout(() => {
+        if (document.activeElement === button) focusPages();
+      }, 0);
+    };
+    document.addEventListener('click', onClick);
+    return () => document.removeEventListener('click', onClick);
+  }, [focusPages]);
+  return focusPages;
+}
+
+/**
+ * Marks the pages (`data-keyboard-focus`) while the keyboard brought the focus to them (Tab, Shift+Tab), so their
+ * focus ring shows then and only then (NavRail.module.css). A click on the pages, or the focus handed back after a
+ * toolbar click, shows none: the ring was noise for mouse readers, and Chrome's :focus-visible would show it as soon
+ * as a reading key was pressed.
+ */
+function useKeyboardFocusMark(): void {
+  useEffect(() => {
+    let tabbed = false;
+    const isPages = (t: EventTarget | null): t is HTMLElement => t instanceof HTMLElement && t.getAttribute('role') === 'document';
+    const onKeyDown = (e: KeyboardEvent) => {
+      tabbed = e.key === 'Tab';
+    };
+    const onPointerDown = () => {
+      tabbed = false;
+      document.querySelector('[data-keyboard-focus]')?.removeAttribute('data-keyboard-focus');
+    };
+    const onFocusIn = (e: FocusEvent) => {
+      if (isPages(e.target)) e.target.toggleAttribute('data-keyboard-focus', tabbed);
+    };
+    const onFocusOut = (e: FocusEvent) => {
+      if (isPages(e.target)) e.target.removeAttribute('data-keyboard-focus');
+    };
+    document.addEventListener('keydown', onKeyDown, true);
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('focusin', onFocusIn);
+    document.addEventListener('focusout', onFocusOut);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true);
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('focusin', onFocusIn);
+      document.removeEventListener('focusout', onFocusOut);
+    };
+  }, []);
 }
 
 /** What the open document hands up to the header: its commands and the view state they read. */
@@ -382,6 +477,8 @@ interface ReaderProps {
   onChrome: (chrome: ReaderChrome | null) => void;
   /** The engine stopped under this document: called once, with where the reader was. */
   onEngineStopped: (err: PdfEngineCrashedError, resume: Resume) => void;
+  /** Gives the focus back to the pages after the zoom list was used with the pointer. */
+  returnFocus: () => void;
 }
 
 /**
@@ -389,9 +486,15 @@ interface ReaderProps {
  * its test hooks. Memoised: the header re-renders App when the view changes (its menus), and that must not re-render
  * the page list.
  */
-const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef, ui, save, onChrome, onEngineStopped }: ReaderProps) {
+const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef, ui, save, onChrome, onEngineStopped, returnFocus }: ReaderProps) {
   const [store] = useState(() =>
-    createViewerStore({ currentPage: Math.min(doc.open.pageCount - 1, Math.max(0, (params.page ?? 1) - 1)), railOpen: railStartsOpen(), ...resume }),
+    createViewerStore({
+      // Ruling R61: fit width, but no larger than 100%, as Chrome's and Drive's viewers open (a narrow window goes below).
+      zoom: START_ZOOM,
+      currentPage: Math.min(doc.open.pageCount - 1, Math.max(0, (params.page ?? 1) - 1)),
+      railOpen: railStartsOpen(),
+      ...resume,
+    }),
   );
   const [scheduler] = useState(
     () => new RenderScheduler(backend, doc.open.doc, { concurrency: ENGINE_WORKERS, previewWidthPx: 160, previewCache: 300 }),
@@ -405,7 +508,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   const outline = useOutline(backend, doc);
   useRailFitsWindow(store);
   // Find jumps through the same history as links, so Back returns from each jump to a hit (Task 25).
-  const find = useReaderFind({ backend, doc, store, api, pageText, textLayers, jumps: nav.jumps, root: rootRef });
+  const find = useReaderFind({ backend, doc, store, api, pageText, textLayers, jumps: nav.jumps, root: rootRef, scans });
   // The document's notes: marks, comments and drafts (Phase 2). Null in Incognito, which has none.
   const notes = useNotes(doc, pageText, store, api, textLayers, save, nav.jumps);
   const commands = useMemo(() => {
@@ -476,16 +579,17 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   const [reserveAtOpen] = useState(() => Math.max(0, ...viewerFeatures().map((f) => f.reserveAtOpen?.(doc) ?? 0)));
   const goToPage = useCallback((index: number) => void api.current?.goToPage(index), []);
   const zoom = useCallback((mode: ZoomMode) => api.current?.zoomTo(mode), []);
+  const toolbarView = useMemo(
+    () => ({ store, pageCount: doc.open.pageCount, onGoToPage: goToPage, onZoom: zoom, pageFieldRef }),
+    [store, doc, goToPage, zoom, pageFieldRef],
+  );
   return (
     <>
       <Toolbar
         commands={commands}
-        store={store}
-        pageCount={doc.open.pageCount}
-        onGoToPage={goToPage}
-        onZoom={zoom}
-        pageFieldRef={pageFieldRef}
-        end={<><CurrentPageExtras store={store} scans={scans} source={doc.loaded.sourceUrl} onOpenInChrome={(url) => ui.openInChrome(url)} /><CommentButton /></>}
+        view={toolbarView}
+        returnFocus={returnFocus}
+        end={<><CurrentPageExtras store={store} scans={scans} source={doc.loaded.sourceUrl} onOpenInChrome={(url, page) => ui.openInChrome(url, page)} /><CommentButton /></>}
       />
       <NavRail
         store={store}
@@ -537,13 +641,16 @@ function useNotes(
 /** The text layer's font: the engine's bundled Noto Sans (the spike measured canvas and DOM widths within 0.02 px with it). */
 const TEXT_LAYER_FONT = 'pdf/NotoSans-Regular.ttf';
 
-/** What follows the page in view: `#page=N` in the address, and the scan hint. Kept apart so the page list does not re-render. */
-function CurrentPageExtras(p: { store: ViewerStore; scans: ScanDetector; source: string | null; onOpenInChrome: (url: string) => void }) {
+/**
+ * What follows the page in view: `#page=N` in the address, and the scan hint, whose "open in Chrome" keeps the page.
+ * Kept apart so the page list does not re-render.
+ */
+function CurrentPageExtras(p: { store: ViewerStore; scans: ScanDetector; source: string | null; onOpenInChrome: (url: string, page: number) => void }) {
   const currentPage = useViewerState(p.store, (s) => s.currentPage);
   const scanned = useScannedPage(p.scans, currentPage);
   usePageHash(currentPage);
   const { source, onOpenInChrome } = p;
-  return <ScanHint shown={scanned && source !== null} onOpenInChrome={() => source !== null && onOpenInChrome(source)} />;
+  return <ScanHint shown={scanned && source !== null} onOpenInChrome={() => source !== null && onOpenInChrome(source, currentPage + 1)} />;
 }
 
 /** How long the reader stays on a page before it is checked for being a scan (the check shares the engine). */
