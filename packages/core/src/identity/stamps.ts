@@ -37,8 +37,8 @@ const CLOCK = '\\d{1,2}:\\d{2}(?::\\d{2})?';
 const DATE_FORMS: readonly string[] = [
   // ISO, with an optional time and zone: 2026-10-31, 2026-10-31T10:41:07Z, 2026-10-31 10:41:07+01:00.
   '\\d{4}-\\d{2}-\\d{2}(?:[T ]\\d{1,2}:\\d{2}(?::\\d{2}(?:\\.\\d+)?)?(?:Z|[+-]\\d{2}:?\\d{2})?)?',
-  // Tue, 31 Oct 2026 10:41:07 UTC.
-  `${WEEKDAY},? \\d{1,2} ${MONTH} \\d{4}(?: ${CLOCK}(?: ?(?:UTC|GMT))?)?`,
+  // Tue, 31 Oct 2026 10:41:07 UTC; older JSTOR stamps: Thu, 22 Aug 2013 05:11:55 AM.
+  `${WEEKDAY},? \\d{1,2} ${MONTH} \\d{4}(?: ${CLOCK}(?: ?(?:UTC|GMT|AM|PM))?)?`,
   // 31 October 2026.
   `\\d{1,2} ${MONTH} \\d{4}`,
   // October 31, 2026.
@@ -50,9 +50,10 @@ const DATE = `(?:${DATE_FORMS.join('|')})`;
 
 /** What is removed, in this order. Each match becomes one space; the spaces are folded again at the end. */
 const STAMP_PATTERNS: readonly RegExp[] = [
-  // 1. JSTOR's two lines. The IP address and the date are removed by the patterns below.
+  // 1. JSTOR's two lines (the second ends in the terms link, or in "JSTOR Terms and Conditions" on stamps before 2016).
+  //    The IP address and the date are removed by the patterns below.
   /This content downloaded(?: from \S+)? on\b/gi,
-  /All use subject to https?:\/\/about\.jstor\.org\/terms/gi,
+  /All use subject to (?:https?:\/\/about\.jstor\.org\/terms|JSTOR Terms and Conditions)/gi,
   // 2. Publisher and library lines: "Downloaded from <link> [by <who>] on [<date>]" and "Downloaded by [<who>] at <when>".
   //    <who> is the institution or user and changes with every download, so it goes too.
   new RegExp(`Downloaded from https?:\\/\\/\\S+(?: by .{1,150}?)? on \\[?${DATE}\\]?`, 'gi'),
