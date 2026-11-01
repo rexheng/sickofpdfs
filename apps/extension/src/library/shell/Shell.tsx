@@ -1,6 +1,7 @@
 import { IconButton } from '@sop/ui';
 import { LibraryShell, NavList, ProductMark, SearchPill } from '@sop/ui/library';
 import { type ReactNode, type Ref, useEffect, useRef } from 'react';
+import { BackupAttention } from '../settings/BackupAttention';
 import { DEFAULT_ROUTE } from '../routes/pages';
 import { ROUTES, type RouteId, routeHref } from '../routes/routes';
 import type { UploadOutcome } from '../data/types';
@@ -47,7 +48,12 @@ export function Shell({ route, search, onSearch, onNotify, newMenu, onUpload, ch
         </a>
       }
       search={<SearchPill ref={field} value={search} onChange={onSearch} label="Search in library" />}
-      topEnd={<IconButton icon="settings" label="Settings" size={40} onClick={() => (location.hash = routeHref('settings'))} />}
+      topEnd={
+        <>
+          <BackupAttention />
+          <IconButton icon="settings" label="Settings" size={40} onClick={() => (location.hash = routeHref('settings'))} />
+        </>
+      }
       newButton={<NewMenu ref={newMenu} onNotify={onNotify} onUpload={onUpload} />}
       nav={<NavList items={NAV_ITEMS} current={route} label="Library" />}
     >
