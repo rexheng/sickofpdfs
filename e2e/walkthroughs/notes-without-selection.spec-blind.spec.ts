@@ -140,10 +140,11 @@ test('Ctrl+Alt+Shift+M makes a document note, with or without words selected', a
 test('point, page and document notes are all back after a reload', async ({ openViewer, server }, testInfo) => {
   test.skip(!SAVING_AVAILABLE, NO_SAVING);
   const page = await openPaper(openViewer, server, ATTENTION);
-  await waitSaved(page);
   const sel = await selectPassage(page, ATTENTION, LINES.l7);
   const at = await middleOf(page, sel);
   await noteAt(page, at, 'Reloaded point note');
+  // Triage (TB2): Task 30's stand-in filter calls every PDF "Not sure" until Phase 3, so the first note is what saves it.
+  await waitSaved(page);
   await noteAt(page, GUTTER, 'Reloaded page note');
   await noteAt(page, GUTTER, 'Reloaded document note', 'Control+Alt+Shift+m');
   await waitStored(page, (a) => a.comments.filter((c) => c.draftOfTab === null && c.deletedAt === null).length === 3, 'three notes are stored');

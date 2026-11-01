@@ -537,11 +537,15 @@ export async function altGr(page: Page, key: string, code: string): Promise<void
 }
 
 /** The renderer dies: the same as the "Aw, Snap" crash page. */
+// Triage (TB2): the viewer tab, the extension's service worker and its offscreen store share one renderer process, so
+// Page.crash takes them all down, and the CDP call itself may never answer. The crash is fired without waiting for a
+// reply, waited for with a cap, and the dead tab is then closed (as the owner closes a crashed tab) before reopening.
 export async function crashRenderer(page: Page): Promise<void> {
   const crashed = new Promise<void>((resolve) => page.once('crash', () => resolve()));
   const cdp = await page.context().newCDPSession(page);
-  await cdp.send('Page.crash').catch(() => undefined); // the session dies with the page
-  await crashed;
+  void cdp.send('Page.crash').catch(() => undefined); // the session dies with the page
+  await Promise.race([crashed, new Promise<void>((resolve) => setTimeout(resolve, 10_000))]);
+  await page.close().catch(() => undefined);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -551,13 +555,13 @@ export interface MarkRow {
   id: string;
   style: 'highlight' | 'underline' | 'bold' | 'strike' | 'area';
   color: number | null;
-  anchor: { kind: string; quote?: { exact: string }; start?: { page: number; index: number }; end?: { page: number; index: number }; point?: number[]; page?: number };
+  anchor: { kind: string; quote?: { quote: string }; start?: { page: number; index: number }; end?: { page: number; index: number }; point?: number[]; page?: number };
   pageIndex: number;
   deletedAt: number | null;
 }
 export interface ThreadRow {
   id: string;
-  anchor: { kind: string; quote?: { exact: string }; page?: number; point?: number[] };
+  anchor: { kind: string; quote?: { quote: string }; page?: number; point?: number[] };
   pageIndex: number | null;
   placement: string;
   draftOfTab: string | null;
@@ -590,6 +594,18 @@ export async function waitSaved(page: Page, timeout = 30_000): Promise<string> {
   let id: string | null = null;
   await expect.poll(async () => (id = await libraryId(page)), { timeout, message: 'the PDF should be saved to the library' }).not.toBeNull();
   return id!;
+}
+
+/**
+ * Triage (TB2): saves the paper before a test starts, the way the owner would. The walkthroughs took the learning paper
+ * to be saved by the filter on its own; until Phase 3 wires the real filter, Task 30's stand-in calls every PDF "Not
+ * sure", so the owner presses the chip's "Save?". Returns the library id.
+ */
+export async function saveFirst(page: Page): Promise<string> {
+  const chip = page.getByRole('button', { name: /^(not sure|saved)/i }).first();
+  await expect(chip, 'the save chip settles').toBeVisible({ timeout: 25_000 });
+  if (/not sure/i.test((await chip.textContent()) ?? '')) await chip.click(); // textContent starts with the icon's ligature
+  return waitSaved(page);
 }
 
 export async function annotations(page: Page, documentId?: string): Promise<Annotations> {

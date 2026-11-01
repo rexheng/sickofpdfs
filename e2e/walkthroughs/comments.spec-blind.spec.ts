@@ -138,8 +138,9 @@ test('the card survives a reload, with its highlight, on the same words', async 
   test.skip(!SAVING_AVAILABLE, NO_SAVING);
   const page = await openPaper(openViewer, server, ATTENTION);
   const tokens = await markTokens(page);
-  await waitSaved(page);
   const sel = await postNote(page, ATTENTION, LINES.l5, 'Survives a reload');
+  // Triage (TB2): Task 30's stand-in filter calls every PDF "Not sure" until Phase 3, so the first mark is what saves it.
+  await waitSaved(page);
   await waitStored(page, (a) => a.comments.some((c) => c.body === 'Survives a reload' && c.draftOfTab === null), 'the note is stored');
   await reloadAndWait(page, ATTENTION);
   const card = cardWith(page, 'Survives a reload');

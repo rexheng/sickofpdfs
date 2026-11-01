@@ -103,12 +103,14 @@ test('the highlight is still there after a reload, on the same words', async ({ 
   const page = await openPaper(openViewer, server, ATTENTION);
   const tokens = await markTokens(page);
   const sel = await selectPassage(page, ATTENTION, SENTENCE_1);
-  await waitSaved(page); // a learning paper is saved by itself
   await highlightFromMenu(page, sel, 'green');
+  // Triage (TB2): Task 30's stand-in filter calls every PDF "Not sure" until Phase 3, so the first mark is what saves it.
+  await waitSaved(page);
   const stored = await waitStored(page, (a) => a.marks.some((r) => r.style === 'highlight' && r.deletedAt === null), 'the highlight is written to the library');
   const row = stored.marks.find((r) => r.style === 'highlight')!;
   expect(row.color, 'green is colour slot 2').toBe(2);
-  expect(collapse(row.anchor.quote?.exact ?? ''), 'the mark remembers the words it is on').toBe(collapse(sel.text));
+  // Triage (TB2): contracts section 2 names the TextQuoteSelector's exact text `quote.quote`.
+  expect(collapse(row.anchor.quote?.quote ?? ''), 'the mark remembers the words it is on').toBe(collapse(sel.text));
 
   await reloadAndWait(page, ATTENTION);
   const after = await paintOfSelection(page, sel, { name: 'after-reload', testInfo });

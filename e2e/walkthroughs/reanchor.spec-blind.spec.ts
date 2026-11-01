@@ -40,6 +40,7 @@ import {
   postNote,
   selectPassage,
   settle,
+  saveFirst,
   waitSaved,
   waitStored,
   type OpenViewer,
@@ -99,7 +100,8 @@ test('a stamped re-download shows the same marks and notes on the same words, wi
   const a = await openServed(openViewer, server, '/gen/attention-original.pdf');
   const tokens = await markTokens(a);
   const fx = await showPage(a, 0);
-  const id = await waitSaved(a);
+  // Triage (TB2): saveFirst presses the chip's "Save?" while the stand-in filter calls the paper "Not sure".
+  const id = await saveFirst(a);
   const green = await selectPassage(a, fx, SENTENCE_1);
   await highlightFromMenu(a, green, 'green');
   await postNote(a, fx, LINES.l7, 'Note that must survive a re-download');
@@ -115,7 +117,8 @@ test('a stamped re-download shows the same marks and notes on the same words, wi
   const hl = await paintOfSelection(b, sentence, { name: 'stamped-green', testInfo });
   expect(hl.paint.share(tokens.fill[GREEN]), `the green highlight is on the same words in the stamped copy: ${describe(hl.paint)}`).toBeGreaterThanOrEqual(0.6);
   const cm = await paintOfSelection(b, line);
-  expect(cm.paint.share(tokens.fill[YELLOW]), `and so is the comment's highlight: ${describe(cm.paint)}`).toBeGreaterThanOrEqual(0.6);
+  // Triage (TB2): a new note's highlight is in the last colour picked (marks.lastColor), green here.
+  expect(cm.paint.share(tokens.fill[YELLOW]) + cm.paint.share(tokens.fill[GREEN]), `and so is the comment's highlight: ${describe(cm.paint)}`).toBeGreaterThanOrEqual(0.6);
   await expect(b.getByText('Moved', { exact: true }), 'the words are exactly where the note says: no "Moved" label').toHaveCount(0);
   const stats = await storeOf(b).stats();
   expect(stats.documents, 'the library holds one document').toBe(1);
@@ -129,7 +132,8 @@ test('the same file under another address (moved or renamed) shows the same note
   server.serveSequence('/gen/folder-two/renamed-copy-1.pdf', [original]);
   const a = await openServed(openViewer, server, '/gen/folder-one/attention.pdf');
   const fx = await showPage(a, 0);
-  const id = await waitSaved(a);
+  // Triage (TB2): saveFirst presses the chip's "Save?" while the stand-in filter calls the paper "Not sure".
+  const id = await saveFirst(a);
   await postNote(a, fx, LINES.l3, 'Follows the file, not the address');
   await waitStored(a, (x) => x.comments.some((c) => c.body === 'Follows the file, not the address' && c.draftOfTab === null), 'the note is stored');
 
@@ -147,7 +151,8 @@ test('if the passage has moved a little (a word changed), the note is placed on 
   const a = await openServed(openViewer, server, '/gen/paper-v1.pdf');
   const index = await pageHolding(a, TARGET.v1);
   const fx = await showPage(a, index);
-  const id = await waitSaved(a);
+  // Triage (TB2): saveFirst presses the chip's "Save?" while the stand-in filter calls the paper "Not sure".
+  const id = await saveFirst(a);
   const tokens = await markTokens(a);
   await postNote(a, fx, TARGET_PASSAGE.v1, 'A note on the placebo sentence');
   await waitStored(a, (x) => x.comments.some((c) => c.body === 'A note on the placebo sentence' && c.draftOfTab === null), 'the note is stored');
@@ -170,7 +175,8 @@ test('if the passage is gone, the note goes under "Couldn\'t place" and nothing 
   const a = await openServed(openViewer, server, '/gen/paper-v1.pdf');
   const index = await pageHolding(a, TARGET.v1);
   const fx = await showPage(a, index);
-  const id = await waitSaved(a);
+  // Triage (TB2): saveFirst presses the chip's "Save?" while the stand-in filter calls the paper "Not sure".
+  const id = await saveFirst(a);
   const tokens = await markTokens(a);
   await postNote(a, fx, TARGET_PASSAGE.v1, 'A note on a sentence that will go');
   await waitStored(a, (x) => x.comments.some((c) => c.body === 'A note on a sentence that will go' && c.draftOfTab === null), 'the note is stored');

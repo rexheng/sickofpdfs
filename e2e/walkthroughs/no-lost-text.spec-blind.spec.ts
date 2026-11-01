@@ -20,7 +20,7 @@ import {
   selectPassage,
   startNote,
   typeLines,
-  waitSaved,
+  saveFirst,
 } from './support/marks.spec-blind';
 import { shot } from './support/takeover';
 
@@ -59,6 +59,7 @@ const KILLS = [
 /** The address of the paper on the fixture server. */
 const addressOf = (server: { url(p: string): string }): string => server.url(`/f/${ATTENTION.file}`);
 
+// Triage (TB2): saveFirst presses the chip's "Save?", as the owner would while the stand-in filter calls the paper "Not sure".
 test.describe('No lost text', () => {
   test.setTimeout(150_000);
 
@@ -66,7 +67,7 @@ test.describe('No lost text', () => {
     test(`${name} 100 ms after the last key: the draft is back in its card, with the caret at the end`, async ({ openViewer, server }, testInfo) => {
       test.skip(!SAVING_AVAILABLE, NO_SAVING);
       const first = await openPaper(openViewer, server, ATTENTION);
-      await waitSaved(first);
+      await saveFirst(first);
       await selectPassage(first, ATTENTION, LINES.l1);
       await startNote(first);
       const typed = await typeNote(first);
@@ -87,7 +88,7 @@ test.describe('No lost text', () => {
   test('a draft left alone for a while is just as safe (300 ms, the saving rule)', async ({ openViewer, server }) => {
     test.skip(!SAVING_AVAILABLE, NO_SAVING);
     const first = await openPaper(openViewer, server, ATTENTION);
-    await waitSaved(first);
+    await saveFirst(first);
     await selectPassage(first, ATTENTION, LINES.l3);
     await startNote(first);
     const typed = await typeNote(first);
@@ -100,7 +101,7 @@ test.describe('No lost text', () => {
   test('a draft that was never sent is not in the library as a note, and is not shown as sent', async ({ openViewer, server }, testInfo) => {
     test.skip(!SAVING_AVAILABLE, NO_SAVING);
     const page = await openPaper(openViewer, server, ATTENTION);
-    const id = await waitSaved(page);
+    const id = await saveFirst(page);
     await selectPassage(page, ATTENTION, LINES.l5);
     await startNote(page);
     await page.keyboard.type('Not sent yet', { delay: 10 });
@@ -126,7 +127,7 @@ test.describe('No lost text', () => {
     test(`${way} never loses the text: it is still there after a reload`, async ({ openViewer, server }, testInfo) => {
       test.skip(!SAVING_AVAILABLE, NO_SAVING);
       const page = await openPaper(openViewer, server, ATTENTION);
-      await waitSaved(page);
+      await saveFirst(page);
       await selectPassage(page, ATTENTION, LINES.l1);
       await startNote(page);
       await page.keyboard.type(LINE_1, { delay: 15 });
@@ -143,7 +144,7 @@ test.describe('No lost text', () => {
   test('an unsent reply survives a crash, and the note it belongs to is still there', async ({ openViewer, server }, testInfo) => {
     test.skip(!SAVING_AVAILABLE, NO_SAVING);
     const first = await openPaper(openViewer, server, ATTENTION);
-    await waitSaved(first);
+    await saveFirst(first);
     await postNote(first, ATTENTION, LINES.l3, 'The note that gets a reply');
     const card = cardWith(first, 'The note that gets a reply');
     await card.click();
@@ -162,7 +163,7 @@ test.describe('No lost text', () => {
   test('an unsent edit of a sent note survives a crash, and the sent text stays until the edit is sent', async ({ openViewer, server }, testInfo) => {
     test.skip(!SAVING_AVAILABLE, NO_SAVING);
     const first = await openPaper(openViewer, server, ATTENTION);
-    const id = await waitSaved(first);
+    const id = await saveFirst(first);
     await postNote(first, ATTENTION, LINES.l7, 'Original wording');
     const card = cardWith(first, 'Original wording');
     await card.click();
@@ -186,7 +187,7 @@ test.describe('No lost text', () => {
   test("two tabs on one PDF: the draft stays with tab A while A is open; B sees the notes A posted, never A's draft; when A is gone, B has the draft", async ({ openViewer, server }, testInfo) => {
     test.skip(!SAVING_AVAILABLE, NO_SAVING);
     const a = await openPaper(openViewer, server, ATTENTION);
-    await waitSaved(a);
+    await saveFirst(a);
 
     // A posts a note (Enter) and starts a second one, which it does not finish
     await selectPassage(a, ATTENTION, LINES.l1);

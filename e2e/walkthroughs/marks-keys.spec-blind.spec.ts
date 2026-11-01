@@ -309,8 +309,9 @@ test('the marks of a saved paper are still on the same words after a reload (a h
   const page = await openPaper(openViewer, server, ATTENTION);
   const tokens = await markTokens(page);
   const l1 = await selectPassage(page, ATTENTION, LINES.l1);
-  await waitSaved(page);
   await page.keyboard.press('h');
+  // Triage (TB2): Task 30's stand-in filter calls every PDF "Not sure" until Phase 3, so the first mark is what saves it.
+  await waitSaved(page);
   const l5 = await selectPassage(page, ATTENTION, LINES.l5);
   await page.keyboard.press('Control+u');
   const l9 = await selectPassage(page, ATTENTION, LINES.l9);
@@ -322,5 +323,6 @@ test('the marks of a saved paper are still on the same words after a reload (a h
   const two = await paintOfSelection(page, l5);
   expect(strokesOf(two.shot, two.boxes[0], lineColours(tokens.line[YELLOW])).rows.length, 'the underline is back').toBeGreaterThan(0);
   const three = await paintOfSelection(page, l9);
-  expect(strokesOf(three.shot, three.boxes[0], lineColours(tokens.line[YELLOW]), { above: 0, below: 0 }).rows.length, 'the strike is back').toBeGreaterThan(0);
+  // Triage (TB2): the strike runs behind the black text (see the strike test).
+  expect(strokesOf(three.shot, three.boxes[0], lineColours(tokens.line[YELLOW]), { above: 0, below: 0, cover: 0.2 }).rows.length, 'the strike is back').toBeGreaterThan(0);
 });
