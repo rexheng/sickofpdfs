@@ -510,6 +510,12 @@ export async function markLineRects(text: RectSource, pageIndex: number, start: 
 export interface PathOptions {
   /** Device pixels per CSS px. When given, every edge snaps to a whole device pixel, so edges are crisp. */
   pixelRatio?: number;
+  /**
+   * The turn of the displayed page: its /Rotate plus the viewer's own turn, the same number normToCss was given. Default
+   * 0. Underlines and strikes are drawn on the text's own bottom edge and through its own middle, so they follow it.
+   * (Text that runs sideways on an upright page is still drawn as if it ran across: anchors store no direction.)
+   */
+  rotation?: Rotation;
 }
 
 const fmt = (v: number): string => String(Math.round(v * 1000) / 1000);
@@ -530,34 +536,58 @@ export function highlightPath(rects: readonly Box[], o?: PathOptions): string {
   return rects.map((r) => rectD(s(r.x), s(r.y), s(r.x + r.width), s(r.y + r.height))).join('');
 }
 
-/** An underline: a bar of `thickness` CSS px (default 1) on the bottom edge of each rect. */
+/**
+ * A bar of `t` CSS px along the text line that the box `r` holds (a box on the displayed page), as [x0, y0, x1, y1]: on
+ * the line's text-bottom edge, or through its middle. A line's bottom is the box's bottom edge on an upright page, its
+ * left edge when the page is turned 90 degrees, its top edge at 180 and its right edge at 270.
+ */
+function bar(r: Box, at: 'bottom' | 'middle', t: number, turn: Rotation): [number, number, number, number] {
+  if (turn === 90 || turn === 270) {
+    const x = at === 'middle' ? r.x + r.width / 2 - t / 2 : turn === 90 ? r.x : r.x + r.width - t;
+    return [x, r.y, x + t, r.y + r.height];
+  }
+  const y = at === 'middle' ? r.y + r.height / 2 - t / 2 : turn === 0 ? r.y + r.height - t : r.y;
+  return [r.x, y, r.x + r.width, y + t];
+}
+
+/** An underline: a bar of `thickness` CSS px (default 1) on the text-bottom edge of each rect. */
 export function underlinePath(rects: readonly Box[], o?: PathOptions & { thickness?: number }): string {
   const s = snapper(o);
   const t = o?.thickness ?? 1;
-  return rects.map((r) => rectD(s(r.x), s(r.y + r.height - t), s(r.x + r.width), s(r.y + r.height))).join('');
+  return rects
+    .map((r) => {
+      const [x0, y0, x1, y1] = bar(r, 'bottom', t, o?.rotation ?? 0);
+      return rectD(s(x0), s(y0), s(x1), s(y1));
+    })
+    .join('');
 }
 
-/** A strikethrough: a bar of `thickness` CSS px (default 1) through the middle of each rect. */
+/** A strikethrough: a bar of `thickness` CSS px (default 1) through the middle of each line. */
 export function strikePath(rects: readonly Box[], o?: PathOptions & { thickness?: number }): string {
   const s = snapper(o);
   const t = o?.thickness ?? 1;
-  return rects.map((r) => rectD(s(r.x), s(r.y + r.height / 2 - t / 2), s(r.x + r.width), s(r.y + r.height / 2 + t / 2))).join('');
+  return rects
+    .map((r) => {
+      const [x0, y0, x1, y1] = bar(r, 'middle', t, o?.rotation ?? 0);
+      return rectD(s(x0), s(y0), s(x1), s(y1));
+    })
+    .join('');
 }
 
 /**
  * The dotted underline of a comment whose text has no style left: square dots of `thickness` CSS px (default 1.5) with
- * a gap of the same size between them, on the bottom edge of the same rects an underline uses.
+ * a gap of the same size between them, along the text-bottom edge of the same rects an underline uses.
  */
 export function dottedUnderlinePath(rects: readonly Box[], o?: PathOptions & { thickness?: number }): string {
   const s = snapper(o);
   const t = o?.thickness ?? 1.5;
+  const turn = o?.rotation ?? 0;
+  const along = turn === 90 || turn === 270 ? 'y' : 'x';
   const parts: string[] = [];
   for (const r of rects) {
-    const y1 = r.y + r.height;
-    const y0 = y1 - t;
-    for (let x = r.x; x < r.x + r.width - 1e-6; x += 2 * t) {
-      parts.push(rectD(s(x), s(y0), s(Math.min(x + t, r.x + r.width)), s(y1)));
-    }
+    const [x0, y0, x1, y1] = bar(r, 'bottom', t, turn);
+    if (along === 'x') for (let x = x0; x < x1 - 1e-6; x += 2 * t) parts.push(rectD(s(x), s(y0), s(Math.min(x + t, x1)), s(y1)));
+    else for (let y = y0; y < y1 - 1e-6; y += 2 * t) parts.push(rectD(s(x0), s(y), s(x1), s(Math.min(y + t, y1))));
   }
   return parts.join('');
 }

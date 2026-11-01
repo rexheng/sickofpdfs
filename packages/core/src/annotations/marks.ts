@@ -8,12 +8,17 @@
 //  - Applying a style that already covers the whole passage, in the same colour, takes it off that passage. A mark that
 //    extends past the passage is cut: it shrinks to what is left, or splits in two when text is left on both sides.
 //  - Anything else puts the style on the whole passage. Marks of the same style in another colour lose the passage
-//    (that is how a highlight changes colour); gaps in the same colour are filled with new marks.
+//    (that is how a highlight changes colour). Marks of the same colour that the passage overlaps or touches, and the
+//    passage itself, become one mark: there is one row per continuous range of a style and colour.
 //  - Marks of one style and colour do not overlap, so a mark is never darker where two meet.
 import type { MarkId } from '../ids';
 import type { CharPos } from '../model/anchor';
 import type { MarkColor, MarkRow, MarkStyle } from '../model/rows';
 
+/**
+ * What to write. `shrink` names the range a mark has afterwards, so it can also stretch a mark over a range that was
+ * joined to it; the marks that were swallowed are in `remove`.
+ */
 export interface StylePlan {
   create: { style: MarkStyle; color: MarkColor | null; start: CharPos; end: CharPos }[];
   shrink: { id: MarkId; start: CharPos; end: CharPos }[];
@@ -52,19 +57,16 @@ export function planStyle(
   const overlapping = spans.filter((s) => cmp(s.start, to) < 0 && cmp(s.end, from) > 0);
   const sameColour = spans.filter((s) => (s.row.color ?? null) === wanted).sort((x, y) => cmp(x.start, y.start));
 
-  // The parts of the passage that this colour of the style does not cover yet.
-  const gaps: { start: CharPos; end: CharPos }[] = [];
+  // Is the whole passage already covered in this colour? Marks that touch count as one stretch.
   let cursor = from;
   for (const s of sameColour) {
     if (cmp(s.end, cursor) <= 0) continue;
-    if (cmp(s.start, to) >= 0) break;
-    if (cmp(s.start, cursor) > 0) gaps.push({ start: cursor, end: s.start });
-    if (cmp(s.end, cursor) > 0) cursor = s.end;
+    if (cmp(s.start, cursor) > 0) break;
+    cursor = s.end;
     if (cmp(cursor, to) >= 0) break;
   }
-  if (cmp(cursor, to) < 0) gaps.push({ start: cursor, end: to });
 
-  if (gaps.length === 0) {
+  if (cmp(cursor, to) >= 0) {
     // Already there: take the style off the passage, whatever colour the marks over it are.
     for (const s of overlapping) cut(plan, s, from, to);
     plan.create.sort((x, y) => cmp(x.start, y.start));
@@ -72,7 +74,30 @@ export function planStyle(
   }
 
   for (const s of overlapping) if ((s.row.color ?? null) !== wanted) cut(plan, s, from, to);
-  for (const g of gaps) plan.create.push({ style, color: wanted, start: { ...g.start }, end: { ...g.end } });
+
+  // Same colour: one row for the whole continuous stretch (contracts §2). Every mark the passage overlaps or touches, and
+  // every mark touching those in turn, becomes one mark: the leftmost keeps its id and is stretched over all of it, the
+  // others go. (`shrink` names the range a mark has afterwards, so it also grows a mark.)
+  let lo = from;
+  let hi = to;
+  const joined = new Set<Span>();
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const s of sameColour) {
+      if (joined.has(s) || cmp(s.start, hi) > 0 || cmp(s.end, lo) < 0) continue;
+      joined.add(s);
+      if (cmp(s.start, lo) < 0) lo = s.start;
+      if (cmp(s.end, hi) > 0) hi = s.end;
+      grew = true;
+    }
+  }
+  if (joined.size === 0) {
+    plan.create.push({ style, color: wanted, start: { ...from }, end: { ...to } });
+  } else {
+    const [keep, ...rest] = sameColour.filter((s) => joined.has(s));
+    plan.shrink.push({ id: keep.row.id, start: { ...lo }, end: { ...hi } });
+    for (const s of rest) plan.remove.push(s.row.id);
+  }
   plan.create.sort((x, y) => cmp(x.start, y.start));
   return plan;
 }

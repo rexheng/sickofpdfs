@@ -9,11 +9,16 @@
 //                 shifted the char indices; nothing the owner can see has moved);
 //  3. 'fuzzy'     any other match across the document, nearest pages first: a quote of at least FUZZY_MIN_QUOTE chars
 //                 that scores at least FUZZY_MIN_SCORE (Hypothesis's score: the quote counts 50, the text before and
-//                 after it 20 each, nearness 2) and is clearly better than every other place it could be.
+//                 after it 20 each, nearness 2). Of several places that agree about equally well, the one on the nearest
+//                 page wins (contracts §2); two at the same distance are a guess and are not placed.
 // A placement by 'fuzzy' is a close match, not the same words in the same place: the card says "Moved". Anything that
-// scores less, or that two places fit equally well, is not placed. It goes to "Couldn't place" and is never drawn on
+// scores less, or that two equally near places fit equally well, is not placed. It goes to "Couldn't place" and is never drawn on
 // look-alike text (Hypothesis issue 7571: a fuzzy fallback re-attached a note to a different paragraph that held the
 // same sentence).
+//
+// Line breaks are not content (ruling R52). Matching compares folded text, in which a line break and a run of spaces are
+// one space, so the same words with new line breaks are found by 'stored' or 'same-page', quietly, with no "Moved"
+// label; a reflowed copy is not a close match, it is the same text.
 //
 // Figures stay put while the image hash, the caption quote or the picture's dHash (distance up to DHASH_MATCH_MAX)
 // still match on the stored page; otherwise they follow their caption, then their image (research 06 §5).
@@ -74,7 +79,7 @@ const CONTEXT_CHANCE = 0.5;
 
 /** An exact quote whose surroundings agree this well is "the same words in the same place", so no "Moved" label. */
 const SAME_PAGE_MIN_SCORE = 0.95;
-/** The best place must beat the next one by this much, or the choice is a guess. */
+/** Places whose words and surroundings agree within this much of each other fit equally well. */
 const AMBIGUITY_MARGIN = 0.03;
 /**
  * The most errors the approximate search allows, as a share of the quote. The score floor is 0.8 and the quote carries
@@ -150,6 +155,10 @@ interface Candidate {
   e: number;
   errors: number;
   score: number;
+  /** The score without the nearness term: how well the words and their surroundings agree. */
+  plain: number;
+  /** Pages between this place and the stored page. */
+  dist: number;
 }
 
 class Reader {
@@ -356,11 +365,19 @@ async function locate(a: TextAnchor, rd: Reader, scope: 'document' | 'page'): Pr
   if (all.length === 0) return { placed: false, reason: 'quote-not-found' };
 
   // Best score first; on a tie the nearer page.
-  all.sort((x, y) => y.score - x.score || Math.abs(x.win.first - home) - Math.abs(y.win.first - home));
-  const best = all[0];
-  if (best.score < FUZZY_MIN_SCORE) return { placed: false, reason: 'below-threshold' };
-  const rival = all.find((c) => c !== best && c.score >= FUZZY_MIN_SCORE && !samePlace(c, best));
-  if (rival && best.score - rival.score < AMBIGUITY_MARGIN) return { placed: false, reason: 'below-threshold' };
+  all.sort((x, y) => y.score - x.score || x.dist - y.dist);
+  if (all[0].score < FUZZY_MIN_SCORE) return { placed: false, reason: 'below-threshold' };
+  // Places where the words and their surroundings agree about equally well are the same passage seen in several places.
+  // The nearest page wins (contracts §2 search nearest-first, Hypothesis issue 3705); two at the same distance are a
+  // guess, so neither is taken. A place that agrees clearly worse never competes: that is a look-alike, and it is
+  // refused by the floor above and by the context floor in scoreAt.
+  const good = all.filter((c) => c.score >= FUZZY_MIN_SCORE);
+  const top = Math.max(...good.map((c) => c.plain));
+  const equals = good.filter((c) => top - c.plain < AMBIGUITY_MARGIN);
+  const nearest = Math.min(...equals.map((c) => c.dist));
+  const atNearest = equals.filter((c) => c.dist === nearest);
+  if (atNearest.length > 1) return { placed: false, reason: 'below-threshold' };
+  const best = atNearest[0];
 
   // The winner's chars, with the marks that are not text still in them: its char indices.
   const rawWin = await rd.window(best.win.first, span, 'raw');
@@ -393,7 +410,8 @@ function candidatesIn(win: Win, w: Wanted, maxErrors: number, pageDistance: numb
     for (const m of matches) {
       const t = trimmed(win.folded, m.start, m.end);
       if (!t) continue;
-      found.push({ win, s: t[0], e: t[1], errors: m.errors, score: scoreAt(win, t[0], t[1], m.errors, w, pageDistance).score });
+      const r = scoreAt(win, t[0], t[1], m.errors, w, pageDistance);
+      found.push({ win, s: t[0], e: t[1], errors: m.errors, score: r.score, plain: r.noPosition, dist: pageDistance });
     }
     found.sort((x, y) => y.score - x.score);
     // Keep the best of any matches that overlap each other.

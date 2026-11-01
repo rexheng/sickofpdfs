@@ -26,7 +26,11 @@ export interface LayoutOptions {
   activeId?: string | null;
   /** Space between two cards. Default CARD_GAP. */
   gap?: number;
-  /** The highest a card may go. Default 0. */
+  /**
+   * The highest a card may go. Default: no limit, so the active card stays level with its mark even when the cards above
+   * it have to go above the top of the margin. A caller that clips the margin passes 0 and accepts that the active card
+   * is then pushed down when the others cannot fit above it.
+   */
   minTop?: number;
 }
 
@@ -37,13 +41,14 @@ const finite = (v: number, fallback = 0): number => (Number.isFinite(v) ? v : fa
  *
  * - Order: by `anchorTop`, and by the order given when two are level.
  * - With no active card, each card goes at its mark's top or just under the card before it, whichever is lower.
- * - With an active card, it goes at its mark's top. Cards before it are pushed up until they clear it; cards after it are
- *   pushed down. If the cards above cannot fit above it without leaving the top of the margin, nothing moves up, and the
- *   active card is pushed down like any other: a card never overlaps another.
+ * - With an active card, it goes at its mark's top. Cards before it are pushed up until they clear it (above the top of
+ *   the margin if need be, unless the caller gives a `minTop`); cards after it are pushed down. With a `minTop` that the
+ *   cards above cannot fit under, nothing moves up and the active card is pushed down like any other: a card never
+ *   overlaps another.
  */
 export function layoutCards(cards: readonly CardBox[], o: LayoutOptions = {}): CardPlacement[] {
   const gap = finite(o.gap ?? CARD_GAP);
-  const minTop = finite(o.minTop ?? 0);
+  const minTop = o.minTop === undefined ? -Infinity : finite(o.minTop);
   const order = cards.map((_, i) => i).sort((a, b) => finite(cards[a].anchorTop) - finite(cards[b].anchorTop) || a - b);
   const heightOf = (i: number) => Math.max(0, finite(cards[i].height));
   const tops = new Array<number>(cards.length).fill(0);
