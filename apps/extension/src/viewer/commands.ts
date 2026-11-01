@@ -157,6 +157,7 @@ export function createCommands(ctx: ViewerContext): ViewerCommands {
     'view.fitPage': { run: () => fitPage(pages(), ctx.store), enabled: always },
     'view.zoomIn': { run: () => pages()?.zoomStep(1), enabled: () => scale() < MAX_SCALE - LIMIT_EPSILON },
     'view.zoomOut': { run: () => pages()?.zoomStep(-1), enabled: () => scale() > MIN_SCALE + LIMIT_EPSILON },
+    'view.toggleRail': { run: () => ctx.store.set({ railOpen: !ctx.store.get().railOpen }), enabled: always, checked: () => ctx.store.get().railOpen },
     'tools.goToPage': { run: () => ctx.ui.focusPageField(), enabled: always },
     'help.shortcuts': { run: () => ctx.ui.showShortcuts(), enabled: always },
     'help.about': { run: () => ctx.ui.showAbout(), enabled: always },

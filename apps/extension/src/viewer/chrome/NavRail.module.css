@@ -1,0 +1,90 @@
+/*
+ * The navigation rail and the page area beside it (02 section 4.10) [live]. Under the 48 px toolbar row, the rail
+ * starts 16 px down (y 128, level with the first page):
+ *   the toggle column, 62 px: 40 px round toggles at x 16, 8 px apart, the first at y 136;
+ *   the thumbnails from x 62, or the outline (wider, so its titles can be read).
+ * "Hide navigation pane" is a 56 x 40 pill at the bottom left, half see-through, round on its right end.
+ * In a window under 1100 px the rail lies over the pages, so they do not move (the rail starts closed there).
+ */
+.rail {
+  position: absolute;
+  inset: var(--viewer-pill-h) auto 0 0;
+  z-index: 1;
+  display: flex;
+  box-sizing: border-box;
+  inline-size: var(--rail-w);
+  padding-block-start: var(--space-4);
+  background-color: var(--drive-app-bg);
+}
+
+.wide {
+  inline-size: var(--rail-outline-w);
+}
+
+.tools {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  box-sizing: border-box;
+  inline-size: var(--rail-tools-w);
+  padding: var(--space-2) 0 0 var(--space-4);
+}
+
+/* The selected toggle: Drive's #333537 disc, not the tonal blue of other pressed buttons. */
+.tools .toggle[aria-pressed='true'] {
+  background-color: var(--gm3-sys-color-surface-container-highest);
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.tools .toggle[aria-pressed='true']:hover {
+  background-color: var(--viewer-icon-hover);
+}
+
+.panel {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+.pill {
+  position: absolute;
+  inset: auto auto var(--space-4) 0;
+  z-index: 2;
+  display: flex;
+  box-sizing: border-box;
+  padding-inline-start: var(--space-4);
+  border-radius: 0 var(--shape-full) var(--shape-full) 0;
+  background-color: var(--viewer-rail-pill-bg);
+}
+
+/*
+ * The page list, under the toolbar row: with its 16 px gap the first page starts at y 128, as in Drive. It is its own
+ * stacking context, so the pages' layers (canvases, text and links) stay under the rail when the rail lies over them.
+ */
+.pages {
+  position: absolute;
+  inset: var(--viewer-pill-h) 0 0;
+  isolation: isolate;
+}
+
+.beside {
+  inset-inline-start: var(--rail-w);
+}
+
+.besideWide {
+  inset-inline-start: var(--rail-outline-w);
+}
+
+/* Narrow windows (RAIL_OVERLAY_BELOW_PX in navigation.tsx): the rail lies over the pages, raised a little off them. */
+@media (width < 1100px) {
+  .beside,
+  .besideWide {
+    inset-inline-start: 0;
+  }
+
+  .rail {
+    box-shadow: var(--elev-3);
+  }
+}

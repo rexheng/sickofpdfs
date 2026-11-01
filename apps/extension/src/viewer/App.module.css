@@ -14,12 +14,6 @@
   inset: var(--viewer-header-h) 0 0;
 }
 
-/* The page list, under the toolbar pill's 48 px row: with its 16 px gap the first page starts at y 128, as in Drive. */
-.pages {
-  position: absolute;
-  inset: var(--viewer-pill-h) 0 0;
-}
-
 .status {
   margin: var(--space-6);
   color: var(--gm3-sys-color-on-surface-variant);

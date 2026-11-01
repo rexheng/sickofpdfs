@@ -1,5 +1,5 @@
 // One render queue per tab, in front of PdfBackend.renderTile. The page list and the thumbnail rail (Task 24) share it
-// and its preview cache.
+// and its preview cache. The rail's previews are idle work (requestIdlePreview): they never hold up the page list.
 //
 // Rendering is pulled, not pushed (Phase 0, P0-3): at most `concurrency` calls are with the engine at once, and
 // everything else waits here, where it can still be re-prioritised or dropped. So work for a page the reader has
@@ -35,12 +35,21 @@ interface Job {
   unsignalled: boolean;
   /** The caller no longer wants the result (rotation changed or every signal fired while it was in flight). */
   dropped: boolean;
+  /** Only idle callers want it (requestIdlePreview): it waits for the page list to be idle, and retain() keeps it. */
+  idle: boolean;
 }
+
+/**
+ * Idle previews start only once no full render has been asked for or drawn for this long: a scroll keeps asking for
+ * full renders, so the rail waits until the reader stops.
+ */
+const IDLE_AFTER_FULL_MS = 150;
 
 const abortError = () => new DOMException('The render was cancelled.', 'AbortError');
 
 /**
- * Order: every preview before any full render; then lower `priority` first; then first come, first served.
+ * Order: every preview before any full render; then lower `priority` first; then first come, first served. Idle
+ * previews (requestIdlePreview) come after all of that.
  *
  * - `request` for the same page, kind, scale and rect as a queued or running job returns that job's promise and gives
  *   it the new priority, so callers re-request to re-prioritise.
@@ -59,6 +68,9 @@ export class RenderScheduler {
   private fullCost = 0;
   private pumpQueued = false;
   private disposed = false;
+  /** When a full render was last asked for or finished (performance.now()). */
+  private lastFullAt = -Infinity;
+  private idleTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     private readonly backend: PdfBackend,
@@ -89,6 +101,23 @@ export class RenderScheduler {
   request(pageIndex: number, kind: RenderKind, scale: number, priority: number, rect?: PdfRect, signal?: AbortSignal): Promise<ImageBitmap> {
     if (this.disposed) return Promise.reject(abortError());
     if (signal?.aborted) return Promise.reject(abortError());
+    if (kind === 'full') this.lastFullAt = performance.now();
+    return this.enqueue(pageIndex, kind, scale, priority, rect, signal, false);
+  }
+
+  /**
+   * A preview of page `pageIndex` for the thumbnail rail: the same job, bitmap and cache as request(i, 'preview', scale,
+   * …), so a preview either of them draws serves both. It never delays the page list: it waits behind every other job,
+   * starts only when no full render is queued or drawing and none has been asked for in the last IDLE_AFTER_FULL_MS,
+   * and with two engine workers only one idle preview draws at a time. retain() leaves it queued; `signal` cancels it.
+   * When the page list asks for the same preview, the job becomes the page list's (and retain() applies to it again).
+   */
+  requestIdlePreview(pageIndex: number, scale: number, priority: number, signal: AbortSignal): Promise<ImageBitmap> {
+    if (this.disposed || signal.aborted) return Promise.reject(abortError());
+    return this.enqueue(pageIndex, 'preview', scale, priority, undefined, signal, true);
+  }
+
+  private enqueue(pageIndex: number, kind: RenderKind, scale: number, priority: number, rect: PdfRect | undefined, signal: AbortSignal | undefined, idle: boolean): Promise<ImageBitmap> {
     if (kind === 'preview' && rect === undefined) {
       const cached = this.previews.get(pageIndex);
       if (cached) {
@@ -100,8 +129,11 @@ export class RenderScheduler {
     const key = jobKey(pageIndex, kind, scale, rect);
     const existing = this.running.get(key) ?? this.queue.find((j) => j.key === key);
     if (existing) {
-      existing.priority = priority;
+      // A page-list caller makes an idle job its own; an idle caller only re-prioritises a job that is still idle.
+      if (!idle || existing.idle) existing.priority = priority;
+      if (!idle) existing.idle = false;
       this.watch(existing, signal);
+      this.schedulePump();
       return existing.promise;
     }
     let resolve!: (b: ImageBitmap) => void;
@@ -125,6 +157,7 @@ export class RenderScheduler {
       signals: [],
       unsignalled: false,
       dropped: false,
+      idle,
     };
     this.watch(job, signal);
     this.queue.push(job);
@@ -132,9 +165,12 @@ export class RenderScheduler {
     return promise;
   }
 
-  /** Cancels queued work for pages outside [first, last] (each rejects with AbortError). Running work finishes. */
+  /**
+   * Cancels queued work for pages outside [first, last] (each rejects with AbortError). Running work finishes, and idle
+   * previews (requestIdlePreview) stay queued.
+   */
   retain(range: { first: number; last: number }): void {
-    this.cancelQueued((j) => j.pageIndex < range.first || j.pageIndex > range.last);
+    this.cancelQueued((j) => !j.idle && (j.pageIndex < range.first || j.pageIndex > range.last));
   }
 
   /** The preview of `pageIndex` if it is cached, without queueing anything (for drawing in the same frame). */
@@ -154,6 +190,7 @@ export class RenderScheduler {
   /** Cancels everything and frees the cached previews. */
   dispose(): void {
     this.disposed = true;
+    clearTimeout(this.idleTimer);
     this.cancelQueued(() => true);
     for (const job of this.running.values()) job.dropped = true;
     this.clearPreviews();
@@ -209,9 +246,21 @@ export class RenderScheduler {
     while (!this.disposed && this.running.size < this.o.concurrency && this.queue.length > 0) {
       let best = 0;
       for (let i = 1; i < this.queue.length; i++) if (before(this.queue[i], this.queue[best])) best = i;
+      // Idle jobs sort last, so the best is idle only when nothing else is waiting.
+      if (this.queue[best].idle && !this.idleNow()) return;
       const job = this.queue.splice(best, 1)[0];
       this.start(job);
     }
+  }
+
+  /** Whether an idle preview may start now; if not, a pump is set for when it may. */
+  private idleNow(): boolean {
+    for (const job of this.running.values()) if (job.kind === 'full' || job.idle) return false; // finish() pumps again
+    const wait = this.lastFullAt + IDLE_AFTER_FULL_MS - performance.now();
+    if (wait <= 0) return true;
+    clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => this.pump(), Math.ceil(wait));
+    return false;
   }
 
   private start(job: Job): void {
@@ -248,6 +297,7 @@ export class RenderScheduler {
 
   private finish(job: Job): void {
     if (this.running.get(job.key) === job) this.running.delete(job.key);
+    if (job.kind === 'full') this.lastFullAt = performance.now();
     this.pump();
   }
 
@@ -269,8 +319,9 @@ function jobKey(pageIndex: number, kind: RenderKind, scale: number, rect: PdfRec
   return `${pageIndex}|${kind}|${scale}|${r}`;
 }
 
-/** Whether `a` goes before `b`: previews first, then priority, then arrival. */
+/** Whether `a` goes before `b`: idle previews last; then previews first, then priority, then arrival. */
 function before(a: Job, b: Job): boolean {
+  if (a.idle !== b.idle) return b.idle;
   if (a.kind !== b.kind) return a.kind === 'preview';
   if (a.priority !== b.priority) return a.priority < b.priority;
   return a.seq < b.seq;

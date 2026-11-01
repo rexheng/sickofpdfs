@@ -1,0 +1,78 @@
+/*
+ * The rail's thumbnails, as in Drive's viewer (02 section 4.10) [live]: each page number in a 28 px column (Google Sans
+ * Text 14/20 500, on-surface-variant), right-aligned, then the 73 px thumbnail with 8 px corners. The page in view
+ * gets a 2 px #a8c7fa ring, 2 px out. The list scrolls on its own.
+ */
+.rail {
+  position: relative;
+  box-sizing: border-box;
+  block-size: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* eslint-disable-next-line css/use-baseline -- a Chrome-only extension (minimum Chrome 128; Chrome has it since 121) */
+  scrollbar-width: thin;
+  /* eslint-disable-next-line css/use-baseline -- as above */
+  scrollbar-color: var(--gm3-sys-color-outline-variant) transparent;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-2) 0 var(--space-4);
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.number {
+  flex: none;
+  inline-size: var(--thumb-num-w);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-viewer-toolbar);
+  font-variation-settings: "opsz" 17;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.thumb {
+  display: block;
+  flex: none;
+  inline-size: var(--thumb-w);
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--shape-thumb);
+  background-color: var(--viewer-page-placeholder);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.canvas {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.thumb:hover {
+  outline: var(--focus-ring-width) solid var(--gm3-sys-color-outline-variant);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* The page in view. */
+.thumb[aria-current='page'] {
+  outline: var(--focus-ring-width) solid var(--viewer-focus);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* Keyboard focus: the same ring, a step further out, so the focused and the current page tell apart. */
+.thumb:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(2 * var(--focus-ring-offset));
+}

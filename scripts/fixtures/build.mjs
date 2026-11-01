@@ -19,6 +19,7 @@ const scan = (pages) => ({
 const STEPS = [
   { script: 'fetch-classifier.mjs' },
   { script: 'make-paper50.mjs' },
+  { script: 'make-links.mjs' },
   { script: 'make-objects.mjs' },
   { script: 'make-tagged.mjs' },
   { script: 'make-mixed.mjs' },

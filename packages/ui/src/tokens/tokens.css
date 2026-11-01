@@ -255,6 +255,14 @@
   --sheet-min-w: 400px;             /* the shortcut sheet's table [inf] */
   --snackbar-min-h: 48px;           /* GM3 snackbar [inf] */
 
+  /* The navigation rail (Task 24): Drive's thumbnails and outline pane, 02 section 4.10 [live] */
+  --rail-tools-w: 62px;             /* the toggle column: 16 + a 40 px button + 6 */
+  --rail-outline-w: 300px;          /* the rail with the outline: Chrome's side panel width, so titles fit [css] */
+  --thumb-w: 73px;                  /* a portrait thumbnail is 73 × 97 */
+  --shape-thumb: 8px;               /* thumbnail corners */
+  --viewer-rail-pill-bg: rgba(30,31,32,.92); /* "Hide navigation pane", bottom left, radius 0 100px 100px 0 */
+  --outline-indent: 12px;           /* each outline level steps in this far [inf] */
+
   /* ===== Phase 2: marks, figures, comment cards and the notes panel (plan S4, contracts D5) ===== */
   /*
    * The five mark colours. MarkColor 1–5 (packages/core model/rows.ts) is a slot, and these are its only hex values;

@@ -30,12 +30,14 @@ import { backTarget, goBackToPage } from './back-to-page';
 import { AboutDialog } from './chrome/AboutDialog';
 import { Header } from './chrome/Header';
 import { buildMenus } from './chrome/menus';
+import { NavRail } from './chrome/NavRail';
 import { ShortcutsDialog } from './chrome/ShortcutsDialog';
 import { Snackbar } from './chrome/Snackbar';
 import { Toolbar } from './chrome/Toolbar';
 import { commandShortcuts, createCommands, createIdleCommands, type ViewerCommands, type ViewerContext, type ViewerUi } from './commands';
 import { FormBanner, useFormBounce } from './forms/FormBanner';
 import { maybeLeaveFrame, wantsFullTab } from './frame-escape';
+import { railStartsOpen, useOutline, useRailFitsWindow, useReaderNavigation } from './navigation';
 import { type LargeFileBounce, type OpenDocumentDeps, type OpenedDocument, openDocument, type OpenOutcome, openPickedFile } from './open-document';
 import { publishRuntime, type ViewerHooks, type ViewerState } from './runtime';
 import { openInChrome } from './open-in-chrome';
@@ -261,12 +263,13 @@ interface ReaderProps {
 }
 
 /**
- * The open document: the toolbar pill, the page list, its keys, the scan hint, and its test hooks. Memoised: the header
- * re-renders App when the view changes (its menus), and that must not re-render the page list.
+ * The open document: the toolbar pill, the navigation rail, the page list with its links, its keys, the scan hint, and
+ * its test hooks. Memoised: the header re-renders App when the view changes (its menus), and that must not re-render
+ * the page list.
  */
 const Reader = memo(function Reader({ doc, params, rootRef, pageFieldRef, ui, save, onChrome }: ReaderProps) {
   const [store] = useState(() =>
-    createViewerStore({ currentPage: Math.min(doc.open.pageCount - 1, Math.max(0, (params.page ?? 1) - 1)) }),
+    createViewerStore({ currentPage: Math.min(doc.open.pageCount - 1, Math.max(0, (params.page ?? 1) - 1)), railOpen: railStartsOpen() }),
   );
   const [scheduler] = useState(
     () => new RenderScheduler(backend, doc.open.doc, { concurrency: ENGINE_WORKERS, previewWidthPx: 160, previewCache: 300 }),
@@ -276,6 +279,9 @@ const Reader = memo(function Reader({ doc, params, rootRef, pageFieldRef, ui, sa
   const [pageText] = useState(() => createPageTextProvider(backend, doc.open.doc));
   const [textLayers] = useState(() => new TextLayerController({ source: pageText, pages: doc.open.pages, fontUrl: chrome.runtime.getURL(TEXT_LAYER_FONT) }));
   const api = useRef<PageListApi | null>(null);
+  const nav = useReaderNavigation({ backend, doc, store, api });
+  const outline = useOutline(backend, doc);
+  useRailFitsWindow(store);
   const commands = useMemo(() => {
     const ctx: ViewerContext = {
       params,
@@ -284,14 +290,14 @@ const Reader = memo(function Reader({ doc, params, rootRef, pageFieldRef, ui, sa
       store,
       scheduler,
       root: rootRef.current ?? document.body,
-      jumps: null,
+      jumps: nav.jumps,
       find: null,
       save,
       pageList: api,
       ui,
     };
     return createCommands(ctx);
-  }, [params, doc, store, scheduler, rootRef, ui, save]);
+  }, [params, doc, store, scheduler, rootRef, ui, save, nav.jumps]);
   useEffect(() => {
     onChrome({ commands, store });
     return () => onChrome(null);
@@ -307,7 +313,17 @@ const Reader = memo(function Reader({ doc, params, rootRef, pageFieldRef, ui, sa
       }),
     [store, scans, textLayers],
   );
-  const renderPage = useCallback((box: PageBox, ctx: PageLayerContext) => <TextLayer controller={textLayers} box={box} ctx={ctx} />, [textLayers]);
+  // Each page's layers: the text layer, and the links above it (Task 24).
+  const linksFor = nav.renderPage;
+  const renderPage = useCallback(
+    (box: PageBox, ctx: PageLayerContext) => (
+      <>
+        <TextLayer controller={textLayers} box={box} ctx={ctx} />
+        {linksFor(box)}
+      </>
+    ),
+    [textLayers, linksFor],
+  );
   const goToPage = useCallback((index: number) => void api.current?.goToPage(index), []);
   const zoom = useCallback((mode: ZoomMode) => api.current?.zoomTo(mode), []);
   return (
@@ -321,9 +337,17 @@ const Reader = memo(function Reader({ doc, params, rootRef, pageFieldRef, ui, sa
         pageFieldRef={pageFieldRef}
         end={<CurrentPageExtras store={store} scans={scans} source={doc.loaded.sourceUrl} onOpenInChrome={(url) => ui.openInChrome(url)} />}
       />
-      <div className={styles.pages}>
+      <NavRail
+        store={store}
+        scheduler={scheduler}
+        pages={doc.open.pages}
+        outline={outline}
+        onPage={nav.onPage}
+        onOutline={nav.onOutline}
+        onToggle={() => commands.get('view.toggleRail')?.run()}
+      >
         <PageList backend={backend} doc={doc} store={store} scheduler={scheduler} apiRef={api} renderPage={renderPage} />
-      </div>
+      </NavRail>
     </>
   );
 });

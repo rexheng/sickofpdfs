@@ -1,0 +1,84 @@
+/*
+ * The outline in the rail: rows in Google Sans Text 14/20 on the viewer canvas, each level 12 px further in, with a
+ * 20 px arrow before an item that has children (pointing down when it is open). A row gets the dark chrome's hover
+ * layer; titles wrap rather than being cut off.
+ */
+.tree {
+  box-sizing: border-box;
+  block-size: 100%;
+  padding: var(--space-2) var(--space-2) var(--space-4) 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* eslint-disable-next-line css/use-baseline -- a Chrome-only extension (minimum Chrome 128; Chrome has it since 121) */
+  scrollbar-width: thin;
+  /* eslint-disable-next-line css/use-baseline -- as above */
+  scrollbar-color: var(--gm3-sys-color-outline-variant) transparent;
+}
+
+.row {
+  display: flex;
+  gap: var(--space-1);
+  align-items: flex-start;
+  box-sizing: border-box;
+  min-block-size: var(--icon-btn-lg);
+  padding: var(--space-2) var(--space-2) var(--space-2) calc(var(--space-1) + var(--_level, 0) * var(--outline-indent));
+  border-radius: var(--shape-chip);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+  cursor: pointer;
+  outline: none;
+}
+
+.row:hover {
+  background-color: var(--icon-btn-hover);
+}
+
+.row:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.row[aria-disabled='true'] {
+  color: var(--gm3-sys-color-on-surface-variant);
+  cursor: default;
+}
+
+/* Nested items are a step quieter than the top level, as in a book's contents. */
+.row[aria-level='1'] {
+  font-weight: 500;
+}
+
+.arrow {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--icon-size-20);
+  block-size: var(--icon-size-20);
+  border-radius: var(--shape-full);
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.arrowIcon {
+  inline-size: var(--icon-size-20);
+  block-size: var(--icon-size-20);
+  fill: currentColor;
+  transition: transform 120ms ease-out;
+}
+
+.arrow[data-open] .arrowIcon {
+  transform: rotate(90deg);
+}
+
+.title {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arrowIcon {
+    transition: none;
+  }
+}

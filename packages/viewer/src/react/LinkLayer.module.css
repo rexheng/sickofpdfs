@@ -1,0 +1,29 @@
+/*
+ * The links of a page (LinkLayer.tsx): a layer over the page box, above the text layer, that lets the pointer through
+ * everywhere except on its anchors. Nothing is drawn on a link, as in Chrome's viewer; the pointer turns into a hand.
+ */
+.layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.link {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: auto;
+  cursor: pointer;
+  -webkit-user-drag: none;
+}
+
+/* Alt is held, or a text selection is being dragged: the links let the pointer through. */
+.off .link {
+  pointer-events: none;
+}
+
+/* The page is white even in the dark viewer, so a focused link gets the light theme's blue ring. */
+.link:focus-visible {
+  outline: var(--focus-ring-width) solid var(--sop-mark-focus);
+  outline-offset: 0;
+}

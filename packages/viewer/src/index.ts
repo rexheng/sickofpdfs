@@ -45,6 +45,10 @@ export {
 } from './layout/zoom';
 export { computeLayout, visibleRange, type PageBox, type PageLayout } from './layout/page-layout';
 export { RenderScheduler, type RenderKind, type RenderSchedulerOptions } from './render/scheduler';
+// Task 24: links inside the PDF, and jumps that Back undoes.
+export { createJumpHistory } from './navigation/jump-history';
+export { createPageLinkSource, resolveLinkUri, safeLinkHref, type PageLinkSource } from './navigation/links';
+export { goToTarget, restorePosition, viewPosition, type PageScroller } from './navigation/position';
 export { ScanDetector } from './render/scan-detect';
 export { createViewerStore, INITIAL_VIEWER_SNAPSHOT, useViewerState, type ViewerSnapshot, type ViewerStore } from './react/viewer-state';
 export type { PagePoint } from './layout/page-space';

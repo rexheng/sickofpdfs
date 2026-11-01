@@ -37,6 +37,12 @@ export interface PageListApi {
   goToEnd(): void;
   /** Scrolls page `index` to the top; resolves once its full render is on screen. */
   goToPage(index: number): Promise<void>;
+  /**
+   * Scrolls so the top of the view is `offset` of the way down page `index` (0 its top edge, 1 its bottom edge; below 0
+   * is the gap above it) and, when `left` is given, the view's left edge is `left` CSS px right of the page's left edge.
+   * For link destinations and Back (Task 24). Resolves once the page's full render is on screen.
+   */
+  scrollToOffset(index: number, offset: number, left?: number): Promise<void>;
   currentPage(): number;
   scrollTop(): number;
   maxScrollTop(): number;
@@ -301,6 +307,16 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef }: PageList
         s.scrollTop = Math.ceil(l.boxes[i].top - PAGE_GAP);
         moved();
         return driver.whenPainted(i);
+      },
+      scrollToOffset(index, offset, left) {
+        const s = el();
+        const l = latest.current.layout;
+        if (!s || !l || l.boxes.length === 0) return Promise.resolve();
+        const b = l.boxes[Math.min(l.boxes.length - 1, Math.max(0, Math.round(index)))];
+        s.scrollTop = Math.round(b.top + offset * b.height);
+        if (left !== undefined) s.scrollLeft = Math.round(b.left + left);
+        moved();
+        return driver.whenPainted(b.index);
       },
       currentPage: () => store.get().currentPage,
       scrollTop: () => el()?.scrollTop ?? 0,
