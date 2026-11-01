@@ -14,15 +14,17 @@ export const LOCAL_ONLY_DB = 'sop-local';
 const DB_VERSION = 1;
 
 export type SecretName = 'anthropic_api_key' | 'cloud_token';
-export type MetaKey = 'filterSalt';
+export type MetaKey = 'filterSalt' | 'claudeSpendMonth';
 
 const SECRET_NAMES: readonly SecretName[] = ['anthropic_api_key', 'cloud_token'];
-const META_KEYS: readonly MetaKey[] = ['filterSalt'];
+const META_KEYS: readonly MetaKey[] = ['filterSalt', 'claudeSpendMonth'];
+/** The meta keys that hold a random value made on first use (`ensureMeta`). The others are written by their own feature. */
+const RANDOM_META_KEYS: readonly MetaKey[] = ['filterSalt'];
 
 /** The five object stores of v1. Exported so the e2e helper that seeds a secret builds the same database. */
 export const LOCAL_ONLY_STORES: readonly { name: string; options?: IDBObjectStoreParameters }[] = [
   { name: 'secrets', options: { keyPath: 'name' } }, // { name: SecretName, value: string }
-  { name: 'meta', options: { keyPath: 'key' } }, // { key: MetaKey, value: string }
+  { name: 'meta', options: { keyPath: 'key' } }, // { key: MetaKey, value: string }; claudeSpendMonth holds JSON { month, usd } (Phase 4, A6)
   { name: 'never_save', options: { keyPath: 'hash' } }, // Phase 3: salted hashes of documents the owner chose not to save
   { name: 'filter_reports', options: { keyPath: 'id', autoIncrement: true } }, // Phase 3: "report a wrong decision" notes
   { name: 'handles' }, // out-of-line keys: folder handles
@@ -33,8 +35,14 @@ export interface LocalOnlyStore {
   setSecret(name: SecretName, value: string): Promise<void>;
   deleteSecret(name: SecretName): Promise<void>;
   getMeta(key: MetaKey): Promise<string | null>;
-  /** The stored value, or a new random 128-bit hex value that is stored first. Tabs racing here agree on one value. */
+  /** The stored value, or a new random 128-bit hex value that is stored first. Tabs racing here agree on one value. Only for keys that hold a random value (`filterSalt`). */
   ensureMeta(key: MetaKey): Promise<string>;
+  /**
+   * Reads the value, lets `change` make the new one from it, and writes that, all in ONE read-write transaction: IndexedDB runs such
+   * transactions one after another, so two tabs updating at once never lose an update. Answers with the value now stored.
+   * `change` runs inside the transaction: it must be quick and synchronous, and must not throw.
+   */
+  updateMeta(key: MetaKey, change: (current: string | null) => string): Promise<string>;
 }
 
 function randomHex128(): string {
@@ -47,6 +55,10 @@ function assertSecretName(name: string): asserts name is SecretName {
 
 function assertMetaKey(key: string): asserts key is MetaKey {
   if (!(META_KEYS as readonly string[]).includes(key)) throw new TypeError('Unknown meta key.');
+}
+
+function assertRandomMetaKey(key: string): void {
+  if (!(RANDOM_META_KEYS as readonly string[]).includes(key)) throw new TypeError('This meta key does not hold a random value.');
 }
 
 function openDatabase(): Promise<IDBDatabase> {
@@ -139,6 +151,7 @@ export async function openLocalOnlyStore(): Promise<LocalOnlyStore> {
 
     async ensureMeta(key) {
       assertMetaKey(key);
+      assertRandomMetaKey(key);
       // Reading and writing in one readwrite transaction: IndexedDB runs such transactions one after another.
       return await transact<string>('meta', 'readwrite', (store, answer) => {
         const request = store.get(key);
@@ -148,6 +161,18 @@ export async function openLocalOnlyStore(): Promise<LocalOnlyStore> {
           const created = randomHex128();
           store.put({ key, value: created });
           answer(created);
+        };
+      });
+    },
+
+    async updateMeta(key, change) {
+      assertMetaKey(key);
+      return await transact<string>('meta', 'readwrite', (store, answer) => {
+        const request = store.get(key);
+        request.onsuccess = () => {
+          const next = change(readValue(request.result));
+          store.put({ key, value: next });
+          answer(next);
         };
       });
     },
