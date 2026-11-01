@@ -24,6 +24,11 @@ export interface DialogProps {
    * alone. Screen readers announce the same name. The content carries an empty title, so no tooltip shows over it.
    */
   nameFromTitleAttribute?: boolean;
+  /**
+   * Put the focus on the primary action when the dialog opens (Enter then does it), instead of on the first action. For a
+   * question whose main answer is safe, such as "Print with marks".
+   */
+  focusPrimary?: boolean;
 }
 
 /**
@@ -31,13 +36,14 @@ export interface DialogProps {
  * chrome), radius 28 px, over a 32% scrim. It traps focus, closes on Escape and on a click outside (both through
  * onOpenChange(false)), and puts focus back where it was.
  */
-export function Dialog({ open, title, children, actions, onOpenChange, nameFromTitleAttribute = false }: DialogProps) {
+export function Dialog({ open, title, children, actions, onOpenChange, nameFromTitleAttribute = false, focusPrimary = false }: DialogProps) {
   // An empty title stops the dialog's own title attribute from showing as a tooltip over its content.
   const quiet = nameFromTitleAttribute ? { title: '' } : {};
   // The dialog has no trigger, so a hidden probe where it is placed tells it the theme of that place.
   const { ref, theme } = useInheritedTheme<HTMLSpanElement>();
   // Radix gives focus back to a Dialog.Trigger; this dialog is opened by state, so it remembers the opener itself.
   const opener = useRef<HTMLElement | null>(null);
+  const primary = useRef<HTMLButtonElement | null>(null);
   return (
     <>
       <span ref={ref} hidden />
@@ -50,8 +56,12 @@ export function Dialog({ open, title, children, actions, onOpenChange, nameFromT
             aria-modal="true"
             aria-describedby={undefined}
             {...(nameFromTitleAttribute ? { 'aria-labelledby': undefined, title } : {})}
-            onOpenAutoFocus={() => {
+            onOpenAutoFocus={(event) => {
               opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+              if (focusPrimary && primary.current !== null) {
+                event.preventDefault();
+                primary.current.focus();
+              }
             }}
             onCloseAutoFocus={(event) => {
               if (opener.current?.isConnected !== true) return;
@@ -71,6 +81,7 @@ export function Dialog({ open, title, children, actions, onOpenChange, nameFromT
                 {actions.map((action) => (
                   <button
                     key={action.label}
+                    ref={action.primary === true ? primary : undefined}
                     type="button"
                     className={cx(styles.action, action.primary === true && styles.primary)}
                     onClick={action.onClick}

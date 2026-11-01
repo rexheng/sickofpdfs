@@ -75,6 +75,8 @@ function printScale(size: { width: number; height: number }, dpi: number): numbe
 export interface PrintCopy {
   /** `#sop-print-root`, in the page: one `.sop-print-sheet` per page, each holding the page's image. */
   root: HTMLElement;
+  /** How many bold marks were printed in a simpler style because the engine could not give their outlines (0 usually). */
+  simplerBold: number;
   /** Removes the copy and frees its images. Safe to call twice. */
   dispose(): void;
 }
@@ -197,6 +199,7 @@ export async function preparePrintCopy(backend: PdfBackend, doc: DocHandle, page
   } finally {
     marks?.dispose();
   }
+  const simplerBold = marks?.simplerBold() ?? 0;
   const style = document.createElement('style');
   style.id = PRINT_STYLE_ID;
   style.textContent = css;
@@ -205,6 +208,7 @@ export async function preparePrintCopy(backend: PdfBackend, doc: DocHandle, page
   let disposed = false;
   return {
     root,
+    simplerBold,
     dispose() {
       if (disposed) return;
       disposed = true;
@@ -273,6 +277,8 @@ export async function printDocument(ctx: ViewerContext): Promise<void> {
     ctx.ui.printProgress(null);
     await nextTask();
     window.print();
+    // After the print dialog, so it is not behind it.
+    if (copy.simplerBold > 0) ctx.ui.showNote('Some bold marks were printed in a simpler style');
   } catch {
     ctx.ui.printProgress(null);
     // Cancel is the person's choice: nothing to say.

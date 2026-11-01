@@ -7,13 +7,15 @@ export interface PrintMarksDialogProps {
 }
 
 /**
- * Ctrl+P on a PDF that has marks (print.ts): should they print too? Escape, a click outside and Cancel print nothing.
+ * Ctrl+P on a PDF that has marks (print.ts): should they print too? "Print with marks" has the focus, so Enter prints with
+ * them (printing is not destructive). Escape, a click outside and Cancel print nothing.
  * Plain words: it says what prints and what does not, and the buttons say what they do.
  */
 export function PrintMarksDialog({ onAnswer }: PrintMarksDialogProps) {
   return (
     <Dialog
       open
+      focusPrimary
       title="Print your marks too?"
       actions={[
         { label: 'Cancel', onClick: () => onAnswer(null) },

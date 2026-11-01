@@ -68,9 +68,15 @@ export function marksToPrint(marks: PrintMarks, pageCount: number): MarksToPrint
 export interface MarkPainter {
   /**
    * Paints page `index`'s marks on `context`, which holds the page's picture (`width` × `height` px, the page upright).
-   * Does nothing for a page with no marks. Rejects when the engine fails to give the outlines of a bold range.
+   * Does nothing for a page with no marks. A bold range whose outlines the engine cannot give is painted in the strong
+   * style instead (counted in simplerBold); the print goes on.
    */
   paint(index: number, context: OffscreenCanvasRenderingContext2D, size: { width: number; height: number }): Promise<void>;
+  /**
+   * How many bold ranges so far were printed in the simpler "strong" style (a heavier tint with a dark underline)
+   * because the engine could not give their glyph outlines.
+   */
+  simplerBold(): number;
   /** Removes what the painter put in the page to read colours. Safe to call twice. */
   dispose(): void;
 }
@@ -109,6 +115,7 @@ function tokenReader(): { read(value: string): string; dispose(): void } {
 /** The painter for one print copy. */
 export function createMarkPainter(d: MarkPainterDeps): MarkPainter {
   let tokens: ReturnType<typeof tokenReader> | null = null;
+  let simpler = 0;
   const read = (value: string | number | undefined): string => (value === undefined ? '' : (tokens ??= tokenReader()).read(String(value)));
 
   /** Highlights, underlines, strikethroughs and areas: the mark layer's paths, on the picture. */
@@ -134,25 +141,45 @@ export function createMarkPainter(d: MarkPainterDeps): MarkPainter {
     }
   }
 
+  /** The strong style: a heavier tint with a dark underline on each line rect (points, in the page's own space). */
+  function paintStrong(context: OffscreenCanvasRenderingContext2D, rects: readonly { x: number; y: number; width: number; height: number }[]): void {
+    for (const rect of rects) {
+      context.globalCompositeOperation = 'multiply';
+      context.fillStyle = read('var(--gm3-sys-color-surface-container-highest)');
+      context.fillRect(rect.x, rect.y, rect.width, rect.height);
+      context.globalCompositeOperation = 'source-over';
+      context.fillStyle = read('var(--gm3-sys-color-on-surface)');
+      context.fillRect(rect.x, rect.y + rect.height * (1 - STRONG_UNDERLINE_EM), rect.width, rect.height * STRONG_UNDERLINE_EM);
+    }
+  }
+
+  /**
+   * The outlines of one range, or null when the engine cannot give them. A failure here never stops the print: the range
+   * is then painted in the strong style (below). If the line rects fail too, the engine itself is gone, and so would the
+   * next page's picture be: that error goes up.
+   */
+  async function outlinesOf(index: number, range: BoldRange): Promise<Awaited<ReturnType<typeof drawBoldRange>> | null> {
+    try {
+      return await drawBoldRange({ backend: d.backend, doc: d.doc, pageIndex: index, text: d.marks.text }, range);
+    } catch {
+      return null;
+    }
+  }
+
   /** Bold: each range's glyph outlines, one range at a time (the outlines are dropped once painted). */
   async function paintBold(context: OffscreenCanvasRenderingContext2D, index: number, page: PageSize, ranges: readonly BoldRange[], k: number): Promise<void> {
     const { matrix } = displayMatrix(page, 0);
     for (const range of ranges) {
       if (d.signal.aborted) return;
-      const drawn = await drawBoldRange({ backend: d.backend, doc: d.doc, pageIndex: index, text: d.marks.text }, range);
+      const drawn = await outlinesOf(index, range);
+      const strong = drawn === null ? await d.marks.text.rects(index, range.start, range.end - range.start) : drawn.strong;
+      if (drawn === null) simpler++;
       context.save();
       context.setTransform(k, 0, 0, k, 0, 0);
       if (matrix !== null) context.transform(...matrix);
-      for (const rect of drawn.strong) {
-        context.globalCompositeOperation = 'multiply';
-        context.fillStyle = read('var(--gm3-sys-color-surface-container-highest)');
-        context.fillRect(rect.x, rect.y, rect.width, rect.height);
-        context.globalCompositeOperation = 'source-over';
-        context.fillStyle = read('var(--gm3-sys-color-on-surface)');
-        context.fillRect(rect.x, rect.y + rect.height * (1 - STRONG_UNDERLINE_EM), rect.width, rect.height * STRONG_UNDERLINE_EM);
-      }
+      paintStrong(context, strong);
       context.lineJoin = 'round';
-      for (const g of drawn.glyphs) {
+      for (const g of drawn?.glyphs ?? []) {
         const shape = new Path2D(g.d);
         if (g.fill !== 'none') {
           context.fillStyle = g.fill;
@@ -178,6 +205,7 @@ export function createMarkPainter(d: MarkPainterDeps): MarkPainter {
       paintPaths(context, page, found.items, k);
       await paintBold(context, index, page, found.bold, k);
     },
+    simplerBold: () => simpler,
     dispose() {
       tokens?.dispose();
       tokens = null;
