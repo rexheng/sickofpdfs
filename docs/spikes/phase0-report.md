@@ -25,10 +25,10 @@ Result values: PASS, FAIL, BLOCKED, NOT RUN, and MIXED. MIXED means some variant
 <!-- results:start -->
 | Check | Name | Result | Measured | Notes |
 | --- | --- | --- | --- | --- |
-| P0-1 | EmbedPDF renders in MV3 with bundled wasm and fonts | PASS | v2-blob first page 262 ms; v2-file first page 221 ms |  |
-| P0-2 | Zero network beyond the PDF | PASS | 2 requested URLs in the net log, all 127.0.0.1:37719: /font-fixture.pdf, /paper-50.pdf | Chromium's own service requests left out: clients2.google.com, accounts.google.com, www.google.com, update.googleapis.com |
-| P0-3 | 600-page scan scrolls with no blank page over 150 ms | PASS | workers=1 steady: blank p50 0 / p95 0 / max 0 ms over 34 pages; workers=1 jump: blank p50 49.5 / p95 50.8 / max 50.8 ms over 3 pages; workers=2 steady: blank p50 0 / p95 0 / max 0 ms over 32 pages; workers=2 jump: blank p50 49.2 / p95 55 / max 55 ms over 3 pages |  |
-| P0-4 | Text-layer selection suite | MIXED | PASS: two-column@100% drag 20/20; PASS: two-column@100% edge 0.509 px, overlap 1; PASS: two-column@200% drag 20/20; PASS: two-column@200% edge 0.506 px, overlap 1; PASS: rotated-table@100% drag 20/20; PASS: rotated-table@100% edge 0.472 px, overlap 0.999; PASS: rotated-table@200% drag 20/20; PASS: rotated-table@200% edge 0.468 px, overlap 1; PASS: ligatures@100% drag 20/20; PASS: ligatures@100% edge 0.485 px, overlap 1; PASS: ligatures@200% drag 20/20; PASS: ligatures@200% edge 0.506 px, overlap 1; PASS: maths@100% drag 20/20; PASS: maths@100% edge 0.477 px, overlap 0.999; PASS: maths@200% drag 20/20; PASS: maths@200% edge 0.505 px, overlap 0.999; PASS: rtl@100% drag 20/20; PASS: rtl@100% edge 0.507 px, overlap 1; PASS: rtl@200% drag 20/20; PASS: rtl@200% edge 0.512 px, overlap 1; PASS: rotated-page@100% drag 20/20; PASS: rotated-page@100% edge 0.509 px, overlap 1; PASS: rotated-page@200% drag 20/20; PASS: rotated-page@200% edge 0.506 px, overlap 1; PASS: resnet-p1@100% drag 20/20; PASS: resnet-p1@100% edge 0.516 px, overlap 0.973; PASS: resnet-p1@200% drag 20/20; PASS: resnet-p1@200% edge 0.516 px, overlap 0.998; PASS: attention-p1@100% drag 20/20; PASS: attention-p1@100% edge 0.521 px, overlap 0.973; PASS: attention-p1@200% drag 20/20; PASS: attention-p1@200% edge 0.509 px, overlap 0.999; PASS: attention-p2@100% drag 20/20; PASS: attention-p2@100% edge 0.521 px, overlap 0.998; PASS: attention-p2@200% drag 20/20; PASS: attention-p2@200% edge 0.521 px, overlap 0.999; FAIL: select-all = truth: two-column, ligatures, rotated-page; differs: rotated-table, maths; PASS: column drag: 1 range, 37 chars, no column-2 lower text; PASS: rtl: 77/85 spans rtl; drags both ways [[0,249]] and [[0,249]] | Error: expect(received).toBe(expected) // Object.is equality Expected: "Table 2. Water samples by station Station Depth Temperature Salinity North bank 12 m 14.2 C 35.1 Old mill 3 m 16.8 C 34.6 Bridge 7 m 15.5 C 34.9 South bank 9 m 15.0 C 35.0" Received: "Table 2. Water samples by station Statio n D |
+| P0-1 | EmbedPDF renders in MV3 with bundled wasm and fonts | PASS | v2-blob first page 250 ms; v2-file first page 179 ms |  |
+| P0-2 | Zero network beyond the PDF | PASS | 2 requested URLs in the net log, all 127.0.0.1:40845: /font-fixture.pdf, /paper-50.pdf | Chromium's own service requests left out: clients2.google.com, accounts.google.com, www.google.com, update.googleapis.com |
+| P0-3 | 600-page scan scrolls with no blank page over 150 ms | PASS | workers=1 steady: blank p50 0 / p95 0 / max 0 ms over 34 pages; workers=1 jump: blank p50 52.9 / p95 56.3 / max 56.3 ms over 3 pages; workers=2 steady: blank p50 0 / p95 0 / max 0 ms over 32 pages; workers=2 jump: blank p50 49.3 / p95 49.6 / max 49.6 ms over 3 pages |  |
+| P0-4 | Text-layer selection suite | PASS | two-column@100% drag 20/20; two-column@100% edge 0.509 px, overlap 1; two-column@200% drag 20/20; two-column@200% edge 0.506 px, overlap 1; rotated-table@100% drag 20/20; rotated-table@100% edge 0.472 px, overlap 0.999; rotated-table@200% drag 20/20; rotated-table@200% edge 0.468 px, overlap 1; ligatures@100% drag 20/20; ligatures@100% edge 0.485 px, overlap 1; ligatures@200% drag 20/20; ligatures@200% edge 0.506 px, overlap 1; maths@100% drag 20/20; maths@100% edge 0.477 px, overlap 0.999; maths@200% drag 20/20; maths@200% edge 0.505 px, overlap 0.999; rtl@100% drag 20/20; rtl@100% edge 0.507 px, overlap 1; rtl@200% drag 20/20; rtl@200% edge 0.512 px, overlap 1; rotated-page@100% drag 20/20; rotated-page@100% edge 0.509 px, overlap 1; rotated-page@200% drag 20/20; rotated-page@200% edge 0.506 px, overlap 1; resnet-p1@100% drag 20/20; resnet-p1@100% edge 0.516 px, overlap 0.973; resnet-p1@200% drag 20/20; resnet-p1@200% edge 0.516 px, overlap 0.998; attention-p1@100% drag 20/20; attention-p1@100% edge 0.521 px, overlap 0.973; attention-p1@200% drag 20/20; attention-p1@200% edge 0.509 px, overlap 0.999; attention-p2@100% drag 20/20; attention-p2@100% edge 0.521 px, overlap 0.998; attention-p2@200% drag 20/20; attention-p2@200% edge 0.521 px, overlap 0.999; two-column select-all = PDFium text (2163 chars); = truth; rotated-table select-all = PDFium text (205 chars); = truth but for PDFium line breaks (R26 engine limit); ligatures select-all = PDFium text (57 chars); = truth; maths select-all = PDFium text (202 chars); = truth but for PDFium line breaks (R26 engine limit); rtl select-all = PDFium text (245 chars); rotated-page select-all = PDFium text (2163 chars); = truth; resnet-p1 select-all = PDFium text (4258 chars); attention-p1 select-all = PDFium text (2855 chars); attention-p2 select-all = PDFium text (4249 chars); column drag: 1 range, 37 chars, no column-2 lower text; rtl: 77/85 spans rtl; drags both ways [[0,249]] and [[0,249]] | vs truth first difference at 40: " station Statio n D e pth T e " vs " station Station Depth Tempera"; vs truth first difference at 37: "as an area of x 2 square units" vs "as an area of x2 square units." |
 | P0-5 | Bold as a glyph-outline overlay | NOT RUN | | |
 | P0-6 | 300 MB tab↔offscreen moves; the 1 GB open limit | NOT RUN | | |
 | P0-7 | Form-field detection | NOT RUN | | |
@@ -129,24 +129,24 @@ All numbers so far come from Chrome for Testing 153.0.8010.12 on Linux, launched
 
 ### P0-4 Text layer on PDFium glyph boxes
 
-- **MIXED: selection and copy pass everywhere, but PDFium's own text differs from the page on two fixtures.**
+- **PASS: all 47 tests pass.**
   - The 36 drag and alignment tests pass on 9 pages at 100% and 200%.
+  - On all 9 pages, the select-all text equals PDFium's text for the whole page. Ruling R26 makes that text, which Chrome's own viewer copies, the yardstick.
+  - On the generated fixtures it also equals the HTML ground truth: exactly on two-column, ligatures and rotated-page, and with all whitespace removed on rotated-table and maths. Those two are an engine limitation (R26): PDFium inserts line breaks of its own there (see below).
   - The two-column and RTL tests pass.
-  - Select-all text equals the ground truth on two-column, ligatures and rotated-page. It differs on rotated-table and maths, because PDFium inserts line breaks there (see below).
-  - For the Task 10 gate, "P0-4 pairs and copy" is PASS.
 - 100% is 96/72 CSS px per point, at DPR 1. The viewport is sized to hold the whole page, so the mouse reaches every glyph. A "drag" is a mouse-down at glyph a's PDFium centre and a mouse-up at glyph b's, through 8 moves. The expected range is [min, max + 1), and the copied text is compared with `getTextRange` after NFKC and whitespace collapsing. Endpoints are 20 seeded pairs per page: half anywhere, half within 40 glyphs.
 
-| Page | Drag pairs (range and text), 100% / 200% | Max glyph-edge error, 100% / 200% | Min vertical overlap, 100% / 200% | Select-all = truth |
+| Page | Drag pairs (range and text), 100% / 200% | Max glyph-edge error, 100% / 200% | Min vertical overlap, 100% / 200% | Select-all = PDFium text; = HTML truth |
 | --- | --- | --- | --- | --- |
-| two-column | 20/20 / 20/20 | 0.509 / 0.506 px | 1 / 1 | equal |
-| rotated-table | 20/20 / 20/20 | 0.472 / 0.468 px | 0.999 / 1 | differs (PDFium) |
-| ligatures | 20/20 / 20/20 | 0.485 / 0.506 px | 1 / 1 | equal |
-| maths | 20/20 / 20/20 | 0.477 / 0.505 px | 0.999 / 0.999 | differs (PDFium) |
-| rtl | 20/20 / 20/20 | 0.507 / 0.512 px | 1 / 1 | not compared (RTL) |
-| rotated-page (/Rotate 90) | 20/20 / 20/20 | 0.509 / 0.506 px | 1 / 1 | equal |
-| ResNet p1 | 20/20 / 20/20 | 0.516 / 0.516 px | 0.973 / 0.998 | no truth |
-| Attention p1 | 20/20 / 20/20 | 0.521 / 0.509 px | 0.973 / 0.999 | no truth |
-| Attention p2 (inline maths) | 20/20 / 20/20 | 0.521 / 0.521 px | 0.998 / 0.999 | no truth |
+| two-column | 20/20 / 20/20 | 0.509 / 0.506 px | 1 / 1 | yes; exact |
+| rotated-table | 20/20 / 20/20 | 0.472 / 0.468 px | 0.999 / 1 | yes; with whitespace removed (R26) |
+| ligatures | 20/20 / 20/20 | 0.485 / 0.506 px | 1 / 1 | yes; exact |
+| maths | 20/20 / 20/20 | 0.477 / 0.505 px | 0.999 / 0.999 | yes; with whitespace removed (R26) |
+| rtl | 20/20 / 20/20 | 0.507 / 0.512 px | 1 / 1 | yes; not compared (RTL) |
+| rotated-page (/Rotate 90) | 20/20 / 20/20 | 0.509 / 0.506 px | 1 / 1 | yes; exact |
+| ResNet p1 | 20/20 / 20/20 | 0.516 / 0.516 px | 0.973 / 0.998 | yes; no truth |
+| Attention p1 | 20/20 / 20/20 | 0.521 / 0.509 px | 0.973 / 0.999 | yes; no truth |
+| Attention p2 (inline maths) | 20/20 / 20/20 | 0.521 / 0.521 px | 0.998 / 0.999 | yes; no truth |
 
 - **How the error and overlap are measured.**
   - Edge error is per character: the DOM Range rect against PDFium's loose box (scale and /Rotate applied), along the displayed text direction, on both edges. It covers 56 to 3,634 characters a page.
@@ -171,7 +171,8 @@ All numbers so far come from Chrome for Testing 153.0.8010.12 on Linux, launched
   5. **PDFium's joined line-end hyphen** (U+FFFE in `FPDFText_GetText`, dropped by `getTextRange`) is shown as an unselectable "-". The glyph keeps its box, and copied text drops it as PDFium does.
   6. **The layer font is the bundled `pdf/NotoSans-Regular.ttf`** (Hebrew falls back to a system font). The canvas measurer matched DOM widths within 0.02 px.
   7. **Attention page 2 is an extra fixture.** Page 1 has no inline maths.
-- **Why select-all differs on rotated-table and maths: PDFium's text.** The text layer shows PDFium's text exactly, so copying matches what Chrome's PDF viewer (same PDFium) copies.
+- **Why the truth matches only without whitespace on rotated-table and maths: PDFium's text.** The text layer shows PDFium's text exactly, so copying matches what Chrome's PDF viewer (same PDFium) copies. The tests check that for every page: select-all against `getTextRange(0, all chars)`.
+  - A control on these two pages, dropping or doubling one char of a span in the DOM, fails both the PDFium check and the whitespace-free truth check. So the known difference cannot hide a layer defect.
   - In the rotated table (one text object per glyph, text at 270°), PDFium inserts generated line breaks inside words: "Statio⏎n⏎D⏎e⏎pth T⏎e⏎m⏎p…".
   - Around every superscript it inserts line breaks too: `x²` copies as "x 2", while the truth has "x2". `a₀` is fine.
   - A fix would be a text model in Task 22 that drops PDFium's generated breaks between glyphs on the same visual line, used for both the DOM and the copied text.

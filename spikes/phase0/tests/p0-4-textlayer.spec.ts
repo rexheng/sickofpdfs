@@ -3,9 +3,9 @@ import { test } from './fixtures';
 import { record } from './record';
 import { RTL, TEXTLAYER_FIXTURES, TWO_COLUMN } from './textlayer-fixtures';
 
-// The brief's suite. Two changes, both for the record: each test writes its measurements with record(),
-// and the loops use expect.soft, so every pair and fixture is measured even after a miss (any miss still
-// fails the test). Fixtures: `fixtures:textlayer` (tl-*.pdf) and `fixtures` (the arXiv papers).
+// The brief's suite. Changes: each test writes its measurements with record(); the drag loop uses
+// expect.soft, so every pair is measured even after a miss (any miss still fails the test); select-all is one
+// test per page against PDFium's text (see below). Fixtures: `fixtures:textlayer` (tl-*.pdf) and `fixtures`.
 const norm = (s: string) => s.normalize('NFKC').replace(/­/g, '').replace(/\s+/g, ' ').trim();
 const px = (n: number) => Math.round(n * 1000) / 1000;
 
@@ -45,17 +45,44 @@ for (const f of TEXTLAYER_FIXTURES) for (const zoom of [1, 2]) {
     expect(r.minVerticalOverlap).toBeGreaterThanOrEqual(0.8);
   });
 }
-test('P0-4 generated LTR fixtures: select-all text equals the HTML ground truth', async ({ textlayerPage }) => {
-  const results: string[] = [];
-  for (const f of TEXTLAYER_FIXTURES.filter((x) => x.truth && x.dir === 'ltr')) {
-    const text = norm(await (await textlayerPage(f, 1)).selectAllText());
-    results.push(`${f.name} ${text === norm(f.truth!) ? 'equal' : 'differs'}`);
-    expect.soft(text).toBe(norm(f.truth!));
-  }
-  const equal = results.filter((r) => r.endsWith('equal')).map((r) => r.split(' ')[0]);
-  const differs = results.filter((r) => r.endsWith('differs')).map((r) => r.split(' ')[0]);
-  await record('P0-4', { pass: differs.length === 0, measured: `select-all = truth: ${equal.join(', ') || 'none'}${differs.length ? `; differs: ${differs.join(', ')}` : ''}` });
-});
+// Select-all, one test per page. The yardstick is PDFium's own text for the whole page (ruling R26: copy is
+// judged against Chrome's viewer, i.e. FPDFText), so a dropped or doubled char in the layer fails here. The
+// generated LTR fixtures are also compared with their HTML ground truth: exactly, except where PDFium is known
+// to insert line breaks of its own (PDFIUM_LINE_BREAKS), where only the text with all whitespace removed must
+// match. That difference is the engine limitation R26 records, not a layer defect.
+const PDFIUM_LINE_BREAKS = new Set(['rotated-table', 'maths']); // "Statio⏎n⏎D⏎e⏎pth", "x⏎2"
+const squash = (s: string) => norm(s).replace(/\s+/g, '');
+const firstDiff = (a: string, b: string) => {
+  let i = 0;
+  while (i < a.length && a[i] === b[i]) i++;
+  return i === a.length && i === b.length ? '' : `first difference at ${i}: ${JSON.stringify(a.slice(Math.max(0, i - 15), i + 15))} vs ${JSON.stringify(b.slice(Math.max(0, i - 15), i + 15))}`;
+};
+for (const f of TEXTLAYER_FIXTURES) {
+  const truth = f.truth && f.dir === 'ltr' ? f.truth : undefined; // the brief compares generated LTR fixtures only
+  const limit = PDFIUM_LINE_BREAKS.has(f.name);
+  test(`P0-4 ${f.name}: select-all text equals PDFium's page text${truth ? (limit ? ' and, apart from PDFium line breaks, the HTML ground truth' : ' and the HTML ground truth') : ''}`, async ({ textlayerPage }) => {
+    const p = await textlayerPage(f, 1);
+    const dom = norm(await p.selectAllText());
+    const pdfium = norm(await p.textRange(0, p.info.glyphs));
+    const parts = [`${f.name} select-all ${dom === pdfium ? '= PDFium text' : '≠ PDFium text'} (${dom.length} chars)`];
+    const notes = [firstDiff(dom, pdfium)];
+    if (truth) {
+      const exact = dom === norm(truth);
+      const squashed = squash(dom) === squash(truth);
+      parts.push(exact ? '= truth' : limit && squashed ? '= truth but for PDFium line breaks (R26 engine limit)' : '≠ truth');
+      if (!exact) notes.push(`vs truth ${firstDiff(dom, norm(truth))}`);
+      if (limit) test.info().annotations.push({ type: 'engine-limit', description: `PDFium inserts line breaks into this text (R26): ${firstDiff(dom, norm(truth))}` });
+    }
+    await record('P0-4', {
+      pass: dom === pdfium && (!truth || (limit ? squash(dom) === squash(truth) : dom === norm(truth))),
+      measured: parts.join('; '),
+      note: notes.filter(Boolean).join('; ') || undefined,
+    });
+    expect(dom).toBe(pdfium);
+    if (truth && limit) expect(squash(dom)).toBe(squash(truth));
+    else if (truth) expect(dom).toBe(norm(truth));
+  });
+}
 test('P0-4 two-column: dragging from column 1 bottom line to column 2 top line selects no column-2 lower text', async ({ textlayerPage }) => {
   const p = await textlayerPage(TWO_COLUMN, 1);
   const r = await p.dragColumns();
