@@ -1,5 +1,6 @@
 import { stripFragment } from '../../shared/urls';
 import { VIEWER_PATH } from '../../shared/viewer-url';
+import { requestById } from './request-log';
 
 /**
  * Which addresses the viewer may load in each tab. Any web page can send a tab to `viewer.html?file=<anything>` or put
@@ -10,25 +11,27 @@ import { VIEWER_PATH } from '../../shared/viewer-url';
  * - the tab navigated to that file:// address. A web page cannot start such a navigation: Chrome refuses it before
  *   it starts, and webNavigation never hears of it (measured on Chrome 153).
  * The viewer asks with `takeover:prepare-fetch`. An address the tab never opened is not loaded with the owner's
- * sign-in, and a local file is not loaded at all.
+ * sign-in, and a local file is not loaded at all. Each record also keeps the Referer that the viewer's own request
+ * repeats: the one Chrome sent for that PDF, never the one of some other request of the tab.
  *
  * The records are in chrome.storage.session (memory only, gone when the browser closes), so a reload or Back in the
  * tab still works after the worker slept. They go when the tab closes.
  */
-export interface Grant {
+export interface Grant extends Opened {
   /** The address as the network stack sees it: normalised, without a fragment. */
   url: string;
+}
+
+/** How the tab opened the address. */
+export interface Opened {
   /** The frame it opened in, and that frame's parent (0: the page itself holds it; -1: it is the page). */
   frameId: number;
   parentFrameId: number;
+  /** The Referer of Chrome's own request for it (or what Chrome would send, for an embedded PDF); null for none. */
+  referer: string | null;
 }
-
-/** Where in the tab the address was opened. The service worker's own navigations are of the whole tab. */
-export interface GrantFrame {
-  frameId: number;
-  parentFrameId: number;
-}
-const WHOLE_TAB: GrantFrame = { frameId: 0, parentFrameId: -1 };
+/** The service worker's own navigations are of the whole tab. */
+const WHOLE_TAB: Opened = { frameId: 0, parentFrameId: -1, referer: null };
 
 /** Enough for Back and Forward through the PDFs of one tab; the oldest goes first. */
 const MAX_PER_TAB = 10;
@@ -56,12 +59,13 @@ async function read(tabId: number): Promise<Grant[]> {
   return Array.isArray(value) ? (value as Grant[]) : [];
 }
 
-/** This tab really opened `url` (in `frame`): its viewer may load it. */
-export function grant(tabId: number, url: string, frame: GrantFrame = WHOLE_TAB): Promise<void> {
+/** This tab really opened `url`: its viewer may load it. */
+export function grant(tabId: number, url: string, how: Partial<Opened> = {}): Promise<void> {
   return inOrder(async () => {
     const target = keyUrl(url);
     if (target === null || tabId < 0) return;
-    const record: Grant = { url: target, frameId: frame.frameId, parentFrameId: frame.parentFrameId };
+    const { frameId, parentFrameId, referer } = { ...WHOLE_TAB, ...how };
+    const record: Grant = { url: target, frameId, parentFrameId, referer };
     const others = (await read(tabId)).filter((g) => g.url !== target);
     await chrome.storage.session.set({ [keyOf(tabId)]: [record, ...others].slice(0, MAX_PER_TAB) });
   });
@@ -90,11 +94,13 @@ export function installGrants(): void {
   const redirected = `${chrome.runtime.getURL(VIEWER_PATH)}?DNR:`;
   chrome.webRequest.onBeforeRedirect.addListener(
     (details) => {
-      if (details.tabId >= 0 && details.redirectUrl === redirected + details.url) grant(details.tabId, details.url, details).catch(recordFailed);
+      if (details.tabId < 0 || details.redirectUrl !== redirected + details.url) return;
+      const { frameId, parentFrameId } = details;
+      grant(details.tabId, details.url, { frameId, parentFrameId, referer: requestById(details.requestId)?.referer ?? null }).catch(recordFailed);
     },
     { urls: ['http://*/*', 'https://*/*'], types: ['main_frame', 'sub_frame'] },
   );
-  chrome.webNavigation.onBeforeNavigate.addListener((details) => void grant(details.tabId, details.url, details).catch(recordFailed), {
+  chrome.webNavigation.onBeforeNavigate.addListener(({ tabId, url, frameId, parentFrameId }) => void grant(tabId, url, { frameId, parentFrameId }).catch(recordFailed), {
     url: [{ urlPrefix: 'file://' }],
   });
 }

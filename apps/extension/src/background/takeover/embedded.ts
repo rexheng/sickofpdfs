@@ -1,6 +1,8 @@
 import { splitPageFragment, stripFragment } from '../../shared/urls';
 import { buildViewerUrl, VIEWER_PATH } from '../../shared/viewer-url';
 import { grant } from './grants';
+import { defaultReferer } from './referer';
+import { findRequest } from './request-log';
 
 // One record per tab: the page whose embedded PDFs are left to Chrome.
 const keyOf = (tabId: number) => `suppressed:${tabId}`;
@@ -24,10 +26,14 @@ export async function areEmbedsSuppressed(tabId: number, pageUrl: string): Promi
  * Opens the PDF that a page embeds in the whole tab, with "Back to page" pointing at the page. This also suppresses
  * the page's embeds from now on, so that the browser's own Back button lands on the page and not in a loop: the
  * page would otherwise send the tab to the viewer again each time.
+ *
+ * The viewer's own request repeats the Referer of Chrome's request for the embed or the frame, which follows the
+ * page's referrer policy; if that request was not seen, what Chrome sends by default from the page.
  */
 export async function openEmbeddedInTab(tabId: number, url: string, pageUrl: string): Promise<void> {
   const { url: source, page } = splitPageFragment(url);
-  await grant(tabId, source);
+  const seen = findRequest(tabId, source, ['sub_frame', 'object']);
+  await grant(tabId, source, { referer: seen ? seen.referer : defaultReferer(pageUrl, source) });
   await suppressEmbeds(tabId, pageUrl);
   await chrome.tabs.update(tabId, { url: buildViewerUrl({ source, back: pageUrl, page }) });
 }

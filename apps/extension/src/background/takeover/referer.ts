@@ -22,8 +22,8 @@ import { escapeForRegexFilter } from './escape';
 import { allocateRuleId } from './rule-ids';
 
 /**
- * Makes the viewer's own request for `url` carry `referer`, the one the page request had. Some hosts refuse a PDF
- * without it. The rule can send that Referer nowhere else:
+ * Makes the viewer's own request for `url` carry `referer`: the one Chrome sent for that PDF, which the tab's record
+ * keeps (grants.ts). Some hosts refuse a PDF without it. The rule can send that Referer nowhere else:
  * - only for the exact address `url` (a case-sensitive match of the whole address, with no wildcards: an address
  *   that holds `*` or `^`, which a text pattern would read as wildcards, is matched through an escaped regex);
  * - only for requests started by this extension's own pages (`initiatorDomains`), and only in this tab;
@@ -33,7 +33,7 @@ import { allocateRuleId } from './rule-ids';
  *
  * Returns the session rule's id, or 0 when no rule could be made that matches only `url` (then the request keeps
  * Chrome's own Referer). An earlier rule of the same tab is replaced. The rule is removed when the tab navigates away
- * or closes (`clearStickyReferer`, called from tab-lifecycle.ts).
+ * or closes (`clearStickyReferer`, called from tab-lifecycle.ts); a reload of the viewer makes it again from the record.
  */
 export async function setStickyReferer(tabId: number, url: string, referer: string): Promise<number> {
   await clearStickyReferer(tabId);
@@ -57,21 +57,30 @@ export async function setStickyReferer(tabId: number, url: string, referer: stri
       },
     ],
   });
-  // The request log is in memory and the worker may sleep; a reload of the viewer needs the Referer again.
-  await chrome.storage.session.set({ [keyOf(tabId)]: { url: target, referer } satisfies Remembered });
   return id;
 }
 
-interface Remembered {
-  url: string;
-  referer: string;
-}
-const keyOf = (tabId: number) => `referer:${tabId}`;
-
-/** The Referer that this tab's rule sends for `url`, if it has one (the viewer was reloaded after the request log was lost). */
-export async function rememberedReferer(tabId: number, url: string): Promise<string | null> {
-  const remembered = (await chrome.storage.session.get(keyOf(tabId)))[keyOf(tabId)] as Remembered | undefined;
-  return remembered !== undefined && remembered.url === stripFragment(new URL(url).href) ? remembered.referer : null;
+/**
+ * The Referer Chrome sends from `page` to `target` under its default policy, strict-origin-when-cross-origin: the
+ * page's whole address (without its fragment) to its own origin, only its origin to another, and none from https to
+ * http or from a page that is not on the web. For an embedded PDF whose own request was not seen.
+ */
+export function defaultReferer(page: string, target: string): string | null {
+  let from: URL;
+  let to: URL;
+  try {
+    from = new URL(page);
+    to = new URL(target);
+  } catch {
+    return null;
+  }
+  if (from.protocol !== 'http:' && from.protocol !== 'https:') return null;
+  if (from.protocol === 'https:' && to.protocol !== 'https:') return null;
+  if (from.origin !== to.origin) return `${from.origin}/`;
+  from.hash = '';
+  from.username = '';
+  from.password = '';
+  return from.href;
 }
 
 /** A condition that matches `target` and nothing else, or null if Chrome cannot express one. */
@@ -88,5 +97,4 @@ export async function clearStickyReferer(tabId: number): Promise<void> {
   const rules = await chrome.declarativeNetRequest.getSessionRules();
   const ids = rules.filter((r) => r.action.type === 'modifyHeaders' && r.condition.tabIds?.includes(tabId)).map((r) => r.id);
   if (ids.length > 0) await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: ids });
-  await chrome.storage.session.remove(keyOf(tabId));
 }

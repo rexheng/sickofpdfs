@@ -19,7 +19,10 @@ export interface OpenedDocument {
   open: OpenResult;
   /** The password that opened it; null when none was needed. */
   password: string | null;
-  /** The takeover:prepare-fetch reply's referer, when it was not null: the page the PDF was opened from. */
+  /**
+   * The takeover:prepare-fetch reply's referer, when it was not null: the Referer Chrome sent for this PDF (for an
+   * embedded PDF, what the embedding page sent, which may be its origin only).
+   */
   referrer?: string;
 }
 

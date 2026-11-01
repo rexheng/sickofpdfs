@@ -23,8 +23,8 @@ import { buildViewerUrl } from '../../shared/viewer-url';
 import { areEmbedsSuppressed, openEmbeddedInTab, suppressEmbeds } from './embedded';
 import { armEscape, isEscaped, navigateEscaped } from './escape';
 import { findGrant, grant } from './grants';
-import { clearStickyReferer, rememberedReferer, setStickyReferer } from './referer';
-import { getRequestInfo } from './request-log';
+import { clearStickyReferer, setStickyReferer } from './referer';
+import { findRequest, getRequestInfo } from './request-log';
 
 type Sender = chrome.runtime.MessageSender;
 type Reply = RuntimeReplies[keyof RuntimeReplies];
@@ -125,9 +125,11 @@ async function handle(message: RuntimeMessage, sender: Sender, afterReply: (work
     case 'takeover:prepare-fetch': {
       // Only the viewer that fills the tab loads a PDF; one in a frame never does (frame-escape.ts).
       if (!fromExtensionPage(sender) || tabId === undefined || sender.frameId !== 0 || !isOpenableUrl(message.url)) return { known: false, referer: null };
-      const known = (await findGrant(tabId, message.url)) !== null;
+      const opened = await findGrant(tabId, message.url);
+      const known = opened !== null;
       if (!/^https?:/.test(message.url)) return { known, referer: null };
-      const referer = known ? (getRequestInfo(tabId, sender.frameId)?.referer ?? (await rememberedReferer(tabId, message.url))) : null;
+      // The Referer of Chrome's own request for this very PDF, as the tab's record keeps it.
+      const referer = opened?.referer ?? null;
       if (referer) await setStickyReferer(tabId, message.url, referer);
       else await clearStickyReferer(tabId);
       return { known, referer };
@@ -143,7 +145,7 @@ async function handle(message: RuntimeMessage, sender: Sender, afterReply: (work
       if (!fromContentScript(sender) || tabId === undefined || sender.frameId !== 0 || sender.url !== message.url) return undefined;
       if (!isOpenableUrl(message.url) || !(await canTakeOver(tabId, 0, message.url))) return undefined;
       const { url: source, page } = splitPageFragment(message.url);
-      await grant(tabId, source);
+      await grant(tabId, source, { referer: findRequest(tabId, source, ['main_frame'])?.referer ?? null });
       await chrome.tabs.update(tabId, { url: buildViewerUrl({ source, back: null, page }) });
       return undefined;
     }
