@@ -1,0 +1,623 @@
+// The library store: every read and write of the local SQLite database. It runs inside the store worker (one owner,
+// requests one at a time) and in Node tests over an in-memory database.
+//
+// Rules this file keeps:
+// - Every write is one transaction, and its change event is published only after it commits.
+// - Nothing is written for a document the library does not hold: every write checks `documents` first, and the foreign
+//   keys back that up. `findStampAlias` only reads.
+// - The store stamps `hlc` on every synced write and leaves `rev` alone (sync owns it).
+// - `forgetDocument` really deletes: the rows, every outbox entry naming them, and the deleted words in the indexes (R13).
+// - Errors are rejections whose message starts with a code (`bad-input: …`), so the code survives a message port.
+
+import {
+  canonicalLink,
+  canonicalLocation,
+  cleanLink,
+  locationId,
+  type DocumentId,
+  type DocumentRow,
+  type Hlc,
+  type LocationId,
+  type LocationKind,
+  type LocationRow,
+  type PageHit,
+  type Sha256,
+  type StoreStats,
+} from '@sop/core';
+import type { Database } from '@sqlite.org/sqlite-wasm';
+import { type AnnotationsApi, createAnnotationsApi } from './annotations';
+import type { StoreChange } from './change-bus';
+import { createPageFiguresApi, type PageFiguresApi } from './page-figures';
+import { FTS_TABLES } from './schema';
+import { isReadOnly, type SqlValue, userVersion } from './schema-v2';
+import { ALIAS_MIN, stampedPagesSimilarity } from './stamp-match';
+
+export { migrate } from './migrate';
+
+/** The oo1 database: an `OpfsSAHPoolDb` in the store worker, `:memory:` in Node tests. */
+export type Sqlite3Database = Database;
+
+export interface SaveDocumentInput {
+  id: DocumentId;
+  byteSize: number;
+  pageCount: number;
+  title: string | null;
+  authors: string[];
+  pdfId: string | null;
+  hasText: boolean;
+  encrypted: boolean;
+  blobStored: boolean;
+  saveReasons: string[];
+  location: { kind: LocationKind; raw: string; viaPage: string | null } | null;
+  openedAt: number;
+}
+
+export interface TouchLocationInput {
+  documentId: DocumentId;
+  kind: LocationKind;
+  raw: string;
+  viaPage: string | null;
+  at: number;
+}
+
+export interface StoreApi extends AnnotationsApi, PageFiguresApi {
+  schemaVersion(): Promise<number>;
+  stats(): Promise<StoreStats>;
+  /** The library document these bytes are: `documents.id`, or the document an alias (a stamped copy) points to. */
+  resolveFingerprint(sha256: Sha256): Promise<DocumentId | null>;
+  getDocument(id: DocumentId): Promise<DocumentRow | null>;
+  countDocumentsWithPageCount(pageCount: number): Promise<number>;
+  /** A library document whose page text matches at 99.5% or more once download stamps are removed. Reads only. */
+  findStampAlias(pageCount: number, pageTexts: readonly string[]): Promise<{ documentId: DocumentId; similarity: number } | null>;
+  addAlias(sha256: Sha256, documentId: DocumentId, similarity: number): Promise<void>;
+  /** The document, its history row and its location, in one transaction. Saving again changes nothing it already holds. */
+  saveDocument(input: SaveDocumentInput): Promise<{ row: DocumentRow; created: boolean }>;
+  putPageText(documentId: DocumentId, pages: readonly { pageIndex: number; text: string }[]): Promise<void>;
+  touchLocation(input: TouchLocationInput): Promise<LocationRow>;
+  listLocations(documentId: DocumentId): Promise<LocationRow[]>;
+  recordOpen(documentId: DocumentId, at: number): Promise<void>;
+  /** Hard delete: the document, everything that hangs off it, every outbox row naming any of it, and its indexed words. */
+  forgetDocument(documentId: DocumentId): Promise<void>;
+  /** Pages whose text matches every word of `query`, best first (bm25). */
+  searchPages(query: string, limit: number): Promise<PageHit[]>;
+}
+
+export interface StoreDeps {
+  now(): number;
+  hlc: Hlc;
+  publish(c: StoreChange): void;
+}
+
+/** The method names of this file's part of the API (the annotation and figure parts list their own). */
+export const LIBRARY_METHODS = [
+  'schemaVersion',
+  'stats',
+  'resolveFingerprint',
+  'getDocument',
+  'countDocumentsWithPageCount',
+  'findStampAlias',
+  'addAlias',
+  'saveDocument',
+  'putPageText',
+  'touchLocation',
+  'listLocations',
+  'recordOpen',
+  'forgetDocument',
+  'searchPages',
+] as const satisfies readonly (keyof StoreApi)[];
+
+export type StoreErrorCode = 'bad-input' | 'read-only' | 'document-missing' | 'alias-conflict';
+
+/** The message starts with the code, so it can still be told apart after it crosses a message port as plain text. */
+export class StoreError extends Error {
+  readonly code: StoreErrorCode;
+  constructor(code: StoreErrorCode, message: string) {
+    super(`${code}: ${message}`);
+    this.name = 'StoreError';
+    this.code = code;
+  }
+}
+
+function fail(code: StoreErrorCode, message: string): never {
+  throw new StoreError(code, message);
+}
+
+/** Runs `f` and returns its result as a promise, so a thrown error is a rejection and never a throw at the call site. */
+function attempt<T>(f: () => T): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    try {
+      resolve(f());
+    } catch (e) {
+      reject(e instanceof Error ? e : new Error(String(e)));
+    }
+  });
+}
+
+// ---- checking what comes in --------------------------------------------------------------------------------------------
+
+const HEX64 = /^[0-9a-f]{64}$/;
+/** Links and file paths longer than this are refused rather than stored. */
+const MAX_LINK = 16_384;
+/** The most hits one search returns. */
+const MAX_HITS = 500;
+/** The most words of a search query that are used. */
+const MAX_QUERY_WORDS = 32;
+
+const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v);
+const isTime = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0;
+const isStringList = (v: unknown): v is string[] => Array.isArray(v) && v.every((s) => typeof s === 'string');
+
+function checkHex(v: unknown, what: string): asserts v is string {
+  if (typeof v !== 'string' || !HEX64.test(v)) fail('bad-input', `${what} is not a SHA-256 (64 lower-case hex characters)`);
+}
+
+function checkLocation(kind: unknown, raw: unknown, viaPage: unknown): void {
+  if (kind !== 'url' && kind !== 'file') fail('bad-input', 'a location is a url or a file');
+  if (typeof raw !== 'string' || raw.length === 0 || raw.length > MAX_LINK) fail('bad-input', 'a location needs its link');
+  if (viaPage !== null && (typeof viaPage !== 'string' || viaPage.length > MAX_LINK)) fail('bad-input', 'the page that led here is not a link');
+}
+
+function checkSaveInput(input: SaveDocumentInput): void {
+  if (typeof input !== 'object' || input === null) fail('bad-input', 'nothing to save');
+  checkHex(input.id, 'the document id');
+  if (!isInt(input.byteSize) || input.byteSize < 0) fail('bad-input', 'the size is not a whole number of bytes');
+  if (!isInt(input.pageCount) || input.pageCount < 0) fail('bad-input', 'the page count is not a whole number');
+  if (input.title !== null && typeof input.title !== 'string') fail('bad-input', 'the title is not text');
+  if (!isStringList(input.authors)) fail('bad-input', 'the authors are not a list of names');
+  if (input.pdfId !== null && typeof input.pdfId !== 'string') fail('bad-input', 'the PDF id is not text');
+  for (const flag of ['hasText', 'encrypted', 'blobStored'] as const) {
+    if (typeof input[flag] !== 'boolean') fail('bad-input', `${flag} is not true or false`);
+  }
+  if (!isStringList(input.saveReasons)) fail('bad-input', 'the save reasons are not a list');
+  if (!isTime(input.openedAt)) fail('bad-input', 'the open time is not a time');
+  if (input.location !== null) {
+    if (typeof input.location !== 'object') fail('bad-input', 'the location is not a location');
+    checkLocation(input.location.kind, input.location.raw, input.location.viaPage);
+  }
+}
+
+// ---- reading cells -----------------------------------------------------------------------------------------------------
+
+type Row = Record<string, SqlValue>;
+
+function text(r: Row, col: string): string {
+  const v = r[col];
+  if (typeof v !== 'string') throw new Error(`column ${col} is not text`);
+  return v;
+}
+function textOrNull(r: Row, col: string): string | null {
+  return r[col] == null ? null : text(r, col);
+}
+function num(r: Row, col: string): number {
+  const v = r[col];
+  if (typeof v === 'number') return v;
+  if (typeof v === 'bigint') return Number(v);
+  throw new Error(`column ${col} is not a number`);
+}
+function numOrNull(r: Row, col: string): number | null {
+  return r[col] == null ? null : num(r, col);
+}
+/** A JSON list of strings; anything else reads as an empty list. */
+function stringList(r: Row, col: string): string[] {
+  try {
+    const v: unknown = JSON.parse(text(r, col));
+    return isStringList(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
+const KINDS = new Set(['paper', 'book', 'slides', 'other']);
+
+function documentFromRow(r: Row): DocumentRow {
+  const kind = text(r, 'kind');
+  return {
+    id: text(r, 'id') as DocumentId,
+    pageCount: num(r, 'page_count'),
+    byteSize: num(r, 'byte_size'),
+    title: textOrNull(r, 'title'),
+    authors: stringList(r, 'authors'),
+    year: numOrNull(r, 'year'),
+    doi: textOrNull(r, 'doi'),
+    arxivId: textOrNull(r, 'arxiv_id'),
+    pdfId: textOrNull(r, 'pdf_id'),
+    kind: (KINDS.has(kind) ? kind : 'other') as DocumentRow['kind'],
+    hasText: num(r, 'has_text') === 1,
+    encrypted: num(r, 'encrypted') === 1,
+    indexText: num(r, 'index_text') === 1,
+    blobStored: num(r, 'blob_stored') === 1,
+    starred: num(r, 'starred') === 1,
+    saveReasons: stringList(r, 'save_reasons'),
+    createdAt: num(r, 'created_at'),
+    updatedAt: num(r, 'updated_at'),
+    deletedAt: numOrNull(r, 'deleted_at'),
+    rev: num(r, 'rev'),
+    hlc: text(r, 'hlc'),
+  };
+}
+
+function locationFromRow(r: Row): LocationRow {
+  return {
+    id: text(r, 'id') as LocationId,
+    documentId: text(r, 'document_id') as DocumentId,
+    kind: text(r, 'kind') as LocationKind,
+    canonical: text(r, 'canonical'),
+    raw: text(r, 'raw'),
+    viaPage: textOrNull(r, 'via_page'),
+    firstSeen: num(r, 'first_seen'),
+    lastSeen: num(r, 'last_seen'),
+  };
+}
+
+/** A location ready to store: its id, canonical form, and the raw link with tracking and session parts removed. */
+interface PreparedLocation {
+  id: LocationId;
+  kind: LocationKind;
+  canonical: string;
+  raw: string;
+  viaPage: string | null;
+}
+
+async function prepareLocation(kind: LocationKind, raw: string, viaPage: string | null): Promise<PreparedLocation> {
+  const canonical = canonicalLocation(kind, raw);
+  return {
+    id: await locationId(kind, canonical),
+    kind,
+    canonical,
+    // Web links lose tracking parameters and session keys before they are stored; a file URL is kept as it was.
+    raw: kind === 'url' ? cleanLink(raw) : raw,
+    viaPage: viaPage === null ? null : canonicalLink(viaPage),
+  };
+}
+
+/**
+ * A search box's words as an FTS5 query: each word is a quoted phrase (so no word is read as FTS5 syntax), and all of
+ * them must match. Words with no letter or digit are dropped. Null when nothing is left.
+ */
+export function ftsQuery(query: string): string | null {
+  if (typeof query !== 'string') return null;
+  const words = query
+    .split(/\s+/u)
+    .filter((w) => /[\p{L}\p{N}]/u.test(w))
+    .slice(0, MAX_QUERY_WORDS);
+  return words.length === 0 ? null : words.map((w) => `"${w.replaceAll('"', '""')}"`).join(' ');
+}
+
+// ---- the store -----------------------------------------------------------------------------------------------------------
+
+export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
+  // sqlite-wasm refuses an empty bind list on a statement without parameters, so none is passed then.
+  const binding = (bind: SqlValue[]): SqlValue[] | undefined => (bind.length > 0 ? bind : undefined);
+  const one = (sql: string, bind: SqlValue[] = []): Row | undefined => db.selectObjects(sql, binding(bind))[0];
+  const run = (sql: string, bind: SqlValue[] = []): number => {
+    db.exec({ sql, bind: binding(bind) });
+    return db.changes();
+  };
+  const count = (sql: string, bind: SqlValue[] = []): number => Number(db.selectValue(sql, binding(bind)) ?? 0);
+
+  const assertWritable = (): void => {
+    if (isReadOnly(db)) fail('read-only', 'Update sickofpdfs. This library was saved by a newer version, so it cannot be changed.');
+  };
+  const documentExists = (id: string): boolean => one('SELECT 1 AS x FROM documents WHERE id = ?', [id]) !== undefined;
+
+  /** Publishes after a commit. A failed broadcast never makes a committed write look failed. */
+  const publish = (changes: StoreChange[]): void => {
+    for (const c of changes) {
+      try {
+        deps.publish(c);
+      } catch {
+        // Other tabs catch up on their next read.
+      }
+    }
+  };
+
+  const readDocument = (id: string): DocumentRow | null => {
+    const r = one('SELECT * FROM documents WHERE id = ?', [id]);
+    return r ? documentFromRow(r) : null;
+  };
+
+  /** Inserts or updates a location row. The first sighting stays; the newest document, link and time win. */
+  const upsertLocation = (loc: PreparedLocation, documentId: string, at: number): void => {
+    run(
+      `INSERT INTO locations (id, document_id, kind, canonical, raw, via_page, first_seen, last_seen, rev, hlc)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+       ON CONFLICT (id) DO UPDATE SET document_id = excluded.document_id, raw = excluded.raw,
+         via_page = coalesce(excluded.via_page, locations.via_page),
+         first_seen = min(locations.first_seen, excluded.first_seen), last_seen = max(locations.last_seen, excluded.last_seen),
+         hlc = excluded.hlc`,
+      [loc.id, documentId, loc.kind, loc.canonical, loc.raw, loc.viaPage, at, at, deps.hlc.tick()],
+    );
+  };
+
+  const base: Pick<StoreApi, (typeof LIBRARY_METHODS)[number]> = {
+    schemaVersion: () => attempt(() => userVersion(db)),
+
+    stats: () =>
+      attempt(() => ({
+        documents: count('SELECT count(*) FROM documents'),
+        aliases: count('SELECT count(*) FROM aliases'),
+        locations: count('SELECT count(*) FROM locations'),
+        pageText: count('SELECT count(*) FROM page_text'),
+        history: count('SELECT count(*) FROM history'),
+        outbox: count('SELECT count(*) FROM outbox'),
+      })),
+
+    resolveFingerprint: (sha256) =>
+      attempt(() => {
+        if (typeof sha256 !== 'string' || !HEX64.test(sha256)) return null;
+        if (documentExists(sha256)) return sha256;
+        const alias = one('SELECT document_id FROM aliases WHERE sha256 = ?', [sha256]);
+        return alias ? (text(alias, 'document_id') as DocumentId) : null;
+      }),
+
+    getDocument: (id) => attempt(() => (typeof id === 'string' && HEX64.test(id) ? readDocument(id) : null)),
+
+    countDocumentsWithPageCount: (pageCount) =>
+      attempt(() => (isInt(pageCount) ? count('SELECT count(*) FROM documents WHERE page_count = ?', [pageCount]) : 0)),
+
+    findStampAlias: (pageCount, pageTexts) =>
+      attempt(() => {
+        if (!isInt(pageCount) || !isStringList(pageTexts)) fail('bad-input', 'findStampAlias needs a page count and the text of each page');
+        if (pageCount <= 0 || pageTexts.length !== pageCount) return null;
+        let best: { documentId: DocumentId; similarity: number } | null = null;
+        const candidates = db.selectObjects('SELECT id FROM documents WHERE page_count = ? AND index_text = 1 ORDER BY created_at, id', [pageCount]);
+        for (const c of candidates) {
+          const id = text(c, 'id');
+          const stored = new Array<string>(pageCount).fill('');
+          for (const p of db.selectObjects('SELECT page_index, text FROM page_text WHERE document_id = ? AND page_index < ?', [id, pageCount])) {
+            stored[num(p, 'page_index')] = text(p, 'text');
+          }
+          const similarity = stampedPagesSimilarity(stored, pageTexts);
+          if (similarity >= ALIAS_MIN && (best === null || similarity > best.similarity)) best = { documentId: id as DocumentId, similarity };
+          if (best?.similarity === 1) break;
+        }
+        return best;
+      }),
+
+    addAlias: (sha256, documentId, similarity) =>
+      attempt(() => {
+        assertWritable();
+        checkHex(sha256, 'the alias fingerprint');
+        checkHex(documentId, 'the document id');
+        if (typeof similarity !== 'number' || !(similarity >= ALIAS_MIN && similarity <= 1)) fail('bad-input', 'an alias needs a similarity of 0.995 to 1');
+        if (sha256 === documentId) fail('alias-conflict', 'a document cannot be an alias of itself');
+        let added = false;
+        db.savepoint(() => {
+          if (!documentExists(documentId)) fail('document-missing', 'aliases are only stored for saved documents');
+          if (documentExists(sha256)) fail('alias-conflict', 'these bytes are a library document of their own');
+          const cur = one('SELECT document_id FROM aliases WHERE sha256 = ?', [sha256]);
+          if (cur) {
+            if (cur.document_id !== documentId) fail('alias-conflict', 'these bytes are already an alias of another document');
+            return; // already there: saving again changes nothing
+          }
+          run('INSERT INTO aliases (sha256, document_id, similarity, created_at, rev, hlc) VALUES (?, ?, ?, ?, 0, ?)', [
+            sha256,
+            documentId,
+            similarity,
+            deps.now(),
+            deps.hlc.tick(),
+          ]);
+          added = true;
+        });
+        if (added) publish([{ table: 'aliases', ids: [sha256], op: 'upsert', documentId }]);
+      }),
+
+    saveDocument: async (input) => {
+      checkSaveInput(input);
+      const loc = input.location ? await prepareLocation(input.location.kind, input.location.raw, input.location.viaPage) : null;
+      return attempt(() => {
+        assertWritable();
+        const now = deps.now();
+        let created = false;
+        let changed = false;
+        let historyAdded = false;
+        db.savepoint(() => {
+          if (one('SELECT 1 AS x FROM aliases WHERE sha256 = ?', [input.id])) {
+            fail('alias-conflict', 'this file is a stamped copy of a library document; save that document instead');
+          }
+          const cur = one('SELECT * FROM documents WHERE id = ?', [input.id]);
+          if (!cur) {
+            run(
+              `INSERT INTO documents (id, page_count, byte_size, title, authors, pdf_id, has_text, encrypted, blob_stored, save_reasons,
+                 created_at, updated_at, rev, hlc)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+              [
+                input.id,
+                input.pageCount,
+                input.byteSize,
+                input.title,
+                JSON.stringify(input.authors),
+                input.pdfId,
+                input.hasText ? 1 : 0,
+                input.encrypted ? 1 : 0,
+                input.blobStored ? 1 : 0,
+                JSON.stringify([...new Set(input.saveReasons)]),
+                now,
+                now,
+                deps.hlc.tick(),
+              ],
+            );
+            created = true;
+          } else {
+            // Saved before. Fill in only what the stored row lacks; never overwrite what is there (the owner may have
+            // edited it), so saving the same document again changes nothing.
+            const sets: string[] = [];
+            const binds: SqlValue[] = [];
+            if (input.blobStored && num(cur, 'blob_stored') === 0) sets.push('blob_stored = 1');
+            const reasons = stringList(cur, 'save_reasons');
+            const merged = [...new Set([...reasons, ...input.saveReasons])];
+            if (merged.length > reasons.length) {
+              sets.push('save_reasons = ?');
+              binds.push(JSON.stringify(merged));
+            }
+            if (cur.title == null && input.title !== null) {
+              sets.push('title = ?');
+              binds.push(input.title);
+            }
+            if (stringList(cur, 'authors').length === 0 && input.authors.length > 0) {
+              sets.push('authors = ?');
+              binds.push(JSON.stringify(input.authors));
+            }
+            if (cur.pdf_id == null && input.pdfId !== null) {
+              sets.push('pdf_id = ?');
+              binds.push(input.pdfId);
+            }
+            if (sets.length > 0) {
+              run(`UPDATE documents SET ${sets.join(', ')}, updated_at = ?, hlc = ? WHERE id = ?`, [...binds, now, deps.hlc.tick(), input.id]);
+              changed = true;
+            }
+          }
+          if (!one('SELECT 1 AS x FROM history WHERE document_id = ?', [input.id])) {
+            run('INSERT INTO history (document_id, first_opened, last_opened, open_count, rev, hlc) VALUES (?, ?, ?, 1, 0, ?)', [
+              input.id,
+              input.openedAt,
+              input.openedAt,
+              deps.hlc.tick(),
+            ]);
+            historyAdded = true;
+          }
+          if (loc) upsertLocation(loc, input.id, input.openedAt);
+        });
+        const changes: StoreChange[] = [];
+        if (created || changed) changes.push({ table: 'documents', ids: [input.id], op: 'upsert', documentId: input.id });
+        if (historyAdded) changes.push({ table: 'history', ids: [input.id], op: 'upsert', documentId: input.id });
+        if (loc) changes.push({ table: 'locations', ids: [loc.id], op: 'upsert', documentId: input.id });
+        publish(changes);
+        const row = readDocument(input.id);
+        if (!row) throw new Error('the saved document could not be read back');
+        return { row, created };
+      });
+    },
+
+    putPageText: (documentId, pages) =>
+      attempt(() => {
+        assertWritable();
+        checkHex(documentId, 'the document id');
+        const given: unknown = pages;
+        if (!Array.isArray(given)) fail('bad-input', 'page text comes as a list of pages');
+        for (const p of given as unknown[]) {
+          const page = p as { pageIndex?: unknown; text?: unknown } | null;
+          if (typeof page !== 'object' || page === null || !isInt(page.pageIndex) || page.pageIndex < 0 || typeof page.text !== 'string') {
+            fail('bad-input', 'each page needs a page index and its text');
+          }
+        }
+        const changed = new Set<number>();
+        db.savepoint(() => {
+          const doc = one('SELECT page_count, index_text FROM documents WHERE id = ?', [documentId]);
+          if (!doc) fail('document-missing', 'page text is only stored for saved documents');
+          if (num(doc, 'index_text') !== 1) return; // the owner keeps this document's text out of the library
+          const pageCount = num(doc, 'page_count');
+          for (const p of pages) {
+            if (p.pageIndex >= pageCount) fail('bad-input', 'a page index is past the last page');
+            const n = run(
+              `INSERT INTO page_text (document_id, page_index, text) VALUES (?, ?, ?)
+               ON CONFLICT (document_id, page_index) DO UPDATE SET text = excluded.text WHERE page_text.text IS NOT excluded.text`,
+              [documentId, p.pageIndex, p.text],
+            );
+            if (n > 0) changed.add(p.pageIndex);
+          }
+        });
+        if (changed.size > 0) {
+          publish([{ table: 'page_text', ids: [...changed].sort((a, b) => a - b).map((i) => `${documentId}:${i}`), op: 'upsert', documentId }]);
+        }
+      }),
+
+    touchLocation: async (input) => {
+      if (typeof input !== 'object' || input === null) fail('bad-input', 'no location');
+      checkHex(input.documentId, 'the document id');
+      checkLocation(input.kind, input.raw, input.viaPage);
+      if (!isTime(input.at)) fail('bad-input', 'the time is not a time');
+      const loc = await prepareLocation(input.kind, input.raw, input.viaPage);
+      return attempt(() => {
+        assertWritable();
+        db.savepoint(() => {
+          if (!documentExists(input.documentId)) fail('document-missing', 'locations are only stored for saved documents');
+          upsertLocation(loc, input.documentId, input.at);
+        });
+        publish([{ table: 'locations', ids: [loc.id], op: 'upsert', documentId: input.documentId }]);
+        const row = one('SELECT * FROM locations WHERE id = ?', [loc.id]);
+        if (!row) throw new Error('the location could not be read back');
+        return locationFromRow(row);
+      });
+    },
+
+    listLocations: (documentId) =>
+      attempt(() =>
+        db.selectObjects('SELECT * FROM locations WHERE document_id = ? ORDER BY last_seen DESC, id', [documentId]).map(locationFromRow),
+      ),
+
+    recordOpen: (documentId, at) =>
+      attempt(() => {
+        assertWritable();
+        checkHex(documentId, 'the document id');
+        if (!isTime(at)) fail('bad-input', 'the open time is not a time');
+        db.savepoint(() => {
+          if (!documentExists(documentId)) fail('document-missing', 'history is only kept for saved documents');
+          run(
+            `INSERT INTO history (document_id, first_opened, last_opened, open_count, rev, hlc) VALUES (?, ?, ?, 1, 0, ?)
+             ON CONFLICT (document_id) DO UPDATE SET open_count = history.open_count + 1,
+               first_opened = min(history.first_opened, excluded.first_opened), last_opened = max(history.last_opened, excluded.last_opened),
+               hlc = excluded.hlc`,
+            [documentId, at, at, deps.hlc.tick()],
+          );
+        });
+        publish([{ table: 'history', ids: [documentId], op: 'upsert', documentId }]);
+      }),
+
+    forgetDocument: (documentId) =>
+      attempt(() => {
+        assertWritable();
+        checkHex(documentId, 'the document id');
+        let existed = false;
+        db.savepoint(() => {
+          existed = documentExists(documentId);
+          // 1. Every id that names this document or something hanging off it. The history row's id is the document id.
+          const ids = new Set<string>([documentId]);
+          for (const sql of [
+            'SELECT sha256 AS id FROM aliases WHERE document_id = ?',
+            'SELECT id FROM locations WHERE document_id = ?',
+            'SELECT id FROM marks WHERE document_id = ?',
+            'SELECT id FROM threads WHERE document_id = ?',
+            'SELECT id FROM comments WHERE document_id = ?',
+          ]) {
+            for (const r of db.selectObjects(sql, [documentId])) ids.add(text(r, 'id'));
+          }
+          // 2. The cascade removes aliases, locations, page text, marks, threads, comments, history and the figure cache;
+          // the index triggers remove their words from page_text_fts, documents_fts and comments_fts.
+          run('DELETE FROM documents WHERE id = ?', [documentId]);
+          // 3. Every outbox row naming any of them, including the delete rows the cascade itself just queued.
+          run('DELETE FROM outbox WHERE row_id IN (SELECT value FROM json_each(?))', [JSON.stringify([...ids])]);
+          // 4. Merge each index into one fresh segment, so the deleted words are gone from the index files too (R13).
+          if (existed) for (const t of FTS_TABLES) db.exec(`INSERT INTO ${t} (${t}) VALUES ('optimize')`);
+        });
+        if (existed) publish([{ table: 'documents', ids: [documentId], op: 'delete', documentId }]);
+      }),
+
+    searchPages: (query, limit) =>
+      attempt(() => {
+        const match = ftsQuery(query);
+        const n = isInt(limit) ? Math.min(limit, MAX_HITS) : 0;
+        if (match === null || n <= 0) return [];
+        return db
+          .selectObjects(
+            `SELECT p.document_id AS document_id, p.page_index AS page_index,
+                    snippet(page_text_fts, 0, '<b>', '</b>', '…', 16) AS snippet, bm25(page_text_fts) AS rank
+             FROM page_text_fts
+             JOIN page_text p ON p.rowid = page_text_fts.rowid
+             JOIN documents d ON d.id = p.document_id
+             WHERE page_text_fts MATCH ? AND d.deleted_at IS NULL
+             ORDER BY rank, p.document_id, p.page_index
+             LIMIT ?`,
+            [match, n],
+          )
+          .map((r) => ({
+            documentId: text(r, 'document_id') as DocumentId,
+            pageIndex: num(r, 'page_index'),
+            snippet: text(r, 'snippet'),
+            rank: num(r, 'rank'),
+          }));
+      }),
+  };
+
+  return { ...base, ...createAnnotationsApi(db, deps), ...createPageFiguresApi(db, deps) };
+}

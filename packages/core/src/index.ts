@@ -1,8 +1,10 @@
 export type { DocumentId, LocationId, LocationKind, Sha256 } from './ids';
 export type { Author, CommentId, MarkId, TabId, ThreadId } from './ids';
+export { compareHlc, Hlc } from './hlc';
 export type { HlcStamp } from './hlc';
 export type { Anchor, CharPos, FigureFingerprint, NormRect, TextQuote } from './model/anchor';
 export type { CommentMeta, CommentRow, MarkColor, MarkRow, MarkStyle, ThreadRow } from './model/rows';
+export type { DocumentRow, LocationRow, PageHit, StoreStats } from './model/rows';
 export type { DetectedFigure, PageFigure } from './model/figures';
 export type { SaveState } from './save/types';
 export type { ClaudeReplyMeta, ConflictCopyMeta, ModelRole, PageCitation, ReplyError, WebSource } from './claude/types';

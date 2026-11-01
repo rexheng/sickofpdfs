@@ -9,32 +9,6 @@
     "types": ["chrome", "node"]
   },
   "include": ["src", "scripts", "wxt.config.ts", ".wxt/wxt.d.ts"],
-  // Setting "exclude" replaces WXT's own, so its two entries come first.
-  // The rest are spec-blind tests that import Task 28's store files, which are not merged yet, so they cannot be type checked.
-  // Vitest and ESLint pick them up by themselves once store-api.ts exists (see vitest.config.ts and eslint.config.mjs); this list
-  // cannot, so DELETE the lines below when Task 28 has merged.
-  "exclude": [
-    "node_modules",
-    ".output",
-    "src/store/db.spec-blind.ts",
-    "src/store/env.spec-blind.ts",
-    "src/store/v1-data.spec-blind.ts",
-    "src/store/v1-fixture.spec-blind.ts",
-    "src/store/opfs-peer.spec-blind.worker.ts",
-    "src/store/schema-v2.spec-blind.test.ts",
-    "src/store/annotations.spec-blind.test.ts",
-    "src/store/durability.spec-blind.browser.test.ts",
-    "src/viewer/annotations/stack.spec-blind.ts",
-    "src/viewer/annotations/no-lost-text.spec-blind.test.ts",
-    "src/viewer/annotations/edit-draft.spec-blind.test.ts",
-    "src/store/library.spec-blind.ts",
-    "src/store/documents.spec-blind.test.ts",
-    "src/store/identity.spec-blind.test.ts",
-    "src/store/search-forget.spec-blind.test.ts",
-    "src/store/forget-file.spec-blind.browser.test.ts",
-    "src/store/forget-file.spec-blind.worker.ts",
-    "src/store/client.spec-blind.browser.test.ts",
-    "src/store/device-id.spec-blind.browser.test.ts",
-    "src/store/device-id.spec-blind.worker.ts"
-  ]
+  // Setting "exclude" replaces WXT's own, so its two entries are listed here.
+  "exclude": ["node_modules", ".output"]
 }

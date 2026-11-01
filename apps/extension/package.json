@@ -15,6 +15,7 @@
     "@sop/core": "workspace:*",
     "@sop/ui": "workspace:*",
     "@sop/viewer": "workspace:*",
+    "@sqlite.org/sqlite-wasm": "3.54.1-build1",
     "@wxt-dev/module-react": "1.2.2",
     "react": "19.3.1",
     "react-dom": "19.3.1",

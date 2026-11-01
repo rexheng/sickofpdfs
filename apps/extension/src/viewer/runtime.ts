@@ -3,6 +3,7 @@
  * nothing in this file is global, and nothing in production reads it. Later tasks add fields.
  */
 import type { PageBox, PagePoint, PdfBackend, ViewerSnapshot } from '@sop/viewer';
+import type { StoreClient } from '../store/client';
 import type { OpenedDocument } from './open-document';
 
 /** Where opening the PDF stands. A password prompt is still `loading`. */
@@ -33,6 +34,8 @@ export interface ViewerRuntime {
   doc(): OpenedDocument | null;
   viewerState(): ViewerState;
   viewer: ViewerHooks;
+  /** The library store, once connected after the PDF opened. Null in Incognito or when the library cannot be reached. */
+  store: StoreClient | null;
 }
 
 let registry: Partial<ViewerRuntime> = {};

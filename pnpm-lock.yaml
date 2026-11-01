@@ -81,6 +81,9 @@ importers:
       '@sop/viewer':
         specifier: workspace:*
         version: link:../../packages/viewer
+      '@sqlite.org/sqlite-wasm':
+        specifier: 3.54.1-build1
+        version: 3.54.1-build1
       '@wxt-dev/module-react':
         specifier: 1.2.2
         version: 1.2.2(vite@8.3.5(@types/node@22.20.5)(jiti@2.7.0))(wxt@0.21.5(eslint@10.14.0(jiti@2.7.0))(rolldown@1.2.16)(typescript@6.0.3)(vite@8.3.5(@types/node@22.20.5)(jiti@2.7.0)))
@@ -1244,6 +1247,10 @@ packages:
 
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
+
+  '@sqlite.org/sqlite-wasm@3.54.1-build1':
+    resolution: {integrity: sha512-foW427VBLJ3G87bsnvQTZCc9zYe0Fq1wH0pz1I6BlKLKXcArIAyTkHtq0iT2llmhcMQt9T/p6l5PpQQh+6O8uQ==}
+    engines: {node: '>=22'}
 
   '@topcli/prompts@4.0.0':
     resolution: {integrity: sha512-kkKYPb4k/6kRdnESt77B5vJrrYnYHIYczwv0P1c+tfN/IWEx3KZeKEHoUq7sImIyBEXWdA2uakIroD9pmRJziQ==}
@@ -3629,6 +3636,8 @@ snapshots:
     optional: true
 
   '@rolldown/pluginutils@1.0.1': {}
+
+  '@sqlite.org/sqlite-wasm@3.54.1-build1': {}
 
   '@topcli/prompts@4.0.0': {}
 

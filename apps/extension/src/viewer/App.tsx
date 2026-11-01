@@ -42,6 +42,7 @@ import { LargeFileNotice } from './ui/LargeFileNotice';
 import { LoadErrorCard } from './ui/LoadErrorCard';
 import { PasswordDialog } from './ui/PasswordDialog';
 import { ScanHint } from './ui/ScanHint';
+import { useStore } from './use-store';
 
 /** The tab's one engine. Its worker starts at once, so PDFium is ready by the time the PDF has downloaded. */
 const backend = createEmbedPdfBackend(engineAssets((p) => chrome.runtime.getURL(p)), { workers: ENGINE_WORKERS, startNow: true });
@@ -73,6 +74,7 @@ export function App() {
   const attempts = useRef(0);
   const started = useRef(false);
   const loading = useRef(false);
+  useStore(view.kind === 'ready');
 
   const show = useCallback((next: View) => {
     currentView = next;
