@@ -321,6 +321,9 @@ One reference implementation in TypeScript, with its test cases, defines these r
 - **A note that saved the PDF has no Undo.** A note is real work, so a quick Undo never deletes it. You can delete the note itself.
 - **Every tab follows an Undo.** Other tabs on the same PDF go back to "Not sure" and drop the undone mark. No tab says "Saved" for a PDF that isn't saved.
 - **Undo leaves no trace.** It removes the PDF from the library and everything kept about it on this computer, including unsent notes and the margin hint.
+- **Undo never removes another tab's notes (R67 tightened).** If another tab, or another download of the same PDF still being checked, has any note or mark, there is no Undo. A save that carries a note never has an Undo, even after a failed save or when it is finished on reopen.
+- **Notes made while the PDF is still being checked are kept at once.** If you close the tab before it knows, they come back next time.
+- **On reopen, the chip says "Saving your notes…"** while a save left by a closed tab is finished. Notes kept for a PDF you have not opened for 7 days also show in the library under "Recovered notes", with Copy and Delete. Nothing is deleted without you.
 
 **When the filter is wrong:**
 
