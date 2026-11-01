@@ -1,0 +1,66 @@
+/*
+ * The "not sure" banner: placed as the form banner is, centred over the page list 16 px under the toolbar pill, at most as
+ * wide as a dialog. GM3 two-line banner: the icon and message on top, the actions right-aligned under them, on
+ * surface-container-high with a 12 px radius and elevation 2.
+ */
+.place {
+  position: absolute;
+  inset: calc(var(--viewer-pill-h) + var(--space-4)) var(--space-4) auto;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.banner {
+  box-sizing: border-box;
+  inline-size: min(var(--dialog-max-w), 100%);
+  padding: var(--space-3) var(--space-2) var(--space-2) var(--space-4);
+  border-radius: var(--shape-banner);
+  background-color: var(--gm3-sys-color-surface-container-high);
+  box-shadow: var(--elev-2);
+  color: var(--gm3-sys-color-on-surface);
+  pointer-events: auto;
+  animation: pop-in 150ms ease-out;
+}
+
+.row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding-inline-end: var(--space-2);
+}
+
+.icon {
+  flex: none;
+  color: var(--gm3-sys-color-primary);
+}
+
+.message {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  margin: 0;
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  justify-content: flex-end;
+  margin-block-start: var(--space-2);
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--space-1) * -1));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner {
+    animation: none;
+  }
+}

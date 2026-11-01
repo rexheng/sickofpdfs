@@ -29,6 +29,7 @@ export { linkForCopy } from './actions/copy-link';
 
 export type ViewerCommandId =
   | 'file.openInChrome' | 'file.download' | 'file.copyLink' | 'file.print' | 'file.saveToLibrary'
+  | 'file.forget' | 'file.reportDecision' // Phase 3 (S11): save/save-commands.ts
   | 'view.fitWidth' | 'view.fitPage' | 'view.zoomIn' | 'view.zoomOut' | 'view.rotateCw' | 'view.rotateCcw'
   | 'view.twoPage' | 'view.presentation' | 'view.toggleRail'
   | 'tools.find' | 'tools.goToPage' | 'help.shortcuts' | 'help.about'
@@ -122,6 +123,8 @@ const SPECS: [ViewerCommandId, CommandSpec][] = [
   ['file.copyLink', { label: 'Copy link', icon: 'link', keys: [] }],
   ['file.print', { label: 'Print', icon: 'print', keys: ['Ctrl+P'] }],
   ['file.saveToLibrary', { label: 'Save to library', icon: 'library_add', keys: ['Ctrl+Alt+S'] }],
+  ['file.forget', { label: 'Forget this PDF', icon: 'delete_forever', keys: ['Ctrl+Shift+Delete'] }],
+  ['file.reportDecision', { label: 'Report a wrong decision', icon: 'flag', keys: [] }],
   ['view.fitWidth', { label: 'Fit width', icon: 'fit_page_width', keys: ['Ctrl+0'] }],
   ['view.fitPage', { label: 'Fit page', icon: 'fit_page', keys: [] }],
   ['view.zoomIn', { label: 'Zoom in', icon: 'zoom_in', keys: ['Ctrl+=', 'Ctrl++'] }],
@@ -314,9 +317,10 @@ const HIDDEN_KEYS: Partial<Record<ViewerCommandId, KeyCombo[]>> = { 'view.zoomOu
 /**
  * Commands whose Ctrl keys are editing keys: they act only when they can (text is selected, there is a figure to copy),
  * and otherwise the key does what it does anyway. In a text field (the note box, the page box) they always type: Ctrl+B
- * and Ctrl+Z belong to the note box there, and Ctrl+C copies its text (plan section 7).
+ * and Ctrl+Z belong to the note box there, and Ctrl+C copies its text (plan section 7). Ctrl+Shift+Delete (Forget this
+ * PDF) too: never while a note is being typed, and Chrome's own "Clear browsing data" when the PDF is not saved.
  */
-const EDITING_KEYS = new Set<ViewerCommandId>(['marks.underline', 'marks.bold', 'figures.copyImage', 'edit.undo', 'edit.redo']);
+const EDITING_KEYS = new Set<ViewerCommandId>(['marks.underline', 'marks.bold', 'figures.copyImage', 'edit.undo', 'edit.redo', 'file.forget']);
 
 /**
  * Keys the viewer always takes, with nothing selected and in a text field too, because the browser's own action is

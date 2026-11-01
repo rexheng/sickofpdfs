@@ -119,6 +119,7 @@
   --shape-grid-thumb: 4px;         /* [live] */
   --shape-menu: 4px;               /* [live] light and dark menus */
   --shape-tooltip: 4px;            /* [live] */
+  --tooltip-max-w: 320px;          /* a long tooltip (the save chip's reasons) wraps here [inf, GM3 rich-tooltip width] */
   --shape-header-cell-hover: 8px 8px 0 0; /* [live] th radius */
   --shape-chip: 8px;               /* GM3 filter chip [css default] */
   --shape-docs-comment: 12px;      /* [live] */

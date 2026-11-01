@@ -78,6 +78,13 @@ export const ICON_NAMES = [
   'arrow_downward',
   'restore_from_trash',
   'search_off',
+  // Phase 3, the save decision (S11)
+  'delete_forever',
+  'flag',
+  'check_box',
+  'check_box_outline_blank',
+  'radio_button_checked',
+  'radio_button_unchecked',
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

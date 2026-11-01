@@ -2,7 +2,7 @@
  * What the viewer publishes about itself for tests to read. Production code writes here with `publishRuntime`;
  * nothing in this file is global, and nothing in production reads it. Later tasks add fields.
  */
-import type { DocumentId, SaveState } from '@sop/core';
+import type { DocumentId, FilterDecision, SaveState } from '@sop/core';
 import type { CharRange, PageBox, PagePoint, PdfBackend, ViewerSnapshot } from '@sop/viewer';
 import type { BlobStore } from '../store/blob-store';
 import type { StoreClient } from '../store/client';
@@ -62,6 +62,8 @@ export interface SaveHooks {
   documentId(): DocumentId | null;
   /** What the first mark or note does on a PDF that is not saved: resolves once it is saved, or the question shows. */
   firstMark(): Promise<void>;
+  /** Phase 3 (S11): the learning filter's decision in this tab (fixed labels only); null when it made none. */
+  decision?(): FilterDecision | null;
 }
 
 let registry: Partial<ViewerRuntime> = {};

@@ -63,7 +63,10 @@ import { publishRuntime, type ViewerHooks, type ViewerState } from './runtime';
 import { atPage, openInChrome } from './open-in-chrome';
 import { settlePresentation } from './presentation';
 import type { SaveControllerImpl } from './save/save-controller';
+import { NotSureBanner } from './save/NotSureBanner';
+import { saveDecisionCommands } from './save/save-commands';
 import { SaveAskDialog } from './save/SaveAskDialog';
+import { SaveDialogs } from './save/SaveDialogs';
 import { StatusChip, useSaveView } from './save/StatusChip';
 import { useSave } from './save/use-save';
 import { PrintMarksDialog } from './print/PrintMarksDialog';
@@ -321,7 +324,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
         // The error and stopped cards carry their own "Open in Chrome's viewer"; one is enough on screen.
         onOpenInChrome={!canEscape || view.kind === 'error' || view.kind === 'stopped' ? null : () => escape(source, (live?.store.get().currentPage ?? 0) + 1)}
         chromeRefused={chromeRefused}
-        status={save !== null && <StatusChip save={save} />}
+        status={save !== null && <StatusChip save={save} returnFocus={focusPages} />}
         returnFocus={focusPages}
       />
       <div className={styles.content}>
@@ -343,6 +346,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
         {/* The pill is there from the start, in its place, so it does not pop in when the PDF arrives. */}
         {view.kind === 'loading' && <Toolbar commands={idleCommands} view={null} />}
         {view.kind === 'ready' && form.notice !== null && <FormBanner kind={form.notice} onDismiss={form.dismiss} />}
+        {view.kind === 'ready' && form.notice === null && <NotSureBanner save={save} ui={ui} />}
         {view.kind === 'loading' && prompt === null && (
           <div role="progressbar" aria-label="Loading the PDF" className={styles.progress} />
         )}
@@ -376,6 +380,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
       <AboutDialog open={dialog === 'about'} onOpenChange={(open) => !open && setDialog(null)} />
       <SaveAskDialog save={save} />
       {printAsk !== null && <PrintMarksDialog onAnswer={printAsk.answer} />}
+      <SaveDialogs save={save} ui={ui} />
       {printing !== null && <PrintProgressDialog done={printing.done} total={printing.total} onCancel={printing.cancel} />}
       <Snackbar note={note} />
     </div>
@@ -546,7 +551,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       printMarks: notes === null ? null : { layer: notes.layer, text: pageText },
       ui,
     };
-    return createCommands(ctx, notes?.behaviours() ?? {});
+    return createCommands(ctx, { ...notes?.behaviours(), ...saveDecisionCommands(save) });
   }, [params, doc, store, scheduler, rootRef, ui, save, nav.jumps, find.controller, find.open, notes, pageText]);
   useEffect(() => {
     onChrome({ commands, store });

@@ -29,8 +29,18 @@ export type SaveEvent =
   /** "Save this PDF to keep your notes?" was answered. */
   | { type: 'ask-answered'; save: boolean }
   | { type: 'undo-requested' }
-  /** A forget effect finished: the library holds nothing of the PDF. */
-  | { type: 'undone' }
+  /**
+   * A forget effect finished: the library holds nothing of the PDF. Back to "not sure", with `reasons` (the filter's own,
+   * Phase 3) for the chip's tooltip; left out, the stand-in's.
+   */
+  | { type: 'undone'; reasons?: string[] }
+  /**
+   * Phase 3: the owner forgot the saved PDF ("Forget this PDF", "Remove from library…"). It is not in the library, and it is
+   * not "not sure" either: a mark asks before it saves it again. `reasons` say why ("removed from your library").
+   */
+  | { type: 'forgotten'; reasons: string[] }
+  /** Phase 3: the owner chose "Never for this file". A mark asks before it saves; `reasons` say so. */
+  | { type: 'never-save'; reasons: string[] }
   /** The 10 s Undo after an automatic save ran out. */
   | { type: 'undo-expired' }
   | { type: 'incognito' };
@@ -91,8 +101,13 @@ export function reduceSave(s: SaveState, e: SaveEvent): Step {
       return s.kind === 'saved' && s.undoable ? { state: s, effect: { kind: 'forget' } } : stay(s);
     case 'undone':
       // Back to before the save. An undoable save only comes from a first mark on a "not sure" PDF, so Undo returns
-      // there; the controller puts its filter's own reasons back.
-      return s.kind === 'saved' ? stay({ kind: 'unsure', reasons: [...STAND_IN_REASONS] }) : stay(s);
+      // there, with the filter's own reasons.
+      return s.kind === 'saved' ? stay({ kind: 'unsure', reasons: [...(e.reasons ?? STAND_IN_REASONS)] }) : stay(s);
+    case 'forgotten':
+      return s.kind === 'saved' ? stay({ kind: 'not-learning', reasons: [...e.reasons] }) : stay(s);
+    case 'never-save':
+      // Not from `memory-only` (the owner said No: the notes stay in this tab, and nothing changes that), nor while asking.
+      return s.kind === 'unsure' || s.kind === 'not-learning' ? stay({ kind: 'not-learning', reasons: [...e.reasons] }) : stay(s);
     case 'undo-expired':
       return s.kind === 'saved' && s.undoable ? stay({ ...s, undoable: false }) : stay(s);
   }
