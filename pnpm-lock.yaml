@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   '@embedpdf/engines@2.15.1':
-    hash: 2a11eb27e67eb9f50fa77dda2fcf225094be750472984e4334161d432949317b
+    hash: cd39c847a9c39c2faf2bc3c6b288c9139035bd2671ef24873d3052e658806537
     path: patches/@embedpdf__engines@2.15.1.patch
   '@embedpdf/pdfium@2.15.1':
     hash: 026cb1377c264965e1da589d8880030ba34682c95e1ae5a3175a227f623d9b00
@@ -184,7 +184,7 @@ importers:
     dependencies:
       '@embedpdf/engines':
         specifier: 2.15.1
-        version: 2.15.1(patch_hash=2a11eb27e67eb9f50fa77dda2fcf225094be750472984e4334161d432949317b)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        version: 2.15.1(patch_hash=cd39c847a9c39c2faf2bc3c6b288c9139035bd2671ef24873d3052e658806537)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@embedpdf/fonts-latin':
         specifier: 1.0.0
         version: 1.0.0
@@ -3228,7 +3228,7 @@ snapshots:
     dependencies:
       '@jridgewell/trace-mapping': 0.3.9
 
-  '@embedpdf/engines@2.15.1(patch_hash=2a11eb27e67eb9f50fa77dda2fcf225094be750472984e4334161d432949317b)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@embedpdf/engines@2.15.1(patch_hash=cd39c847a9c39c2faf2bc3c6b288c9139035bd2671ef24873d3052e658806537)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
       '@embedpdf/fonts-arabic': 1.0.0
       '@embedpdf/fonts-hebrew': 1.0.0

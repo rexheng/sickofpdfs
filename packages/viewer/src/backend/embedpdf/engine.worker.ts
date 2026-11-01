@@ -8,7 +8,7 @@
 //   worker answers `fatal` instead of replying, and the page ends it.
 import { init } from '@embedpdf/pdfium';
 import { ENGINE_METHODS, toWireError, type CallMessage, type EngineMethod, type InitMessage, type WorkerMessage } from './rpc';
-import { bundledFontFallback } from './fonts';
+import { installBundledFonts } from './fonts';
 import { SopPdfiumNative } from './sop-native';
 
 /** The wasm heap's limit in this build (getHeapMax in @embedpdf/pdfium's Emscripten glue). */
@@ -45,7 +45,11 @@ async function start(msg: InitMessage): Promise<void> {
         if (text.includes('Cannot enlarge memory')) heapLimitHit = true;
       },
     });
-    native = new SopPdfiumNative(module, { fontFallback: bundledFontFallback(msg.fontBaseUrl) });
+    // The engine starts PDFium; the fonts go in before any document opens. No fontFallback option here: the stock one
+    // would also replace the 14 standard fonts with Noto Sans (fonts.ts).
+    const engine = new SopPdfiumNative(module);
+    installBundledFonts(module, msg.fontBaseUrl);
+    native = engine;
     post({ type: 'ready' });
   } catch (err) {
     post({ type: 'init-error', error: toWireError(err) });

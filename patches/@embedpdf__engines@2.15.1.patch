@@ -16,3 +16,16 @@ index 26006508987850f2cc64903021cf33e4663cca6b..948a4528edb7f5e7d9b0441bd0223c8e
      /**
       * memory manager instance
       */
+diff --git a/dist/lib/pdfium/font-fallback.d.ts b/dist/lib/pdfium/font-fallback.d.ts
+index 0d295c397695e3ae0bda259a0064220911dfc0d8..36d25022d88b93b3f9c71907c253d37e38c81730 100644
+--- a/dist/lib/pdfium/font-fallback.d.ts
++++ b/dist/lib/pdfium/font-fallback.d.ts
+@@ -129,7 +129,7 @@ export declare class FontFallbackManager {
+     /**
+      * MapFont - called by PDFium when it needs a font
+      */
+-    private mapFont;
++    protected mapFont(weight: number, bItalic: number, charset: number, pitchFamily: number, face: string): number;
+     /**
+      * GetFontData - called by PDFium to get font bytes
+      */
