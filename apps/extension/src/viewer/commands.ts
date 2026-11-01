@@ -119,8 +119,9 @@ const SPECS: [ViewerCommandId, CommandSpec][] = [
   ['view.fitPage', { label: 'Fit page', icon: 'fit_page', keys: [] }],
   ['view.zoomIn', { label: 'Zoom in', icon: 'zoom_in', keys: ['Ctrl+=', 'Ctrl++'] }],
   ['view.zoomOut', { label: 'Zoom out', icon: 'zoom_out', keys: ['Ctrl+-'] }],
-  ['view.rotateCw', { label: 'Rotate clockwise', icon: 'rotate_right', keys: ['Ctrl+]'] }],
-  ['view.rotateCcw', { label: 'Rotate counter-clockwise', icon: 'rotate_left', keys: ['Ctrl+['] }],
+  // Plain, short names for when Task 26 builds them (TB1 wording table).
+  ['view.rotateCw', { label: 'Rotate right', icon: 'rotate_right', keys: ['Ctrl+]'] }],
+  ['view.rotateCcw', { label: 'Rotate left', icon: 'rotate_left', keys: ['Ctrl+['] }],
   ['view.twoPage', { label: 'Two-page view', icon: 'auto_stories', keys: [] }],
   ['view.presentation', { label: 'Presentation mode', icon: 'slideshow', keys: [] }],
   ['view.toggleRail', { label: 'Thumbnails and outline', icon: 'photo_library', keys: ['F4'] }],

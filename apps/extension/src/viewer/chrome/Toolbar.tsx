@@ -181,11 +181,14 @@ function rangeNote(typed: number, pageCount: number): string {
   return pageCount === 1 ? 'This PDF has 1 page.' : `This PDF has ${pageCount} pages. Showing the last one.`;
 }
 
+/** While the page box has the focus (a click, Ctrl+G, Tools → Go to page), the note under it says what to do. */
+const HOW_TO = 'Type a page number, then press Enter';
+
 /**
- * "Page [n]": shows the page in view and follows scrolling. Type a number and press Enter to go there. A number past
- * either end goes to the first or the last page, as Chrome's page box does, and a short note under the box says so
- * (never a silent red flash). Escape or leaving the box puts it back. After a jump or Escape the box lets go of the
- * focus, so the reading keys (arrows, Page Down) move the pages again.
+ * "Page [n]": shows the page in view and follows scrolling. Type a number and press Enter to go there; while the box
+ * has the focus, a note under it says so. A number past either end goes to the first or the last page, as Chrome's
+ * page box does, and the note says so (never a silent red flash). Escape or leaving the box puts it back. After a jump
+ * or Escape the box lets go of the focus, so the reading keys (arrows, Page Down) move the pages again.
  */
 function PageField({ store, pageCount, onGoToPage, inputRef }: PageFieldProps) {
   const current = useViewerState(store, (s) => s.currentPage);
@@ -194,6 +197,7 @@ function PageField({ store, pageCount, onGoToPage, inputRef }: PageFieldProps) {
   // for until the view moves on.
   const [jump, setJump] = useState<{ target: number; landed: number } | null>(null);
   const [note, setNote] = useState<{ text: string } | null>(null);
+  const [focused, setFocused] = useState(false);
   const noteTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const selectOnMouseUp = useRef(false);
   useEffect(() => () => clearTimeout(noteTimer.current), []);
@@ -234,7 +238,9 @@ function PageField({ store, pageCount, onGoToPage, inputRef }: PageFieldProps) {
   const onFocus = (e: FocusEvent<HTMLInputElement>) => {
     e.currentTarget.select();
     selectOnMouseUp.current = true;
+    setFocused(true);
   };
+  const shown = note ?? (focused ? { text: HOW_TO } : null);
 
   return (
     <span className={styles.pageField}>
@@ -256,12 +262,15 @@ function PageField({ store, pageCount, onGoToPage, inputRef }: PageFieldProps) {
           selectOnMouseUp.current = false;
           e.preventDefault();
         }}
-        onBlur={() => setTyped(null)}
+        onBlur={() => {
+          setTyped(null);
+          setFocused(false);
+        }}
       />
       <span role="status" className={styles.pageNote}>
-        {note !== null && (
-          <span key={note.text} className={styles.pageNoteText}>
-            {note.text}
+        {shown !== null && (
+          <span key={shown.text} className={styles.pageNoteText}>
+            {shown.text}
           </span>
         )}
       </span>
