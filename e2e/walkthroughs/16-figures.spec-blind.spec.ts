@@ -721,3 +721,62 @@ test('the rail has a Figures tab that lists the figures with their labels; choos
   await shot(page, testInfo, 'figure-jumped-to');
 });
 
+
+// ---------------------------------------------------------------------------------------------------------------
+// One menu (ruling R80; added at integration, not by the spec-blind author): right-click on an area mark opens the mark
+// menu (R72) with Comment and "Remove area"; right-click on a figure where there is no area mark opens the figure menu.
+
+test('R80: right-click on an area mark inside a figure opens one menu, the mark menu (Comment, "Remove area"); right-click on the figure beside it opens the figure menu', async ({ openViewer, server }, testInfo) => {
+  const fig = FIG_PICTURE;
+  const page = await openFigurePaper(openViewer, server, fig);
+  const v = await viewOf(page, fig);
+  await warmUp(v);
+  await page.mouse.move(AWAY.x, AWAY.y);
+
+  // An area mark over the top half of the figure.
+  await clearSelection(page);
+  await altDrag(page, within(v.box, 0.08, 0.08), within(v.box, 0.6, 0.45));
+  await answerSavePrompt(page, 'Yes', 500);
+  await page.mouse.move(AWAY.x, AWAY.y);
+  await page.keyboard.press('Escape');
+  await settle(page, 500);
+
+  // On the area mark: exactly one menu, the mark menu.
+  const read = await watchContextMenu(page);
+  await rightClickAt(page, within(v.box, 0.3, 0.25));
+  await expect(markMenu(page), 'one menu opens on the area mark').toHaveCount(1, { timeout: 3000 });
+  expect((await read()).prevented, 'in place of Chrome\'s menu').toBe(true);
+  await expect(menuRow(page, /^remove area\b/i), 'its Remove reads "Remove area"').toBeVisible();
+  await expect(menuRow(page, /^comment\b/i), 'it offers Comment').toBeVisible();
+  await expect(menuRow(page, /^copy image\b/i), 'it is not the figure menu as well').toHaveCount(0);
+  note(testInfo, 'area mark menu', (await markMenu(page).getByRole('menuitem').allInnerTexts()).map((n) => n.replace(/\s+/g, ' ').trim()).join(' | '));
+  await shot(page, testInfo, 'r80-area-mark-menu');
+
+  // Its Comment makes a note on the area, which is a part of the figure.
+  await menuRow(page, /^comment\b/i).click();
+  await startNoteAfterMenu(page);
+  await page.keyboard.type('A note on the area', { delay: 8 });
+  await page.keyboard.press('Enter');
+  await expect(cardWith(page, 'A note on the area'), 'the mark menu\'s Comment makes a note on the area').toBeVisible({ timeout: 5000 });
+  await expect(cardWith(page, 'A note on the area')).toContainText(/part of figure 1\s*·\s*page 1(?!\d)/i);
+  await page.keyboard.press('Escape');
+  await page.mouse.click(AWAY.x, AWAY.y);
+  await settle(page, 600);
+
+  // On the figure where there is no area mark: exactly one menu, the figure menu.
+  const box = await figureBox(page, fig); // the first note may have moved the page over (R79)
+  await rightClickAt(page, within(box, 0.5, 0.8));
+  await expect(markMenu(page), 'one menu opens on the figure').toHaveCount(1, { timeout: 3000 });
+  await expect(menuRow(page, /^copy image\b/i), 'the figure menu: Copy image').toBeVisible();
+  await expect(menuRow(page, /^comment\b/i), 'and Comment').toBeVisible();
+  await expect(menuRow(page, /^remove\b/i), 'and no Remove: there is no mark here').toHaveCount(0);
+  await shot(page, testInfo, 'r80-figure-menu-beside-area');
+  await page.keyboard.press('Escape');
+  await settle(page, 300);
+
+  // "Remove area" takes the area mark off.
+  await rightClickAt(page, within(box, 0.3, 0.25));
+  await expect(menuRow(page, /^remove area\b/i)).toBeVisible({ timeout: 3000 });
+  await menuRow(page, /^remove area\b/i).click();
+  if (SAVING_AVAILABLE) await waitStored(page, (a) => !a.marks.some((m) => m.style === 'area' && m.deletedAt === null), 'Remove area takes the area mark off');
+});

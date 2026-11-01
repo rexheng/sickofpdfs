@@ -10,7 +10,8 @@
 //   nothing selected and the pointer over a figure: a numbered pin there. A second Ctrl+Alt+M on a figure that has a
 //   note opens that note.
 // - Right-click a figure: Comment and Copy image (Ask Claude and Explain this figure join in Phase 4). Ctrl+C copies the
-//   selected figure as a PNG drawn at 2×, on this computer.
+//   selected figure as a PNG drawn at 2×, on this computer. Right-click on an area mark (inside a figure too) is the
+//   mark's own menu (R72), never this one: there is exactly one menu (R80).
 // - Alt+drag anywhere (links are ignored while Alt is held), on scans too: an area mark, which is then the focused mark,
 //   so Ctrl+Alt+M comments on it, Ctrl+C copies it and Delete removes it. Inside a figure, the mark and a note on it are
 //   a part of the figure (`figure` with `sub.rect`, stored relative to it). Alt+click selects any figure under the pointer, medium ones included.
@@ -62,7 +63,7 @@ export interface FigureState {
   /** The area tool is on: the next plain drag draws an area note. */
   areaTool: boolean;
   /** The figure menu, open at a viewport point. */
-  menu: { at: { x: number; y: number }; region: Region } | null;
+  menu: { at: { x: number; y: number }; region: Extract<Region, { kind: 'figure' }> } | null;
 }
 
 export interface FigureController {
@@ -85,8 +86,6 @@ export interface FigureController {
   comment(r: Region): void;
   /** Copy image. */
   copy(r: Region): void;
-  /** Takes an area mark off. */
-  removeArea(id: MarkId): void;
   closeMenu(this: void): void;
   setAreaTool(on: boolean): void;
   /** Whether notes can be made here (not view only). */
@@ -623,7 +622,8 @@ export function createFigureController(host: NotesHost): FigureController {
       { signal },
     );
 
-    // Right-click on a figure or an area: its own menu. With text selected, the mark-up menu (S13) has it.
+    // Right-click on a figure: its own menu. On an area mark, the mark menu (R72) has it, so there is one menu (R80). With
+    // text selected, the mark-up menu (S13) has it.
     window.addEventListener(
       'contextmenu',
       (e) => {
@@ -637,23 +637,17 @@ export function createFigureController(host: NotesHost): FigureController {
         if (host.textSelection.ranges().length > 0) return;
         const p = pointAt(e.clientX, e.clientY);
         if (p === null) return;
-        const area = areaMarkAt(p.page, p.u, p.v);
-        let r: Region | null = area;
-        if (area !== null) {
-          select(null);
-          session.setFocusedMark(area.markId);
-        } else {
-          const f =
-            figureAt(peek(p.page), p.page, sizeOf(p.page), p.u, p.v) ??
-            (st.selected !== null && st.selected.page === p.page && contains(st.selected.rect, p.u, p.v) ? st.selected : null);
-          if (f !== null) {
-            select(f);
-            r = { kind: 'figure', found: f };
-          }
+        if (areaMarkAt(p.page, p.u, p.v) !== null) {
+          select(null); // the mark menu (R72) opens on it and focuses it (R80)
+          return;
         }
-        if (r === null) return;
+        const f =
+          figureAt(peek(p.page), p.page, sizeOf(p.page), p.u, p.v) ??
+          (st.selected !== null && st.selected.page === p.page && contains(st.selected.rect, p.u, p.v) ? st.selected : null);
+        if (f === null) return;
+        select(f);
         e.preventDefault();
-        set({ menu: { at: { x: e.clientX, y: e.clientY }, region: r } });
+        set({ menu: { at: { x: e.clientX, y: e.clientY }, region: { kind: 'figure', found: f } } });
       },
       { signal, capture: true },
     );
@@ -688,17 +682,18 @@ export function createFigureController(host: NotesHost): FigureController {
       { signal },
     );
 
-    // The menu key and Shift+F10 open the figure menu for the selected figure or area (with no text selected).
+    // The menu key and Shift+F10 open the figure menu for the selected figure (with no text selected). A focused area
+    // mark gets the mark menu from the same keys (R72, R80).
     const offKeys = installShortcuts([
       {
         id: 'figures.menu',
         keys: ['Shift+F10', 'ContextMenu'],
-        enabled: () => region() !== null && host.textSelection.ranges().length === 0 && !overlayOpen(),
+        enabled: () => st.selected !== null && host.textSelection.ranges().length === 0 && !overlayOpen(),
         run: () => {
-          const r = region();
+          const r = st.selected === null ? null : ({ kind: 'figure', found: st.selected } as const);
           if (r === null) return;
-          const page = r.kind === 'figure' ? r.found.page : r.page;
-          const rect = r.kind === 'figure' ? r.found.rect : r.rect;
+          const page = r.found.page;
+          const rect = r.found.rect;
           const size = sizeOf(page);
           const at = size ? host.pageList.current?.clientPointOf({ pageIndex: page, x: rect[2] * size.width, y: rect[1] * size.height }) : undefined;
           const area = scroller()?.getBoundingClientRect();
@@ -828,10 +823,6 @@ export function createFigureController(host: NotesHost): FigureController {
     },
     comment: (r) => runComment(noteReleasing(r)),
     copy,
-    removeArea(id) {
-      void session.removeMark(id);
-      if (session.state().focusedMark === id) session.setFocusedMark(null);
-    },
     closeMenu: () => {
       if (st.menu !== null) set({ menu: null });
     },

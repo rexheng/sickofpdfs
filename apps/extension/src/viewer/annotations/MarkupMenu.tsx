@@ -3,7 +3,8 @@
 // row acts on the chars that were selected when it opened. Ask Claude joins it in Phase 4.
 //
 // The same dark menu, for one mark (ruling R72), opens on a right-click on a mark, or the menu key on a focused mark:
-// the colour row (keys 1 to 5), Comment and Remove (Delete), with the keys shown in the rows.
+// the colour row (keys 1 to 5), Comment and Remove (Delete), with the keys shown in the rows. An area mark has it too,
+// and never the figure menu as well (R80): it has no colour slot, so no colour row, and Remove reads "Remove area".
 //
 // The open state lives here, apart from the page list, so opening and closing the menu re-renders only this.
 import type { MarkColor, MarkStyle } from '@sop/core';
@@ -72,13 +73,16 @@ function markItems(req: Extract<MenuRequest, { kind: 'mark' }>, input: MarkInput
   if (mark === null) return [];
   const comment = commands.get('marks.comment');
   const commentRow =
-    mark.style === 'area' || comment === undefined
+    comment === undefined
       ? []
       : [
           ...commandRow(
             commands,
             'marks.comment',
             () => {
+              // An area mark is focused (the menu focused it): Ctrl+Alt+M's own flow makes the note on it, or opens the
+              // one it has (S16, R80).
+              if (mark.style === 'area') return comment.run();
               // Comment acts on the selection: the mark's own text becomes it, then the note opens on those words (or
               // the note already there). The mark stays as it is (R68).
               if (input.selectText(req.id)) comment.run();
