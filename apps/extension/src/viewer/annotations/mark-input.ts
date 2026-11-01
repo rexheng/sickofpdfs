@@ -314,8 +314,8 @@ export function createMarkInput(d: MarkInputDeps): MarkInput {
     const m = session.state().marks.find((x) => x.id === id);
     if (!m) return '';
     const what = m.color === null ? STYLE_WORDS[m.style] : `${MARK_COLOR_NAMES[m.color]} ${STYLE_WORDS[m.style]}`;
-    const recolour = m.color === null ? '' : ' Press 1 to 5 to change its colour,';
-    return `${what[0]?.toUpperCase() ?? ''}${what.slice(1)} selected.${recolour} Delete removes it, Esc lets go.`;
+    const recolour = m.color === null ? '' : ' Keys 1 to 5 change the colour.';
+    return `${what[0]?.toUpperCase() ?? ''}${what.slice(1)}.${recolour} Delete removes it. Esc to finish.`;
   }
 
   function focusMark(id: MarkId | null): void {
