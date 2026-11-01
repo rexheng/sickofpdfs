@@ -3,6 +3,7 @@
 //   Spec, Marks: "printing 'with marks' draws the same overlay onto each page. They are written into a PDF only when you export."
 //   Plan S17: "Ctrl+P can print your marks on the pages. ... it draws the same overlay geometry, BoldLayer included, onto each print page."
 //   Plan S16: an area draws in --sop-area-outline; a figure comment keeps its outline (spec: "A figure comment shows an outline, not a highlight").
+//   Ruling R78: "Print with marks" prints marks only; notes (comments, pins, figure and area note outlines, dotted underlines) never print.
 //
 // How it looks at the print. A script cannot drive Chrome's print preview, so window.print() is replaced by a recorder (support/nav.spec-blind.ts,
 // as in walkthrough 14). At the moment the viewer asks the browser to print, the test asks Chromium for the PDF it would print (page.pdf with the
@@ -275,7 +276,7 @@ test('printing with marks puts the highlights, underline, strike and bold on the
   expect.soft(shareOf(a2.frame, changed(a2.frame, b2.frame), a2.box), 'a page with no marks prints the same with or without marks').toBeLessThan(0.0002);
 });
 
-test('an Alt+drag area and a figure comment print too, in their own outline; printing without marks leaves the figure bare', async ({ context, openViewer, server }, testInfo) => {
+test('an Alt+drag area prints in its own outline; a figure comment does not (notes never print, R78), with or without marks', async ({ context, openViewer, server }, testInfo) => {
   await useRecordingPrint(context);
   const fig = FIG_PICTURE;
   const page = await openFigurePaper(openViewer, server, fig);
@@ -321,12 +322,12 @@ test('an Alt+drag area and a figure comment print too, in their own outline; pri
   const areaBare = findRing(b.frame, near(b.frame, tokens.area, 40), await boxOfNorm(outWithout, fig.pageIndex, dragNorm), { band: 8, prefer: tokens.area });
   expect(areaBare.found, `and not without marks: ${describeRing(areaBare)}`).toBe(0);
 
-  // the figure's outline: there with marks, bare without
+  // the figure: bare in both prints
   const figOnSheet = (await pageMap(outWith, fig.pageIndex)).box(fig.rect);
   const band = Math.max(20, 0.15 * Math.min(figOnSheet.right - figOnSheet.left, figOnSheet.bottom - figOnSheet.top));
   const outlined = findRing(a.frame, changed(b.frame, a.frame), figOnSheet, { band });
-  expect(outlined.found, `the commented figure prints with its outline: ${describeRing(outlined)}`).toBe(4);
-  expect(outlined.iou, 'around the figure').toBeGreaterThanOrEqual(0.55);
+  // Ruling R78: "Print with marks" prints marks only; a figure comment's outline is a note's sign and never prints (the first guess was that it does).
+  expect(outlined.found, `the commented figure prints bare, as notes never print (R78): ${describeRing(outlined)}`).toBe(0);
   const stray = changedOutside(a.frame, b.frame, a.box, [areaOnSheet, grow(figOnSheet, band)], 8);
   expect(stray, 'outside the area and the figure the two prints are the same (no card, no pin of the margin, no stray mark)').toBeLessThan(0.0005);
 });

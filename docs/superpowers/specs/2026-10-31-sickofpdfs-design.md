@@ -146,7 +146,7 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 - Colours apply to highlight, underline and strikethrough:&#32;
 - Bold draws the covered glyphs' own outlines (taken from PDFium) again in the overlay, filled and stroked slightly heavier. It works per character, stays crisp at any zoom and must fit the 50 ms budget, which Phase 0 measures. If it looks wrong, bold becomes a "strong" style (dark underline plus heavier highlight), and you are asked first.
 - **Figures and areas:** figures, charts, photos, tables and equation images are found on each page. Hovering one gives it a faint outline (nothing pops up); a click selects it, and Ctrl+Alt+M, or right-click → Comment, comments on it. With nothing selected, Ctrl+Alt+M over a figure drops a numbered pin at that spot. Alt+drag (links are ignored while Alt is held), or the area tool in the toolbar, draws any rectangle, such as one panel of a chart or part of a scan. A figure comment shows an outline, not a highlight.
-- Marks live in our database and draw as an SVG overlay; printing "with marks" draws the same overlay onto each page. They are written into a PDF only when you export.
+- Marks live in our database and draw as an SVG overlay; printing "with marks" draws the same overlay onto each page. Printing with marks draws marks only (highlights, underlines, bold, strikethrough and area marks, in their own shapes and colours); notes never print, so comments, pins, figure and area note outlines and dotted thread underlines stay off the paper (ruling R78). They are written into a PDF only when you export.
 
 **What a note is made of**
 
