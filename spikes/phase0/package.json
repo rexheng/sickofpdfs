@@ -8,6 +8,7 @@
   "scripts": {
     "build": "wxt build",
     "fixtures": "node scripts/fetch-fixtures.mjs && node scripts/make-paper50.mjs && node scripts/make-font-fixture.mjs",
+    "fixtures:scan": "node scripts/make-scan-fixture.mjs --source fixtures/out/classifier/learning/textbook-grinstead-snell-probability.pdf --pages 600 --dpi 200 --quality 60 --out fixtures/out/scan-600.pdf",
     "report": "node scripts/report.mjs"
   },
   "dependencies": {
