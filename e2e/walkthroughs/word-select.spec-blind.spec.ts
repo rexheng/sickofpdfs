@@ -43,7 +43,7 @@ test('double-clicking a word selects that whole word, on at least 95% of words a
     const o = await openFixture(openViewer, server, fx);
     const glyphs = await glyphsOf(o.page, o.pageIndex);
     const map = await pageMap(o.page, o.pageIndex);
-    const words = sample(wordsOf(glyphs, fx.dir === 'rtl' ? 'he' : 'en'), PER_FIXTURE, `dbl-${fx.name}`);
+    const words = sample(wordsOf(glyphs, fx.dir === 'rtl' ? 'he' : 'en', { rtl: fx.dir === 'rtl' }), PER_FIXTURE, `dbl-${fx.name}`);
     let ok = 0;
     for (const w of words) {
       // The glyph in the middle of the word, as a reader aims.

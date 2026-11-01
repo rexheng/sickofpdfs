@@ -41,6 +41,20 @@ const MODES = [
   { name: 'both on the left half', pa: 0.2, pb: 0.2 },
 ];
 
+/**
+ * Triage (TB1): the fraction of the glyph's box, moved out of any part the next or previous letter's box also covers (an
+ * f's overhang reaches over the o after it). A press there is on both letters; Chrome's viewer, which takes the first
+ * PDFium box that holds the point, gives the earlier one, and so does ours.
+ */
+function aim(glyphs: Glyph[], g: Glyph, fraction: number): number {
+  const w = g.box.width;
+  const prev = glyphs[g.index - 1];
+  const next = glyphs[g.index + 1];
+  const lo = prev && isVisible(prev) && prev.box.x + prev.box.width > g.box.x ? (prev.box.x + prev.box.width - g.box.x) / w : 0;
+  const hi = next && isVisible(next) && next.box.x < g.box.x + w ? (next.box.x - g.box.x) / w : 1;
+  return lo + 0.04 < hi - 0.04 ? Math.min(Math.max(fraction, lo + 0.04), hi - 0.04) : fraction;
+}
+
 test('a drag that starts or ends part-way across a glyph includes that glyph', async ({ openViewer, server }, testInfo) => {
   const failures: string[] = [];
   let tried = 0;
@@ -58,7 +72,8 @@ test('a drag that starts or ends part-way across a glyph includes that glyph', a
         // Forwards, the press is on the right of the earlier glyph and the release on the left of the later one. Backwards,
         // the press is on the left of the later glyph and the release on the right of the earlier one: the same stress, mirrored.
         const forward = from < to;
-        await dragClient(o.page, pointIn(map, glyphs[from], forward ? mode.pa : mode.pb), pointIn(map, glyphs[to], forward ? mode.pb : mode.pa));
+        const [fa, fb] = forward ? [mode.pa, mode.pb] : [mode.pb, mode.pa];
+        await dragClient(o.page, pointIn(map, glyphs[from], aim(glyphs, glyphs[from], fa)), pointIn(map, glyphs[to], aim(glyphs, glyphs[to], fb)));
         const { ranges } = await readSelection(o.page);
         tried++;
         if (!same(ranges, inclusive(o.pageIndex, a, b))) failures.push(`${name}: ${describeFail(from, to, mode.name, ranges, glyphs)}`);
@@ -87,9 +102,9 @@ test('drags between glyph centres select the glyphs and read as the engine reads
       await clearSelection(o.page);
       const { ranges, domText } = await dragGlyphs(o.page, o.pageIndex, a, b);
       tried++;
-      const want = inclusive(o.pageIndex, a, b);
+      const want = inclusive(o.pageIndex, a, b, glyphs);
       if (!same(ranges, want)) {
-        failures.push(`${name}@${zoom * 100}%: ${describeFail(a, b, 'centre to centre', ranges, glyphs)}`);
+        failures.push(`${name}@${zoom * 100}%: ${describeFail(a, b, 'centre to centre', ranges, glyphs)} (want [${want.start}, ${want.end}))`);
         continue;
       }
       // The browser's own selection holds the same letters (find and screen readers read it).

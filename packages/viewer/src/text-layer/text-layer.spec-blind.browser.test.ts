@@ -97,7 +97,7 @@ async function build(bytes: Uint8Array, scale = 1): Promise<Built> {
   const glyphs = await backend.getPageGlyphs(info.doc, 0);
   const text = await backend.getPageText(info.doc, 0);
   const items = exported<BuildTextItems>('buildTextItems')(glyphs, measure, scale);
-  const page = info.pages[0]!;
+  const page = info.pages[0];
   const box: PageBox = { index: 0, top: 0, left: 0, width: (page.width * 96 * scale) / 72, height: (page.height * 96 * scale) / 72, rotation: 0 };
   const viewerRoot = document.createElement('div');
   const pageEl = document.createElement('div');
@@ -144,7 +144,7 @@ describe.each(FIXTURES)('the text layer of $name ($note)', ({ name }) => {
   it('is made of items in text order whose text is the page text', () => {
     const { items, text } = built;
     expect(items.length).toBeGreaterThan(0);
-    for (let i = 1; i < items.length; i++) expect(items[i]!.start, `item ${i} starts after item ${i - 1}`).toBeGreaterThan(items[i - 1]!.start);
+    for (let i = 1; i < items.length; i++) expect(items[i].start, `item ${i} starts after item ${i - 1}`).toBeGreaterThan(items[i - 1].start);
     expect(squash(items.map((i) => i.str).join(''))).toBe(squash(text));
     // Each item says which way it reads, and has a real size.
     for (const it of items) {
@@ -170,11 +170,11 @@ describe.each(FIXTURES)('the text layer of $name ($note)', ({ name }) => {
     for (let n = 0; n < 40; n++) {
       const i = Math.floor(random() * pool.length);
       const j = n % 2 === 0 ? Math.min(pool.length - 1, i + Math.floor(random() * 30)) : Math.floor(random() * pool.length);
-      const a = Math.min(pool[i]!, pool[j]!);
-      const b = Math.max(pool[i]!, pool[j]!) + 1; // end exclusive: a visible last glyph
+      const a = Math.min(pool[i], pool[j]);
+      const b = Math.max(pool[i], pool[j]) + 1; // end exclusive: a visible last glyph
       select(viewerRoot, [{ pageIndex: 0, start: a, end: b }]);
       const got = read(viewerRoot);
-      if (got.length !== 1 || got[0]!.pageIndex !== 0 || got[0]!.start !== a || got[0]!.end !== b) failures.push(`[${a}, ${b}) came back as ${JSON.stringify(got.map((r) => [r.start, r.end]))}`);
+      if (got.length !== 1 || got[0].pageIndex !== 0 || got[0].start !== a || got[0].end !== b) failures.push(`[${a}, ${b}) came back as ${JSON.stringify(got.map((r) => [r.start, r.end]))}`);
     }
     expect(failures).toEqual([]);
   });
@@ -183,7 +183,7 @@ describe.each(FIXTURES)('the text layer of $name ($note)', ({ name }) => {
     const { viewerRoot, glyphs, doc } = built;
     const pool = glyphs.glyphs.filter(visible).map((g) => g.index);
     const select = exported<SelectCharRanges>('selectCharRanges');
-    for (const [a, b] of [[pool[0]!, pool[Math.min(20, pool.length - 1)]! + 1], [pool[Math.floor(pool.length / 2)]!, pool[pool.length - 1]! + 1], [pool[0]!, pool[pool.length - 1]! + 1]] as const) {
+    for (const [a, b] of [[pool[0], pool[Math.min(20, pool.length - 1)] + 1], [pool[Math.floor(pool.length / 2)], pool[pool.length - 1] + 1], [pool[0], pool[pool.length - 1] + 1]] as const) {
       select(viewerRoot, [{ pageIndex: 0, start: a, end: b }]);
       const engine = await backend.getTextRange(doc, 0, a, b - a);
       expect(squash(String(getSelection())), `DOM selection of [${a}, ${b})`).toBe(squash(engine));
@@ -227,7 +227,7 @@ describe('a real paper page keeps its text layer in step with the engine', () =>
     const built = await build(await classifier('learning/arxiv-1512.03385-resnet.pdf'));
     try {
       expect(squash(built.items.map((i) => i.str).join('')).replace(/-/gu, '')).toBe(squash(built.text).replace(/-/gu, ''));
-      const hit = (await backend.searchPage(built.doc, 0, 'Deeper neural networks are more difficult', { matchCase: true, wholeWord: false }))[0]!;
+      const hit = (await backend.searchPage(built.doc, 0, 'Deeper neural networks are more difficult', { matchCase: true, wholeWord: false }))[0];
       const select = exported<SelectCharRanges>('selectCharRanges');
       const read = exported<GetSelectionRanges>('getSelectionRanges');
       select(built.viewerRoot, [{ pageIndex: 0, start: hit.start, end: hit.start + hit.count }]);

@@ -79,7 +79,9 @@ test('the accessibility tree holds the page text once, in PDFium reading order',
       // Not hidden by attribute or style: no text span sits in aria-hidden / hidden / inert, or is display:none / visibility:hidden.
       const hidden = await o.page.evaluate(() => {
         const spans = [...document.querySelectorAll('[data-page-index="0"] [data-start]')];
-        const bad = spans.filter((s) => s.closest('[aria-hidden="true"], [hidden], [inert]') !== null);
+        // Triage (TB1): the layer may hide its per-fragment spans and give screen readers whole lines instead (the tree
+        // check above reads the text); what must not be hidden is the layer itself, so look from the spans' parent up.
+        const bad = spans.filter((s) => s.parentElement?.closest('[aria-hidden="true"], [hidden], [inert]') != null);
         const invisible = spans.filter((s) => getComputedStyle(s).display === 'none' || getComputedStyle(s).visibility !== 'visible');
         return { spans: spans.length, hiddenByAttribute: bad.length, invisible: invisible.length };
       });

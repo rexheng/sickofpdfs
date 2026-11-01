@@ -2,7 +2,6 @@
 // extension's fixed id, with the address of the PDF (and the page it came from) in its own address.
 // Spec: "Clicking a PDF link ... opens it in our viewer in the same tab"; "a fixed extension key ... so the extension's
 // identity and data survive updates"; "Embedded PDFs ... 'Back to page'"; test hooks only through hooks(page).
-/* eslint-disable @typescript-eslint/unbound-method -- the fixtures are plain functions; the interface declares them with method syntax */
 import { expect } from '@playwright/test';
 import { EXTENSION_ID } from '../apps/extension/scripts/extension-id.mjs';
 import { VIEWER_PATH, parseViewerUrl } from '../apps/extension/src/shared/viewer-url';

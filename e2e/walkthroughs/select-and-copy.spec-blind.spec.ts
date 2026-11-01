@@ -88,9 +88,12 @@ for (const name of ['rotated-table', 'maths'] as const) {
     expect(truth, 'the fixture truth (.txt) is next to the fixture sources').not.toBeNull();
     expect(squash(copied)).toBe(squash(truth!));
     let cursor = 0;
+    // Triage (TB1): the copy keeps the engine's maths italic letters (U+1D465 for x), as the copy judge above allows;
+    // the truth has plain letters, so the words are looked for in the NFKC-folded copy, as squash() compares it.
+    const folded = copied.normalize('NFKC');
     for (const word of truth!.split(/\s+/u).filter(Boolean)) {
-      const at = copied.indexOf(word, cursor);
-      expect(at, `"${word}" is whole and in order in:\n${copied}`).toBeGreaterThanOrEqual(0);
+      const at = folded.indexOf(word, cursor);
+      expect(at, `"${word}" is whole and in order in:\n${folded}`).toBeGreaterThanOrEqual(0);
       cursor = at + word.length;
     }
   });

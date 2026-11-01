@@ -12,7 +12,7 @@ import type { BrowserContext, Page, TestInfo } from '@playwright/test';
 import type { SopTestHooks } from '../../apps/extension/src/testing/test-hooks';
 import type { Glyph, PdfRect } from '../../packages/viewer/src/backend/types';
 import { hooks, type FixtureServer } from './test';
-import { INVISIBLE } from './tl-copy.spec-blind';
+import { breakVerdict, INVISIBLE, lineRelation } from './tl-copy.spec-blind';
 import { analyzeSelectionPaint, decodePng, parseCssColor, type Box, type PaintReport, type Rgba } from './tl-paint.spec-blind';
 
 export const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -35,7 +35,7 @@ type Hooks = SopTestHooks & TextHooks;
 /** `hooks(page)` with the two hooks Task 22 adds. */
 export function th(page: Page): { eval: <T, A = undefined>(fn: (h: Hooks, arg: A) => T | Promise<T>, arg?: A) => Promise<T> } {
   const base = hooks(page);
-  return { eval: <T, A = undefined>(fn: (h: Hooks, arg: A) => T | Promise<T>, arg?: A) => base.eval(fn as unknown as (h: SopTestHooks, a: A) => T | Promise<T>, arg) };
+  return { eval: <T, A = undefined>(fn: (h: Hooks, arg: A) => T | Promise<T>, arg?: A) => base.eval(fn, arg) };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -229,8 +229,22 @@ export async function dragGlyphs(page: Page, pageIndex: number, a: number, b: nu
   return readSelection(page);
 }
 
-/** The reader's range for a drag over glyphs a and b: both glyphs included (R27). */
-export const inclusive = (pageIndex: number, a: number, b: number): CharRange => ({ pageIndex, start: Math.min(a, b), end: Math.max(a, b) + 1 });
+/**
+ * The reader's range for a drag over glyphs a and b: both glyphs included (R27). With `glyphs`, an end on half of a
+ * surrogate pair (a maths italic letter is two PDFium chars in one box) takes the whole letter. Triage (TB1): a selection
+ * cannot hold half a letter, and the layer selects the whole one.
+ */
+export const inclusive = (pageIndex: number, a: number, b: number, glyphs?: Glyph[]): CharRange => {
+  let start = Math.min(a, b);
+  let end = Math.max(a, b) + 1;
+  if (glyphs) {
+    const high = (i: number) => /^[\uD800-\uDBFF]$/u.test(glyphs[i]?.text ?? '');
+    const low = (i: number) => /^[\uDC00-\uDFFF]$/u.test(glyphs[i]?.text ?? '');
+    if (low(start) && high(start - 1)) start--;
+    if (high(end - 1) && low(end)) end++;
+  }
+  return { pageIndex, start, end };
+};
 
 // ---------------------------------------------------------------------------------------------------------------
 // Copy, through the real clipboard
@@ -285,16 +299,45 @@ export interface Word {
   end: number;
 }
 
-/** The words of the page, by ICU word breaks over the engine's text (what a double-click is expected to select). */
-export function wordsOf(glyphs: Glyph[], locale: string): Word[] {
+const isGeneratedBreak = (g: Glyph) => g.generated && (g.text === '\r' || g.text === '\n');
+/** How far apart two neighbouring glyphs are along their line, in points (box edge to box edge). */
+function alongGap(prev: Glyph, next: Glyph): number {
+  const t = (prev.angle * Math.PI) / 180;
+  const extent = (g: Glyph) => Math.abs(g.box.width * Math.cos(t)) + Math.abs(g.box.height * Math.sin(t));
+  return Math.abs(lineRelation(prev, next).along) - (extent(prev) + extent(next)) / 2;
+}
+
+/**
+ * The words of the page, by ICU word breaks over the engine's text (what a double-click is expected to select).
+ * Triage (TB1): a line break PDFium put inside a line (between the letters of a rotated table header, before a
+ * superscript) is joined first, as R26 joins it for copy (breakVerdict 'join'): with nothing when the glyphs touch, with a
+ * space when they are a gap apart. Otherwise "Statio⏎n" would be two words and x⏎2 not the x² a reader sees.
+ */
+export function wordsOf(glyphs: Glyph[], locale: string, o: { rtl?: boolean } = {}): Word[] {
   let text = '';
   const owner: number[] = [];
-  for (const g of glyphs) {
+  let last: Glyph | null = null;
+  for (let i = 0; i < glyphs.length; i++) {
+    const g = glyphs[i];
     if (INVISIBLE.has(g.text)) continue;
+    if (isGeneratedBreak(g)) {
+      let j = i;
+      while (j < glyphs.length && isGeneratedBreak(glyphs[j])) j++;
+      const next = glyphs[j];
+      if (last && next && isVisible(next) && breakVerdict(last, next, o) === 'join') {
+        if (alongGap(last, next) > 0.15 * Math.max(last.fontSize, next.fontSize)) {
+          text += ' ';
+          owner.push(g.index);
+        }
+        i = j - 1;
+        continue;
+      }
+    }
     for (const unit of g.text.split('')) {
       text += unit;
       owner.push(g.index);
     }
+    if (isVisible(g)) last = g;
   }
   const words: Word[] = [];
   for (const part of new Intl.Segmenter(locale, { granularity: 'word' }).segment(text)) {

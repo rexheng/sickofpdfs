@@ -1,6 +1,5 @@
 // User tests, bare profile (a brand-new Chrome profile: nothing set up). The extension must start under the same
 // fixed id and open a PDF the same way as in the seeded profile.
-/* eslint-disable @typescript-eslint/unbound-method -- the fixtures are plain functions; the interface declares them with method syntax */
 import { expect } from '@playwright/test';
 import { EXTENSION_ID } from '../apps/extension/scripts/extension-id.mjs';
 import { VIEWER_PATH, parseViewerUrl } from '../apps/extension/src/shared/viewer-url';
