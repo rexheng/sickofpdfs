@@ -8,6 +8,19 @@
   color-scheme: dark;
 }
 
+/* Everything under the top bar (ViewerBar): the page list, the loader's cards and the loading bar. */
+.content {
+  position: absolute;
+  inset: var(--viewer-header-h) 0 0;
+}
+
+.status {
+  margin: var(--space-6);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
 /* Loading: a thin indeterminate bar along the top, like Chrome's viewer. It appears only if loading takes a while. */
 .progress {
   position: absolute;

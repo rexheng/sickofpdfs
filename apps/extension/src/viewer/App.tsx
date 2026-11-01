@@ -1,4 +1,6 @@
 // The viewer page: opens the PDF the address names, then shows its pages. One engine and one render queue per tab.
+// It also owns the takeover's viewer side (Task 17): leaving a frame for the full tab, "Back to page" for an embedded
+// PDF, and the escape hatch to Chrome's own viewer.
 import '@sop/ui/tokens.css';
 import '@sop/ui/base.css';
 import { registerFonts } from '@sop/ui';
@@ -16,17 +18,21 @@ import {
 } from '@sop/viewer';
 import { PageList, type PageListApi } from '@sop/viewer/react';
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { sendRuntimeMessage } from '../shared/send-message';
 import { parseViewerUrl } from '../shared/viewer-url';
 import styles from './App.module.css';
+import { backTarget, goBackToPage } from './back-to-page';
+import { maybeLeaveFrame, wantsFullTab } from './frame-escape';
 import { type LargeFileBounce, type OpenDocumentDeps, type OpenedDocument, openDocument, type OpenOutcome, openPickedFile } from './open-document';
 import { publishRuntime, type ViewerHooks, type ViewerState } from './runtime';
+import { openInChrome } from './open-in-chrome';
 import { installShortcuts, type ShortcutDef } from './shortcuts';
-import { openFileSettings, openInChromeViewer } from './takeover-client';
 import { FileAccessDialog } from './ui/FileAccessDialog';
 import { LargeFileNotice } from './ui/LargeFileNotice';
 import { LoadErrorCard } from './ui/LoadErrorCard';
 import { PasswordDialog } from './ui/PasswordDialog';
 import { ScanHint } from './ui/ScanHint';
+import { ViewerBar } from './ui/ViewerBar';
 
 /** The tab's one engine. Its worker starts at once, so PDFium is ready by the time the PDF has downloaded. */
 const backend = createEmbedPdfBackend(engineAssets((p) => chrome.runtime.getURL(p)), { workers: ENGINE_WORKERS, startNow: true });
@@ -52,8 +58,12 @@ export function App() {
   const [prompt, setPrompt] = useState<PasswordPrompt | null>(null);
   const [bounce, setBounce] = useState<LargeFileBounce | null>(null);
   const [fileDialogOpen, setFileDialogOpen] = useState(true);
+  // In a frame of some page, the PDF opens in the whole tab instead; until the worker says otherwise, nothing loads here.
+  const [leaving, setLeaving] = useState(() => wantsFullTab(params));
+  const [chromeRefused, setChromeRefused] = useState(false);
   const attempts = useRef(0);
   const started = useRef(false);
+  const loading = useRef(false);
 
   const show = useCallback((next: View) => {
     currentView = next;
@@ -84,12 +94,20 @@ export function App() {
     if (started.current) return;
     started.current = true;
     void registerFonts().catch(() => {}); // text falls back to the next font until the files load
-    void openDocument(params, deps).then(show);
-  }, [params, deps, show]);
+    // Embedded in a page: ask for the full tab. If this page's PDFs are suppressed (the person came back), stay here.
+    maybeLeaveFrame(params, () => setLeaving(false));
+  }, [params]);
 
   useEffect(() => {
-    document.title = view.kind === 'ready' ? view.doc.loaded.displayName : displayNameFor(params.source, null);
-  }, [view, params]);
+    if (leaving || loading.current) return;
+    loading.current = true;
+    void openDocument(params, deps).then(show);
+  }, [leaving, params, deps, show]);
+
+  useEffect(() => {
+    if (leaving) document.title = 'sickofpdfs';
+    else document.title = view.kind === 'ready' ? view.doc.loaded.displayName : displayNameFor(params.source, null);
+  }, [leaving, view, params]);
 
   const importFile = useCallback(
     (file: File) => {
@@ -100,28 +118,53 @@ export function App() {
     [deps, show],
   );
 
-  const openInChrome = useCallback((url: string) => void openInChromeViewer(url), []);
+  /** The escape hatch: this address in Chrome's own viewer, once. Chrome refuses a local file without file access. */
+  const escape = useCallback((url: string) => {
+    setChromeRefused(false);
+    void openInChrome(url).then((ok) => setChromeRefused(!ok));
+  }, []);
   const fileAccess = view.kind === 'error' && view.error instanceof PdfLoadError && view.error.code === 'file-access';
+  const back = backTarget(params);
+  const source = params.source;
+  const name = view.kind === 'ready' ? view.doc.loaded.displayName : displayNameFor(source, null);
 
   return (
     <div className={styles.app}>
-      {view.kind === 'ready' && <Reader doc={view.doc} initialPage={params.page} onOpenInChrome={openInChrome} />}
-      {view.kind === 'loading' && prompt === null && <div role="progressbar" aria-label="Loading the PDF" className={styles.progress} />}
-      {view.kind === 'error' && !(fileAccess && fileDialogOpen) && (
-        <LoadErrorCard error={view.error} sourceUrl={params.source} onOpenInChrome={openInChrome} onImport={importFile} />
-      )}
+      <ViewerBar
+        name={name}
+        onBack={back === null ? null : () => void goBackToPage(params)}
+        // The error card carries its own "Open in Chrome's viewer"; one is enough on screen.
+        onOpenInChrome={source === null || leaving || view.kind === 'error' ? null : () => escape(source)}
+        chromeRefused={chromeRefused}
+      />
+      <div className={styles.content}>
+        {leaving && (
+          <p role="status" className={styles.status}>
+            Opening in the full tab…
+          </p>
+        )}
+        {view.kind === 'ready' && <Reader doc={view.doc} initialPage={params.page} onOpenInChrome={escape} />}
+        {!leaving && view.kind === 'loading' && prompt === null && (
+          <div role="progressbar" aria-label="Loading the PDF" className={styles.progress} />
+        )}
+        {view.kind === 'error' && !(fileAccess && fileDialogOpen) && (
+          <LoadErrorCard error={view.error} sourceUrl={source} onOpenInChrome={escape} onImport={importFile} />
+        )}
+        {view.kind === 'bounced' && bounce !== null && <LargeFileNotice size={bounce.size} onOpenNow={bounce.openNow} />}
+      </div>
       {fileAccess && (
-        <FileAccessDialog
-          open={fileDialogOpen}
-          onOpenChange={setFileDialogOpen}
-          onOpenSettings={() => void openFileSettings()}
-          onChooseFile={importFile}
-        />
+        <FileAccessDialog open={fileDialogOpen} onOpenChange={setFileDialogOpen} onOpenSettings={openFileSettings} onChooseFile={importFile} />
       )}
-      {view.kind === 'bounced' && bounce !== null && <LargeFileNotice size={bounce.size} onOpenNow={bounce.openNow} />}
       {prompt !== null && <PasswordDialog retry={prompt.retry} attempt={prompt.attempt} onSubmit={prompt.resolve} />}
     </div>
   );
+}
+
+/** "Open extension settings": the service worker opens chrome://extensions/?id=… beside this tab (a page cannot). */
+function openFileSettings(): void {
+  sendRuntimeMessage({ type: 'takeover:open-file-settings' }).catch(() => {
+    void chrome.tabs.create({ url: `chrome://extensions/?id=${chrome.runtime.id}` });
+  });
 }
 
 /** The open document: the page list, its keys, the scan hint, and its test hooks. */

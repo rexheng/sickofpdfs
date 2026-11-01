@@ -9,8 +9,10 @@ import {
   PdfLoadError,
   PdfPasswordError,
 } from '@sop/viewer';
+import { sendRuntimeMessage } from '../shared/send-message';
 import type { ViewerParams } from '../shared/viewer-url';
-import { mayShowSourceHere, openInChromeViewer, prepareFetch } from './takeover-client';
+import { mayShowSourceHere } from './frame-escape';
+import { openInChrome } from './open-in-chrome';
 
 export interface OpenedDocument {
   loaded: LoadedPdf;
@@ -49,7 +51,8 @@ export const BOUNCE_DELAY_MS = 2000;
 export async function openDocument(p: ViewerParams, deps: OpenDocumentDeps): Promise<OpenOutcome> {
   const url = p.source;
   if (url === null) return { kind: 'error', error: new PdfLoadError('network') };
-  if (!mayShowSourceHere(url)) return { kind: 'error', error: new PdfLoadError('aborted') };
+  // A web page put the viewer in a frame and named a file on this computer: nothing of it is loaded (pdf.js's rule).
+  if (!mayShowSourceHere(p)) return { kind: 'error', error: new PdfLoadError('aborted') };
   let referrer: string | undefined;
   if (/^https?:/i.test(url)) {
     const { referer } = await prepareFetch(url);
@@ -109,10 +112,27 @@ function bounce(url: string, size: number, deps: OpenDocumentDeps): void {
     if (gone) return;
     gone = true;
     clearTimeout(timer);
-    void openInChromeViewer(url);
+    void openInChrome(url);
   };
   const timer = setTimeout(go, BOUNCE_DELAY_MS);
   deps.onLargeFile?.({ size, openNow: go });
+}
+
+/** How long the viewer waits for the service worker's Referer set-up before it fetches anyway. */
+const PREPARE_TIMEOUT_MS = 2000;
+
+/**
+ * takeover:prepare-fetch: the service worker makes the viewer's own fetch of `url` carry the Referer the tab's
+ * navigation had (Task 16's sticky rule) and says what it was. No answer in time, or none at all, means no Referer.
+ */
+async function prepareFetch(url: string): Promise<{ referer: string | null }> {
+  const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), PREPARE_TIMEOUT_MS));
+  try {
+    const reply = await Promise.race([sendRuntimeMessage({ type: 'takeover:prepare-fetch', url }), timeout]);
+    return { referer: reply?.referer ?? null };
+  } catch {
+    return { referer: null };
+  }
 }
 
 async function fileAccessAllowed(): Promise<boolean> {

@@ -1,7 +1,10 @@
 // Reads a PDF from where it lives (a web address, a file:// address, or a file the person picked) into one Blob,
 // hashing it while it streams in (global constraints: a document is "the SHA-256 of the file's bytes, computed while
 // it streams in"). Nothing here touches the engine: the caller opens `blob` with PdfBackend.open.
-import { createSha256, type Sha256, type Sha256Hasher } from '@sop/core';
+// Deep imports: the extension compiles what it imports with noUncheckedIndexedAccess, and @sop/core's index also
+// re-exports code (the learning filter) written without it.
+import { createSha256, type Sha256Hasher } from '@sop/core/fingerprint';
+import type { Sha256 } from '@sop/core/ids';
 import { PdfLoadError } from './errors';
 import { displayNameFor } from './file-name';
 import { MAX_OPEN_BYTES } from './limits';

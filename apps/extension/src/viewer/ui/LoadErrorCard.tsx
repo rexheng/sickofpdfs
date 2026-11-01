@@ -33,7 +33,7 @@ function copyFor(error: PdfLoadError | PdfFormatError, sourceUrl: string | null)
     case 'file-access':
       return { title: couldNot, lines: ["Chrome isn't letting this viewer read files on your computer."] };
     case 'aborted':
-      return { title: couldNot, lines: ['This PDF cannot be shown here.'] };
+      return { title: couldNot, lines: ['A web page asked to show a file from your computer here.', 'It is not shown.'] };
     case 'network':
       return sourceUrl === null
         ? { title: couldNot, lines: ['There is no PDF address in this link.'] }
@@ -48,7 +48,9 @@ function copyFor(error: PdfLoadError | PdfFormatError, sourceUrl: string | null)
 export function LoadErrorCard({ error, sourceUrl, onOpenInChrome, onImport }: LoadErrorCardProps) {
   const { title, lines } = copyFor(error, sourceUrl);
   const picker = useFilePicker(onImport);
-  const canOpen = sourceUrl !== null && /^(https?|file):/i.test(sourceUrl);
+  // Not for a local file that a web page tried to show in a frame: that page should get nothing from it.
+  const refused = error instanceof PdfLoadError && error.code === 'aborted';
+  const canOpen = !refused && sourceUrl !== null && /^(https?|file):/i.test(sourceUrl);
   return (
     <div className={styles.stage}>
       <section className={styles.card} aria-labelledby="load-error-title">
