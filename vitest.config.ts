@@ -1,16 +1,13 @@
-import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { playwright } from '@vitest/browser-playwright';
 import { configDefaults, defineConfig } from 'vitest/config';
 
 const repoRoot = fileURLToPath(new URL('.', import.meta.url));
 
-// Phase 3 pack T3 tests the full-text query builder, apps/extension/src/store/fts-query.ts, which S9 is building in parallel.
-// Until that file exists the test cannot load; it switches on by itself the moment the file is there. Delete when S9 has merged.
-const needS9 = existsSync(new URL('./apps/extension/src/store/fts-query.ts', import.meta.url)) ? [] : ['**/store/fts-query.spec-blind.test.ts'];
+
 
 // Never collected, by either project. spikes/** is the throwaway Phase 0 package with its own Playwright suite.
-const exclude = [...needS9, ...configDefaults.exclude, '**/.output/**', '**/.wxt/**', 'test-assets/**', 'spikes/**'];
+const exclude = [...configDefaults.exclude, '**/.output/**', '**/.wxt/**', 'test-assets/**', 'spikes/**'];
 
 export default defineConfig({
   test: {

@@ -9,8 +9,6 @@
     "types": ["chrome", "node"]
   },
   "include": ["src", "scripts", "wxt.config.ts", ".wxt/wxt.d.ts"],
-  // Setting "exclude" replaces WXT's own, so its two entries come first.
-  // The third is Phase 3 pack T3's test of S9's src/store/fts-query.ts, which is not merged yet, so it cannot be type checked.
-  // Vitest and ESLint pick it up by themselves once fts-query.ts exists; this list cannot, so DELETE it when S9 has merged.
-  "exclude": ["node_modules", ".output", "src/store/fts-query.spec-blind.test.ts"]
+  // Setting "exclude" replaces WXT's own, so its two entries are listed here.
+  "exclude": ["node_modules", ".output"]
 }

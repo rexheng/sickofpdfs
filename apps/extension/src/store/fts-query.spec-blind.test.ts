@@ -42,7 +42,8 @@ const toMatch = (r: unknown): string | null => {
 function build(text: string, prefix = false): string | null {
   const plain = pick(NAMES);
   if (!plain) throw new Error(`fts-query exports none of [${NAMES.join(', ')}]; it exports: ${Object.keys(ftsModule).join(', ') || 'nothing'}`);
-  if (!prefix) return toMatch(plain(text));
+  // triage: S9's ftsQuery makes the last word a prefix unless told not to (search as you type), so exact words ask for that
+  if (!prefix) return toMatch(plain(text, { prefix: false }));
   const separate = pick(PREFIX_NAMES);
   if (separate) return toMatch(separate(text));
   const viaOptions = toMatch(plain(text, { prefix: true }));
