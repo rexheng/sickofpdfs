@@ -33,7 +33,7 @@ export interface DraftKeeper {
   dispose(): void;
 }
 
-export const DRAFT_DELAY_MS = 15;
+export const DRAFT_DELAY_MS = 5;
 export const DRAFT_MAX_MS = 300;
 const RETRY_MS = [500, 1000, 2000, 4000, 5000];
 
