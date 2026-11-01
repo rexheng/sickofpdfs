@@ -33,6 +33,9 @@ export const ICON_NAMES = [
   'check',
   'undo',
   'menu_book',
+  // Phase 2 comment cards (S5): the card's actions button and the owner's avatar
+  'more_vert',
+  'person',
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

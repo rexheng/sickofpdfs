@@ -1,0 +1,167 @@
+/*
+ * One comment (02 section 4.11): avatar 32 px; name Google Sans 14/20 500 +.1px in on-surface at 12 px from the
+ * avatar; time 12/16 +.1px in on-surface-variant under it; the body 12 px below the author block.
+ */
+.comment {
+  min-inline-size: 0;
+}
+
+.head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  min-block-size: var(--sop-card-avatar);
+}
+
+.who {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.name {
+  overflow: hidden;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-docs-comment-author);
+  letter-spacing: var(--tracking-tight);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.time {
+  overflow: hidden;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-docs-comment-time);
+  letter-spacing: var(--tracking-tight);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.draft {
+  color: var(--gm3-sys-color-primary);
+  font-weight: 500;
+}
+
+/* The ⋮ button sits at the right of the author row, its glyph lined up with the card's padding edge. */
+.menu {
+  margin-inline-end: calc(-1 * var(--space-2));
+}
+
+.hoverActions .menu {
+  opacity: 0;
+}
+
+.hoverActions:hover .menu,
+.hoverActions:focus-within .menu,
+.hoverActions .menu[aria-expanded='true'] {
+  opacity: 1;
+}
+
+.content {
+  margin-block-start: var(--sop-card-body-gap);
+}
+
+.clamped {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--sop-card-clamp-lines);
+}
+
+.showMore {
+  display: block;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gm3-sys-color-primary);
+  font: var(--type-docs-comment-time);
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+  cursor: pointer;
+}
+
+.showMore:hover {
+  text-decoration: underline;
+}
+
+/* Claude, before the first words arrive: a quiet line with three dots that breathe. */
+.status {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-docs-comment-body);
+  font-style: italic;
+}
+
+.dots > span {
+  animation: breathe 1.2s ease-in-out infinite;
+}
+
+.dots > span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.dots > span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* The caret at the end of a streaming reply. */
+.caret {
+  display: inline-block;
+  inline-size: var(--space-1);
+  block-size: var(--space-4);
+  margin-inline-start: 1px;
+  border-radius: 1px;
+  background-color: var(--sop-claude-accent);
+  vertical-align: text-bottom;
+  animation: blink 1s steps(1, end) infinite;
+}
+
+.error {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  align-items: center;
+  margin-block-start: var(--space-2);
+}
+
+.content > .error:first-child {
+  margin-block-start: 0;
+}
+
+.errorText {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--gm3-sys-color-error);
+  font: var(--type-docs-comment-body);
+}
+
+/* The text button sits flush with the text above it. */
+.retry {
+  margin-inline-start: calc(-1 * var(--space-3));
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dots > span,
+  .caret {
+    animation: none;
+  }
+}

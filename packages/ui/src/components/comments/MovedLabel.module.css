@@ -1,0 +1,54 @@
+/*
+ * A quiet line at the top of a card: 12/16 in on-surface-variant, like the comment time. "Show where it was" is a
+ * primary text link that fades in on hover or keyboard focus (D7).
+ */
+.row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-block-size: var(--space-5);
+  margin-block-end: var(--space-2);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-docs-comment-time);
+  letter-spacing: var(--tracking-tight);
+}
+
+.label {
+  cursor: default;
+}
+
+.action {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--shape-menu);
+  background: none;
+  color: var(--gm3-sys-color-primary);
+  font: inherit;
+  font-weight: 500;
+  letter-spacing: inherit;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.row:hover .action,
+.action:focus-visible,
+.revealed .action {
+  opacity: 1;
+}
+
+.action:hover {
+  text-decoration: underline;
+}
+
+.action:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action {
+    transition: none;
+  }
+}

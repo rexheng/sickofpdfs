@@ -1,0 +1,122 @@
+/*
+ * The note box and the reply box: Docs' comment field (02 section 4.11). A 1 px outline box with 16 px corners and
+ * 8/16 px padding, so one line is 38 px tall; Google Sans 14/20. When focused the outline turns primary and 2 px
+ * (the second pixel is an outline outside the border, so the text never moves). It grows with the text up to 8 lines.
+ * Under it: a quiet hint and the filled send button, as Docs' "Comment" / "Reply" row.
+ */
+.box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+/* eslint-disable css/use-baseline -- a Chrome-only extension (Chrome 128 or newer), where all three are supported */
+.field {
+  display: block;
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-block-size: calc(var(--sop-note-max-h) + 2 * var(--sop-note-pad-y) + 2 * 1px);
+  margin: 0;
+  padding: var(--sop-note-pad-y) var(--sop-note-pad-x);
+  overflow-y: auto;
+  border: 1px solid var(--gm3-sys-color-outline);
+  border-radius: var(--sop-note-shape);
+  outline: none;
+  background-color: transparent;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-docs-comment-body);
+  resize: none;
+  field-sizing: content;
+  scrollbar-width: thin;
+}
+/* eslint-enable css/use-baseline */
+
+.field::placeholder {
+  color: var(--gm3-sys-color-on-surface-variant);
+  opacity: 1;
+}
+
+.field:focus {
+  border-color: var(--gm3-sys-color-primary);
+  outline: 1px solid var(--gm3-sys-color-primary);
+  outline-offset: 0;
+}
+
+.field:hover:not(:focus) {
+  border-color: var(--gm3-sys-color-on-surface);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.actions[hidden] {
+  display: none;
+}
+
+.hint {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-docs-comment-time);
+  letter-spacing: var(--tracking-tight);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The hint only matters while typing: it fades in with focus, so a box at rest stays as quiet as Docs'. */
+.box:not(:focus-within) .hint {
+  opacity: 0;
+}
+
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* GM3 filled button at Docs' 36 px: primary / on-primary; disabled is on-surface at 12% with a 38% label. */
+.send {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  box-sizing: border-box;
+  block-size: var(--sop-note-btn-h);
+  margin: 0;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--shape-full);
+  background-color: var(--gm3-sys-color-primary);
+  color: var(--gm3-sys-color-on-primary);
+  font: var(--type-text-button);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.send:hover:not(:disabled) {
+  background-color: color-mix(
+    in srgb,
+    var(--gm3-sys-color-on-primary) calc(var(--gm3-state-hover) * 100%),
+    var(--gm3-sys-color-primary)
+  );
+  box-shadow: var(--elev-1);
+}
+
+.send:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.send:disabled {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) 12%, transparent);
+  color: color-mix(in srgb, var(--gm3-sys-color-on-surface) 38%, transparent);
+  cursor: default;
+}

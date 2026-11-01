@@ -16,6 +16,7 @@
   "dependencies": {
     "@fontsource-variable/google-sans": "5.3.2",
     "@fontsource-variable/google-sans-flex": "5.3.2",
+    "@sop/core": "workspace:*",
     "material-symbols": "0.48.2",
     "radix-ui": "1.8.1",
     "react": "19.3.1",

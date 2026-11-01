@@ -1,0 +1,176 @@
+/*
+ * The card (02 section 4.11, Docs margin cards; spec "Comment cards" and "Viewer specifics"):
+ *   282 px wide, 12 px corners, padding 16px 16px 12px.
+ *   Inactive: surface-container-high. On the dark viewer canvas that is Drive's dark surface #282a2c (the dark menus'
+ *   colour), with #e3e3e3 names and #c4c7c5 text; in a light panel it is Docs' sidebar card #e9eef6.
+ *   Active: data-theme="light" on the card brings back the light set, so it is white with #1f1f1f/#444746 text, Docs'
+ *   shadow, and it moves 12 px left. `translate` is used (not `transform`) so it adds to any transform the card
+ *   column sets.
+ */
+.card {
+  box-sizing: border-box;
+  inline-size: var(--sop-card-w);
+  padding: var(--sop-card-pad-top) var(--sop-card-pad-x) var(--sop-card-pad-bottom);
+  border-radius: var(--shape-docs-comment);
+  outline: none;
+  background-color: var(--gm3-sys-color-surface-container-high);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-docs-comment-body);
+  text-align: start;
+  cursor: pointer;
+  transition:
+    translate 150ms ease-out,
+    box-shadow 150ms ease-out;
+}
+
+.card:hover:not(.active) {
+  background-color: color-mix(
+    in srgb,
+    var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%),
+    var(--gm3-sys-color-surface-container-high)
+  );
+}
+
+.card:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.active {
+  background-color: var(--gm3-sys-color-surface);
+  box-shadow: var(--shadow-docs-comment-active);
+  translate: calc(-1 * var(--sop-card-shift)) 0;
+  cursor: default;
+}
+
+/* A line above the note: "Page 4 · “the passage…”" (Docs sidebar: 12/20 500 on-surface-variant, one line). */
+.context {
+  margin: 0 0 var(--space-3);
+  overflow: hidden;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-docs-comment-time);
+  font-weight: 500;
+  line-height: var(--space-5);
+  letter-spacing: var(--tracking-tight);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* A figure note: the 64 px thumbnail (a piece of a white page) and its label. */
+.figure {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  margin-block-end: var(--space-3);
+}
+
+.thumb {
+  display: block;
+  flex: none;
+  box-sizing: border-box;
+  inline-size: var(--sop-card-thumb);
+  block-size: var(--sop-card-thumb);
+  border: 1px solid var(--gm3-sys-color-outline-variant);
+  border-radius: var(--shape-grid-thumb);
+  background-color: var(--drive-content-bg);
+  object-fit: contain;
+}
+
+.figureLabel {
+  min-inline-size: 0;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-docs-comment-author);
+  letter-spacing: var(--tracking-tight);
+}
+
+/* Replies stack with 20 px above each (Docs). */
+.reply {
+  margin-block-start: var(--sop-card-reply-gap);
+}
+
+/* The owner's name above a new note (same as CommentItem's author row). */
+.authorRow {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.who {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.name {
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-docs-comment-author);
+  letter-spacing: var(--tracking-tight);
+}
+
+.draftTime,
+.draftLabel {
+  color: var(--gm3-sys-color-primary);
+  font: var(--type-docs-comment-time);
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+}
+
+.noteBox {
+  margin-block-start: var(--sop-card-body-gap);
+}
+
+.replyBox {
+  margin-block-start: var(--space-4);
+  margin-block-end: var(--space-1);
+}
+
+/* Unsent text on an inactive card: the body style, in italics, at most 4 (or 2) lines. */
+.draftText {
+  display: -webkit-box;
+  margin: var(--sop-card-body-gap) 0 0;
+  overflow: hidden;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-docs-comment-body);
+  font-style: italic;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--sop-card-clamp-lines);
+}
+
+.twoLines {
+  -webkit-line-clamp: 2;
+}
+
+.replyDraft {
+  margin-block-start: var(--space-3);
+}
+
+.replyDraft .draftText {
+  margin-block-start: 0;
+}
+
+/* "2 replies" (Docs collapses an inactive thread to its first comment and a reply count). */
+.replies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  margin: var(--space-3) 0 0;
+  font: var(--type-docs-comment-time);
+  letter-spacing: var(--tracking-tight);
+}
+
+.repliesCount {
+  color: var(--gm3-sys-color-primary);
+  font-weight: 500;
+}
+
+.repliesNote {
+  color: var(--gm3-sys-color-on-surface-variant);
+  font-style: italic;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    transition: none;
+  }
+}

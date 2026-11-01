@@ -1,0 +1,43 @@
+/*
+ * Comment cards and the note box (Phase 2, slice S5): sizes and the one colour they need that Drive has no token for.
+ *
+ * Values are Google Docs' margin cards, measured in docs/research/02-drive-visual-spec.md section 4.11, and the spec's
+ * "Comment cards" row: 282 px wide, 12 px corners, 10 px apart; the active card turns white, lifts and shifts 12 px
+ * left. Every colour of the cards themselves is a GM3 role from tokens.css, so the cards follow the theme they sit in:
+ * Drive's dark surfaces on the viewer canvas, and the light set inside the active card (data-theme="light").
+ *
+ * This file sits beside tokens.css instead of inside it because slice S4 edits tokens.css in parallel. The comment
+ * components import it themselves, so a page needs no extra import. None of these values change with the theme, so
+ * one :root block is enough.
+ */
+:root {
+  /* The card (02 section 4.11, margin cards) */
+  --sop-card-w: 282px;            /* [live] */
+  --sop-card-gap: 10px;           /* [live] space between stacked cards */
+  --sop-card-shift: 12px;         /* [live] the active card sits 12 px left of the others (x 1143 vs 1155) */
+  --sop-card-pad-top: 16px;       /* [live] padding 16px 16px 12px */
+  --sop-card-pad-x: 16px;
+  --sop-card-pad-bottom: 12px;
+  --sop-card-avatar: 32px;        /* [live] round avatar; the name starts 12 px after it (x+44) */
+  --sop-card-body-gap: 12px;      /* [live] 11 px below the author block, on the 4 px grid */
+  --sop-card-reply-gap: 20px;     /* [live] replies stack with 20 px top padding */
+  --sop-card-clamp-lines: 4;      /* an inactive card shows at most 4 lines of a long note, then "Show more" */
+
+  /* Figure cards: a 64 px thumbnail of the figure next to its label (plan S16) */
+  --sop-card-thumb: 64px;
+
+  /* The note box and the reply box (02 section 4.11: "Reply or add others with @", 38 px tall, radius 16 px) */
+  --sop-note-shape: 16px;         /* [live] */
+  --sop-note-pad-y: 8px;          /* [live] padding 8px 7px 8px 16px */
+  --sop-note-pad-x: 16px;
+  --sop-note-max-h: 160px;        /* 8 lines of 14/20 text; then the box scrolls (research 04 A(ii)) */
+  --sop-note-btn-h: 36px;         /* Docs' "Comment" and "Reply" buttons */
+
+  /* Citation chips inside a reply ("p. 4", a web source) */
+  --sop-chip-sm-h: 20px;
+  --type-sop-chip-sm: 500 12px/16px var(--font-text);
+
+  /* Claude's mark: a warm accent, so a reply from Claude is told apart at a glance from the owner's blue avatar */
+  --sop-claude-accent: #d97757;
+  --sop-claude-on-accent: #ffffff;
+}

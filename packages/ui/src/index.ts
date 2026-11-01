@@ -1,5 +1,6 @@
 export { Banner, type BannerProps } from './components/Banner';
 export { Chip, type ChipProps } from './components/Chip';
+export * from './components/comments';
 export { Dialog, type DialogAction, type DialogProps } from './components/Dialog';
 export { IconButton, type IconButtonProps } from './components/IconButton';
 export { DropdownMenu, type DropdownMenuProps, type MenuDef, type MenuItemDef } from './components/Menu';

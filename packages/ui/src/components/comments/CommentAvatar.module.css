@@ -1,0 +1,33 @@
+/* 32 px round avatar (02 section 4.11). */
+.avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--sop-card-avatar);
+  block-size: var(--sop-card-avatar);
+  overflow: hidden;
+  border-radius: var(--shape-full);
+}
+
+/* The owner: Google's person avatar on the tonal blue (#c2e7ff with #004a77 light; #004a77 with #c2e7ff dark). */
+.me {
+  background-color: var(--gm3-sys-color-secondary-container);
+  color: var(--gm3-sys-color-on-secondary-container);
+}
+
+/* Google's default avatar: the person glyph is drawn larger and low, so the circle's edge cuts the shoulders. */
+.me > span {
+  scale: 1.25;
+  translate: 0 var(--space-1);
+}
+
+.claude {
+  background-color: var(--sop-claude-accent);
+  color: var(--sop-claude-on-accent);
+}
+
+.mark {
+  inline-size: var(--icon-size-20);
+  block-size: var(--icon-size-20);
+}
