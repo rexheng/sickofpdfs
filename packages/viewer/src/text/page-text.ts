@@ -6,8 +6,8 @@
 // hyphen, soft hyphens, zero-width spaces), and getPageText drops them, so after the first one its offsets are shifted
 // from the char indices. `rawText()` keeps them, so that raw[i] is char i. Anchors are built and re-placed on
 // `rawText()`; on the first page of ResNet, getPageText is 14 chars shorter than the 4,355 chars PDFium has.
-// `rangeText()` is getTextRange: the cleaned text of a range of char indices, which needs no alignment and costs one
-// engine call, where `rawText()` reads every glyph of the page (about 45 ms for a page of maths).
+// `rawText()` is getPageChars, one engine call (about 1 ms a page, against about 45 ms for rebuilding it from every
+// glyph). `rangeText()` is getTextRange: the cleaned text of a range of char indices, which needs no alignment.
 import type { DocHandle, PageGlyphs, PdfBackend, PdfRect, SearchHit } from '../backend/types';
 
 export interface PageTextProvider {
@@ -84,7 +84,7 @@ export function createPageTextProvider(be: PdfBackend, doc: DocHandle): PageText
     source: () => 'pdfium',
     text: (pageIndex) => remember(texts, pageIndex, () => be.getPageText(doc, pageIndex)),
     glyphs,
-    rawText: (pageIndex) => remember(raws, pageIndex, async () => (await glyphs(pageIndex)).glyphs.map((g) => g.text).join('')),
+    rawText: (pageIndex) => remember(raws, pageIndex, () => be.getPageChars(doc, pageIndex)),
     rects(pageIndex, start, count) {
       let page = rectPages.get(pageIndex);
       if (!page) rectPages.set(pageIndex, (page = new Map<string, Promise<PdfRect[]>>()));
