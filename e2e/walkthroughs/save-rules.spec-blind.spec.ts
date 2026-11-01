@@ -87,7 +87,9 @@ test.describe('on a PDF the filter is not sure about', () => {
     await expect(page.getByText(/not sure/i).first()).toBeVisible({ timeout: 25_000 });
     await postNote(page, UNSURE, HANDOUT_LINE, 'My first note on a not-sure PDF');
     const id = await waitSaved(page, 15_000);
-    await expect(undoChip(page)).toBeVisible({ timeout: 5000 });
+    // Triage (R67 f, 1 Nov 2026, a spec change): a save a note started shows no Undo chip. A typed note is deliberate
+    // work and must never vanish on a quick Undo; the owner can delete the note itself. Only a first mark gets the chip.
+    await expect(undoChip(page), 'a save started by a note has no Undo (R67 f)').toHaveCount(0);
     expect((await annotations(page, id)).comments.map((c) => c.body)).toEqual(['My first note on a not-sure PDF']);
     await reloadAndWait(page, UNSURE);
     await expect(cardWith(page, 'My first note on a not-sure PDF'), 'and it is there after a reload').toBeVisible({ timeout: 10_000 });
