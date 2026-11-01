@@ -10,10 +10,13 @@
 // - Errors are rejections whose message starts with a code (`bad-input: …`), so the code survives a message port.
 
 import {
+  ALIAS_THRESHOLD,
   canonicalLink,
   canonicalLocation,
   cleanLink,
+  isStampAlias,
   locationId,
+  stampedTextSimilarity,
   type DocumentId,
   type DocumentRow,
   type Hlc,
@@ -30,7 +33,6 @@ import type { StoreChange } from './change-bus';
 import { createPageFiguresApi, type PageFiguresApi } from './page-figures';
 import { FTS_TABLES } from './schema';
 import { isReadOnly, type SqlValue, userVersion } from './schema-v2';
-import { ALIAS_MIN, stampedPagesSimilarity } from './stamp-match';
 
 export { migrate } from './migrate';
 
@@ -367,8 +369,9 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
           for (const p of db.selectObjects('SELECT page_index, text FROM page_text WHERE document_id = ? AND page_index < ?', [id, pageCount])) {
             stored[num(p, 'page_index')] = text(p, 'text');
           }
-          const similarity = stampedPagesSimilarity(stored, pageTexts);
-          if (similarity >= ALIAS_MIN && (best === null || similarity > best.similarity)) best = { documentId: id as DocumentId, similarity };
+          if (!isStampAlias(stored, pageTexts)) continue; // R59: the same letters and digits, not just a high percentage
+          const similarity = stampedTextSimilarity(stored, pageTexts);
+          if (best === null || similarity > best.similarity) best = { documentId: id as DocumentId, similarity };
           if (best?.similarity === 1) break;
         }
         return best;
@@ -379,7 +382,7 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
         assertWritable();
         checkHex(sha256, 'the alias fingerprint');
         checkHex(documentId, 'the document id');
-        if (typeof similarity !== 'number' || !(similarity >= ALIAS_MIN && similarity <= 1)) fail('bad-input', 'an alias needs a similarity of 0.995 to 1');
+        if (typeof similarity !== 'number' || !(similarity >= ALIAS_THRESHOLD && similarity <= 1)) fail('bad-input', 'an alias needs a similarity of 0.995 to 1');
         if (sha256 === documentId) fail('alias-conflict', 'a document cannot be an alias of itself');
         let added = false;
         db.savepoint(() => {

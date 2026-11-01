@@ -26,6 +26,7 @@ export { createSha256, sha256Hex } from './identity/fingerprint';
 export type { Sha256Hasher } from './identity/fingerprint';
 export { canonicalLink, cleanLink } from './identity/canonical-link';
 export { canonicalFileLocation, canonicalLocation, locationId } from './identity/location';
+export { ALIAS_THRESHOLD, MIN_ALIAS_CHARS, MIN_ALIAS_CHARS_PER_PAGE, isStampAlias, stampedTextSimilarity, stripStamps } from './identity/stamps';
 export * from './filter/index';
 export { buildTextAnchor, QUOTE_CONTEXT } from './anchoring/quote';
 export { DHASH_MATCH_MAX, dHash64, hammingHex } from './anchoring/dhash';

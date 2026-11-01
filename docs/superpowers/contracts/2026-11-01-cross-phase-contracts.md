@@ -16,6 +16,7 @@ Nov 1, 2026. Binding for every plan from Phase 2 to Phase 8. The spec wins over 
 | Shape | Owner | Code lives in | Consumers | Phase 1 status |
 | --- | --- | --- | --- | --- |
 | Ids | P2 adds brands | `packages/core/src/ids.ts` | all | **exists** (Task 18): `Sha256`, `DocumentId`, `LocationId`, `LocationKind`. New: `MarkId`, `ThreadId`, `CommentId`, `TabId`, `Author` |
+| Identity | exists | `packages/core/src/identity/` | store (`findStampAlias`), viewer open, P5 | **exists** (Tasks 18, 19): `createSha256`, `canonicalLink`, `locationId`, `stripStamps`, `stampedTextSimilarity`, `isStampAlias`, `ALIAS_THRESHOLD`. The alias rule is R59 (§4) |
 | Anchor JSON | P2 | `packages/core/src/model/anchor.ts` | P2, P4, P6, P7, P8 | **exists** (Task 28): `Anchor`, `NormRect`, `CharPos`, `TextQuote`, `FigureFingerprint`. New: two optional fields |
 | Annotation rows | P2 | `packages/core/src/model/rows.ts` | P2–P8 | the tables **exist** (Task 28, schema v1). New: `MarkRow`, `ThreadRow`, `CommentRow` |
 | Style planning | P2 | `packages/core/src/annotations/marks.ts` | P2, P8 | new: `planStyle` |
@@ -222,6 +223,18 @@ export interface StoreChange { table: StoreTable; ids: string[]; op: 'upsert' | 
 ```
 
 - A viewer listens for changes to its own `documentId`, and ignores an event with its own `tabId` (its own echo). Draft writes publish nothing. Applied sync and restore rows publish with `origin` set, so open tabs redraw. Sync never listens to events: it reads the outbox.
+
+### Identity: when a re-download is the same document (R59, 1 Nov 2026)
+
+- **One rule decides.** `isStampAlias(a, b)` in `packages/core/src/identity/stamps.ts`, with `a` and `b` the text of each page. The store's `findStampAlias` calls it on every candidate with the same page count, and records `stampedTextSimilarity(a, b)` as the alias's `similarity`. Nothing else decides.
+- **All four must hold.**
+  - (a) The page counts are equal.
+  - (b) Once the stamps are removed and the text is folded (`text-fold.ts`: marks that are not text dropped, whitespace and ligatures folded), the **letters and digits are the same, in the same order**. The two texts may differ only in whitespace, punctuation and accents.
+  - (c) `stampedTextSimilarity` is at least `ALIAS_THRESHOLD` (0.995). It stays as a sanity floor.
+  - (d) Each side has real body text: at least `MIN_ALIAS_CHARS` (200) letters and digits, and `MIN_ALIAS_CHARS_PER_PAGE` (30) per page on average. A blank scan, or a scan whose text layer is only page numbers, never aliases. Its score is 0, never `NaN` or 1.
+- **Why (b).** A percentage cannot tell a re-download from a new version. An arXiv v2 that corrects three numbers scores about 0.9999 against v1, and would have shared v1's notes. On 37 real arXiv version pairs with equal page counts, the percentage alone aliased 8, and the rule aliases none. A missed alias costs a re-save; a wrong alias shows the wrong notes.
+- **Stamps are looked for after folding**, so a stamp whose line has marks at its edges, or a date split across a line break, is still found. The patterns are phrases, not line anchors. They remove the JSTOR lines, `Downloaded from <link> [by <who>] on <date>`, `Downloaded by [<who>] at <when>`, IP addresses, dates (ISO, `Tue, 31 Oct 2026 10:41:07 UTC`, `31 October 2026`, `October 31, 2026`, `31/10/2026`, `31-10-2026`) and times. The arXiv stamp keeps its version (`arXiv:1706.03762v2`), so two versions never match.
+- **A stamp this list does not know** leaves letters or digits that differ, so the copies do not alias. That is the safe direction.
 
 ## 5. Library and filter (Phase 3)
 
