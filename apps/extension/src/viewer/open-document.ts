@@ -6,6 +6,7 @@ import {
   loadPdfSource,
   type OpenResult,
   type PdfBackend,
+  PdfEngineCrashedError,
   PdfFormatError,
   PdfLoadError,
   PdfPasswordError,
@@ -36,6 +37,7 @@ export type OpenOutcome =
 
 /** Shown while a too-large PDF waits to move to Chrome's viewer. */
 export interface LargeFileBounce {
+  /** Over the 1 GB limit, or under it but more than the engine's memory holds (it needs about twice the file). */
   size: number;
   /** Goes now, without waiting for the rest of the delay. */
   openNow: () => void;
@@ -81,7 +83,7 @@ export async function openDocument(p: ViewerParams, deps: OpenDocumentDeps): Pro
     if (err.code === 'file-access' && (await fileAccessAllowed())) return { kind: 'error', error: new PdfLoadError('network') };
     return { kind: 'error', error: err, ...signedOut };
   }
-  return openLoaded(loaded, deps, referrer);
+  return openLoaded(loaded, deps, url, referrer);
 }
 
 /** Opens a file the person picked ("Import this PDF", "Choose file"). */
@@ -92,11 +94,14 @@ export async function openPickedFile(file: File, deps: OpenDocumentDeps): Promis
   } catch (err) {
     return { kind: 'error', error: err instanceof PdfLoadError ? err : new PdfLoadError('file-access') };
   }
-  return openLoaded(loaded, deps);
+  return openLoaded(loaded, deps, null);
 }
 
-/** The engine open, asking for a password as long as PDFium refuses the one given. */
-async function openLoaded(loaded: LoadedPdf, deps: OpenDocumentDeps, referrer?: string): Promise<OpenOutcome> {
+/**
+ * The engine open, asking for a password as long as PDFium refuses the one given. `url` is where the file came from
+ * (null for a picked file): a file the engine has no memory for moves there, to Chrome's viewer, like one over 1 GB.
+ */
+async function openLoaded(loaded: LoadedPdf, deps: OpenDocumentDeps, url: string | null, referrer?: string): Promise<OpenOutcome> {
   let password: string | null = null;
   for (;;) {
     try {
@@ -110,6 +115,13 @@ async function openLoaded(loaded: LoadedPdf, deps: OpenDocumentDeps, referrer?: 
         continue;
       }
       if (err instanceof PdfFormatError) return { kind: 'error', error: err };
+      // Opening copies the file into the engine's memory (at most 2 GiB) while the page still holds it, so a file under
+      // the 1 GB limit can still be too big: that is a file too large for this viewer, not a damaged one.
+      if (err instanceof PdfEngineCrashedError && err.reason === 'out-of-memory') {
+        if (url === null) return { kind: 'error', error: new PdfLoadError('too-large', { size: loaded.size }) };
+        bounce(url, loaded.size, deps);
+        return { kind: 'bounced' };
+      }
       // The engine crashed or could not start: shown like a damaged file ("Couldn't load this PDF").
       return { kind: 'error', error: new PdfFormatError(err instanceof Error ? err.message : String(err)) };
     }
