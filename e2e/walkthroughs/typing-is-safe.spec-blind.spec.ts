@@ -113,7 +113,7 @@ test('in the note box Ctrl+B formats the note (Markdown bold), Ctrl+I italic, an
   await page.keyboard.press('Control+u');
   await page.keyboard.press('Control+b');
   const after = await paintOfSelection(page, sel, { name: 'page-after-box-formatting', testInfo });
-  expect(Math.abs(after.paint.ink - before.paint.ink) / before.paint.ink, 'Ctrl+B in the box does not make the page text bold').toBeLessThan(0.01);
+  expect(Math.abs(after.paint.darkness - before.paint.darkness) / before.paint.darkness, 'Ctrl+B in the box does not make the page text bold').toBeLessThan(0.01);
   expect(strokesOf(after.shot, after.boxes[0], lineColours(tokens.line[YELLOW], tokens.fill[YELLOW])).rows, 'and Ctrl+U in the box does not underline the page text').toEqual([]);
 
   // Ctrl+Z inside the box undoes typing, not the highlight the note made

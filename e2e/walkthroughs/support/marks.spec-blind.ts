@@ -143,10 +143,24 @@ export async function phraseBoxes(page: Page, fx: TlFixture, p: Passage): Promis
   return lineBoxes(page, { fx, a: first.start, b: last.start + last.count - 1 });
 }
 
-/** Where to right-click or point: the middle glyph of the selection. */
+/** Where to right-click or point: the middle glyph of the selection (the nearest one that has a place on the screen). */
 export async function middleOf(page: Page, s: Pick<Selected, 'fx' | 'a' | 'b'>): Promise<{ x: number; y: number }> {
   const mid = Math.floor((s.a + s.b) / 2);
-  return hooks(page).eval((h, q) => h.glyphCenter(q.p, q.i), { p: s.fx.page, i: mid });
+  const found = await hooks(page).eval(
+    (h, q) => {
+      for (let d = 0; d <= 30; d++) {
+        for (const i of d === 0 ? [q.mid] : [q.mid - d, q.mid + d]) {
+          if (i < q.a || i > q.b) continue;
+          const c = h.glyphCenter(q.p, i);
+          if (Number.isFinite(c.x) && Number.isFinite(c.y)) return c;
+        }
+      }
+      return null;
+    },
+    { p: s.fx.page, mid, a: s.a, b: s.b },
+  );
+  if (found === null) throw new Error('middleOf: no glyph of the selection has a place on the screen');
+  return found;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -223,6 +237,8 @@ export interface Paint {
   paper: number;
   /** Dark pixels (luminance under 128): the ink. */
   ink: number;
+  /** How much dark there is in all, in whole black pixels (the sum of 1 - luminance / 255): a heavier stroke raises it even when no pixel crosses the threshold. */
+  darkness: number;
   /** The share of the paper pixels within `tol` of `c`. */
   share(c: RGB, tol?: number): number;
   /** The share of the paper pixels that are white or grey (nothing coloured over them). */
@@ -235,9 +251,11 @@ export interface Paint {
 export function paintOf(shot: Shot, boxes: Box[]): Paint {
   const paper: RGB[] = [];
   let ink = 0;
+  let darkness = 0;
   for (const box of boxes) {
     for (const p of pixelsIn(shot, box)) {
       const l = luma(p);
+      darkness += 1 - l / 255;
       if (l < 128) ink++;
       if (l >= 150) paper.push(p);
     }
@@ -252,6 +270,7 @@ export function paintOf(shot: Shot, boxes: Box[]): Paint {
   return {
     paper: paper.length,
     ink,
+    darkness,
     share: (c, tol = 12) => (paper.length === 0 ? 0 : paper.filter((p) => dist(p, c) <= tol).length / paper.length),
     neutral: paper.length === 0 ? 0 : paper.filter((p) => Math.max(...p) - Math.min(...p) <= 14).length / paper.length,
     dominant,

@@ -35,6 +35,11 @@ import { shot } from './support/takeover';
 test.use({ networkGate: 'observe' });
 test.setTimeout(120_000);
 
+// "observe" asks every test to read the gate itself; a test that fails early still has to let the gate close the browser.
+test.afterEach(async ({ netgate }) => {
+  await netgate.report();
+});
+
 const SEARCH_HOSTS = /^https:\/\/(scholar\.google\.com|www\.google\.com|google\.com|doi\.org|dx\.doi\.org|arxiv\.org)\//;
 const words = (s: string): string => s.replace(/\s+/gu, ' ').trim();
 

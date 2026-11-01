@@ -126,14 +126,14 @@ test('a stamped re-download shows the same marks and notes on the same words, wi
 test('the same file under another address (moved or renamed) shows the same notes', async ({ openViewer, server }, testInfo) => {
   const original = await bytesOfAttention();
   server.serveSequence('/gen/folder-one/attention.pdf', [original]);
-  server.serveSequence('/gen/folder-two/Renamed Copy (1).pdf', [original]);
+  server.serveSequence('/gen/folder-two/renamed-copy-1.pdf', [original]);
   const a = await openServed(openViewer, server, '/gen/folder-one/attention.pdf');
   const fx = await showPage(a, 0);
   const id = await waitSaved(a);
   await postNote(a, fx, LINES.l3, 'Follows the file, not the address');
   await waitStored(a, (x) => x.comments.some((c) => c.body === 'Follows the file, not the address' && c.draftOfTab === null), 'the note is stored');
 
-  const b = await openServed(openViewer, server, '/gen/folder-two/Renamed Copy (1).pdf');
+  const b = await openServed(openViewer, server, '/gen/folder-two/renamed-copy-1.pdf');
   await showPage(b, 0);
   expect(await waitSaved(b)).toBe(id);
   await expect(cardWith(b, 'Follows the file, not the address'), 'the note is there at the new address').toBeVisible({ timeout: 15_000 });

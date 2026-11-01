@@ -117,13 +117,13 @@ test('Ctrl+B makes the words bold, drawn from their own outlines (heavier ink, s
 
   await apply(page, sel, 'Control+b', testInfo);
   const on = await paintOfSelection(page, sel, { name: 'bold-on', testInfo });
-  expect(on.paint.ink, `bold ink is heavier: ${plain.paint.ink} dark px before, ${on.paint.ink} after`).toBeGreaterThanOrEqual(plain.paint.ink * 1.03);
-  expect(on.paint.ink, 'but it is the same words, not a smear').toBeLessThanOrEqual(plain.paint.ink * 2);
+  expect(on.paint.darkness, `bold ink is heavier: ${plain.paint.darkness.toFixed(0)} black px before, ${on.paint.darkness.toFixed(0)} after`).toBeGreaterThanOrEqual(plain.paint.darkness * 1.03);
+  expect(on.paint.darkness, 'but it is the same words, not a smear').toBeLessThanOrEqual(plain.paint.darkness * 2);
   expect(on.paint.neutral, 'bold has no colour').toBeGreaterThanOrEqual(0.97);
 
   await apply(page, sel, 'Control+b', testInfo);
   const off = await paintOfSelection(page, sel, { name: 'bold-off', testInfo });
-  expect(Math.abs(off.paint.ink - plain.paint.ink) / plain.paint.ink, 'Ctrl+B again takes the bold off').toBeLessThan(0.01);
+  expect(Math.abs(off.paint.darkness - plain.paint.darkness) / plain.paint.darkness, 'Ctrl+B again takes the bold off').toBeLessThan(0.01);
 });
 
 test('highlight and underline can share the same words, and each can be taken off on its own', async ({ openViewer, server }, testInfo) => {

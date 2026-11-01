@@ -92,6 +92,29 @@ test('the note box opens in under 100 ms (smoke: 300), and the page says so with
   expect.soft(median(fromPerf), `sop:notebox-open is within ${100 * LOOSE} ms of the key`).toBeLessThanOrEqual(100 * LOOSE);
 });
 
+test('bold on a whole paragraph still appears quickly (smoke: 150 ms), because it is drawn from the glyphs\' own outlines', async ({ openViewer, server }, testInfo) => {
+  const page = await openPaper(openViewer, server, ATTENTION);
+  await installTiming(page);
+  const abstract: Passage = { from: 'The dominant sequence transduction models', to: 'limited training data.' };
+  const tries: number[] = [];
+  for (let i = 0; i < 3; i++) {
+    const sel = await selectPassage(page, ATTENTION, abstract);
+    expect(sel.b - sel.a, 'the abstract is a long selection').toBeGreaterThan(900);
+    await page.keyboard.press('Control+b');
+    await page.waitForTimeout(500);
+    const t = await readTiming(page);
+    expect(t.markDrawn, 'bold changed a mark layer (no change to an SVG mark layer was seen)').not.toBeNull();
+    tries.push(t.markDrawn!);
+    await selectPassage(page, ATTENTION, abstract); // and take it off again
+    await page.keyboard.press('Control+b');
+    await page.waitForTimeout(300);
+    await clearSelection(page);
+  }
+  note(testInfo, 'bold on ~1000 characters, ms after Ctrl+B (3 tries)', tries.map((x) => x.toFixed(0)).join(', '));
+  expect(median(tries), `the median bold is on the page within ${50 * LOOSE} ms (the spec says 50)`).toBeLessThanOrEqual(50 * LOOSE);
+  await shot(page, testInfo, 'bold-paragraph');
+});
+
 test('a figure outline shows in under 100 ms (smoke: 300) after hovering, and the page says so with sop:figure-outline', async ({ openViewer, server }, testInfo) => {
   test.skip(!FIGURES_AVAILABLE, NO_FIGURES);
   const page = await openViewer(server.url('/f/objects.pdf'));
