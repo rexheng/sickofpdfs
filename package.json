@@ -9,7 +9,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p e2e/tsconfig.json && pnpm -r --if-present run typecheck",
+    "typecheck": "node scripts/dev/typecheck.mjs",
     "lint": "eslint .",
     "test": "vitest run --project unit",
     "test:browser": "vitest run --project browser",

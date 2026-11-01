@@ -184,7 +184,7 @@ export class RenderScheduler {
 
   private cancelQueued(match: (j: Job) => boolean): void {
     for (let i = this.queue.length - 1; i >= 0; i--) {
-      const job = this.queue[i]!;
+      const job = this.queue[i];
       if (!match(job)) continue;
       this.queue.splice(i, 1);
       job.reject(abortError());
@@ -208,8 +208,8 @@ export class RenderScheduler {
   private pump(): void {
     while (!this.disposed && this.running.size < this.o.concurrency && this.queue.length > 0) {
       let best = 0;
-      for (let i = 1; i < this.queue.length; i++) if (before(this.queue[i]!, this.queue[best]!)) best = i;
-      const job = this.queue.splice(best, 1)[0]!;
+      for (let i = 1; i < this.queue.length; i++) if (before(this.queue[i], this.queue[best])) best = i;
+      const job = this.queue.splice(best, 1)[0];
       this.start(job);
     }
   }

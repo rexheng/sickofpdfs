@@ -83,7 +83,7 @@ function scaleFor(zoom: ZoomMode, viewport: Viewport, pages: PageSize[], fitPage
   if (zoom.kind !== 'fit-page') return resolveScale(zoom, viewport, pages, { viewRotation, spread });
   const rows = rowsOf(pages.length, spread);
   const row = rows.find((r) => r.includes(fitPage)) ?? rows[0] ?? [];
-  return resolveScale(zoom, viewport, row.map((i) => pages[i]!), { viewRotation, spread });
+  return resolveScale(zoom, viewport, row.map((i) => pages[i]), { viewRotation, spread });
 }
 
 /** The page whose box holds content point `c`, or the nearest one. */
@@ -93,7 +93,7 @@ function nearestPage(layout: PageLayout, c: { x: number; y: number }): number {
   let best = candidates.first;
   let bestDistance = Infinity;
   for (let i = candidates.first; i <= candidates.last; i++) {
-    const b = layout.boxes[i]!;
+    const b = layout.boxes[i];
     const dx = Math.max(b.left - c.x, 0, c.x - (b.left + b.width));
     const dy = Math.max(b.top - c.y, 0, c.y - (b.top + b.height));
     const d = Math.hypot(dx, dy);
@@ -143,7 +143,7 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef }: PageList
     const dy = anchor ? anchor.clientY - rect.top : el.clientHeight / 2;
     const c = { x: el.scrollLeft + dx, y: el.scrollTop + dy };
     const i = nearestPage(l, c);
-    return { pageIndex: i, point: contentPointToPage(l.boxes[i]!, pages[i]!, c), dx, dy };
+    return { pageIndex: i, point: contentPointToPage(l.boxes[i], pages[i], c), dx, dy };
   };
 
   // The driver's callbacks and scroll container.
@@ -215,7 +215,7 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef }: PageList
     const a = pendingAnchor.current;
     pendingAnchor.current = null;
     if (a && layout.boxes[a.pageIndex]) {
-      const c = pagePointToContent(layout.boxes[a.pageIndex]!, pages[a.pageIndex]!, a.point);
+      const c = pagePointToContent(layout.boxes[a.pageIndex], pages[a.pageIndex], a.point);
       el.scrollLeft = c.x - a.dx;
       el.scrollTop = c.y - a.dy;
     } else if (!opened.current) {
@@ -296,7 +296,7 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef }: PageList
         if (!s || !l || l.boxes.length === 0) return Promise.resolve();
         const i = Math.min(l.boxes.length - 1, Math.max(0, Math.round(index)));
         // Rounded up: scrollTop snaps to whole pixels, and rounding down would leave a sliver of the previous page in view.
-        s.scrollTop = Math.ceil(l.boxes[i]!.top - PAGE_GAP);
+        s.scrollTop = Math.ceil(l.boxes[i].top - PAGE_GAP);
         moved();
         return driver.whenPainted(i);
       },
@@ -315,9 +315,9 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef }: PageList
         const rect = s.getBoundingClientRect();
         const c = { x: x - rect.left + s.scrollLeft, y: y - rect.top + s.scrollTop };
         const i = nearestPage(l, c);
-        const b = l.boxes[i]!;
+        const b = l.boxes[i];
         if (c.x < b.left || c.x > b.left + b.width || c.y < b.top || c.y > b.top + b.height) return null;
-        return { pageIndex: i, ...contentPointToPage(b, pages[i]!, c) };
+        return { pageIndex: i, ...contentPointToPage(b, pages[i], c) };
       },
       clientPointOf(p) {
         const s = el();
@@ -325,7 +325,7 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef }: PageList
         const b = l?.boxes[p.pageIndex];
         if (!s || !b) return { x: NaN, y: NaN };
         const rect = s.getBoundingClientRect();
-        const c = pagePointToContent(b, pages[p.pageIndex]!, p);
+        const c = pagePointToContent(b, pages[p.pageIndex], p);
         return { x: c.x - s.scrollLeft + rect.left, y: c.y - s.scrollTop + rect.top };
       },
     };
@@ -369,7 +369,7 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef }: PageList
       {layout && (
         <div className={styles.sizer} style={{ width: layout.width, height: Math.ceil(layout.height) }}>
           {mounted.map((i) => (
-            <PageView key={i} box={layout.boxes[i]!} device={deviceSizes[i]!} dpr={dpr} driver={driver} renderPage={renderPage} />
+            <PageView key={i} box={layout.boxes[i]} device={deviceSizes[i]} dpr={dpr} driver={driver} renderPage={renderPage} />
           ))}
         </div>
       )}

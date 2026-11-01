@@ -99,7 +99,7 @@ export function createEmbedPdfBackend(assets: EngineAssets, opts: EmbedPdfBacken
   ): Promise<Awaited<ReturnType<EngineApi[M]>>> => {
     const d = entry(doc);
     const n = d.workers.length;
-    const w = d.workers[pageIndex !== null && Number.isInteger(pageIndex) ? ((pageIndex % n) + n) % n : 0]!;
+    const w = d.workers[pageIndex !== null && Number.isInteger(pageIndex) ? ((pageIndex % n) + n) % n : 0];
     return w.call(method, [doc, ...rest] as unknown as Parameters<EngineApi[M]>, { signal });
   };
 
@@ -117,7 +117,7 @@ export function createEmbedPdfBackend(assets: EngineAssets, opts: EmbedPdfBacken
       const rejected = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
       const failure: unknown = rejected ? rejected.reason : workers.find((w) => w.failure)?.failure;
       if (failure) {
-        workers.forEach((w, i) => results[i]!.status === 'fulfilled' && closeQuietly(w, doc));
+        workers.forEach((w, i) => results[i].status === 'fulfilled' && closeQuietly(w, doc));
         throw failure instanceof Error ? failure : new Error('the engine could not open the document');
       }
       docs.set(doc, { id: doc, workers, lost: null });

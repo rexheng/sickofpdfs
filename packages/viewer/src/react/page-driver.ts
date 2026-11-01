@@ -428,13 +428,13 @@ export class PageDriver {
 
   private previewScale(i: number): number {
     const view = this.view;
-    const d = displayedSize(this.pages[i]!, view?.viewRotation ?? 0);
+    const d = displayedSize(this.pages[i], view?.viewRotation ?? 0);
     return this.scheduler.previewWidthPx / d.width;
   }
 
   /** The full render's size and scale for page i at the current view. */
   private plan(view: DriverView, i: number): FullPlan {
-    const { scale, width: devW, height: devH } = pageDeviceSize(this.pages[i]!, view.viewRotation, view.scale, view.dpr);
+    const { scale, width: devW, height: devH } = pageDeviceSize(this.pages[i], view.viewRotation, view.scale, view.dpr);
     const tiled = Math.max(devW, devH) > TILE_LIMIT;
     return { scale, devW, devH, tiled, baseScale: tiled ? (scale * BASE_LIMIT) / Math.max(devW, devH) : scale };
   }
@@ -442,8 +442,8 @@ export class PageDriver {
   /** The tiles of page i that meet the viewport (plus TILE_MARGIN), nearest the viewport centre first. */
   private tilePlans(view: DriverView, i: number, plan: FullPlan): TilePlan[] {
     const el = this.scroller!;
-    const box: PageBox = view.layout.boxes[i]!;
-    const page = this.pages[i]!;
+    const box: PageBox = view.layout.boxes[i];
+    const page = this.pages[i];
     const { dpr } = view;
     const vx0 = el.scrollLeft - TILE_MARGIN;
     const vy0 = el.scrollTop - TILE_MARGIN;
@@ -620,7 +620,7 @@ export class PageDriver {
     let best = r.first;
     let bestArea = -1;
     for (let i = r.first; i <= r.last; i++) {
-      const b = boxes[i]!;
+      const b = boxes[i];
       const area = Math.max(0, Math.min(b.top + b.height, top + height) - Math.max(b.top, top)) * b.width;
       if (area > bestArea) {
         best = i;

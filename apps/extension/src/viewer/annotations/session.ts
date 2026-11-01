@@ -782,7 +782,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     pumping = true;
     try {
       while (queue.length > 0 && canWrite()) {
-        const b = queue[0]!;
+        const b = queue[0];
         const id = currentDocId()!;
         const ops: AnnotationOp[] = b.ops.map((op) => ({ ...op, row: { ...op.row, documentId: id } }));
         inflight = b;
@@ -1004,8 +1004,8 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       };
 
       for (const run of runs) {
-        const first = run[0]!;
-        const last = run[run.length - 1]!;
+        const first = run[0];
+        const last = run[run.length - 1];
         const target = { start: { page: first.pageIndex, index: first.start }, end: { page: last.pageIndex, index: last.end } };
         const plan = planStyleFn(planningMarks(work), target, style, col);
         for (const id of plan.remove) {

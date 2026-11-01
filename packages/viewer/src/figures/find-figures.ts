@@ -148,10 +148,7 @@ const inside = (inner: Rect, outer: Rect) => inner.x >= outer.x && inner.y >= ou
 const gap = (a: Rect, b: Rect) => Math.hypot(Math.max(0, a.x - right(b), b.x - right(a)), Math.max(0, a.y - bottom(b), b.y - bottom(a)));
 const sortedUnique = (indices: number[]) => [...new Set(indices)].sort((a, b) => a - b);
 
-/**
- * a[i] at an index the code has already bounded. The extension compiles this file with noUncheckedIndexedAccess (WXT's
- * default) and this package without it, so reads go through here instead of a `!` that one of the two would reject.
- */
+/** a[i] at an index the code has already bounded; it throws if the index is out of range. */
 function nth<T>(a: ArrayLike<T>, i: number): T {
   const v = a[i];
   if (v === undefined) throw new RangeError(`find-figures: index ${i} is out of range (${a.length})`);

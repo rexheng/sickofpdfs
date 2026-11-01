@@ -77,7 +77,7 @@ export function resolveScale(
   if (mode.kind === 'scale') return clampScale(mode.scale);
   let best = Infinity;
   for (const row of rowsOf(pages.length, o.spread)) {
-    const sizes = row.map((i) => displayedSize(pages[i]!, o.viewRotation));
+    const sizes = row.map((i) => displayedSize(pages[i], o.viewRotation));
     const rowWidth = sizes.reduce((sum, s) => sum + s.width, 0) * PT_TO_CSS;
     const rowHeight = Math.max(...sizes.map((s) => s.height)) * PT_TO_CSS;
     const byWidth = (viewport.width - 2 * PAGE_GAP - (row.length - 1) * PAGE_GAP) / rowWidth;

@@ -13,7 +13,7 @@ function sopTestHooks() {
     name: 'sop-test-hooks',
     enforce: 'pre' as const,
     transform(code: string, id: string) {
-      if (!id.split('?')[0]!.replaceAll('\\', '/').endsWith('/src/entrypoints/viewer/main.tsx')) return null;
+      if (!id.split('?')[0].replaceAll('\\', '/').endsWith('/src/entrypoints/viewer/main.tsx')) return null;
       return { code: `import '@/testing/test-hooks';\n${code}`, map: null };
     },
   };

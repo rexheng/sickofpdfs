@@ -3,6 +3,9 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "allowJs": true,
+    // R55: one strictness across the repo. WXT turns this on in .wxt/tsconfig.json; tsconfig.base.json leaves it off, and
+    // the extension re-checks packages/core and packages/viewer source, so it must use the same setting they do.
+    "noUncheckedIndexedAccess": false,
     "types": ["chrome", "node"]
   },
   "include": ["src", "scripts", "wxt.config.ts", ".wxt/wxt.d.ts"]

@@ -35,8 +35,8 @@ export function computeLayout(pages: PageSize[], o: { scale: number; viewRotatio
   });
   const rows = rowsOf(pages.length, o.spread).map((indices) => ({
     indices,
-    width: indices.reduce((sum, i) => sum + shown[i]!.width, 0) + (indices.length - 1) * PAGE_GAP,
-    height: Math.max(...indices.map((i) => shown[i]!.height)),
+    width: indices.reduce((sum, i) => sum + shown[i].width, 0) + (indices.length - 1) * PAGE_GAP,
+    height: Math.max(...indices.map((i) => shown[i].height)),
   }));
   const width = Math.max(o.viewportWidth, ...rows.map((r) => r.width + 2 * PAGE_GAP));
   const boxes: PageBox[] = [];
@@ -44,7 +44,7 @@ export function computeLayout(pages: PageSize[], o: { scale: number; viewRotatio
   for (const row of rows) {
     let left = (width - row.width) / 2;
     for (const i of row.indices) {
-      const s = shown[i]!;
+      const s = shown[i];
       boxes.push({ index: i, top, left, width: s.width, height: s.height, rotation: s.rotation });
       left += s.width + PAGE_GAP;
     }
@@ -68,21 +68,21 @@ export function visibleRange(l: PageLayout, scrollTop: number, viewportHeight: n
   let hi = b.length;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
-    if (b[mid]!.top + rowBottomOffset(b, mid) <= scrollTop) lo = mid + 1;
+    if (b[mid].top + rowBottomOffset(b, mid) <= scrollTop) lo = mid + 1;
     else hi = mid;
   }
   let first = lo;
-  while (first > 0 && b[first - 1]!.top === b[first]!.top) first--;
-  if (first >= b.length || b[first]!.top >= bottom) return { first: 0, last: -1 };
+  while (first > 0 && b[first - 1].top === b[first].top) first--;
+  if (first >= b.length || b[first].top >= bottom) return { first: 0, last: -1 };
   let last = first;
-  while (last + 1 < b.length && b[last + 1]!.top < bottom) last++;
+  while (last + 1 < b.length && b[last + 1].top < bottom) last++;
   return { first: Math.max(0, first - overscan), last: Math.min(b.length - 1, last + overscan) };
 }
 
 /** The height of box i's row (the tallest box sharing its top). */
 function rowBottomOffset(b: PageBox[], i: number): number {
-  let h = b[i]!.height;
-  for (let k = i - 1; k >= 0 && b[k]!.top === b[i]!.top; k--) h = Math.max(h, b[k]!.height);
-  for (let k = i + 1; k < b.length && b[k]!.top === b[i]!.top; k++) h = Math.max(h, b[k]!.height);
+  let h = b[i].height;
+  for (let k = i - 1; k >= 0 && b[k].top === b[i].top; k--) h = Math.max(h, b[k].height);
+  for (let k = i + 1; k < b.length && b[k].top === b[i].top; k++) h = Math.max(h, b[k].height);
   return h;
 }

@@ -18,8 +18,8 @@ const PARAM = /;\s*([^\s=;]+)\s*=\s*("(?:[^"\\]|\\.)*"|[^;]*)/g;
 function fromContentDisposition(header: string): string | null {
   const params = new Map<string, string>();
   for (const m of header.matchAll(PARAM)) {
-    const key = m[1]!.toLowerCase();
-    if (!params.has(key)) params.set(key, m[2]!.trim());
+    const key = m[1].toLowerCase();
+    if (!params.has(key)) params.set(key, m[2].trim());
   }
   const extended = params.get('filename*');
   const fromExtended = extended !== undefined ? decodeExtended(unquote(extended)) : null;
@@ -35,10 +35,10 @@ function fromContentDisposition(header: string): string | null {
 function decodeExtended(value: string): string | null {
   const m = /^([^']*)'[^']*'(.*)$/.exec(value);
   if (!m) return null;
-  const charset = m[1]!.toLowerCase();
-  if (charset === 'utf-8' || charset === 'utf8') return tryDecode(m[2]!);
+  const charset = m[1].toLowerCase();
+  if (charset === 'utf-8' || charset === 'utf8') return tryDecode(m[2]);
   if (charset === 'iso-8859-1' || charset === 'latin1') {
-    return m[2]!.replace(/%([0-9a-f]{2})/gi, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+    return m[2].replace(/%([0-9a-f]{2})/gi, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
   }
   return null;
 }
