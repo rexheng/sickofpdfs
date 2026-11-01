@@ -1,6 +1,6 @@
 // P0-10: PDFium page objects, the structure tree and text runs, and figure finding from them, in our engine worker.
 //   spike.html?check=objects&file=<url>&page=<index>[&detect=1][&textRuns=1]
-//     → { pageIndex, renderMs, objects, truncated, elapsedMs, objectCount, struct, [runs], [figures, detectMs, …] }.
+//     → { pageIndex, renderMs, objects, truncated, elapsedMs, objectCount, struct, missingFunctions, [runs], [figures, detectMs, …] }.
 //       The page is drawn first, as the viewer draws a page before it looks for figures, so PDFium has it loaded;
 //       then getPageObjects (recurseForms, 20,000 objects, 15 ms) and getStructTree, plus getPageTextRuns with
 //       `textRuns` and detectFigures with `detect`.
@@ -45,7 +45,9 @@ async function onePage(engine: SpikeEngine, params: URLSearchParams) {
   const renderMs = await draw(engine, doc.docId, pageIndex);
   const { value: list } = await timed('getPageObjects', () => engine.call<PageObjectsResult>('getPageObjects', doc.docId, pageIndex, OBJECT_OPTIONS));
   const { value: struct } = await timed('getStructTree', () => engine.call<StructElement[]>('getStructTree', doc.docId, pageIndex));
-  const out: Record<string, unknown> = { pageIndex, renderMs, ...list, objectCount: list.objects.length, struct };
+  // The PDFium functions the P0-10 methods call that this wasm does not export (expected: none).
+  const missingFunctions = await engine.call<string[]>('missingObjectFunctions');
+  const out: Record<string, unknown> = { pageIndex, renderMs, ...list, objectCount: list.objects.length, struct, missingFunctions };
   if (params.get('textRuns') === '1') {
     out.runs = (await timed('getPageTextRuns', () => engine.call<TextRun[]>('getPageTextRuns', doc.docId, pageIndex))).value;
   }

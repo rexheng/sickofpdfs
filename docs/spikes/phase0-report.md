@@ -35,7 +35,7 @@ Result values: PASS, FAIL, BLOCKED, NOT RUN, and MIXED. MIXED means some variant
 | P0-7 | Form-field detection | NOT RUN | | |
 | P0-8 | Backup-folder permission from an extension origin | NOT RUN | | |
 | P0-9 | TypeScript 7 with typescript-eslint | NOT RUN | | |
-| P0-10 | Page objects find figures within 20 ms a page | PASS | objects.pdf p1: 93 objects (1 image, 48 path, 44 text) in 1.1 ms, truncated false; image (72, 90, 216 × 144) 432×288 px DCTDecode; objects.pdf p1 detection in 25.9 ms: Figure 1 image high (72, 90, 216 × 144) IoU 1; Figure 2 vector high (330, 90, 200 × 140) IoU 1; Table 1 table high (72, 416.9, 302 × 85.2) IoU 0.933; tagged.pdf p1 structure tree: 11 elements (Document, H1, NonStruct, P, Figure, Caption); Figure alt "Bar chart of test scores", marked-content ids [2]; detection: Figure 1 image high (72, 142.5, 225 × 135); objects.pdf p1: 44 text runs; caption run "Figure 1: A photo." at (72, 238.9, 74.9 × 14.2), 9 pt, chars 0+18; 50 paper pages (5 papers × 10): objects + detection p50 1.7 / p95 6.2 / max 8.5 ms (first call, text page still to load: p50 3.5 / p95 13.8 / max 20.2 ms); objects a page median 285, max 1079; 45 figures (43 captioned); slowest nature-s41586-021-03819-2-alphafold p4 8.5 ms; ResNet p1 labels [Figure 1]; objects.pdf p2 (50,000 rectangles): stopped at 11520 objects in 15.8 ms, truncated true |  |
+| P0-10 | Page objects find figures within 20 ms a page | PASS | objects.pdf p1: 93 objects (1 image, 48 path, 44 text) in 1 ms, truncated false; image (72, 90, 216 × 144) 432×288 px DCTDecode; PDFium functions not exported: none; objects.pdf p1 detection in 13.7 ms: Figure 1 image high (72, 90, 216 × 144) IoU 1; Figure 2 vector high (330, 90, 200 × 140) IoU 1; Table 1 table high (72, 416.9, 302 × 85.2) IoU 0.933; tagged.pdf p1 structure tree: 11 elements (Document, H1, NonStruct, P, Figure, Caption); Figure alt "Bar chart of test scores", marked-content ids [2]; detection: Figure 1 image high (72, 142.5, 225 × 135); objects.pdf p1: 44 text runs; caption run "Figure 1: A photo." at (72, 238.9, 74.9 × 14.2), 9 pt, chars 0+18; 50 paper pages (5 papers × 10): objects + detection p50 1.7 / p95 5.5 / max 7.5 ms (first call, text page still to load: p50 3.6 / p95 9.7 / max 20.2 ms); objects a page median 285, max 1079; 45 figures (43 captioned); slowest nature-s41586-021-03819-2-alphafold p4 7.5 ms; ResNet p1 labels [Figure 1]; objects.pdf p2 (50,000 rectangles): stopped at 11072 objects in 15.3 ms, truncated true |  |
 <!-- results:end -->
 
 ## Notes
@@ -260,15 +260,15 @@ All numbers so far come from Chrome for Testing 153.0.8010.12 on Linux, launched
 
 | Run | p50 | p95 | max | First call on the page (its text page still to load): p50 / p95 / max |
 | --- | --- | --- | --- | --- |
-| Recorded | 1.7 ms | **6.2 ms** | **8.5 ms** | 3.5 / 13.8 / 20.2 ms |
-| Four earlier runs, same build | 1.7–2 ms | 5.3–6.6 ms | 6.6–11.9 ms | 3.7–4.2 / 9.6–14.4 / 18.6–26.3 ms |
+| Recorded | 1.7 ms | **5.5 ms** | **7.5 ms** | 3.6 / 9.7 / 20.2 ms |
+| Five earlier runs, same detector | 1.7–2 ms | 5.3–6.6 ms | 6.6–11.9 ms | 3.5–4.2 / 9.6–14.4 / 18.6–26.3 ms |
 
   - **What is timed.** The check draws each page first, because the viewer draws a page before it looks for figures. It then calls `detectFigures` twice:
     - the first call also loads PDFium's text page;
     - the second is the asserted number: the page and its text page are loaded, as after the page is drawn and its text layer built.
   - **The first-call maximum.** It is always the first page of the run, with a cold JIT.
   - **Per page.** 50–1,079 objects (median 285).
-  - **Cost split** (median / max over the 50 pages): objects 0.2 / 1.1 ms, structure tree 0 / 0.1 ms, text runs 0.9 / 4.1 ms, finding 0.6 / 5.8 ms. Text runs are the largest part on text-heavy pages; finding is the largest on AlphaFold's figure pages.
+  - **Cost split** (median / max over the 50 pages): objects 0.2 / 1.5 ms, structure tree 0.0 / 0.1 ms, text runs 0.8 / 3.9 ms, finding 0.6 / 6.1 ms. Text runs are the largest part on text-heavy pages; finding is the largest on AlphaFold's figure pages.
   - **The cap.** On the 50,000-rectangle page, `getPageObjects` stops at 8,300–11,500 objects after 15.3–16.2 ms (`truncated`). The budget, not the 20,000-object cap, stops it.
   - **Per-page rows.** `results/P0-10-pages.json` (not committed).
 - **PDFium functions.** All 33 are exported by the installed 2.15.1 wasm (`missingObjectFunctions()` returns []) and listed in v2's `packages/pdfium/src/vendor/functions.ts`:

@@ -40,7 +40,8 @@ test('P0-10: objects fixture enumerates images and paths with exact bounds', asy
     pass: !!image && iou(image.bounds, { x: 72, y: 90, width: 216, height: 144 }) > 0.99 && count('path') >= 48,
     measured:
       `objects.pdf p1: ${objects.length} objects (${count('image')} image, ${count('path')} path, ${count('text')} text) in ${r.elapsedMs} ms, ` +
-      `truncated ${r.truncated}; image ${image ? `${box(image.bounds)} ${image.image?.pixelWidth}×${image.image?.pixelHeight} px ${image.image?.filters.join('+')}` : 'none'}`,
+      `truncated ${r.truncated}; image ${image ? `${box(image.bounds)} ${image.image?.pixelWidth}×${image.image?.pixelHeight} px ${image.image?.filters.join('+')}` : 'none'}; ` +
+      `PDFium functions not exported: ${r.missingFunctions.length ? r.missingFunctions.join(', ') : 'none'}`,
   });
   const img = r.objects.find((o: PageObjectInfo) => o.type === 'image')!;
   expect(img.bounds).toMatchObject({ x: expect.closeTo(72, 0.5), y: expect.closeTo(90, 0.5), width: expect.closeTo(216, 0.5), height: expect.closeTo(144, 0.5) });
