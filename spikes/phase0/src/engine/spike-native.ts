@@ -1,6 +1,7 @@
 import { PdfiumNative, type PdfiumEngineOptions } from '@embedpdf/engines/pdfium';
 import type { ImageDataLike, PdfDocumentObject, PdfTask } from '@embedpdf/models';
 import type { WrappedPdfiumModule } from '@embedpdf/pdfium';
+import { findFigures } from '../figures/find-figures';
 
 export interface SpikeDoc {
   docId: string;
@@ -72,6 +73,185 @@ export interface GlyphArgForms {
   /** Visible chars no argument form could draw. */
   failed: { charIndex: number; unicode: number }[];
 }
+
+// P0-10. The names of these types and their fields are fixed: Task 15's PdfBackend (listPageObjects, getStructTree,
+// getTextRuns) reuses them unchanged.
+export type PageObjectType = 'text' | 'path' | 'image' | 'shading' | 'form' | 'unknown';
+export interface PageObjectInfo {
+  type: PageObjectType;
+  /**
+   * FPDFPageObj_GetBounds in points, unrotated page space, origin at the crop box's top-left (as Glyph boxes). PDFium
+   * gives an object inside a form XObject in the form's own space; it is mapped here through the forms' matrices.
+   */
+  bounds: Rect;
+  /** 0 for an object on the page itself, 1 for one inside a form XObject on the page, and so on. */
+  formDepth: number;
+  /** FPDFPageObj_GetMarkedContentID: the MCID of the marked content holding the object; −1 for none. */
+  markedContentId: number;
+  /** Image objects: FPDFImageObj_GetImagePixelSize and the stream's filters (FPDFImageObj_GetImageFilter), e.g. DCTDecode. */
+  image?: { pixelWidth: number; pixelHeight: number; filters: string[] };
+  /** Path objects: FPDFPath_CountSegments and FPDFPath_GetDrawMode (filled: any fill mode). */
+  path?: { segmentCount: number; filled: boolean; stroked: boolean };
+}
+export interface PageObjectsResult {
+  /** Depth first, in content order: a form XObject comes before the objects inside it. */
+  objects: PageObjectInfo[];
+  /** The walk stopped at maxObjects or budgetMs; `objects` is a prefix of the page's objects. */
+  truncated: boolean;
+  /** The whole call, in the worker. */
+  elapsedMs: number;
+}
+/** One element of the page's structure tree (tagged PDF), to depth 32. */
+export interface StructElement {
+  /** FPDF_StructElement_GetType (/S), e.g. Document, P, Figure, Table. */
+  type: string;
+  /** /Alt; null when the element has none. */
+  altText: string | null;
+  /** /ActualText; null when the element has none. */
+  actualText: string | null;
+  /** The marked-content ids this element holds on the page (FPDF_StructElement_GetMarkedContentIdAtIndex). */
+  markedContentIds: number[];
+  children: StructElement[];
+}
+/** One PDFium text object's chars on one line. */
+export interface TextRun {
+  /** FPDFText_GetText over [charStart, charStart + charCount): one UTF-16 code unit per char. */
+  text: string;
+  /** The union of the run's char boxes (FPDFText_GetLooseCharBox), top-left origin; generated chars have none. */
+  rect: Rect;
+  /** Points: FPDFTextObj_GetFontSize × the char matrix's vertical scale, as Glyph.fontSize (Chromium's Tf 32 at 0.75 reads 24). */
+  fontSize: number;
+  charStart: number;
+  charCount: number;
+}
+export interface DetectedFigure {
+  kind: 'image' | 'vector' | 'mixed' | 'table' | 'unknown';
+  rect: Rect;
+  /** The caption's label, e.g. "Figure 1" or "Table IV"; null for an uncaptioned figure. */
+  label: string | null;
+  /** The caption's first line and the lines of its block; null when uncaptioned. */
+  captionRect: Rect | null;
+  /** high: tagged, caption-linked, or one large image or form XObject; medium: an uncaptioned vector cluster. */
+  confidence: 'high' | 'medium';
+}
+export interface DetectFiguresResult {
+  figures: DetectedFigure[];
+  objectCount: number;
+  /** The whole detection, in the worker: objects, structure tree, text runs and finding. */
+  elapsedMs: number;
+  /** Diagnostics: the object list stopped at its cap (only caption-linked figures are kept), and the time of each step. */
+  truncated: boolean;
+  phases: { objectsMs: number; structMs: number; runsMs: number; findMs: number };
+}
+/** The production limits for getPageObjects in detectFigures (06 §3.2). */
+export const FIGURE_OBJECT_LIMITS = { recurseForms: true, maxObjects: 20_000, budgetMs: 15 } as const;
+/** How deep getStructTree reads the structure tree. */
+const STRUCT_MAX_DEPTH = 32;
+/** FPDF_PAGEOBJ_* in fpdf_edit.h, by value. */
+const PAGE_OBJECT_TYPES: PageObjectType[] = ['unknown', 'text', 'path', 'image', 'shading', 'form'];
+/** Every PDFium function the P0-10 methods call, through the wasm exports. */
+const OBJECT_FUNCTIONS = [
+  'FPDF_GetPageBoundingBox',
+  'FPDFPage_CountObjects',
+  'FPDFPage_GetObject',
+  'FPDFPageObj_GetType',
+  'FPDFPageObj_GetBounds',
+  'FPDFPageObj_GetMarkedContentID',
+  'FPDFPageObj_GetMatrix',
+  'FPDFFormObj_CountObjects',
+  'FPDFFormObj_GetObject',
+  'FPDFImageObj_GetImagePixelSize',
+  'FPDFImageObj_GetImageFilterCount',
+  'FPDFImageObj_GetImageFilter',
+  'FPDFPath_CountSegments',
+  'FPDFPath_GetDrawMode',
+  'FPDF_StructTree_GetForPage',
+  'FPDF_StructTree_CountChildren',
+  'FPDF_StructTree_GetChildAtIndex',
+  'FPDF_StructTree_Close',
+  'FPDF_StructElement_CountChildren',
+  'FPDF_StructElement_GetChildAtIndex',
+  'FPDF_StructElement_GetType',
+  'FPDF_StructElement_GetAltText',
+  'FPDF_StructElement_GetActualText',
+  'FPDF_StructElement_GetMarkedContentIdCount',
+  'FPDF_StructElement_GetMarkedContentIdAtIndex',
+  'FPDFText_CountChars',
+  'FPDFText_GetText',
+  'FPDFText_IsGenerated',
+  'FPDFText_GetTextObject',
+  'FPDFText_GetCharOrigin',
+  'FPDFText_GetLooseCharBox',
+  'FPDFText_GetMatrix',
+  'FPDFTextObj_GetFontSize',
+] as const;
+type ObjectFunction = (typeof OBJECT_FUNCTIONS)[number];
+/** The wasm exports the P0-10 methods call directly (no cwrap): every argument and result is a number. */
+type Exports = Record<ObjectFunction, (...args: number[]) => number> & {
+  memory: WebAssembly.Memory;
+  malloc(bytes: number): number;
+  free(ptr: number): void;
+};
+type Matrix = [number, number, number, number, number, number];
+
+/** Typed views of the wasm memory, made again whenever the memory has grown (which detaches the old buffer). */
+class Heap {
+  private readonly memory: WebAssembly.Memory;
+  private buffer: ArrayBuffer | null = null;
+  private f32 = new Float32Array(0);
+  private f64 = new Float64Array(0);
+  private i32 = new Int32Array(0);
+  private u8 = new Uint8Array(0);
+  private u16 = new Uint16Array(0);
+
+  constructor(memory: WebAssembly.Memory) {
+    this.memory = memory;
+  }
+
+  private sync(): void {
+    if (this.buffer === this.memory.buffer) return;
+    this.buffer = this.memory.buffer;
+    this.f32 = new Float32Array(this.buffer);
+    this.f64 = new Float64Array(this.buffer);
+    this.i32 = new Int32Array(this.buffer);
+    this.u8 = new Uint8Array(this.buffer);
+    this.u16 = new Uint16Array(this.buffer);
+  }
+
+  float(ptr: number): number {
+    this.sync();
+    return this.f32[ptr >> 2]!;
+  }
+  double(ptr: number): number {
+    this.sync();
+    return this.f64[ptr >> 3]!;
+  }
+  int(ptr: number): number {
+    this.sync();
+    return this.i32[ptr >> 2]!;
+  }
+  /** `count` UTF-16 code units at ptr, as they are (no decoding: lone surrogates and U+FFFE stay). */
+  utf16(ptr: number, count: number): string {
+    this.sync();
+    let out = '';
+    for (let i = 0; i < count; i += 4096) out += String.fromCharCode(...this.u16.subarray((ptr >> 1) + i, (ptr >> 1) + Math.min(count, i + 4096)));
+    return out;
+  }
+  /** `count` bytes at ptr as Latin-1. */
+  bytes(ptr: number, count: number): string {
+    this.sync();
+    return String.fromCharCode(...this.u8.subarray(ptr, ptr + count));
+  }
+}
+
+/** Matrix product in PDF's row-vector order: `first`, then `then`. */
+function concat(first: Matrix, then: Matrix): Matrix {
+  const [a, b, c, d, e, f] = first;
+  const [A, B, C, D, E, F] = then;
+  return [a * A + b * C, a * B + b * D, c * A + d * C, c * B + d * D, e * A + f * C + E, e * B + f * D + F];
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Every PDFium function getGlyphOutlines calls (missingGlyphFunctions checks each in the wrapper and the wasm). */
 const GLYPH_FUNCTIONS = [
@@ -224,6 +404,295 @@ export class SpikeNative extends PdfiumNative {
   /** The functions missingGlyphFunctions checks. */
   glyphFunctions(): string[] {
     return [...GLYPH_FUNCTIONS];
+  }
+
+  /** The PDFium functions the P0-10 methods call that the wasm does not export (they are called as wasm exports). */
+  missingObjectFunctions(): string[] {
+    const exported = this.pdfiumModule.pdfium.wasmExports as unknown as Record<string, unknown>;
+    return OBJECT_FUNCTIONS.filter((name) => typeof exported[name] !== 'function');
+  }
+
+  /**
+   * The page's objects (P0-10), depth first in content order. For each: FPDFPageObj_GetType, GetBounds and
+   * GetMarkedContentID; for an image, FPDFImageObj_GetImagePixelSize and GetImageFilter(Count); for a path,
+   * FPDFPath_CountSegments and GetDrawMode. With recurseForms, each form XObject is followed by its own objects
+   * (FPDFFormObj_CountObjects/GetObject), whose bounds are mapped to the page through the forms' matrices
+   * (FPDFPageObj_GetMatrix). The walk stops once it holds maxObjects objects or has run budgetMs (checked every 64
+   * objects; the clock starts once the page is loaded) and sets `truncated`. The loop calls the wasm exports directly.
+   */
+  getPageObjects(docId: string, pageIndex: number, opts: { recurseForms: boolean; maxObjects: number; budgetMs: number }): PageObjectsResult {
+    const start = performance.now();
+    const doc = this.doc(docId);
+    if (!doc.pages[pageIndex]) throw new Error(`page ${pageIndex} out of range (0–${doc.pageCount - 1})`);
+    const x = this.exports();
+    const h = this.heap();
+    const pageCtx = this.cache.getContext(doc.id)!.acquirePage(pageIndex);
+    // The budget runs from here: loading a page that is not loaded yet (the viewer has drawn it by the time it looks
+    // for figures) must not use up the walk's time. elapsedMs still covers the whole call.
+    const walkStart = performance.now();
+    const mem = x.malloc(64);
+    const objects: PageObjectInfo[] = [];
+    let truncated = false;
+    try {
+      const crop = this.cropBox(pageCtx.pagePtr, mem);
+      const visit = (obj: number, depth: number, matrix: Matrix | null): boolean => {
+        if (objects.length >= opts.maxObjects || ((objects.length & 63) === 0 && performance.now() - walkStart > opts.budgetMs)) {
+          truncated = true;
+          return false;
+        }
+        const type = PAGE_OBJECT_TYPES[x.FPDFPageObj_GetType(obj)] ?? 'unknown';
+        let [l, b, r, t] = [0, 0, 0, 0];
+        if (x.FPDFPageObj_GetBounds(obj, mem, mem + 4, mem + 8, mem + 12)) {
+          [l, b, r, t] = [h.float(mem), h.float(mem + 4), h.float(mem + 8), h.float(mem + 12)];
+          if (matrix) [l, b, r, t] = transformBox(matrix, l, b, r, t);
+        }
+        const info: PageObjectInfo = {
+          type,
+          bounds: { x: l - crop.left, y: crop.top - t, width: r - l, height: t - b },
+          formDepth: depth,
+          markedContentId: x.FPDFPageObj_GetMarkedContentID(obj),
+        };
+        if (type === 'image') {
+          x.FPDFImageObj_GetImagePixelSize(obj, mem, mem + 4);
+          info.image = { pixelWidth: h.int(mem), pixelHeight: h.int(mem + 4), filters: this.imageFilters(obj) };
+        } else if (type === 'path') {
+          x.FPDFPath_GetDrawMode(obj, mem, mem + 4); // int fill mode (0 = none), FPDF_BOOL stroke
+          info.path = { segmentCount: x.FPDFPath_CountSegments(obj), filled: h.int(mem) !== 0, stroked: h.int(mem + 4) !== 0 };
+        }
+        objects.push(info);
+        if (type === 'form' && opts.recurseForms) {
+          x.FPDFPageObj_GetMatrix(obj, mem); // FS_MATRIX: the form matrix, form space → its parent's space
+          const own: Matrix = [h.float(mem), h.float(mem + 4), h.float(mem + 8), h.float(mem + 12), h.float(mem + 16), h.float(mem + 20)];
+          const toPage = matrix ? concat(own, matrix) : own;
+          const count = x.FPDFFormObj_CountObjects(obj);
+          for (let k = 0; k < count; k++) if (!visit(x.FPDFFormObj_GetObject(obj, k), depth + 1, toPage)) return false;
+        }
+        return true;
+      };
+      const count = x.FPDFPage_CountObjects(pageCtx.pagePtr);
+      for (let i = 0; i < count; i++) if (!visit(x.FPDFPage_GetObject(pageCtx.pagePtr, i), 0, null)) break;
+    } finally {
+      x.free(mem);
+      pageCtx.release();
+    }
+    return { objects, truncated, elapsedMs: round2(performance.now() - start) };
+  }
+
+  /**
+   * The page's structure tree (tagged PDF): FPDF_StructTree_GetForPage, then each element's FPDF_StructElement_GetType,
+   * GetAltText, GetActualText and marked-content ids (GetMarkedContentIdCount/AtIndex), and its element children
+   * (CountChildren/GetChildAtIndex; marked-content kids are not elements and are skipped), to depth 32. [] when the
+   * page has no tree. PDFium returns an empty string for a missing /Alt or /ActualText, so both read null when empty.
+   */
+  getStructTree(docId: string, pageIndex: number): StructElement[] {
+    const doc = this.doc(docId);
+    if (!doc.pages[pageIndex]) throw new Error(`page ${pageIndex} out of range (0–${doc.pageCount - 1})`);
+    const x = this.exports();
+    const h = this.heap();
+    const pageCtx = this.cache.getContext(doc.id)!.acquirePage(pageIndex);
+    const tree = x.FPDF_StructTree_GetForPage(pageCtx.pagePtr);
+    try {
+      if (!tree) return [];
+      // UTF-16LE with a NUL; the call returns the byte count, NUL included, whatever the buffer.
+      const read16 = (fn: (el: number, buf: number, len: number) => number, el: number): string => {
+        const bytes = fn(el, 0, 0);
+        if (bytes <= 2) return '';
+        const buf = x.malloc(bytes);
+        try {
+          fn(el, buf, bytes);
+          return h.utf16(buf, bytes / 2 - 1);
+        } finally {
+          x.free(buf);
+        }
+      };
+      const element = (el: number, depth: number): StructElement => {
+        const markedContentIds: number[] = [];
+        const ids = x.FPDF_StructElement_GetMarkedContentIdCount(el);
+        for (let k = 0; k < ids; k++) {
+          const id = x.FPDF_StructElement_GetMarkedContentIdAtIndex(el, k);
+          if (id >= 0) markedContentIds.push(id);
+        }
+        const children: StructElement[] = [];
+        if (depth < STRUCT_MAX_DEPTH) {
+          const kids = x.FPDF_StructElement_CountChildren(el);
+          for (let k = 0; k < kids; k++) {
+            const child = x.FPDF_StructElement_GetChildAtIndex(el, k);
+            if (child) children.push(element(child, depth + 1));
+          }
+        }
+        return {
+          type: read16(x.FPDF_StructElement_GetType, el),
+          altText: read16(x.FPDF_StructElement_GetAltText, el) || null,
+          actualText: read16(x.FPDF_StructElement_GetActualText, el) || null,
+          markedContentIds,
+          children,
+        };
+      };
+      const out: StructElement[] = [];
+      const count = x.FPDF_StructTree_CountChildren(tree);
+      for (let k = 0; k < count; k++) {
+        const el = x.FPDF_StructTree_GetChildAtIndex(tree, k);
+        if (el) out.push(element(el, 1));
+      }
+      return out;
+    } finally {
+      if (tree) x.FPDF_StructTree_Close(tree);
+      pageCtx.release();
+    }
+  }
+
+  /**
+   * The page's text as runs: its chars in index order, a new run whenever FPDFText_GetTextObject changes or the
+   * baseline (FPDFText_GetCharOrigin's y) moves by more than half the run's font size. PDFium's generated line
+   * breaks ('\r', '\n') end a run and belong to none; a generated space belongs to a run only when the run goes on
+   * after it. `text` is FPDFText_GetText over the run's chars, `rect` the union of their FPDFText_GetLooseCharBox, and
+   * `fontSize` FPDFTextObj_GetFontSize × the vertical scale of the first char's FPDFText_GetMatrix (see TextRun).
+   */
+  // @ts-expect-error The brief's getPageTextRuns(docId, pageIndex) replaces PdfiumNative's own getPageTextRuns(doc, page)
+  // (font/colour runs). Nothing in PdfiumNative calls it; only the stock worker's runner does, by message, and this
+  // spike's worker never sends that message.
+  override getPageTextRuns(docId: string, pageIndex: number): TextRun[] {
+    const doc = this.doc(docId);
+    if (!doc.pages[pageIndex]) throw new Error(`page ${pageIndex} out of range (0–${doc.pageCount - 1})`);
+    const x = this.exports();
+    const h = this.heap();
+    const pageCtx = this.cache.getContext(doc.id)!.acquirePage(pageIndex);
+    const mem = x.malloc(64);
+    try {
+      const crop = this.cropBox(pageCtx.pagePtr, mem);
+      const textPage = pageCtx.getTextPage();
+      const count = x.FPDFText_CountChars(textPage);
+      const buf = x.malloc(2 * (count + 1));
+      let text: string;
+      try {
+        x.FPDFText_GetText(textPage, 0, count, buf);
+        text = h.utf16(buf, count);
+      } finally {
+        x.free(buf);
+      }
+
+      const runs: TextRun[] = [];
+      let run: { start: number; end: number; obj: number; baseline: number; size: number; l: number; t: number; r: number; b: number } | null = null;
+      const close = () => {
+        if (!run) return;
+        runs.push({
+          text: text.slice(run.start, run.end),
+          rect: { x: run.l - crop.left, y: crop.top - run.t, width: run.r - run.l, height: run.t - run.b },
+          fontSize: run.size,
+          charStart: run.start,
+          charCount: run.end - run.start,
+        });
+        run = null;
+      };
+      for (let i = 0; i < count; i++) {
+        const ch = text.charCodeAt(i);
+        if (ch === 0x0d || ch === 0x0a) {
+          close();
+          continue;
+        }
+        if (x.FPDFText_IsGenerated(textPage, i) === 1) continue; // inside the run only if a later char extends it
+        const obj = x.FPDFText_GetTextObject(textPage, i);
+        x.FPDFText_GetCharOrigin(textPage, i, mem, mem + 8);
+        const baseline = h.double(mem + 8);
+        if (run && (obj !== run.obj || Math.abs(baseline - run.baseline) > run.size / 2)) close();
+        x.FPDFText_GetLooseCharBox(textPage, i, mem); // FS_RECTF: left, top, right, bottom
+        const [l, t, r, b] = [h.float(mem), h.float(mem + 4), h.float(mem + 8), h.float(mem + 12)];
+        if (run) {
+          run.end = i + 1;
+          run.l = Math.min(run.l, l);
+          run.t = Math.max(run.t, t);
+          run.r = Math.max(run.r, r);
+          run.b = Math.min(run.b, b);
+          continue;
+        }
+        let size = 0;
+        if (obj && x.FPDFTextObj_GetFontSize(obj, mem)) {
+          const tf = h.float(mem);
+          x.FPDFText_GetMatrix(textPage, i, mem); // FS_MATRIX: a b c d e f
+          size = tf * Math.hypot(h.float(mem + 8), h.float(mem + 12));
+        }
+        run = { start: i, end: i + 1, obj, baseline, size: size > 0 ? size : t - b, l, t, r, b };
+      }
+      close();
+      return runs;
+    } finally {
+      x.free(mem);
+      pageCtx.release();
+    }
+  }
+
+  /**
+   * Figures on the page (P0-10, research 06 §3.2): getPageObjects with the production limits, getStructTree and
+   * getPageTextRuns, then findFigures (src/figures/find-figures.ts). `elapsedMs` covers all of it, in the worker.
+   */
+  detectFigures(docId: string, pageIndex: number): DetectFiguresResult {
+    const start = performance.now();
+    const list = this.getPageObjects(docId, pageIndex, FIGURE_OBJECT_LIMITS);
+    const afterObjects = performance.now();
+    const struct = this.getStructTree(docId, pageIndex);
+    const afterStruct = performance.now();
+    const runs = this.getPageTextRuns(docId, pageIndex);
+    const afterRuns = performance.now();
+    const figures = findFigures({ page: this.pageSize(docId, pageIndex), objects: list.objects, truncated: list.truncated, runs, struct });
+    const end = performance.now();
+    return {
+      figures,
+      objectCount: list.objects.length,
+      elapsedMs: round2(end - start),
+      truncated: list.truncated,
+      phases: { objectsMs: round2(afterObjects - start), structMs: round2(afterStruct - afterObjects), runsMs: round2(afterRuns - afterStruct), findMs: round2(end - afterRuns) },
+    };
+  }
+
+  private exportsCache?: Exports;
+  private heapCache?: Heap;
+  private exports(): Exports {
+    return (this.exportsCache ??= this.pdfiumModule.pdfium.wasmExports as unknown as Exports);
+  }
+  private heap(): Heap {
+    return (this.heapCache ??= new Heap(this.exports().memory));
+  }
+
+  /** FPDF_GetPageBoundingBox (the crop box within the media box), in PDF space: left, top, right, bottom. */
+  private cropBox(pagePtr: number, mem: number): { left: number; top: number; right: number; bottom: number } {
+    const x = this.exports();
+    const h = this.heap();
+    x.FPDF_GetPageBoundingBox(pagePtr, mem);
+    return { left: h.float(mem), top: h.float(mem + 4), right: h.float(mem + 8), bottom: h.float(mem + 12) };
+  }
+
+  /** The crop box's size in points, unrotated (the space PageObjectInfo and TextRun rects are in). */
+  private pageSize(docId: string, pageIndex: number): { width: number; height: number } {
+    const doc = this.doc(docId);
+    const x = this.exports();
+    const pageCtx = this.cache.getContext(doc.id)!.acquirePage(pageIndex);
+    const mem = x.malloc(16);
+    try {
+      const crop = this.cropBox(pageCtx.pagePtr, mem);
+      return { width: crop.right - crop.left, height: crop.top - crop.bottom };
+    } finally {
+      x.free(mem);
+      pageCtx.release();
+    }
+  }
+
+  /** FPDFImageObj_GetImageFilter for each of the image's filters (ASCII names such as DCTDecode). */
+  private imageFilters(obj: number): string[] {
+    const x = this.exports();
+    const filters: string[] = [];
+    const count = x.FPDFImageObj_GetImageFilterCount(obj);
+    for (let k = 0; k < count; k++) {
+      const bytes = x.FPDFImageObj_GetImageFilter(obj, k, 0, 0);
+      if (bytes <= 1) continue;
+      const buf = x.malloc(bytes);
+      try {
+        x.FPDFImageObj_GetImageFilter(obj, k, buf, bytes);
+        filters.push(this.heap().bytes(buf, bytes - 1));
+      } finally {
+        x.free(buf);
+      }
+    }
+    return filters;
   }
 
   private outlines(docId: string, pageIndex: number, charStart: number, charCount: number, tally?: GlyphArgForms): GlyphOutline[] {
@@ -394,6 +863,14 @@ export class SpikeNative extends PdfiumNative {
       heap.wasmExports.free(buf);
     }
   }
+}
+
+/** The bounding box (PDF space: left, bottom, right, top) of a box mapped through `m`. */
+function transformBox(m: Matrix, l: number, b: number, r: number, t: number): [number, number, number, number] {
+  const [a, bb, c, d, e, f] = m;
+  const xs = [a * l + c * b + e, a * r + c * b + e, a * l + c * t + e, a * r + c * t + e];
+  const ys = [bb * l + d * b + f, bb * r + d * b + f, bb * l + d * t + f, bb * r + d * t + f];
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
 }
 
 /** FPDFText_GetUnicode values as text: surrogate halves or whole code points, as PDFium gives them; U+FFFD past U+10FFFF. */

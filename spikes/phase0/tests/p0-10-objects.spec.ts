@@ -58,14 +58,15 @@ test('P0-10: captions pair with figures and a text table', async ({ objectsPage 
   expect(figures.every((f: DetectedFigure) => f.confidence === 'high')).toBe(true);
 });
 test('P0-10: tagged PDF exposes Figure with alt text', async ({ objectsPage }) => {
-  const r = await objectsPage('tagged.pdf', 0);
+  const r = await objectsPage('tagged.pdf', 0, { detect: true });
   const all = flatten(r.struct);
-  const figure = all.find((e) => e.type === 'Figure');
+  const figure = all.find((e) => e.type === 'Figure' && e.altText) ?? all.find((e) => e.type === 'Figure');
   await record('P0-10', {
     pass: all.some((e) => e.type === 'Figure' && e.altText === 'Bar chart of test scores'),
     measured:
       `tagged.pdf p1 structure tree: ${all.length} elements (${[...new Set(all.map((e) => e.type))].join(', ')}); ` +
-      (figure ? `Figure alt ${JSON.stringify(figure.altText)}, marked-content ids [${figure.markedContentIds.join(', ')}]` : 'no Figure element'),
+      (figure ? `Figure alt ${JSON.stringify(figure.altText)}, marked-content ids [${figure.markedContentIds.join(', ')}]` : 'no Figure element') +
+      `; detection: ${(r.figures as DetectedFigure[]).map((f) => `${f.label ?? 'unlabelled'} ${f.kind} ${f.confidence} ${box(f.rect)}`).join('; ') || 'none'}`,
   });
   expect(flatten((await objectsPage('tagged.pdf', 0)).struct)).toContainEqual(expect.objectContaining({ type: 'Figure', altText: 'Bar chart of test scores' }));
 });
