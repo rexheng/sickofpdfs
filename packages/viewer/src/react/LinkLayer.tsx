@@ -5,7 +5,8 @@
 //   without Ctrl or Shift, as in Chrome's viewer) jumps there through onInternal; the browser never follows the href.
 // - A web link is a real `<a href rel="noopener noreferrer">`, drawn only for http:, https: and mailto: addresses
 //   (safeLinkHref). The browser opens it as Chrome's viewer would: a click in this tab, Ctrl or middle click in a
-//   background tab, Ctrl+Shift in a new foreground tab, Shift in a new window. Nothing is fetched on hover.
+//   background tab, Ctrl+Shift in a new foreground tab, Shift in a new window. Nothing is fetched on hover, and a press
+//   reaches the network only if it ends in a click on the link (liftHref).
 // - Links never block text selection. A press on a link that moves 3 px or more becomes a text selection from the
 //   press point: every link layer lets the pointer through for the rest of the drag, and the selection is extended to
 //   the pointer (the text layer then makes it glyph-exact on release). A press without movement is a click. A press
@@ -168,6 +169,16 @@ function trackPress(down: ReactPointerEvent): void {
   window.addEventListener('pointercancel', onCancel, true);
 }
 
+/**
+ * Chrome preconnects to a web link's host the moment the pointer is pressed on it (its anchor preloading reads the href
+ * before any listener runs): a DNS look-up and a TLS handshake, before any click. A press on a link may become a text
+ * selection, or be dragged off to cancel, and must not reach the network then. So while the pointer is over a web link
+ * its href is lifted, and it is put back when the pointer comes up on the link (just before the click that reads it)
+ * or leaves it. Hover alone never preconnects. The keyboard (Tab, Enter) never lifts it.
+ */
+const liftHref = (a: HTMLAnchorElement) => a.removeAttribute('href');
+const putHrefBack = (a: HTMLAnchorElement, href: string) => a.setAttribute('href', href);
+
 // ---- the layer ---------------------------------------------------------------------------------------------------
 
 /** A rect in unrotated page space as a rect on the page as shown (turned by `r`), in points. */
@@ -259,6 +270,14 @@ export function LinkLayer({ links, box, page, onInternal }: LinkLayerProps): JSX
             aria-label={href}
             draggable={false}
             style={style}
+            onPointerEnter={(e) => liftHref(e.currentTarget)}
+            onPointerLeave={(e) => putHrefBack(e.currentTarget, href)}
+            onPointerUp={(e) => {
+              const a = e.currentTarget;
+              putHrefBack(a, href);
+              // After the click has read it, lifted again while the pointer is still on the link.
+              setTimeout(() => a.matches(':hover') && liftHref(a), 0);
+            }}
             onPointerDown={onPointerDown}
             onMouseDown={onMouseDown}
             onClick={guard}
