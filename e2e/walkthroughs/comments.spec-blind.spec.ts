@@ -76,7 +76,10 @@ test('Ctrl+Alt+M shows the highlight at once and opens a note box in the right m
 
   // The comment makes a highlight at once (before a word is typed).
   const lit = await paintOfSelection(page, sel, { name: 'highlight-while-the-box-is-open', testInfo });
-  expect(lit.paint.share(tokens.fill[YELLOW]), `the commented words are highlighted already (${hex(tokens.fill[YELLOW])}): ${describe(lit.paint)}`).toBeGreaterThanOrEqual(0.6);
+  // Triage (TB2): the new note's card is the active one while its box is open, so its highlight shows in the active
+  // (darker) fill, as Docs shows a new comment's anchor; either fill counts as highlighted.
+  const litShare = lit.paint.share(tokens.fill[YELLOW]) + lit.paint.share(tokens.active[YELLOW]);
+  expect(litShare, `the commented words are highlighted already (${hex(tokens.fill[YELLOW])} or active ${hex(tokens.active[YELLOW])}): ${describe(lit.paint)}`).toBeGreaterThanOrEqual(0.6);
   expect(lit.paint.ink, 'the words are still readable').toBeGreaterThanOrEqual(plain.paint.ink * 0.95);
 
   // Beside the line, in the right margin, level with it, never over it.
@@ -116,7 +119,8 @@ test('Shift+Enter adds a new line and Enter saves: the note becomes a card with 
   await expect(card).toContainText('Check this against section 3.');
   await expect(card, 'the card is the note, not a draft').not.toContainText(/draft/i);
   await expect(noteBox(page), 'the new-note box has closed').toHaveCount(0);
-  await expect(card).toContainText(/\bYou\b/);
+  // Triage (TB2): the avatar is an icon whose ligature text ("person") runs into "You" in textContent; the card's name says who.
+  await expect(card).toHaveAccessibleName(/\bYou\b/);
   await shot(page, testInfo, 'note-sent-as-a-card');
 
   if (SAVING_AVAILABLE) {
@@ -164,7 +168,8 @@ test('Esc on an empty new note drops its highlight and leaves no card', async ({
   const sel = await selectPassage(page, ATTENTION, LINES.l3);
   await startNote(page);
   const lit = await paintOfSelection(page, sel);
-  expect(lit.paint.share(tokens.fill[YELLOW]), 'while the empty box is open the words are highlighted').toBeGreaterThanOrEqual(0.6);
+  // Triage (TB2): the open box's card is active, so its highlight is in the active fill (either fill counts).
+  expect(lit.paint.share(tokens.fill[YELLOW]) + lit.paint.share(tokens.active[YELLOW]), 'while the empty box is open the words are highlighted').toBeGreaterThanOrEqual(0.6);
   await page.keyboard.press('Escape');
   await expect(noteBox(page), 'Esc closes the empty box').toHaveCount(0);
   await expect(allCards(page), 'and no card is left').toHaveCount(0);

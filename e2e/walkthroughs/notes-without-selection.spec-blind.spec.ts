@@ -26,12 +26,15 @@ import {
   cardWith,
   clearSelection,
   describe,
+  grab,
   isPlain,
+  lineBoxes,
   middleOf,
   noteBox,
   note,
   openPaper,
   pageRect,
+  paintOf,
   paintOfSelection,
   reloadAndWait,
   selectPassage,
@@ -73,8 +76,15 @@ test('with nothing selected and the pointer over a page, Ctrl+Alt+M makes a poin
   await page.keyboard.type('A point note on this line', { delay: 8 });
   await page.keyboard.press('Enter');
   await expect(cardWith(page, 'A point note on this line')).toBeVisible();
-  const words = await paintOfSelection(page, sel, { name: 'point-note-sent', testInfo });
-  expect(isPlain(words.paint), `a point note is not a highlight: the words under the pointer are plain: ${describe(words.paint)}`).toBe(true);
+  // Triage (TB2): the viewer marks a point note with a round pin at the pointer, which sits on the words; the words are
+  // judged beside the pin, and the notes model must hold no highlight.
+  await clearSelection(page);
+  const pin = await page.getByRole('button', { name: /^note on page/i }).boundingBox();
+  const lines = await lineBoxes(page, sel);
+  const beside = pin === null ? lines : lines.flatMap((l) => (l.bottom < pin.y || l.top > pin.y + pin.height ? [l] : [{ ...l, right: pin.x - 2 }, { ...l, left: pin.x + pin.width + 2 }]));
+  const words = paintOf(await grab(page, 'point-note-sent', testInfo), beside);
+  expect(isPlain(words), `a point note is not a highlight: the words under the pointer are plain: ${describe(words)}`).toBe(true);
+  expect(await hooks(page).eval((h) => h.annotations?.state().marks.length ?? -1), 'and no mark was made').toBe(0);
 
   if (SAVING_AVAILABLE) {
     await waitSaved(page);
@@ -94,7 +104,8 @@ test('with the pointer off the pages, Ctrl+Alt+M makes a page note for the page 
   await settle(page, 600);
   await noteAt(page, GUTTER, 'A note for the whole page');
   const card = cardWith(page, 'A note for the whole page');
-  await expect(card, 'a page note says which page it is for').toContainText(/page\s*3\b/i);
+  // Triage (TB2): the label "Page 3" runs into the avatar icon's ligature text ("person") in textContent.
+  await expect(card, 'a page note says which page it is for').toContainText(/page\s*3(?!\d)/i);
   await shot(page, testInfo, 'page-note');
   if (SAVING_AVAILABLE) {
     await waitSaved(page);
@@ -172,7 +183,7 @@ test.describe('a scan (scan-120.pdf)', () => {
     expect(await noteBox(page).count()).toBe(0);
 
     await noteAt(page, GUTTER, 'A page note on the scan');
-    await expect(cardWith(page, 'A page note on the scan'), 'a page note works on a scan').toContainText(/page\s*1\b/i);
+    await expect(cardWith(page, 'A page note on the scan'), 'a page note works on a scan').toContainText(/page\s*1(?!\d)/i);
     expect(await allCards(page).count()).toBe(2);
     await shot(page, testInfo, 'scan-notes');
   });

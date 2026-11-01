@@ -122,7 +122,8 @@ test('in the note box Ctrl+B formats the note (Markdown bold), Ctrl+I italic, an
   await page.keyboard.press('Control+z');
   expect((await readBox(box)).text, 'Ctrl+Z in the box undoes the typing in the box').not.toContain('xyz');
   const lit = await paintOfSelection(page, sel);
-  expect(lit.paint.share(tokens.fill[YELLOW]), `and not the note's highlight: ${describe(lit.paint)}`).toBeGreaterThanOrEqual(0.6);
+  // Triage (TB2): the open note's card is active, so its highlight is in the active (darker) fill; either fill counts.
+  expect(lit.paint.share(tokens.fill[YELLOW]) + lit.paint.share(tokens.active[YELLOW]), `and not the note's highlight: ${describe(lit.paint)}`).toBeGreaterThanOrEqual(0.6);
   await expect(noteBox(page)).toHaveCount(1);
 });
 

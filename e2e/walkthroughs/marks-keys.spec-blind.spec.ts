@@ -101,13 +101,15 @@ test('Alt+Shift+5 strikes through the words; Alt+Shift+5 again removes it', asyn
 
   await apply(page, sel, 'Alt+Shift+5', testInfo);
   const on = await paintOfSelection(page, sel, { name: 'strike-on', testInfo });
-  const rows = strokesOf(on.shot, on.boxes[0], lineColours(tokens.line[YELLOW]), { above: 0, below: 0 }).rows;
+  // Triage (TB2): the strike runs behind the black text (the mark layer multiplies, so text stays black), so only the
+  // gaps between letters show the line colour: a quarter of the row is the bar, not half.
+  const rows = strokesOf(on.shot, on.boxes[0], lineColours(tokens.line[YELLOW]), { above: 0, below: 0, cover: 0.2 }).rows;
   expect(rows.length, `a line in the line colour ${hex(tokens.line[YELLOW])} runs through the words`).toBeGreaterThan(0);
   expect(rows.every((r) => r >= 0.2 && r <= 0.8), `the strike is through the middle of the line: rows at ${rows.map((r) => r.toFixed(2)).join(', ')}`).toBe(true);
 
   await apply(page, sel, 'Alt+Shift+5', testInfo);
   const off = await paintOfSelection(page, sel, { name: 'strike-off', testInfo });
-  expect(strokesOf(off.shot, off.boxes[0], lineColours(tokens.line[YELLOW]), { above: 0, below: 0 }).rows, 'Alt+Shift+5 again removes the strike').toEqual([]);
+  expect(strokesOf(off.shot, off.boxes[0], lineColours(tokens.line[YELLOW]), { above: 0, below: 0, cover: 0.2 }).rows, 'Alt+Shift+5 again removes the strike').toEqual([]);
 });
 
 test('Ctrl+B makes the words bold, drawn from their own outlines (heavier ink, same place); Ctrl+B again takes it off', async ({ openViewer, server }, testInfo) => {
@@ -163,10 +165,13 @@ test('toggling a style off in the middle of a mark splits it: the two ends stay 
   const shotNow = await grab(page, 'split-in-the-middle', testInfo);
   const left = paintOf(shotNow, await phraseBoxes(page, ATTENTION, { from: 'The dominant', to: 'sequence' }));
   const mid = paintOf(shotNow, await phraseBoxes(page, ATTENTION, { from: 'transduction models are', to: 'on complex' }));
-  const right = paintOf(shotNow, await phraseBoxes(page, ATTENTION, { from: 'recurrent', to: 'or' }));
+  // Triage (TB2): 'or' alone matched an earlier "or" on the page (an empty box); the phrase is named whole.
+  const right = paintOf(shotNow, await phraseBoxes(page, ATTENTION, { from: 'recurrent', to: 'recurrent or' }));
   expect(left.share(tokens.fill[YELLOW]), `the left end is still highlighted: ${describe(left)}`).toBeGreaterThanOrEqual(0.6);
   expect(isPlain(mid), `the middle has lost its highlight: ${describe(mid)}`).toBe(true);
-  expect(right.share(tokens.fill[YELLOW]), `the right end is still highlighted: ${describe(right)}`).toBeGreaterThanOrEqual(0.6);
+  // Triage (TB2): "recurrent or" has only x-height letters, so its tight glyph box is half anti-aliased letter edge; the
+  // end counts as highlighted when the highlight is its paper colour.
+  expect(Math.max(...right.dominant.map((v, i) => Math.abs(v - tokens.fill[YELLOW][i]))), `the right end is still highlighted: ${describe(right)}`).toBeLessThanOrEqual(8);
 
   if (SAVING_AVAILABLE) {
     await waitSaved(page);
@@ -290,7 +295,9 @@ test('with nothing selected, H, Ctrl+U, Ctrl+B and Alt+Shift+5 do nothing, and C
   expect(Math.abs(after.paint.ink - before.paint.ink) / before.paint.ink, 'and the page is unchanged').toBeLessThan(0.01);
   const ctrl = events.filter((e) => e.key.toLowerCase() === 'u' || e.key.toLowerCase() === 'b');
   expect(ctrl.length).toBe(2);
-  expect(ctrl.map((e) => e.prevented), 'Ctrl+U and Ctrl+B are only taken over when text is selected, so Chrome keeps them otherwise').toEqual([false, false]);
+  // Triage (TB2), controller ruling: Ctrl+U with nothing selected does nothing in the viewer and never opens view-source,
+  // so the viewer always takes it; Ctrl+B is left to Chrome when nothing is selected (plan section 7).
+  expect(ctrl.map((e) => e.prevented), 'Ctrl+U is always the viewer\'s (it never opens view-source); Ctrl+B is left to Chrome with nothing selected').toEqual([true, false]);
   expect(context.pages().length, 'no tab was opened (Ctrl+U is view-source in Chrome)').toBe(pagesBefore);
   await expect(markMenu(page)).toHaveCount(0);
   await expect(anyBox(page)).toHaveCount(0);

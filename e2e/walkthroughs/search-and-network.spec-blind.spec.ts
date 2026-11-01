@@ -22,6 +22,7 @@ import {
   PLOS_DOI_PASSAGE,
   RESNET_REFS,
   allCards,
+  ensureSelected,
   menuRow,
   markMenu,
   openPaper,
@@ -76,9 +77,11 @@ test('Search on a sentence opens Google Scholar in a new tab, with those words a
   expect(context.pages().length, 'one new tab').toBe(before + 1);
   expect(await page.evaluate(() => String(getSelection() ?? '')).then((t) => t.length), 'the viewer keeps the selection').toBeGreaterThan(0);
 
-  const hosts = new Set(outside.map((u) => new URL(u).host));
-  expect([...hosts], 'the only host anything was sent to is the search').toEqual(['scholar.google.com']);
+  // Triage (TB2): Playwright's context 'request' event misses the first request of a tab the extension opens with
+  // chrome.tabs.create; the network gate's log of the whole run sees it, so the hosts are read from the gate.
   const report = await netgate.report();
+  const hosts = new Set([...outside, ...report.external].map((u) => new URL(u).host));
+  expect([...hosts], 'the only host anything was sent to is the search').toEqual(['scholar.google.com']);
   expect(report.external.filter((u) => !SEARCH_HOSTS.test(u)), 'the network gate saw nothing else leave').toEqual([]);
   expect(report.recording).toBe(true);
 });
@@ -97,7 +100,8 @@ test('Search on a reference that has a DOI goes to doi.org for that paper', asyn
   await shot(tab, testInfo, 'doi-tab');
   expect(url.host, 'a selection that holds a DOI goes to the paper itself on doi.org').toMatch(/^(dx\.)?doi\.org$/);
   expect(decodeURIComponent(url.pathname), 'the address is the DOI').toContain(PLOS_DOI);
-  expect(new Set(outside.map((u) => new URL(u).host)).size, 'one host').toBe(1);
+  // Triage (TB2): the tab's first request is read from the network gate (see the first test).
+  expect(new Set([...outside, ...(await netgate.report()).external].map((u) => new URL(u).host)).size, 'one host').toBe(1);
 
   // the DOI alone, too
   await page.bringToFront();
@@ -139,6 +143,9 @@ test('marking up, commenting and replying send nothing anywhere: Search is the o
   await replyBox(page).click();
   await page.keyboard.type('and a reply that does too', { delay: 5 });
   await page.keyboard.press('Enter');
+  // Triage (TB2): later selections replaced the first one; select it again, since a right-click with nothing selected
+  // is Chrome's menu (spec).
+  await ensureSelected(page, a);
   await rightClickSelection(page, a);
   await expect(markMenu(page)).toBeVisible({ timeout: 3000 });
   await page.keyboard.press('Escape');

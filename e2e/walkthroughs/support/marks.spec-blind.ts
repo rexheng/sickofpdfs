@@ -632,8 +632,11 @@ const PERF_NAMES = ['sop:mark-drawn', 'sop:notebox-open', 'sop:figure-outline'] 
 export async function installTiming(page: Page, o: { pointer?: boolean } = {}): Promise<void> {
   await page.evaluate(
     ({ noteName, pointer }) => {
-      const w = window as unknown as { __t?: { keyAt: number | null; mark: number | null; box: number | null } };
-      w.__t = { keyAt: null, mark: null, box: null };
+      // Triage (TB2): the viewer's own key listener (also capture phase, on window, added earlier) can draw the mark in
+      // the same dispatch, before this probe hears the key; so every mark-layer change is logged with its time, and
+      // readTiming takes the first one at or after the key press.
+      const w = window as unknown as { __t?: { keyAt: number | null; mark: number | null; box: number | null; marks: number[] } };
+      w.__t = { keyAt: null, mark: null, box: null, marks: [] };
       const start = (e: Event) => {
         w.__t!.keyAt = e.timeStamp;
         w.__t!.mark = null;
@@ -655,8 +658,9 @@ export async function installTiming(page: Page, o: { pointer?: boolean } = {}): 
       const isBox = (n: Node): boolean => n instanceof Element && (n.matches('textarea') || n.querySelector('textarea') !== null) && new RegExp(noteName, 'i').test((n.matches('textarea') ? n : n.querySelector('textarea')!).getAttribute('aria-label') ?? '');
       new MutationObserver((records) => {
         const t = w.__t!;
-        if (t.keyAt === null) return;
         const now = performance.now();
+        if (records.some(markLayerChange)) t.marks.push(now);
+        if (t.keyAt === null) return;
         for (const m of records) {
           if (t.mark === null && markLayerChange(m)) t.mark = now;
           if (t.box === null && [...m.addedNodes].some(isBox)) {
@@ -672,7 +676,9 @@ export async function installTiming(page: Page, o: { pointer?: boolean } = {}): 
 
 export async function readTiming(page: Page): Promise<Timing> {
   return page.evaluate((names) => {
-    const t = (window as unknown as { __t: { keyAt: number | null; mark: number | null; box: number | null } }).__t;
+    const t = (window as unknown as { __t: { keyAt: number | null; mark: number | null; box: number | null; marks: number[] } }).__t;
+    const keyAt = t.keyAt;
+    if (keyAt !== null) t.mark = t.marks.find((x) => x >= keyAt) ?? null;
     const perf: Record<string, number[]> = {};
     for (const n of names) perf[n] = performance.getEntriesByName(n).map((e) => e.startTime);
     return { keyAt: t.keyAt, markDrawn: t.keyAt !== null && t.mark !== null ? t.mark - t.keyAt : null, noteBox: t.keyAt !== null && t.box !== null ? t.box - t.keyAt : null, perf };
@@ -706,15 +712,19 @@ export async function watchKeys(page: Page): Promise<() => Promise<{ key: string
 }
 
 /** What has keyboard focus, in words a failure message can use. */
+// Triage (TB2): the viewer keeps the keyboard focus on the pages and holds "the focused mark" in its notes model (it
+// draws a ring and a live region names it), so a mark also counts as focused when the published notes say so.
 export const focusInfo = (page: Page): Promise<{ tag: string; inSvg: boolean; inMarkLayer: boolean; label: string; id: string }> =>
   page.evaluate(() => {
+    const marked = (globalThis as unknown as { __sopTest?: { annotations?: { state(): { focusedMark: string | null } } | null } }).__sopTest?.annotations?.state().focusedMark ?? null;
     const a = document.activeElement;
-    if (!a || a === document.body) return { tag: 'body', inSvg: false, inMarkLayer: false, label: '', id: '' };
+    if (!a || a === document.body) return { tag: 'body', inSvg: false, inMarkLayer: marked !== null, label: '', id: marked ?? '' };
     const svg = a.closest('svg');
     const inPage = a.closest('[data-page-index]') !== null;
     const inSelection = svg?.classList.contains('sop-selection') === true;
     const text = (a.getAttribute('aria-label') ?? a.textContent ?? '').trim().slice(0, 60);
-    return { tag: a.tagName.toLowerCase(), inSvg: svg !== null, inMarkLayer: svg !== null && inPage && !inSelection, label: text, id: `${a.tagName}#${a.id}.${String(a.getAttribute('class') ?? '')}@${Math.round(a.getBoundingClientRect().left)},${Math.round(a.getBoundingClientRect().top)}` };
+    const inSvgLayer = svg !== null && inPage && !inSelection;
+    return { tag: a.tagName.toLowerCase(), inSvg: svg !== null, inMarkLayer: inSvgLayer || marked !== null, label: text, id: marked ?? `${a.tagName}#${a.id}.${String(a.getAttribute('class') ?? '')}@${Math.round(a.getBoundingClientRect().left)},${Math.round(a.getBoundingClientRect().top)}` };
   });
 
 /** Scales a wait to the box: the machine is shared and loaded, so waits are generous while the limits asserted are the spec's x 3. */
