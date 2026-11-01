@@ -9,7 +9,7 @@
 //   - a hover or selection outline: the pixels that CHANGED between a screenshot with the pointer away and one with it on the figure;
 //   - an area: a rectangle in the design token `--sop-area-outline` (plan S4: "Area marks keep color null and draw in --sop-area-outline");
 //   - a pin: "a small numbered dot" (research 06 section 4): looked for as a small element with the number 1 in it near its place;
-//   - the figure card: an `article` (the shared card of the notes walkthroughs) whose text reads "Figure N · p. M" with a thumbnail in it;
+//   - the figure card: an `article` (the shared card of the notes walkthroughs) whose text reads "Figure N · Page M" (R74) with a thumbnail in it;
 //   - Ctrl+C and "Copy image": the PNG the page hands to `navigator.clipboard.write` (recorded, see installClipboardRecorder).
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -64,7 +64,7 @@ export interface FigureSpec {
   aim: { x: number; y: number };
   /** What to open: the paper, scrolled to the figure's page. */
   fx: TlFixture;
-  /** The label the card is expected to carry: "Figure 1 · p. 7". */
+  /** The label the card is expected to carry: "Figure 1 · Page 7" (ruling R74: "Page N" everywhere; the first guess was "p. 7"). */
   cardLabel: RegExp;
 }
 
@@ -81,7 +81,7 @@ export function figureOf(paperId: string, label: string, name: string, aim = { x
     name,
     aim,
     fx: { name: paperId, file: `figures/${paperId}.pdf`, page: hit.pageIndex, dir: 'ltr' },
-    cardLabel: new RegExp(`${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*·\\s*p\\.\\s*${hit.pageIndex + 1}(?!\\d)`, 'i'),
+    cardLabel: new RegExp(`${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*·\\s*Page\\s*${hit.pageIndex + 1}(?!\\d)`, 'i'),
   };
 }
 

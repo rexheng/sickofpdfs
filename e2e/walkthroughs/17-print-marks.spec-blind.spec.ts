@@ -230,16 +230,25 @@ test('printing with marks puts the highlights, underline, strike and bold on the
   const grabbed = (f: Frame) => ({ img: f.img, dpr: f.dpr });
 
   // yellow and green highlights
-  const yellow = paintOf(grabbed(a.frame), printed(0));
-  expect.soft(yellow.share(tokens.fill[YELLOW]), `the yellow highlight is on the printed line, in the mark's yellow ${hex(tokens.fill[YELLOW])}: ${describe(yellow)}`).toBeGreaterThanOrEqual(0.6);
-  const green = paintOf(grabbed(a.frame), printed(1));
-  expect.soft(green.share(tokens.fill[GREEN]), `the green highlight is on the printed line, in the mark's green ${hex(tokens.fill[GREEN])}: ${describe(green)}`).toBeGreaterThanOrEqual(0.6);
+  // Triage note: a printed sheet is a 200 dpi picture shown again at 100%, so more paper pixels are blends of ink and fill than on the screen;
+  // the yellow line read 0.58 with no white at all and #fce494 as its colour. So: at least half in the fill, no white, and the fill is the
+  // line's most common paper colour (the first guess was 0.6, the screen's bound).
+  const highlightOnSheet = (p: ReturnType<typeof paintOf>, fill: (typeof tokens.fill)[number], name: string) => {
+    expect.soft(p.share(fill), `the ${name} highlight is on the printed line, in the mark's ${name} ${hex(fill)}: ${describe(p)}`).toBeGreaterThanOrEqual(0.5);
+    expect.soft(p.neutral, `the ${name} line has no plain paper left: ${describe(p)}`).toBeLessThanOrEqual(0.1);
+    expect.soft(Math.max(...p.dominant.map((c, k) => Math.abs(c - fill[k]))), `its most common paper colour is the ${name} fill: ${describe(p)}`).toBeLessThanOrEqual(12);
+  };
+  highlightOnSheet(paintOf(grabbed(a.frame), printed(0)), tokens.fill[YELLOW], 'yellow');
+  highlightOnSheet(paintOf(grabbed(a.frame), printed(1)), tokens.fill[GREEN], 'green');
   // underline
-  const under = strokesOf(grabbed(a.frame), printed(2)[0], lineColours(tokens.line[YELLOW]));
-  expect.soft(under.rows.length, `an underline in the line colour ${hex(tokens.line[YELLOW])} runs along the printed words`).toBeGreaterThan(0);
+  // Triage note: the underline and the strike come after the green from the menu, and line styles use the last colour (plan section 7,
+  // 'marks.lastColor'), so on the screen they are green: the print is judged in that colour (the first guess was yellow).
+  const LINE = GREEN;
+  const under = strokesOf(grabbed(a.frame), printed(2)[0], lineColours(tokens.line[LINE]));
+  expect.soft(under.rows.length, `an underline in the line colour ${hex(tokens.line[LINE])} runs along the printed words`).toBeGreaterThan(0);
   expect.soft(Math.min(...under.rows), 'in the lower part of the line').toBeGreaterThanOrEqual(0.6);
   // strike
-  const strike = strokesOf(grabbed(a.frame), printed(3)[0], lineColours(tokens.line[YELLOW]), { above: 0, below: 0, cover: 0.2 });
+  const strike = strokesOf(grabbed(a.frame), printed(3)[0], lineColours(tokens.line[LINE]), { above: 0, below: 0, cover: 0.2 });
   expect.soft(strike.rows.length, `a strike in the line colour runs through the printed words`).toBeGreaterThan(0);
   expect.soft(strike.rows.every((r) => r >= 0.2 && r <= 0.8), 'through the middle of the line').toBe(true);
   // bold: heavier ink than the same words printed without marks
@@ -253,8 +262,8 @@ test('printing with marks puts the highlights, underline, strike and bold on the
     const p = paintOf(grabbed(b.frame), plain(i));
     expect.soft(isPlain(p), `without marks the ${m.name} line prints plain: ${describe(p)}`).toBe(true);
   }
-  expect.soft(strokesOf(grabbed(b.frame), plain(2)[0], lineColours(tokens.line[YELLOW])).rows, 'no underline without marks').toEqual([]);
-  expect.soft(strokesOf(grabbed(b.frame), plain(3)[0], lineColours(tokens.line[YELLOW]), { above: 0, below: 0, cover: 0.2 }).rows, 'no strike without marks').toEqual([]);
+  expect.soft(strokesOf(grabbed(b.frame), plain(2)[0], lineColours(tokens.line[LINE])).rows, 'no underline without marks').toEqual([]);
+  expect.soft(strokesOf(grabbed(b.frame), plain(3)[0], lineColours(tokens.line[LINE]), { above: 0, below: 0, cover: 0.2 }).rows, 'no strike without marks').toEqual([]);
 
   // Nothing else changes: outside the five lines the two prints are the same sheet (no card, no margin column, no stray mark).
   const stray = changedOutside(a.frame, b.frame, a.box, lines.map((l) => toSheet(l, onScreen, a.box)), 8);

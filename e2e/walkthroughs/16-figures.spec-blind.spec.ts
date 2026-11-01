@@ -23,7 +23,8 @@
 // GUESSES (the spec is silent): see the list at the end of p2r3-tests-report.md. The ones that decide a verdict here: the outline of a figure may sit
 // a little inside or outside the hand-drawn box (the box found from the four lines must overlap it by 0.55 or more); a figure's comment keeps
 // showing its outline when nothing is selected; the pin shows its number 1 as text or as an accessible name; the margin note of a figure carries
-// "Figure N · p. M" in its text and a picture of at most 72 px; Ctrl+C hands the PNG to navigator.clipboard.write.
+// "Figure N · Page M" in its text (ruling R74: "Page N" everywhere; plan 4 item 11 said "p. M") and a picture of at most 72 px; Ctrl+C hands
+// the PNG to navigator.clipboard.write.
 import type { Page } from '@playwright/test';
 import { budgetMs, budgetNote } from '../support/perf-budget';
 import { changed, dist, findRing, meanChange, near, describeRing, shareOf, variety, iou, type Frame, type Ring, type RGB } from '../support/rings.spec-blind';
@@ -87,6 +88,8 @@ import { shot } from './support/takeover';
 test.setTimeout(180_000);
 
 const median = (xs: number[]): number => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+/** How far from its spot a pin's centre may be (px): its tail is on the spot, not its middle. */
+const PIN_NEAR = 30;
 
 // ---------------------------------------------------------------------------------------------------------------
 // A figure on the screen
@@ -252,9 +255,11 @@ test('a drag that starts on the text inside a figure still selects text (axis la
   const v = await viewOf(page, fig);
   const tokens = await outlineTokens(page);
   const { baseline } = await warmUp(v);
-  const label = await findOnPage(page, fig.pageIndex, 'Time post');
+  // Triage note: the axis labels of this paper are in a Type3 font with no Unicode map, so PDFium (and Chrome's viewer) has no "Time post" to
+  // find; the panel label "(a)" inside the figure is real text, so the drag runs over it.
+  const label = await findOnPage(page, fig.pageIndex, '(a)');
   const after = await dragGlyphs(page, fig.pageIndex, label.start, label.start + label.count - 1);
-  expect(after.domText, 'the drag over an axis label selects its words').toContain('Time post');
+  expect(after.domText, 'the drag over a label inside the figure selects its words').toContain('(a)');
   expect(after.ranges.length).toBeGreaterThan(0);
   await page.waitForTimeout(300);
   const ring = outlineOf(v, baseline, await snapFrame(page, v.clip), tokens.selected);
@@ -269,7 +274,7 @@ test('a drag that starts on the text inside a figure still selects text (axis la
 // ---------------------------------------------------------------------------------------------------------------
 // Ctrl+Alt+M on a figure: the card
 
-test('Ctrl+Alt+M on a selected figure makes a card with a 64 px thumbnail and "Figure 1 · p. 1"; the figure keeps an outline, no highlight; it is all back after a reload', async ({ openViewer, server }, testInfo) => {
+test('Ctrl+Alt+M on a selected figure makes a card with a 64 px thumbnail and "Figure 1 · Page 1"; the figure keeps an outline, no highlight; it is all back after a reload', async ({ openViewer, server }, testInfo) => {
   const fig = FIG_PICTURE;
   const page = await openFigurePaper(openViewer, server, fig);
 
@@ -302,7 +307,7 @@ test('Ctrl+Alt+M on a selected figure makes a card with a 64 px thumbnail and "F
   await settle(page, 600);
 
   // The card says which figure and which page, and shows the figure small.
-  await expect(card, 'the card is labelled "Figure 1 · p. 1"').toContainText(fig.cardLabel);
+  await expect(card, 'the card is labelled "Figure 1 · Page 1"').toContainText(fig.cardLabel);
   const thumb = await thumbnailOf(card);
   expect(thumb, 'the card shows a picture of the figure').not.toBeNull();
   expect(Math.max(thumb!.width, thumb!.height), `the thumbnail is 64 px (it is ${thumb!.width.toFixed(0)} x ${thumb!.height.toFixed(0)})`).toBeGreaterThanOrEqual(56);
@@ -465,13 +470,17 @@ test('with nothing selected, Ctrl+Alt+M over a figure drops a numbered pin; an A
   const afterShift = await pageRect(page, fig.pageIndex);
   const pinNow = { x: afterShift.left + pinOnPage.x * (afterShift.right - afterShift.left), y: afterShift.top + pinOnPage.y * (afterShift.bottom - afterShift.top) };
   await page.mouse.move(AWAY.x, AWAY.y);
-  const dot = await numberedPinNear(page, pinNow, 1);
+  // Triage note: the pin's tail (its square corner) sits on the spot and the 28 px marker stands above it, so its centre is about 20 px away;
+  // "near" is 30 px (the first guess, 18 px, assumed a centred dot).
+  const dot = await numberedPinNear(page, pinNow, 1, PIN_NEAR);
   expect(dot.found, `a small numbered pin (1) sits where the pointer was; small things near ${pinNow.x.toFixed(0)},${pinNow.y.toFixed(0)}: ${dot.seen.slice(0, 6).join(' / ') || 'none'}`).toBe(true);
   await shot(page, testInfo, 'pin-dropped');
 
   // The area: Alt+drag over the abstract (the left column), which has text in it.
-  const aFrom = await clientOfPoint(page, fig.pageIndex, 80, 300);
-  const aTo = await clientOfPoint(page, fig.pageIndex, 250, 385);
+  // Triage note: the top and bottom sides sit 4 pt higher than the first guess (300 and 385 pt), between two lines of text; there they ran
+  // through the middle of a line, where the glyphs hide a 1 px line (measured: 2 of 4 sides found at 300/385, 4 of 4 at 296/381).
+  const aFrom = await clientOfPoint(page, fig.pageIndex, 80, 296);
+  const aTo = await clientOfPoint(page, fig.pageIndex, 250, 381);
   const dragBox: Box = { left: aFrom.x, top: aFrom.y, right: aTo.x, bottom: aTo.y };
   await clearSelection(page);
   await altDrag(page, aFrom, aTo);
@@ -514,7 +523,7 @@ test('with nothing selected, Ctrl+Alt+M over a figure drops a numbered pin; an A
     expect(ring.found, `the area is back after a reload: ${describeRing(ring)}`).toBe(4);
     const figureBack = await boxOfNorm(page, fig.pageIndex, rect);
     const pinBack = { x: figureBack.left + point![0] * (figureBack.right - figureBack.left), y: figureBack.top + point![1] * (figureBack.bottom - figureBack.top) };
-    const dotBack = await numberedPinNear(page, pinBack, 1);
+    const dotBack = await numberedPinNear(page, pinBack, 1, PIN_NEAR);
     expect(dotBack.found, `the numbered pin is back where it was: ${dotBack.seen.slice(0, 6).join(' / ') || 'nothing small near it'}`).toBe(true);
     await shot(page, testInfo, 'pin-and-area-after-reload');
   } else {
@@ -530,8 +539,10 @@ test('an Alt+drag that starts inside a figure is a sub-area of that figure, stor
   await warmUp(v);
   await page.mouse.move(AWAY.x, AWAY.y);
 
+  // Triage note: the right side ends at 0.36, inside panel (a); at 0.42 it lay on the panel's yellow colour bar, where a line in the area colour
+  // cannot be seen (the drawn rectangle was there: 3 sides found, the fourth hidden by the bar).
   const from = within(v.box, 0.1, 0.1);
-  const to = within(v.box, 0.42, 0.42);
+  const to = within(v.box, 0.36, 0.42);
   const dragBox: Box = { left: from.x, top: from.y, right: to.x, bottom: to.y };
   await clearSelection(page);
   await altDrag(page, from, to);
@@ -695,7 +706,8 @@ test('the rail has a Figures tab that lists the figures with their labels; choos
     .or(page.getByRole('treeitem', { name: /\bfigure 2\b/i }))
     .or(page.getByRole('link', { name: /\bfigure 2\b/i }));
   await expect(item.first(), 'the tab lists "Figure 2" with its page').toBeVisible({ timeout: 8000 });
-  await expect(item.first()).toContainText(/\b(?:p\.?|page)\s*5\b/i);
+  // Triage note: the row shows "Figure 2" and "Page 5" on two lines, so its textContent is "Figure 2Page 5" (no word break); read the text as shown.
+  await expect.poll(() => item.first().evaluate((el) => (el as HTMLElement).innerText), { message: 'the row says which page' }).toMatch(/\b(?:p\.?|page)\s*5\b/i);
   await shot(page, testInfo, 'figures-tab');
   await item.first().focus();
   await page.keyboard.press('Enter');
