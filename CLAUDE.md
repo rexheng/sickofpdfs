@@ -7,6 +7,17 @@ A Chrome extension that replaces Chrome's PDF viewer. It adds comments, highligh
 - Phase 0 results and decisions: `docs/spikes/phase0-report.md`.
 - Ledger: `.superpowers/sdd/<plan>/progress.md`. It is gitignored and local to one container. Anything that must survive goes here or in the plan.
 
+## Mission and quality bar (every agent reads this)
+
+- **Mission:** reading and thinking about PDFs in Chrome should feel effortless. Select text, right-click, mark it or comment. Every note persists on that PDF wherever it is opened. Learning PDFs build into a knowledge base you can search and ask Claude about. Receipts and private documents are never touched.
+- **Quality bar:** at least as good as Chrome's own PDF viewer and Foxit for reading, speed and selection. It has Google Drive's clean aesthetic (not a pixel-perfect copy). It is frontier for AI-in-PDF and annotation; we check this with web research before each phase.
+- **Non-negotiables:**
+  - no lost notes;
+  - no network traffic except what the owner turns on;
+  - nothing saved from non-learning PDFs;
+  - the visual polish of the owner-facing UI;
+  - plain, clear wording in the UI.
+
 The owner has learning disabilities and is highly intelligent. Write to them plainly, with short sentences, structure and no jargon.
 
 ## Standing process rules (set by the owner, 2026-11-01)
