@@ -19,3 +19,11 @@ export { FUZZY_MIN_QUOTE, FUZZY_MIN_SCORE, resolveAnchor } from './anchoring/rea
 export type { AnchorContext, PlacedBy, Resolution, ResolveOptions } from './anchoring/reanchor';
 export { planStyle } from './annotations/marks';
 export type { StylePlan } from './annotations/marks';
+export { CLAUDE_LABEL, SUBJ_BOLD, SUBJ_DOCUMENT_NOTE, SUBJ_PAGE_NOTE, SUBJ_THREAD, derivedId, parseNm, partNm, pdfRefOf, popupNm, rowNm } from './export/nm';
+export type { NmPart, ParsedNm } from './export/nm';
+export { commentPlainText, noteText, plainToMarkdown } from './export/note-text';
+export type { NoteTextRefs } from './export/note-text';
+export { ANNOT_FLAG, NOTE_ICON_SIZE, normToUser, planPdfExport, pointToUser, quadPoints, unionRect, userToNorm, userToPoint } from './export/pdf-mapping';
+export type { NormRectsByPage, PageGeometry, PdfAnnotationPlan, PdfExportInput, PdfExportOptions, PdfExportPlan, PdfSubtype, PdfUserRect, Rgb } from './export/pdf-mapping';
+export { nearestMarkColor, planPdfImport } from './export/pdf-import';
+export type { ImportedMeta, ImportRef, PdfAnnotation, PdfImportOptions, PdfImportPlan } from './export/pdf-import';

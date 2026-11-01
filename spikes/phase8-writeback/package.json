@@ -1,0 +1,20 @@
+{
+  "name": "sop-spike-phase8-writeback",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "THROWAWAY Phase 8 spike (8.0): writing annotations back into a PDF with our PDFium build, tail-only incremental save, and the Foxit/Acrobat file rules. Not part of the workspace.",
+  "packageManager": "pnpm@10.28.0",
+  "scripts": {
+    "samples": "node --experimental-transform-types --no-warnings --import ./loader/register.mjs scripts/make-hand-samples.ts",
+    "samples:spike": "node --experimental-transform-types --no-warnings --import ./loader/register.mjs scripts/make-samples.ts",
+    "roundtrip": "node --experimental-transform-types --no-warnings --import ./loader/register.mjs scripts/roundtrip.ts",
+    "matrix": "node --experimental-transform-types --no-warnings --import ./loader/register.mjs scripts/write-matrix.ts",
+    "measure": "node --experimental-transform-types --no-warnings --import ./loader/register.mjs scripts/measure-save.ts"
+  },
+  "devDependencies": {
+    "@embedpdf/pdfium": "2.15.1",
+    "@types/node": "22.20.5",
+    "pdfjs-dist": "6.1.200"
+  }
+}
