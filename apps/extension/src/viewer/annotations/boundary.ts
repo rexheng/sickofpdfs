@@ -78,8 +78,11 @@ export interface SaveController {
   subscribe(cb: (s: SaveState) => void): () => void;
   start(): Promise<void>;
   requestSave(): Promise<void>;
-  /** R67 (c, f): `undoable: false` when a note started the save, or more than one mark was made before it began. */
-  firstMark(o?: { undoable?: boolean }): Promise<void>;
+  /**
+   * R67 (c, f): `undoable: false` when the save carries note text, or more than one mark was made before it began.
+   * `rows`: how many mark rows the first mark made; Undo removes no more than these (R67 tightened 1).
+   */
+  firstMark(o?: { undoable?: boolean; rows?: number }): Promise<void>;
   undo(): Promise<void>;
   answerAsk(save: boolean): Promise<void>;
   // R67 additions (contracts §3, "Saving"). Optional, so a controller without them still fits.
@@ -87,10 +90,12 @@ export interface SaveController {
   readonly busy?: 'save' | 'forget' | null;
   /** R67 (c): there is more than the first mark (another mark, an open or typed note) here: no Undo, here or in any tab. */
   endUndo?(): void;
+  /** R67 tightened (1): this tab has content now: every other tab on this PDF, or on a copy still being identified, loses its Undo. */
+  announce?(): void;
   /** R67 (b): the note that started this tab's save was emptied and closed before anything else was made: forget the save. */
   withdraw?(): Promise<void>;
-  /** R67 (a): completes a save the owner started in a tab that closed or crashed before it finished. */
-  resumeSave?(undoable: boolean): Promise<void>;
+  /** R67 (a): completes a save the owner started in a tab that closed or crashed before it finished. Never with an Undo. */
+  resumeSave?(): Promise<void>;
 }
 
 // ---------------------------------------------------------------- S7 and S3 (text access, anchoring)

@@ -24,10 +24,17 @@ export const IN_TRASH_HINT = 'This PDF is in your library’s Trash. Restore it 
 export interface ChipFlags {
   failed?: boolean;
   trashed?: boolean;
+  /** R67 tightened (4): a save left by a tab that closed or crashed is being finished. */
+  resuming?: boolean;
 }
+
+/** The chip while a save left by a tab that closed or crashed is finished (R67 tightened 4). */
+export const SAVING_NOTES = 'Saving your notes…';
+const SAVING_NOTES_HINT = 'Your notes from last time are being saved to your library.';
 
 /**
  * What the chip shows for a state; null for none (while the PDF is being checked). One look at a time, in this order:
+ * 0. "Saving your notes…": a save a closed or crashed tab left is being finished (R67 tightened 4).
  * 1. "Saving…": a save running now is the newest fact, and it settles the other two (it ends in "Saved" or "Couldn't save").
  * 2. "In Trash": the PDF is in the library, so nothing failed to save; the owner must see that it is on its way out.
  * 3. "Couldn't save. Try again": an earlier attempt failed, and the notes are only on this computer until a save works.
@@ -36,7 +43,10 @@ export interface ChipFlags {
  * it is written down so a later change keeps it.
  */
 export function chipFor(state: SaveState, busy: SaveControllerImpl['busy'], savedReasons: readonly string[] | null, flags: ChipFlags = {}): ChipLook | null {
-  const { failed = false, trashed = false } = flags;
+  const { failed = false, trashed = false, resuming = false } = flags;
+  if (resuming && !failed && state.kind !== 'saved' && state.kind !== 'asking') {
+    return { label: SAVING_NOTES, icon: 'library_add', tone: 'attention', tooltip: SAVING_NOTES_HINT, saves: false };
+  }
   if (busy === 'save' && state.kind !== 'saved') return { label: 'Saving…', icon: 'library_add', tone: 'attention', saves: false };
   if (trashed && state.kind === 'saved') return { label: 'In Trash', icon: 'delete', tone: 'neutral', tooltip: IN_TRASH_HINT, saves: false };
   if (failed && busy === null && state.kind !== 'saved' && state.kind !== 'asking' && state.kind !== 'incognito') {
@@ -74,13 +84,20 @@ function tooltipOf(reasons: readonly string[]): string | undefined {
 }
 
 /** The controller's state and running effect, re-read whenever it announces a change. */
-export function useSaveView(save: SaveControllerImpl | null): { state: SaveState | null; busy: SaveControllerImpl['busy']; failed: boolean; trashed: boolean } {
+export function useSaveView(save: SaveControllerImpl | null): {
+  state: SaveState | null;
+  busy: SaveControllerImpl['busy'];
+  failed: boolean;
+  trashed: boolean;
+  resuming: boolean;
+} {
   const subscribe = useCallback((cb: () => void) => save?.subscribe(cb) ?? (() => {}), [save]);
   const state = useSyncExternalStore(subscribe, () => save?.state ?? null);
   const busy = useSyncExternalStore(subscribe, () => save?.busy ?? null);
   const failed = useSyncExternalStore(subscribe, () => save?.failed ?? false);
   const trashed = useSyncExternalStore(subscribe, () => save?.trashed ?? false);
-  return { state, busy, failed, trashed };
+  const resuming = useSyncExternalStore(subscribe, () => save?.resuming ?? false);
+  return { state, busy, failed, trashed, resuming };
 }
 
 export interface StatusChipProps {
@@ -91,10 +108,10 @@ export interface StatusChipProps {
 const quietly = (p: Promise<void>): void => void p.catch(() => {});
 
 export function StatusChip({ save }: StatusChipProps) {
-  const { state, busy, failed, trashed } = useSaveView(save);
+  const { state, busy, failed, trashed, resuming } = useSaveView(save);
   const [restoring, setRestoring] = useState(false);
   if (state === null) return null;
-  const look = chipFor(state, busy, save.savedReasons, { failed, trashed });
+  const look = chipFor(state, busy, save.savedReasons, { failed, trashed, resuming });
   if (look === null) return null;
   const { saves, ...chip } = look;
   return (

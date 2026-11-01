@@ -29,6 +29,9 @@ import {
 import type { PdfBackend, SaveController } from '@sop/viewer';
 import type { BlobStore } from '../../store/blob-store';
 import type { StoreChange } from '../../store/change-bus';
+import { localPendingSaves } from '../annotations/save-pending';
+import { tabIdentity } from '../annotations/tab-presence';
+import { rememberNotes } from '../notes/margin-at-open';
 import { forgetLocalTraces } from './local-traces';
 import type { StoreClient } from '../../store/client';
 import { type IdentityResult, resolveIdentity } from '../identity/resolve-identity';
@@ -53,6 +56,12 @@ interface MoreContent {
   type: 'more-content';
   /** The file's fingerprint and, once saved, its library id. */
   ids: string[];
+  /**
+   * R67 tightened (1): the sender is still working out which PDF it is ("checking"), so it may turn out to be a stamped copy
+   * of the receiver's document. A copy always has the same page count (R59 a), so a receiver with that count counts it.
+   */
+  checking?: boolean;
+  pageCount?: number;
 }
 
 export interface SaveLocation {
@@ -88,6 +97,8 @@ export interface SaveControllerImpl extends SaveController {
   readonly savedReasons: readonly string[] | null;
   /** R67 (a): the last save failed and nothing has saved the PDF since. The chip says "Couldn't save. Try again". */
   readonly failed: boolean;
+  /** R67 tightened (4): a save left by a tab that closed or crashed is being finished. The chip says "Saving your notes…". */
+  readonly resuming: boolean;
   /** The library document, while the state is `saved`. */
   documentId(): DocumentId | null;
   /**
@@ -125,6 +136,12 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
   let stopFollowing: (() => void) | null = null;
   /** R67 (a): the last save failed. */
   let failed = false;
+  /** R67 tightened (4): a save the owner started in a tab that went is being finished: "Saving your notes…". */
+  let resuming = false;
+  /** R67 tightened (3): a note started a save here since the PDF was last forgotten; no later save gets an Undo. */
+  let noteSeen = false;
+  /** R67 tightened (1): how many mark rows the last first mark made; Undo may remove no more than these. */
+  let triggerRows: number | null = null;
   /** R67 (c): since the last first mark here, more was made here (another mark, a note): its save gets no Undo. */
   let moreHere = false;
   /** R67 (f): the last first-mark save here was asked for by a note. */
@@ -133,8 +150,19 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
   let othersAdded = false;
   /** R67 (b): this tab's last save created the document (not another tab's, not one already there). */
   let createdHere = false;
-  /** R67 (c): tells the other tabs; null in Incognito or where there is no BroadcastChannel. */
+  /**
+   * R67 (c): tells the other tabs; null in Incognito or where there is no BroadcastChannel. Open from the start, so content
+   * made while the PDF is still being identified is told too (R67 tightened 1).
+   */
   let channel: BroadcastChannel | null = null;
+  if (!d.incognito && typeof BroadcastChannel !== 'undefined') {
+    try {
+      channel = new BroadcastChannel(SAVE_CHANNEL);
+      channel.onmessage = onMoreContent;
+    } catch {
+      channel = null;
+    }
+  }
 
   const notify = (): void => {
     for (const cb of [...listeners]) {
@@ -165,6 +193,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     if (next === state) return;
     state = next;
     if (next.kind === 'saved') failed = false;
+    if (next.kind === 'saved' || next.kind === 'memory-only') resuming = false; // saved, or the owner said No
     if (undoable && !wasUndoable) startUndoTimer();
     if (!undoable) stopUndoTimer();
     if (next.kind !== 'saved') {
@@ -295,7 +324,11 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     othersAdded = false;
     moreHere = false;
     byNote = false;
+    noteSeen = false;
     createdHere = false;
+    triggerRows = null;
+    // R67 tightened (6): this tab's own file (a second download, say) leaves no margin hint once it is not saved.
+    rememberNotes(loaded.sha256, false);
     const step = reduceSave(state, { type: 'undone' });
     // The reducer goes back to the stand-in's "not sure"; the filter's own reasons are the right tooltip.
     set(step.state.kind === 'unsure' && decision?.verdict === 'unsure' ? { kind: 'unsure', reasons: decision.reasons } : step.state);
@@ -309,7 +342,12 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
 
   function tellOthers(): void {
     try {
-      const msg: MoreContent = { type: 'more-content', ids: [loaded.sha256, ...(state.kind === 'saved' ? [state.documentId] : [])] };
+      const msg: MoreContent = {
+        type: 'more-content',
+        ids: [loaded.sha256, ...(state.kind === 'saved' ? [state.documentId] : [])],
+        checking: state.kind === 'checking',
+        pageCount: open.pageCount,
+      };
       channel?.postMessage(msg);
     } catch {
       // the other tabs keep their Undo a little longer; it still runs out after 10 s
@@ -319,10 +357,33 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
   function onMoreContent(e: MessageEvent): void {
     const m = e.data as Partial<MoreContent> | null;
     if (disposed || !m || m.type !== 'more-content' || !Array.isArray(m.ids)) return;
-    const mine = m.ids.includes(loaded.sha256) || (state.kind === 'saved' && m.ids.includes(state.documentId));
+    const mine =
+      m.ids.includes(loaded.sha256) || (state.kind === 'saved' && m.ids.includes(state.documentId)) || (m.checking === true && m.pageCount === open.pageCount);
     if (!mine) return;
     othersAdded = true;
     endUndoHere();
+  }
+
+  /**
+   * R67 tightened (1): Undo removes the save and the one mark that made it, and never anything another tab or another
+   * download added. Checked again when Undo is pressed: no other tab said it has content, no closed tab left a
+   * save-pending record for this PDF, and the library holds no note and no more marks than that first mark made.
+   */
+  async function onlyTheFirstMark(lib: StoreClient, documentId: DocumentId): Promise<boolean> {
+    if (othersAdded) return false;
+    const me = tabIdentity()?.tabId ?? null;
+    const pending = localPendingSaves();
+    for (const key of new Set<string>([loaded.sha256, documentId])) {
+      if ((pending?.list(key) ?? []).some((r) => r.tab !== me)) return false;
+    }
+    try {
+      const held = await lib.listAnnotations(documentId);
+      if (held.threads.length > 0 || held.comments.length > 0) return false;
+      if (triggerRows !== null && held.marks.length > triggerRows) return false;
+    } catch {
+      return false; // when in doubt, keep everything
+    }
+    return !othersAdded;
   }
 
   function run(effect: SaveEffect, cause: SaveCause): Promise<void> {
@@ -364,7 +425,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     const cause: SaveCause =
       e.type === 'classified'
         ? 'filter'
-        : e.type === 'first-mark' || (e.type === 'resume-save' && e.undoable)
+        : e.type === 'first-mark'
           ? e.undoable === false
             ? 'first-note'
             : 'first-mark'
@@ -444,14 +505,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       return;
     }
     if (!disposed) stopFollowing = store.onChange(onLibraryChange);
-    if (!disposed && typeof BroadcastChannel !== 'undefined') {
-      try {
-        channel = new BroadcastChannel(SAVE_CHANNEL);
-        channel.onmessage = onMoreContent;
-      } catch {
-        channel = null;
-      }
-    }
+
     let identity: IdentityResult = { kind: 'unknown' };
     try {
       identity = await resolveIdentity({ sha256: loaded.sha256, pageCount: open.pageCount, pageTexts: allPageTexts }, store);
@@ -498,6 +552,9 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     get failed() {
       return failed && state.kind !== 'saved';
     },
+    get resuming() {
+      return resuming && state.kind !== 'saved';
+    },
     documentId: () => (state.kind === 'saved' ? state.documentId : null),
     get trashed() {
       return state.kind === 'saved' && trashed;
@@ -522,19 +579,24 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       await dispatch({ type: 'save-requested' });
     },
     async firstMark(o) {
-      // R67 (c, f): a note's save, or one with more than the first mark already made, gets no Undo.
-      const undoable = o?.undoable !== false;
+      // R67 (c, f): a note's save, or one with more than the first mark already made, gets no Undo; nor, once a note has
+      // started a save here, does any later one (a failed note save, then a mark or Enter: R67 tightened 3).
+      if (o?.undoable === false) noteSeen = true;
+      const undoable = o?.undoable !== false && !noteSeen;
       moreHere = false;
-      byNote = !undoable;
+      byNote = o?.undoable === false;
+      triggerRows = typeof o?.rows === 'number' && o.rows > 0 ? o.rows : null;
       tellOthers(); // for the other tabs this mark or note is more than their first mark
       await afterStart();
       await dispatch({ type: 'first-mark', ...(undoable ? {} : { undoable: false }) });
     },
     endUndo() {
       if (disposed) return;
-      const tell = state.kind === 'saved' || busy?.kind === 'save';
       endUndoHere();
-      if (tell) tellOthers();
+      tellOthers(); // R67 tightened (1): always, so a tab on a copy still being identified counts it too
+    },
+    announce() {
+      if (!disposed) tellOthers();
     },
     async withdraw() {
       // R67 (b): the note that saved the PDF was emptied and closed before anything else was made, in any tab.
@@ -543,13 +605,33 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       byNote = false;
       await run({ kind: 'forget' }, 'owner');
     },
-    async resumeSave(undoable) {
+    async resumeSave() {
+      // R67 tightened (3, 4): never with an Undo; the chip says "Saving your notes…" until the save lands.
+      resuming = true;
+      byNote = false;
+      noteSeen = true;
+      notify();
       await afterStart();
-      if (!undoable) byNote = false;
-      await dispatch({ type: 'resume-save', undoable });
+      if (disposed || state.kind === 'saved') {
+        resuming = false;
+        notify();
+        return;
+      }
+      try {
+        await dispatch({ type: 'resume-save' });
+      } finally {
+        if (state.kind !== 'asking' && busy?.kind !== 'save') {
+          resuming = false;
+          notify();
+        }
+      }
     },
     async undo() {
       stopUndoTimer();
+      if (state.kind === 'saved' && state.undoable && store !== null && !(await onlyTheFirstMark(store, state.documentId))) {
+        await dispatch({ type: 'undo-expired' }); // more than the first mark is here: there is no Undo to give
+        return;
+      }
       await dispatch({ type: 'undo-requested' });
     },
     async answerAsk(save) {

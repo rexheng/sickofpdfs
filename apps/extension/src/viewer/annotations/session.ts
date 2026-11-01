@@ -210,6 +210,8 @@ const SYNC_WAIT_MS = 400;
 const FLUSH_WAIT_MS = 2000;
 /** A caller waiting for its change to be written gives up after this; the change itself keeps being retried. */
 const SETTLE_WAIT_MS = 3000;
+/** After the PDF is first stored, drafts of tabs that are gone are looked for once more, when the roll call has settled. */
+const SECOND_ADOPT_MS = 1500;
 
 function newId<T extends string>(): T {
   return String(crypto.randomUUID()) as T;
@@ -384,6 +386,8 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
   let pendingLooked = false;
   /** R67 (a): this page life, for its save-pending record (a tab keeps its id across reloads, R65). */
   const life = newId<string>();
+  /** The second look for drafts of tabs that are gone (onBecameStored). */
+  let secondAdopt: ReturnType<typeof setTimeout> | null = null;
 
   // The write queue.
   const queue: Batch[] = [];
@@ -524,6 +528,19 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
    * R67 (c): there is more here than the mark that started the save (another mark, a note box, a typed note). Its Undo
    * goes, in this tab and in every other (the controller tells them), so Undo only ever removes the save and that mark.
    */
+  /** A sent note, or a draft with text, is in this tab (R67 f tightened). */
+  function holdsNoteText(): boolean {
+    if (comments.size > 0) return true;
+    for (const c of drafts.values()) if (c.body.trim() !== '') return true;
+    return false;
+  }
+
+  /** Something here is not in the store and must not be lost: a draft with text, or a write still waiting. */
+  function holdsUnwritten(): boolean {
+    for (const c of drafts.values()) if (c.body.trim() !== '') return true;
+    return queue.some((b) => b.ops.length > 0) || parked.some((b) => b.ops.length > 0);
+  }
+
   function contentAdded(): void {
     typedTrigger = null;
     if (kick) kickNoUndo = true;
@@ -544,7 +561,19 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     const s = save.state;
     if (s.kind === 'asking') return false; // the question is already open
     for (const k of triggerKeys) savedTriggerKeys.add(k);
-    kickNoUndo = o.note === true; // R67 (f): a save a note started has no Undo
+    // R67 (f), tightened: a save that carries any note text has no Undo: a note started it, or a sent note or a typed
+    // draft is already here (a save that failed earlier and is started again by a mark or by Enter, for one).
+    kickNoUndo = o.note === true || holdsNoteText();
+    // R67 tightened (2): what started the save is save-pending at once, before the wait for "checking" to end. A PDF
+    // judged not learning asks first, so nothing is kept for it until the owner says Yes.
+    if (s.kind === 'checking' || s.kind === 'unsure') markOwnerSave();
+    // R67 tightened (1): every other tab on this PDF, or on a copy still being identified, loses its first-mark Undo now.
+    try {
+      save.announce?.();
+    } catch (e) {
+      report(e, 'announce');
+    }
+    const rows = triggerKeys.length;
     kick = (async () => {
       try {
         // Identity is still being worked out; firstMark would do nothing yet.
@@ -553,7 +582,11 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
         if (!disposed && (now.kind === 'unsure' || now.kind === 'not-learning')) {
           // A "not sure" PDF saves now: what is made from here on is save-pending (R67 a). A "not learning" one asks first.
           if (now.kind === 'unsure') markOwnerSave();
-          await save.firstMark(kickNoUndo ? { undoable: false } : undefined);
+          await save.firstMark(kickNoUndo ? { undoable: false, rows } : { rows });
+        } else if (!disposed && now.kind === 'saved') {
+          // The PDF turned out to be saved already (another tab's save, or a copy of a saved one): what this change made
+          // is more than that save's first mark, so its Undo goes everywhere (R67 tightened 1).
+          contentAdded();
         }
         syncSaveState();
       } catch (e) {
@@ -596,13 +629,16 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       mode = computeMode();
       dropForgottenRows();
       emit();
+      // R67 tightened (1): what this tab made that the store never had survives another tab's Undo. Real content saves,
+      // so it is saved again at once, with no Undo.
+      if (holdsUnwritten()) startSaveIfNeeded([], { note: true });
       return;
     }
     if (s.kind === 'saved') docGone = false;
     mode = computeMode();
     if (mode === 'pending-save' && d.save?.busy === 'save') markOwnerSave(); // Save, Yes, or a learning PDF's own save
-    if (mode === 'memory-only' || mode === 'view-only') {
-      // The owner said No: nothing of this PDF is kept anywhere but this tab.
+    if (mode === 'memory-only' || mode === 'view-only' || (s.kind === 'asking' && d.save?.busy !== 'save')) {
+      // The owner said No, or the question "Save this PDF?" is open: nothing of this PDF is kept anywhere but this tab.
       ownerSave = false;
       dropPending();
     }
@@ -623,6 +659,8 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     keepPending(); // the drafts are the keeper's now; the record keeps only the writes still waiting
     void pump();
     void refresh().then(adoptDraftsImpl);
+    // A tab that went a moment ago may still have answered the first roll call; its drafts are taken a little later.
+    if (secondAdopt === null) secondAdopt = setTimeout(() => void adoptDraftsImpl(), SECOND_ADOPT_MS);
   }
 
   // ------------------------------------------------------------ R67 (a): save-pending
@@ -681,7 +719,6 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       report(e, 'liveTabs');
       return;
     }
-    let undoable = true;
     const taken: PendingSave[] = [];
     await pj
       .locked(() => {
@@ -694,12 +731,11 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
             if (rec.life === life) continue; // this page's own
             if (rec.tab !== tabId && live.has(rec.tab)) continue; // that tab is open and still saving it
             adoptPending(rec);
-            if (!rec.undoable) undoable = false;
             taken.push(rec);
           }
         }
         if (taken.length === 0) return Promise.resolve();
-        if (!undoable) kickNoUndo = true;
+        kickNoUndo = true; // R67 tightened (3): a save finished on reopen never offers Undo
         // This page's own record holds them before the old ones go, so a crash in between loses nothing.
         if (mode === 'stored') {
           pendingKept = true;
@@ -713,7 +749,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       })
       .catch((e: unknown) => report(e, 'pending.restore'));
     if (taken.length === 0 || disposed) return;
-    if (mode !== 'stored') resumeSave(undoable);
+    if (mode !== 'stored') resumeSave();
     emit();
   }
 
@@ -727,7 +763,6 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       if (op.op === 'soft-delete') put(table, id, null);
       else put(table, id, op.row);
       if (op.op !== 'soft-delete' && table !== 'comments') moved.push(id);
-      if (rec.undoable && op.op !== 'soft-delete') savedTriggerKeys.add(rowKey(table, id));
     }
     if (ops.length > 0) queue.push(newBatch(ops));
     for (const r of rec.drafts) if (adoptDraftRow(r) && active === null) active = r.threadId;
@@ -745,18 +780,24 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     void pump();
   }
 
-  /** Completes the save of a record whose tab went before it finished. */
-  function resumeSave(undoable: boolean): void {
+  /**
+   * Completes the save of a record whose tab went before it finished. It never offers Undo (R67 tightened 3); on a PDF
+   * judged not learning it asks first. The chip says "Saving your notes…" until it lands.
+   */
+  function resumeSave(): void {
     const save = d.save;
     if (!save || kick) return;
     kick = (async () => {
       try {
+        if (save.resumeSave) {
+          await save.resumeSave();
+          syncSaveState();
+          return;
+        }
         await waitForSaveState((x) => x.kind !== 'checking').done;
         const now = save.state;
         if (disposed || now.kind === 'saved' || now.kind === 'incognito' || now.kind === 'asking') return;
-        if (save.resumeSave) await save.resumeSave(undoable);
-        else if (undoable) await save.firstMark();
-        else await save.requestSave();
+        await save.firstMark({ undoable: false });
         syncSaveState();
       } catch (e) {
         report(e, 'resumeSave');
@@ -2153,6 +2194,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       if (disposed) return;
       disposed = true;
       clearDocGoneTimer();
+      if (secondAdopt) clearTimeout(secondAdopt);
       if (retryTimer) clearTimeout(retryTimer);
       for (const off of cleanups.splice(0)) off();
       listeners.clear();

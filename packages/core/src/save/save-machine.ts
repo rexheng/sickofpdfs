@@ -19,10 +19,11 @@ export type SaveEvent =
    */
   | { type: 'first-mark'; undoable?: boolean }
   /**
-   * R67 (a): a save the owner started earlier, in a tab that closed or crashed before it finished, completes now.
-   * `undoable` as that save would have had it.
+   * R67 (a): a save the owner started earlier, in a tab that closed or crashed before it finished, completes now. It
+   * never has an Undo (R67 tightened 3). On a PDF judged not learning it asks first: the notes may have been made before
+   * the verdict was known.
    */
-  | { type: 'resume-save'; undoable: boolean }
+  | { type: 'resume-save' }
   /** A save effect finished. */
   | { type: 'saved'; documentId: DocumentId; undoable: boolean }
   /** "Save this PDF to keep your notes?" was answered. */
@@ -79,10 +80,8 @@ export function reduceSave(s: SaveState, e: SaveEvent): Step {
           return stay(s);
       }
     case 'resume-save':
-      // The owner already chose to save (their mark or note started it, or they answered Yes). A first-mark save on a PDF
-      // now judged not learning asks again instead.
-      if (s.kind === 'not-learning' && e.undoable) return { state: { kind: 'asking' }, effect: { kind: 'ask' } };
-      return notSaved(s) && s.kind !== 'asking' ? save(s, e.undoable && s.kind === 'unsure') : stay(s);
+      if (s.kind === 'not-learning') return { state: { kind: 'asking' }, effect: { kind: 'ask' } };
+      return s.kind === 'unsure' ? save(s, false) : stay(s);
     case 'saved':
       return stay({ kind: 'saved', documentId: e.documentId, undoable: e.undoable });
     case 'ask-answered':
