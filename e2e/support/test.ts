@@ -8,7 +8,7 @@ import { buildViewerUrl, VIEWER_PATH } from '../../apps/extension/src/shared/vie
 import { LOCAL_ONLY_DB, LOCAL_ONLY_STORES } from '../../apps/extension/src/local-only/secrets-store';
 import type { SopTestHooks } from '../../apps/extension/src/testing/test-hooks';
 import { launchExtension, waitForExtensionWorker } from './launch';
-import { netlogBrowserServiceHosts, netlogExternalUrls, readNetlogRequests } from './netlog';
+import { netlogBrowserServiceHosts, netlogExternalUrls, readNetlogRequests, waitForNetlog } from './netlog';
 import { profileTemplates, type ProfileKind } from './seed-profile';
 import { startFixtureServer, TEST_ASSETS, type FixtureServer } from './server';
 
@@ -121,6 +121,7 @@ export const test = base.extend<Options & Fixtures, WorkerFixtures>({
     const finish = () =>
       (closing ??= (async () => {
         await context.close();
+        await waitForNetlog(netlogPath); // under load the browser can still be writing the log after it has closed
         const requests = await readNetlogRequests(netlogPath);
         return {
           external: await netlogExternalUrls(netlogPath, server.origin),

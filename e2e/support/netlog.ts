@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 
 /** One URL request in a Chromium net log (`--log-net-log`). */
 export interface NetlogRequest {
@@ -29,6 +29,32 @@ function parseNetlog(text: string): NetLog {
   } catch {
     return JSON.parse(`${text.trimEnd().replace(/,$/, '')}]}`) as NetLog;
   }
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Waits until the browser has finished writing its net log: the file exists and its size has not changed for two checks in
+ * a row. Under heavy load the browser can still be writing it after `context.close()` has returned. Gives up after
+ * `timeoutMs`: with a clear error if the file never appeared, and otherwise (still growing) lets the caller read what is
+ * there, which `readNetlogRequests` repairs or rejects loudly.
+ */
+export async function waitForNetlog(netlogPath: string, timeoutMs = 10_000, pollMs = 100): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let last = -1;
+  let seen = false;
+  for (;;) {
+    const size = await stat(netlogPath).then(
+      (s) => s.size,
+      () => -1,
+    );
+    if (size >= 0) seen = true;
+    if (size > 0 && size === last) return;
+    last = size;
+    if (Date.now() >= deadline) break;
+    await sleep(pollMs);
+  }
+  if (!seen) throw new Error(`The browser never wrote its net log: ${netlogPath} did not exist ${timeoutMs / 1000} s after the browser closed. The network gate cannot say what left the browser.`);
 }
 
 const text = (value: unknown, fallback: string) => (typeof value === 'string' ? value : fallback);
