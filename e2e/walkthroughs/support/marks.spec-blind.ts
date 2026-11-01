@@ -10,6 +10,7 @@
 //   - what the library holds is read through the store the viewer publishes (`store.listAnnotations`, contracts section 3).
 import { existsSync } from 'node:fs';
 import type { Locator, Page } from '@playwright/test';
+import { ownerReloadsAfterCrash } from '../../support/crash';
 import { dragSelect } from '../../support/drag-select';
 import { REPO_ROOT } from '../../support/launch';
 import { store as storeOf } from '../../support/store-probe.spec-blind';
@@ -541,12 +542,18 @@ export async function altGr(page: Page, key: string, code: string): Promise<void
 // Triage (TB2): the viewer tab, the extension's service worker and its offscreen store share one renderer process, so
 // Page.crash takes them all down, and the CDP call itself may never answer. The crash is fired without waiting for a
 // reply, waited for with a cap, and the dead tab is then closed (as the owner closes a crashed tab) before reopening.
+// Triage (crash): measured in crash-report.md. Because the offscreen document dies too, Chrome terminates the extension and
+// blocks its pages until it is reloaded; it never reloads it by itself. Chrome then tells the owner "sickofpdfs has crashed.
+// Click this balloon to reload the extension", and chrome://extensions shows a Reload button. Headless Chromium shows no
+// notification, so the owner's click is the Reload button (ownerReloadsAfterCrash). The assertions are unchanged.
 export async function crashRenderer(page: Page): Promise<void> {
+  const context = page.context();
   const crashed = new Promise<void>((resolve) => page.once('crash', () => resolve()));
-  const cdp = await page.context().newCDPSession(page);
+  const cdp = await context.newCDPSession(page);
   void cdp.send('Page.crash').catch(() => undefined); // the session dies with the page
   await Promise.race([crashed, new Promise<void>((resolve) => setTimeout(resolve, 10_000))]);
   await page.close().catch(() => undefined);
+  await ownerReloadsAfterCrash(context);
 }
 
 // ---------------------------------------------------------------------------------------------------------------

@@ -194,6 +194,13 @@ test.describe('No lost text', () => {
   test("two tabs on one PDF: the draft stays with tab A while A is open; B sees the notes A posted, never A's draft; when A is gone, B has the draft", async ({ openViewer, server }, testInfo) => {
     test.fixme(true, CRASH_FIXME);
     test.skip(!SAVING_AVAILABLE, NO_SAVING);
+    // Triage (crash): Chrome makes the last step impossible as written, so this waits for the spec-blind author; the
+    // assertions are unchanged. Measured (crash-report.md): every page of the extension shares one renderer process, so
+    // crashing A's renderer kills B's in the same moment ("Target crashed" on B, +3 ms). B cannot be the tab that survives
+    // A. In the product B comes back by itself once the owner reloads the extension, and then holds A's draft (measured by
+    // spikes/crash-model), but Playwright never lets a crashed Page be used again, so `b.bringToFront()` and `b.reload()`
+    // throw. "When A is gone" needs restating: A's tab closed, or B opened again after the crash.
+    test.fixme(true, "B shares A's renderer process, so A's crash kills B too (crash-report.md)");
     const a = await openPaper(openViewer, server, ATTENTION);
     await saveFirst(a);
 
