@@ -25,6 +25,7 @@ import {
 } from '@sop/core';
 import type { PdfBackend, SaveController } from '@sop/viewer';
 import type { BlobStore } from '../../store/blob-store';
+import type { StoreChange } from '../../store/change-bus';
 import type { StoreClient } from '../../store/client';
 import { type IdentityResult, resolveIdentity } from '../identity/resolve-identity';
 import type { OpenedDocument } from '../open-document';
@@ -94,6 +95,8 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
   /** The store and blob store, once `start()` has them. Effects only run after that. */
   let store: StoreClient | null = null;
   let blobs: BlobStore | null = null;
+  /** Stops listening to the library's changes (another tab's save). */
+  let stopFollowing: (() => void) | null = null;
 
   const notify = (): void => {
     for (const cb of [...listeners]) {
@@ -266,6 +269,46 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     await run(step.effect, cause);
   }
 
+  /** Records this open of a PDF the library holds: its location and its history row. */
+  async function recordKnownOpen(lib: StoreClient, documentId: DocumentId): Promise<void> {
+    try {
+      if (d.location !== null) await lib.touchLocation({ documentId, ...d.location, at: d.now() });
+      await lib.recordOpen(documentId, d.now());
+    } catch (error) {
+      console.warn('sickofpdfs: this open was not recorded', error instanceof Error ? error.message.split(':')[0] : '');
+    }
+  }
+
+  /**
+   * Tabs in step (plan section 4 item 8): when another tab saves this PDF (a `documents` upsert), or records this copy
+   * as an alias of a saved one, a tab that has not saved it yet looks again and follows: it becomes `saved` too. Not
+   * while it is still checking (start() decides then), saving itself, or kept in memory because the owner said No here.
+   */
+  let following: Promise<void> | null = null;
+  let lookAgain = false;
+  function onLibraryChange(c: StoreChange): void {
+    if (disposed || c.op !== 'upsert' || (c.table !== 'documents' && c.table !== 'aliases')) return;
+    if (following !== null) {
+      lookAgain = true;
+      return;
+    }
+    following = (async () => {
+      do {
+        lookAgain = false;
+        const lib = store;
+        if (disposed || lib === null || busy !== null) return;
+        if (state.kind !== 'unsure' && state.kind !== 'not-learning' && state.kind !== 'asking') return;
+        const identity = await resolveIdentity({ sha256: loaded.sha256, pageCount: open.pageCount, pageTexts: allPageTexts }, lib).catch((): IdentityResult => ({ kind: 'unknown' }));
+        // The state may have moved while the library was read (this tab saved, or the owner answered).
+        if (identity.kind !== 'known' || disposed || (state as SaveState).kind === 'saved') continue;
+        await recordKnownOpen(lib, identity.documentId);
+        await dispatch({ type: 'identified', documentId: identity.documentId });
+      } while (lookAgain);
+    })().finally(() => {
+      following = null;
+    });
+  }
+
   async function begin(): Promise<void> {
     if (d.incognito) return dispatch({ type: 'incognito' });
     [store, blobs] = await Promise.all([d.store, Promise.resolve(d.blobs).catch(() => null)]);
@@ -274,6 +317,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       set({ kind: 'memory-only' });
       return;
     }
+    if (!disposed) stopFollowing = store.onChange(onLibraryChange);
     let identity: IdentityResult = { kind: 'unknown' };
     try {
       identity = await resolveIdentity({ sha256: loaded.sha256, pageCount: open.pageCount, pageTexts: allPageTexts }, store);
@@ -283,12 +327,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     }
     if (identity.kind === 'known') {
       const documentId = identity.documentId;
-      try {
-        if (d.location !== null) await store.touchLocation({ documentId, ...d.location, at: d.now() });
-        await store.recordOpen(documentId, d.now());
-      } catch (error) {
-        console.warn('sickofpdfs: this open was not recorded', error instanceof Error ? error.message.split(':')[0] : '');
-      }
+      await recordKnownOpen(store, documentId);
       return dispatch({ type: 'identified', documentId });
     }
     const input = await filterInput();
@@ -347,6 +386,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     },
     dispose() {
       disposed = true;
+      stopFollowing?.();
       stopUndoTimer();
       listeners.clear();
       failureListeners.clear();
