@@ -7,7 +7,21 @@ export type { CommentMeta, CommentRow, MarkColor, MarkRow, MarkStyle, ThreadRow 
 export type { DocumentRow, LocationRow, PageHit, StoreStats } from './model/rows';
 export type { DetectedFigure, PageFigure } from './model/figures';
 export type { SaveState } from './save/types';
-export type { ClaudeReplyMeta, ConflictCopyMeta, ModelRole, PageCitation, ReplyError, WebSource } from './claude/types';
+export type {
+  CitableBlock, ClaudeReplyMeta, ClaudeStreamEvent, ClaudeTurnRequest, ClientTool, ConflictCopyMeta, ContextPack, DocumentMap, FigurePack,
+  ModelChoice, ModelRole, PageCitation, Passage, RegionImage, ReplyError, WebSource,
+} from './claude/types';
+export { REPLY_ERROR_MESSAGES, replyError } from './claude/types';
+export { CLIENT_TOOLS, EXPLAIN_FIGURE_QUESTION, MAX_WEB_SEARCHES, SYSTEM_PROMPT, describeToolUse } from './claude/prompts';
+export { EFFORT, MAX_TOKENS, buildRequest, encodePackImages, encodeRegionImage, figureLabelsOf, parseSearchSource, searchResultFor } from './claude/request';
+export type { BuildOptions, MessageParam, MessagesParams, ThreadTurn } from './claude/request';
+export { createStreamMapper, replyErrorFromApi } from './claude/stream-map';
+export type { MapperOptions, ReplyResult, StreamMapper } from './claude/stream-map';
+export { createCitationBook, replyBodyToPlainText } from './claude/citations';
+export { KNOWN_LINES, LONG_PROMPT_TOKENS, USD_PER_WEB_SEARCH, priceFor, versionOf } from './claude/pricing';
+export type { ModelPrice } from './claude/pricing';
+export { CALIBRATION, EXPECTED_OUTPUT_TOKENS, FIXED_PROMPT_TOKENS, calibrationFor, decide, estimate, packTextTokens, typicalQuestionUsd, usdFromUsage } from './claude/cost';
+export type { Ask, Decision, DecideInput, Estimate, UsageTokens } from './claude/cost';
 export { createSha256, sha256Hex } from './identity/fingerprint';
 export type { Sha256Hasher } from './identity/fingerprint';
 export { canonicalLink, cleanLink } from './identity/canonical-link';
