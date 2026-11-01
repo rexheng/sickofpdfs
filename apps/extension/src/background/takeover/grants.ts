@@ -1,5 +1,5 @@
 import { isOpenableUrl, stripFragment } from '../../shared/urls';
-import { parseViewerUrl, VIEWER_PATH } from '../../shared/viewer-url';
+import { isMarkedRefused, parseViewerUrl, VIEWER_PATH } from '../../shared/viewer-url';
 import { requestById } from './request-log';
 
 /**
@@ -20,9 +20,12 @@ import { requestById } from './request-log';
  * The records are in chrome.storage.session (memory only, gone when the browser closes), so a reload or Back in the
  * tab still works after the worker slept. They go when the tab closes.
  *
- * A refusal is remembered too, for the browser session: an address the viewer was not allowed to load stays refused
- * when it is opened again by reload, Back or Forward, Duplicate tab or Reopen closed tab, so a web page cannot wait for
- * the owner to do one of those. Only a real opening of that address (a link, the takeover, a typed address) lifts it.
+ * A refusal is remembered too, two ways: for the browser session, by address; and in the refused viewer's own address,
+ * which it marks (viewer-url.ts, `withRefusal`). Chrome keeps that address in the tab's history, so the marker also
+ * survives a browser restart's session restore, where chrome.storage.session is empty and the tab reports a plain
+ * reload. Either way an address the viewer was not allowed to load stays refused when it is opened again by reload,
+ * Back or Forward, Duplicate tab, Reopen closed tab or session restore, so a web page cannot wait for the owner to do
+ * one of those. Only a real opening of that address (a link the takeover opened, a typed address) lifts it.
  */
 export interface Grant extends Opened {
   /** The address as the network stack sees it: normalised, without a fragment. */
@@ -107,14 +110,15 @@ export function refuse(url: string): Promise<void> {
 /**
  * The owner opened the viewer's address for `url` in this tab (`revisit`: by reload, Back or Forward, which also
  * covers Duplicate tab, Reopen closed tab and session restore). Granted, unless the tab already has a record (which
- * keeps its Referer and page) or this is a re-visit of an address refused in this session.
+ * keeps its Referer and page) or this is a re-visit of a refused address: refused in this session, or `marked` refused
+ * in the address itself.
  */
-function grantOwnerOpening(tabId: number, url: string, revisit: boolean): Promise<void> {
+function grantOwnerOpening(tabId: number, url: string, revisit: boolean, marked: boolean): Promise<void> {
   return inOrder(async () => {
     const target = keyUrl(url);
     if (target === null || tabId < 0) return;
     if ((await read(tabId)).some((g) => g.url === target)) return;
-    if (revisit && (await readRefused()).includes(target)) return;
+    if (revisit && (marked || (await readRefused()).includes(target))) return;
     await write(tabId, target, {});
   });
 }
@@ -180,7 +184,8 @@ export function installGrants(): void {
     if (details.frameId !== 0 || !details.url.startsWith(viewer)) return;
     const source = parseViewerUrl(details.url).source;
     const { owner, revisit } = ownerStarted(details);
-    const work = owner && source !== null && isOpenableUrl(source) ? grantOwnerOpening(details.tabId, source, revisit) : Promise.resolve();
+    const marked = isMarkedRefused(details.url);
+    const work = owner && source !== null && isOpenableUrl(source) ? grantOwnerOpening(details.tabId, source, revisit, marked) : Promise.resolve();
     void work.catch(recordFailed).finally(() => markWeighed(details.documentId));
   });
 

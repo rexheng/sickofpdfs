@@ -12,7 +12,7 @@ import {
   PdfPasswordError,
 } from '@sop/viewer';
 import { sendRuntimeMessage } from '../shared/send-message';
-import type { ViewerParams } from '../shared/viewer-url';
+import { isMarkedRefused, type ViewerParams, withRefusal } from '../shared/viewer-url';
 import { openInChrome } from './open-in-chrome';
 
 export interface OpenedDocument {
@@ -74,6 +74,7 @@ export async function openDocument(p: ViewerParams, deps: OpenDocumentDeps): Pro
   const url = p.source;
   if (url === null) return { kind: 'error', error: new PdfLoadError('network') };
   const { known, referer, back } = await prepareFetch(url);
+  markAddress(known);
   deps.onBackPage?.(back);
   if (!known && /^file:/i.test(url)) return { kind: 'refused' };
   const referrer = referer ?? undefined;
@@ -156,6 +157,16 @@ function bounce(url: string, size: number, deps: OpenDocumentDeps): void {
   };
   const timer = setTimeout(go, BOUNCE_DELAY_MS);
   deps.onLargeFile?.({ size, openNow: go });
+}
+
+/**
+ * Writes the service worker's answer into the viewer's own address (viewer-url.ts, `withRefusal`): refused, the address
+ * carries the marker, so a browser restart, Duplicate tab or Reopen closed tab brings the refusal back with it; known
+ * (a link the takeover opened, a typed address), the marker goes. Only the address changes, never the page.
+ */
+function markAddress(known: boolean): void {
+  if (known === !isMarkedRefused(location.href)) return;
+  history.replaceState(history.state, '', withRefusal(location.href, !known));
 }
 
 /** How long the viewer waits for the service worker's answer (it may be starting up) before it treats the address as unknown. */

@@ -57,3 +57,37 @@ export function buildViewerUrl(p: ViewerParams, base: string = chrome.runtime.ge
   const query = [p.source !== null && `file=${encodeURIComponent(p.source)}`, p.back !== null && `back=${encodeURIComponent(p.back)}`].filter(Boolean);
   return `${base}${query.length > 0 ? `?${query.join('&')}` : ''}${p.page !== null ? `#page=${p.page}` : ''}`;
 }
+
+/**
+ * The refusal marker (`&refused=1`): the viewer writes it into its own address (history.replaceState) when the service
+ * worker says this tab was not seen opening the PDF. The address is what Chrome keeps in the tab's history, so a
+ * reload, Back, Duplicate tab, Reopen closed tab and a browser restart's session restore all carry the refusal with
+ * them, even after chrome.storage.session is gone. A web page cannot remove it: it cannot touch the viewer's page or
+ * its history entry, and any address it opens itself is refused (and marked) anyway.
+ */
+const REFUSED_FIELD = 'refused=1';
+
+/** Does this viewer address carry the refusal marker? (Never in the `DNR:` form, which `withRefusal` rewrites.) */
+export function isMarkedRefused(href: string): boolean {
+  const hashAt = href.indexOf('#');
+  const beforeHash = hashAt < 0 ? href : href.slice(0, hashAt);
+  const queryAt = beforeHash.indexOf('?');
+  const query = queryAt < 0 ? '' : beforeHash.slice(queryAt + 1);
+  return !query.startsWith(DNR_PREFIX) && query.split('&').includes(REFUSED_FIELD);
+}
+
+/**
+ * The viewer address `href` with the refusal marker on (`refused` true) or off, the rest kept: the PDF, the page to go
+ * back to and the fragment. A `DNR:` address is rewritten to the `file=` form first, since everything after `DNR:` is
+ * the PDF's own address.
+ */
+export function withRefusal(href: string, refused: boolean): string {
+  const hashAt = href.indexOf('#');
+  const fragment = hashAt < 0 ? '' : href.slice(hashAt);
+  const queryAt = href.search(/[?#]/);
+  const base = queryAt < 0 ? href : href.slice(0, queryAt);
+  const p = parseViewerUrl(href);
+  const plain = buildViewerUrl({ source: p.source, back: p.back, page: null }, base);
+  const marker = refused ? `${plain.includes('?') ? '&' : '?'}${REFUSED_FIELD}` : '';
+  return `${plain}${marker}${fragment}`;
+}
