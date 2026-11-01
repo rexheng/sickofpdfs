@@ -4,8 +4,11 @@ import { FILE_PDF_BOX } from './file-pdf-box';
 
 export interface FileTypeIconProps {
   kind: 'pdf';
-  /** The box in px. The tile fills 3/4 of it, as in Drive's 18 px tile inside a 24 px box. */
-  size?: 18 | 24;
+  /**
+   * The box in px. The tile fills 3/4 of it, as in Drive's 18 px tile inside a 24 px box (file lists). 32 draws the
+   * 24 px tile of Drive's viewer header.
+   */
+  size?: 18 | 24 | 32;
 }
 
 /**

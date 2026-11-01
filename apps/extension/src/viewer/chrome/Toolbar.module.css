@@ -1,0 +1,94 @@
+/*
+ * The 48 px row under the header that holds Drive's toolbar pill, 16 px in from each side (02 section 4.10) [live]:
+ *   "Page" 16 px after the pill's 8 px padding (x 40), the 33 × 24 page box, "/" and the total 8 px apart, and 8 px
+ *   more before the separator;
+ *   Download and Print 12 px apart;
+ *   zoom out, the 73 px zoom box and zoom in side by side, with no gap.
+ */
+.row {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+  box-sizing: border-box;
+  block-size: var(--viewer-pill-h);
+  padding-inline: var(--space-4);
+}
+
+.pageLabel {
+  margin-inline-start: var(--space-4);
+}
+
+.total {
+  margin-inline-end: var(--space-2);
+  word-spacing: var(--space-1);
+}
+
+.fileGroup {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.zoomGroup {
+  display: flex;
+  align-items: center;
+}
+
+/* The zoom box: "100%" in Google Sans 14/24 on-surface, then a 20 px drop-down arrow, in a round 73 × 32 button. */
+.zoom {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-1);
+  align-items: center;
+  box-sizing: border-box;
+  min-inline-size: var(--viewer-zoom-w);
+  block-size: var(--icon-btn);
+  margin: 0;
+  padding: 0 var(--space-1) 0 var(--space-2);
+  border: 0;
+  border-radius: var(--shape-full);
+  background-color: transparent;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-viewer-zoom);
+  font-variation-settings: "opsz" 18;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.zoom:hover {
+  background-color: var(--icon-btn-hover);
+}
+
+/* Keyboard focus, and while its list is open: Drive's 2 px #a8c7fa ring, flush with the box. */
+.zoom:focus-visible,
+.zoom[data-state='open'] {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 0;
+}
+
+.zoom[data-state='open'] {
+  background-color: transparent;
+}
+
+.zoomValue {
+  flex: 1 1 auto;
+  font-variant-numeric: tabular-nums;
+  text-align: start;
+}
+
+.zoomArrow {
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+/* Open, the arrow points up, as Drive's does. */
+.zoom[data-state='open'] .zoomArrow {
+  transform: rotate(180deg);
+}
+
+/* The right end of the pill: the scan hint. */
+.end {
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  min-inline-size: 0;
+}

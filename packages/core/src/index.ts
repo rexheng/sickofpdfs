@@ -4,6 +4,7 @@ export type { HlcStamp } from './hlc';
 export type { Anchor, CharPos, FigureFingerprint, NormRect, TextQuote } from './model/anchor';
 export type { CommentMeta, CommentRow, MarkColor, MarkRow, MarkStyle, ThreadRow } from './model/rows';
 export type { DetectedFigure, PageFigure } from './model/figures';
+export type { SaveState } from './save/types';
 export type { ClaudeReplyMeta, ConflictCopyMeta, ModelRole, PageCitation, ReplyError, WebSource } from './claude/types';
 export { createSha256, sha256Hex } from './identity/fingerprint';
 export type { Sha256Hasher } from './identity/fingerprint';

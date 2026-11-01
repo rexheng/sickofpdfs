@@ -29,9 +29,13 @@
   max-block-size: var(--radix-menubar-content-available-height);
 }
 
-/* A short list of plain labels (zoom levels): GM3's minimum width and 16 px label padding, like Drive's zoom list. */
+/*
+ * A short list of plain labels (zoom levels), as Drive's viewer zoom list [live]: surface-container (#1e1f20 in the
+ * dark chrome), 40 px rows, Google Sans 16/24 labels 16 px in, GM3's minimum width.
+ */
 .compact {
   min-inline-size: var(--menu-compact-min-w);
+  background-color: var(--gm3-sys-color-surface-container);
 }
 
 .item {
@@ -50,7 +54,9 @@
 }
 
 .compact .item {
+  block-size: var(--menu-compact-item-h);
   padding-inline: var(--space-4);
+  font: var(--type-menu-compact);
 }
 
 /* Pointer hover and keyboard focus: an 8% on-surface state layer */

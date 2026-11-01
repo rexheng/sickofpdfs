@@ -48,3 +48,4 @@ export { RenderScheduler, type RenderKind, type RenderSchedulerOptions } from '.
 export { ScanDetector } from './render/scan-detect';
 export { createViewerStore, INITIAL_VIEWER_SNAPSHOT, useViewerState, type ViewerSnapshot, type ViewerStore } from './react/viewer-state';
 export type { PagePoint } from './layout/page-space';
+export type { FindController, FindState, JumpHistory, SaveController, SaveState, ViewPosition } from './contracts';

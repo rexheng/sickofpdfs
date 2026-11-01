@@ -12,6 +12,11 @@ export interface IconButtonProps extends Omit<ComponentPropsWithRef<'button'>, '
   onClick?: () => void;
   /** 32: toolbar pill and menus, 20 px icon. 40: header, rail and top bar, 24 px icon. */
   size?: 32 | 40;
+  /**
+   * The glyph size when it differs from the size's own: Drive's viewer header has a 24 px close (or back) icon in a
+   * 32 px button, and a 20 px "open in new tab" icon in a 40 px one (02 section 4.10).
+   */
+  iconSize?: 20 | 24;
   /** Set it to make a toggle button (aria-pressed). True draws the selected state and the filled icon. */
   pressed?: boolean;
   disabled?: boolean;
@@ -23,7 +28,7 @@ export interface IconButtonProps extends Omit<ComponentPropsWithRef<'button'>, '
  * Drive's round icon button (02 section 4.10), with a tooltip. It passes other button props and its ref on to the
  * <button>, so it can be the trigger of a DropdownMenu.
  */
-export function IconButton({ icon, label, onClick, size = 32, pressed, disabled = false, shortcut, className, ...rest }: IconButtonProps) {
+export function IconButton({ icon, label, onClick, size = 32, iconSize, pressed, disabled = false, shortcut, className, ...rest }: IconButtonProps) {
   return (
     <Tooltip label={label} shortcut={shortcut}>
       <button
@@ -35,7 +40,7 @@ export function IconButton({ icon, label, onClick, size = 32, pressed, disabled 
         disabled={disabled}
         onClick={onClick}
       >
-        <Icon name={icon} size={size === 40 ? 24 : 20} filled={pressed === true} />
+        <Icon name={icon} size={iconSize ?? (size === 40 ? 24 : 20)} filled={pressed === true} />
       </button>
     </Tooltip>
   );

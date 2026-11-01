@@ -1,6 +1,7 @@
 // The viewer page: opens the PDF the address names, then shows its pages. One engine and one render queue per tab.
 // It also owns the takeover's viewer side (Task 17): leaving a frame for the full tab, "Back to page" for an embedded
-// PDF, and the escape hatch to Chrome's own viewer.
+// PDF, and the escape hatch to Chrome's own viewer. The chrome around the pages (Task 23) is Drive's: the header with
+// its menus, the toolbar pill, the shortcut sheet and About; all of them run the commands in commands.ts.
 import '@sop/ui/tokens.css';
 import '@sop/ui/base.css';
 import { registerFonts } from '@sop/ui';
@@ -15,13 +16,22 @@ import {
   ScanDetector,
   useViewerState,
   type ViewerStore,
+  type ZoomMode,
 } from '@sop/viewer';
 import { PageList, type PageListApi } from '@sop/viewer/react';
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { sendRuntimeMessage } from '../shared/send-message';
-import { parseViewerUrl } from '../shared/viewer-url';
+import { parseViewerUrl, type ViewerParams } from '../shared/viewer-url';
+import { copyLink } from './actions/copy-link';
 import styles from './App.module.css';
 import { backTarget, goBackToPage } from './back-to-page';
+import { AboutDialog } from './chrome/AboutDialog';
+import { Header } from './chrome/Header';
+import { buildMenus } from './chrome/menus';
+import { ShortcutsDialog } from './chrome/ShortcutsDialog';
+import { Snackbar } from './chrome/Snackbar';
+import { Toolbar } from './chrome/Toolbar';
+import { commandShortcuts, createCommands, createIdleCommands, type ViewerCommands, type ViewerContext, type ViewerUi } from './commands';
 import { maybeLeaveFrame, wantsFullTab } from './frame-escape';
 import { type LargeFileBounce, type OpenDocumentDeps, type OpenedDocument, openDocument, type OpenOutcome, openPickedFile } from './open-document';
 import { publishRuntime, type ViewerHooks, type ViewerState } from './runtime';
@@ -32,7 +42,6 @@ import { LargeFileNotice } from './ui/LargeFileNotice';
 import { LoadErrorCard } from './ui/LoadErrorCard';
 import { PasswordDialog } from './ui/PasswordDialog';
 import { ScanHint } from './ui/ScanHint';
-import { ViewerBar } from './ui/ViewerBar';
 
 /** The tab's one engine. Its worker starts at once, so PDFium is ready by the time the PDF has downloaded. */
 const backend = createEmbedPdfBackend(engineAssets((p) => chrome.runtime.getURL(p)), { workers: ENGINE_WORKERS, startNow: true });
@@ -128,13 +137,42 @@ export function App() {
   const source = params.source;
   const name = view.kind === 'ready' ? view.doc.loaded.displayName : displayNameFor(source, null);
 
+  // The chrome: dialogs, the page box (Ctrl+G), the copy-link note, and the commands everything runs.
+  const root = useRef<HTMLDivElement>(null);
+  const pageField = useRef<HTMLInputElement>(null);
+  const [dialog, setDialog] = useState<'shortcuts' | 'about' | null>(null);
+  const [note, setNote] = useState<{ text: string } | null>(null);
+  const ui = useMemo<ViewerUi>(
+    () => ({
+      openInChrome: escape,
+      focusPageField: () => {
+        pageField.current?.focus();
+        pageField.current?.select();
+      },
+      showShortcuts: () => setDialog('shortcuts'),
+      showAbout: () => setDialog('about'),
+      copyLink: (link) => void copyLink(link).then((ok) => setNote({ text: ok ? 'Link copied' : 'Couldn’t copy the link. Try again.' })),
+    }),
+    [escape],
+  );
+  const [reader, setReader] = useState<ReaderChrome | null>(null);
+  const canEscape = source !== null && !leaving;
+  const idleCommands = useMemo(() => createIdleCommands({ source, canOpenInChrome: canEscape, ui }), [source, canEscape, ui]);
+  const live = view.kind === 'ready' ? reader : null;
+  const commands = live?.commands ?? idleCommands;
+  useEffect(() => installShortcuts(commandShortcuts(commands)), [commands]);
+  // The menus read each command's state when they are built: build them again whenever the view changes.
+  const viewVersion = useViewVersion(live?.store ?? null);
+  const menus = useMemo(() => buildMenus(commands), [commands, viewVersion]); // eslint-disable-line react-hooks/exhaustive-deps -- viewVersion is the trigger
+
   return (
-    <div className={styles.app}>
-      <ViewerBar
+    <div ref={root} className={styles.app}>
+      <Header
         name={name}
         onBack={back === null ? null : () => void goBackToPage(params)}
+        menus={menus}
         // The error card carries its own "Open in Chrome's viewer"; one is enough on screen.
-        onOpenInChrome={source === null || leaving || view.kind === 'error' ? null : () => escape(source)}
+        onOpenInChrome={!canEscape || view.kind === 'error' ? null : () => escape(source)}
         chromeRefused={chromeRefused}
       />
       <div className={styles.content}>
@@ -143,7 +181,9 @@ export function App() {
             Opening in the full tab…
           </p>
         )}
-        {view.kind === 'ready' && <Reader doc={view.doc} initialPage={params.page} onOpenInChrome={escape} />}
+        {view.kind === 'ready' && (
+          <Reader doc={view.doc} params={params} rootRef={root} pageFieldRef={pageField} ui={ui} onChrome={setReader} />
+        )}
         {!leaving && view.kind === 'loading' && prompt === null && (
           <div role="progressbar" aria-label="Loading the PDF" className={styles.progress} />
         )}
@@ -156,8 +196,28 @@ export function App() {
         <FileAccessDialog open={fileDialogOpen} onOpenChange={setFileDialogOpen} onOpenSettings={openFileSettings} onChooseFile={importFile} />
       )}
       {prompt !== null && <PasswordDialog retry={prompt.retry} attempt={prompt.attempt} onSubmit={prompt.resolve} />}
+      <ShortcutsDialog open={dialog === 'shortcuts'} onOpenChange={(open) => !open && setDialog(null)} commands={commands} />
+      <AboutDialog open={dialog === 'about'} onOpenChange={(open) => !open && setDialog(null)} />
+      <Snackbar note={note} />
     </div>
   );
+}
+
+/** What the open document hands up to the header: its commands and the view state they read. */
+interface ReaderChrome {
+  commands: ViewerCommands;
+  store: ViewerStore;
+}
+
+/** The view state while no document is open: it never changes. */
+const IDLE_STORE = createViewerStore();
+
+/**
+ * Changes whenever something a menu shows may have changed (zoom, rotation, spread, the rail), so the menus are built
+ * again.
+ */
+function useViewVersion(store: ViewerStore | null): string {
+  return useViewerState(store ?? IDLE_STORE, (s) => `${s.zoom.kind}|${s.scale}|${s.viewRotation}|${s.spread}|${s.railOpen}`);
 }
 
 /** "Open extension settings": the service worker opens chrome://extensions/?id=… beside this tab (a page cannot). */
@@ -167,22 +227,64 @@ function openFileSettings(): void {
   });
 }
 
-/** The open document: the page list, its keys, the scan hint, and its test hooks. */
-function Reader({ doc, initialPage, onOpenInChrome }: { doc: OpenedDocument; initialPage: number | null; onOpenInChrome: (url: string) => void }) {
+interface ReaderProps {
+  doc: OpenedDocument;
+  params: ViewerParams;
+  rootRef: RefObject<HTMLDivElement | null>;
+  pageFieldRef: RefObject<HTMLInputElement | null>;
+  ui: ViewerUi;
+  /** The commands for this document and its view state, for the header's menus and the keys; null when it goes. */
+  onChrome: (chrome: ReaderChrome | null) => void;
+}
+
+/** The open document: the toolbar pill, the page list, its keys, the scan hint, and its test hooks. */
+function Reader({ doc, params, rootRef, pageFieldRef, ui, onChrome }: ReaderProps) {
   const [store] = useState(() =>
-    createViewerStore({ currentPage: Math.min(doc.open.pageCount - 1, Math.max(0, (initialPage ?? 1) - 1)) }),
+    createViewerStore({ currentPage: Math.min(doc.open.pageCount - 1, Math.max(0, (params.page ?? 1) - 1)) }),
   );
   const [scheduler] = useState(
     () => new RenderScheduler(backend, doc.open.doc, { concurrency: ENGINE_WORKERS, previewWidthPx: 160, previewCache: 300 }),
   );
   const [scans] = useState(() => new ScanDetector(backend, doc.open.doc, doc.open.pages));
   const api = useRef<PageListApi | null>(null);
+  const commands = useMemo(() => {
+    const ctx: ViewerContext = {
+      params,
+      backend,
+      opened: doc,
+      store,
+      scheduler,
+      root: rootRef.current ?? document.body,
+      jumps: null,
+      find: null,
+      save: null,
+      pageList: api,
+      ui,
+    };
+    return createCommands(ctx);
+  }, [params, doc, store, scheduler, rootRef, ui]);
+  useEffect(() => {
+    onChrome({ commands, store });
+    return () => onChrome(null);
+  }, [commands, store, onChrome]);
   useEffect(() => installShortcuts(readerShortcuts(api)), []);
   useEffect(() => publishRuntime({ viewer: viewerHooks(api, store, scans) }), [store, scans]);
+  const goToPage = useCallback((index: number) => void api.current?.goToPage(index), []);
+  const zoom = useCallback((mode: ZoomMode) => api.current?.zoomTo(mode), []);
   return (
     <>
-      <PageList backend={backend} doc={doc} store={store} scheduler={scheduler} apiRef={api} />
-      <CurrentPageExtras store={store} scans={scans} source={doc.loaded.sourceUrl} onOpenInChrome={onOpenInChrome} />
+      <Toolbar
+        commands={commands}
+        store={store}
+        pageCount={doc.open.pageCount}
+        onGoToPage={goToPage}
+        onZoom={zoom}
+        pageFieldRef={pageFieldRef}
+        end={<CurrentPageExtras store={store} scans={scans} source={doc.loaded.sourceUrl} onOpenInChrome={(url) => ui.openInChrome(url)} />}
+      />
+      <div className={styles.pages}>
+        <PageList backend={backend} doc={doc} store={store} scheduler={scheduler} apiRef={api} />
+      </div>
     </>
   );
 }
@@ -193,7 +295,7 @@ function CurrentPageExtras(p: { store: ViewerStore; scans: ScanDetector; source:
   const scanned = useScannedPage(p.scans, currentPage);
   usePageHash(currentPage);
   const { source, onOpenInChrome } = p;
-  return scanned && source !== null ? <ScanHint onOpenInChrome={() => onOpenInChrome(source)} /> : null;
+  return <ScanHint shown={scanned && source !== null} onOpenInChrome={() => source !== null && onOpenInChrome(source)} />;
 }
 
 /** How long the reader stays on a page before it is checked for being a scan (the check shares the engine). */
@@ -241,16 +343,13 @@ function inPageArea(): boolean {
   return a === null || a === document.body || a === document.documentElement || a.closest('[role="document"]') !== null;
 }
 
-/** Zoom keys (Chrome's: the browser zoom never changes) and Chromium's viewer scroll keys. */
+/** Chromium's viewer scroll keys. (The zoom keys are commands: commands.ts.) */
 function readerShortcuts(api: RefObject<PageListApi | null>): ShortcutDef[] {
   const on = (f: (a: PageListApi) => void) => () => {
     if (api.current) f(api.current);
   };
   const page = (id: string, keys: string[], f: (a: PageListApi) => void): ShortcutDef => ({ id, keys, run: on(f), enabled: inPageArea });
   return [
-    { id: 'view.zoomIn', keys: ['Ctrl+=', 'Ctrl++'], run: on((a) => a.zoomStep(1)) },
-    { id: 'view.zoomOut', keys: ['Ctrl+-', 'Ctrl+_'], run: on((a) => a.zoomStep(-1)) },
-    { id: 'view.fitWidth', keys: ['Ctrl+0'], run: on((a) => a.zoomTo({ kind: 'fit-width' })) },
     page('scroll.lineDown', ['ArrowDown'], (a) => a.scrollLines(1)),
     page('scroll.lineUp', ['ArrowUp'], (a) => a.scrollLines(-1)),
     page('scroll.screenDown', ['PageDown', 'Space'], (a) => a.scrollScreens(1)),

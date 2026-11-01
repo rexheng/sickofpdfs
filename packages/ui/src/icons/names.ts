@@ -34,6 +34,10 @@ export const ICON_NAMES = [
   'check',
   'undo',
   'menu_book',
+  // Phase 1: the viewer chrome (Task 23): View menu fit modes and the scan hint
+  'fit_page_width',
+  'fit_page',
+  'document_scanner',
   // Phase 2: the right-click mark-up menu (S6, S13)
   'ink_highlighter',
   'format_underlined',

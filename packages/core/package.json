@@ -6,7 +6,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./fingerprint": "./src/identity/fingerprint.ts",
-    "./ids": "./src/ids.ts"
+    "./ids": "./src/ids.ts",
+    "./canonical-link": "./src/identity/canonical-link.ts",
+    "./save": "./src/save/types.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

@@ -242,6 +242,17 @@
   --z-menu: 1000;
   --z-tooltip: 1100;
 
+  /* Viewer chrome (Task 23): Drive's PDF preview header and toolbar pill, 02 section 4.10 [live] */
+  --viewer-back-gap: 10px;          /* close (back) button 16–48, PDF tile from 58 */
+  --viewer-menubar-gap: 2px;        /* file name 12–32, menu bar 34–58 */
+  --viewer-zoom-w: 73px;            /* the zoom box between − and + */
+  --type-viewer-zoom: 400 14px/24px var(--font-display); /* "100%" in the zoom box, on-surface */
+  --menu-compact-item-h: 40px;      /* zoom list rows */
+  --type-menu-compact: 400 16px/24px var(--font-display); /* zoom list labels */
+  --kbd-pad: 2px 6px;               /* a key in the shortcut sheet [inf] */
+  --sheet-min-w: 400px;             /* the shortcut sheet's table [inf] */
+  --snackbar-min-h: 48px;           /* GM3 snackbar [inf] */
+
   /* ===== Phase 2: marks, figures, comment cards and the notes panel (plan S4, contracts D5) ===== */
   /*
    * The five mark colours. MarkColor 1–5 (packages/core model/rows.ts) is a slot, and these are its only hex values;

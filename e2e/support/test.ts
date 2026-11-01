@@ -1,4 +1,5 @@
-import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { copyFile, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { expect, test as base, type BrowserContext, type Page, type Worker } from '@playwright/test';
@@ -258,4 +259,36 @@ export async function inkBox(page: Page, canvasSelector: string): Promise<{ left
     if (x1 < 0) return { left: 0, top: 0, width: 0, height: 0 };
     return { left: x0 / w, top: y0 / h, width: (x1 - x0 + 1) / w, height: (y1 - y0 + 1) / h };
   }, canvasSelector);
+}
+
+/** The first element matching `sel`: its box in CSS px (x, y from the viewport's top-left). Fails if there is none. */
+export async function box(page: Page, sel: string): Promise<{ x: number; y: number; width: number; height: number }> {
+  const b = await page.locator(sel).first().boundingBox();
+  if (b === null) throw new Error(`box: nothing visible matches ${sel}`);
+  return b;
+}
+
+/** The first element matching `sel`: its computed style, keyed as in CSSStyleDeclaration (`backgroundColor`). */
+export async function css(page: Page, sel: string): Promise<Record<string, string>> {
+  return page
+    .locator(sel)
+    .first()
+    .evaluate((el) => {
+      const style = getComputedStyle(el);
+      const out: Record<string, string> = {};
+      for (const name of Array.from(style)) out[name.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())] = style.getPropertyValue(name);
+      return out;
+    });
+}
+
+/** Opens a header menu ("File") and chooses an item in it ("Copy link"), as a person would with the mouse. */
+export async function clickMenu(page: Page, menu: string, item: string): Promise<void> {
+  await page.getByRole('menubar').getByRole('menuitem', { name: menu, exact: true }).click();
+  const open = page.getByRole('menu');
+  await open.getByRole('menuitem', { name: item, exact: true }).or(open.getByRole('menuitemcheckbox', { name: item, exact: true })).click();
+}
+
+/** A file's SHA-256, as lower-case hex. */
+export async function sha256File(path: string): Promise<string> {
+  return createHash('sha256').update(await readFile(path)).digest('hex');
 }

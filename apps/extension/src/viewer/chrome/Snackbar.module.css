@@ -1,0 +1,35 @@
+/* GM3 snackbar [inf]: inverse surface, 4 px corners, at least 48 px tall, 24 px from the bottom-left corner. */
+.region {
+  position: fixed;
+  inset-block-end: var(--space-6);
+  inset-inline-start: var(--space-6);
+  z-index: var(--z-tooltip);
+}
+
+.snackbar {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-block-size: var(--snackbar-min-h);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--shape-tooltip);
+  background-color: var(--gm3-sys-color-inverse-surface);
+  box-shadow: var(--elev-3);
+  color: var(--gm3-sys-color-inverse-on-surface);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+  animation: rise 150ms ease-out;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-2));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .snackbar {
+    animation: none;
+  }
+}

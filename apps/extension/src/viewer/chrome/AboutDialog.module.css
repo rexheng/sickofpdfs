@@ -1,0 +1,7 @@
+.line {
+  margin: 0 0 var(--space-2);
+}
+
+.line:last-child {
+  margin-block-end: 0;
+}

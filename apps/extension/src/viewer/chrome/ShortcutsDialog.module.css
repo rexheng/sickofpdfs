@@ -1,0 +1,67 @@
+/*
+ * The shortcut sheet inside the GM3 dialog: groups titled like the menus (Google Sans Text 12/16 500, muted), rows
+ * 36 px with the action at the left in on-surface and its keys at the right as small key caps.
+ */
+.sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-inline-size: var(--sheet-min-w);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+}
+
+.groupTitle {
+  margin: 0 0 var(--space-1);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-chip);
+  font-variation-settings: "opsz" 17;
+}
+
+.table {
+  inline-size: 100%;
+  border-collapse: collapse;
+}
+
+.action,
+.keys {
+  block-size: var(--menu-dark-item-h);
+  padding: 0;
+  border-block-end: 1px solid var(--gm3-sys-color-outline-variant);
+  vertical-align: middle;
+}
+
+.table tr:last-child > * {
+  border-block-end: 0;
+}
+
+.action {
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-body);
+  text-align: start;
+}
+
+.keys {
+  padding-inline-start: var(--space-6);
+  text-align: end;
+  white-space: nowrap;
+}
+
+.or {
+  margin-inline: var(--space-2);
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.kbd {
+  display: inline-block;
+  padding: var(--kbd-pad);
+  border-radius: var(--shape-field);
+  background-color: var(--gm3-sys-color-surface-container-highest);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-tooltip);
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+}
