@@ -1,0 +1,63 @@
+/*
+ * Print. Ctrl+P prints #sop-print-root (print.ts): one sheet per page, each holding the page's image, and each with
+ * its own paper size through a named page (the @page rules are added with the copy, in a <style> of their own).
+ * Nothing of the viewer prints. If Chrome's own menu starts a print while there is no copy, #sop-print-hint prints
+ * instead: one page that says how to print. (Both elements are outside the React root.)
+ */
+/* eslint-disable-next-line css/use-baseline -- @page is the only way to set a printed page's margin */
+@page {
+  margin: 0;
+}
+
+#sop-print-root,
+#sop-print-hint {
+  display: none;
+}
+
+@media print {
+  /* "html body" outranks the viewer's own rules for body, whichever stylesheet comes last. */
+  html,
+  html body {
+    height: auto;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    background: transparent;
+    color: CanvasText;
+  }
+
+  /* The viewer, its dialogs and menus (they are portaled to the body). */
+  body > *:not(#sop-print-root, #sop-print-hint) {
+    display: none;
+  }
+
+  #sop-print-root {
+    display: block;
+  }
+
+  /* Each sheet is exactly one sheet of paper (its size is set with it); break-after keeps a page apart from the next. */
+  .sop-print-sheet {
+    display: block;
+    overflow: hidden;
+    break-inside: avoid;
+    break-after: page;
+  }
+
+  .sop-print-sheet:last-child {
+    break-after: auto;
+  }
+
+  .sop-print-sheet > img {
+    display: block;
+  }
+
+  #sop-print-hint {
+    display: block;
+    padding: var(--space-16);
+    font: var(--type-dialog-title);
+  }
+
+  body:has(#sop-print-root) #sop-print-hint {
+    display: none;
+  }
+}

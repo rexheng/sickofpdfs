@@ -16,6 +16,7 @@ import type { RefObject } from 'react';
 import type { ViewerParams } from '../shared/viewer-url';
 import { downloadOriginal } from './actions/download';
 import type { OpenedDocument } from './open-document';
+import { printDocument } from './print/print';
 import type { KeyCombo, ShortcutDef } from './shortcuts';
 
 export { buildMenus, formatCombo } from './chrome/menus';
@@ -50,6 +51,10 @@ export interface ViewerUi {
   showAbout(): void;
   /** Copies the PDF's link and says whether it worked. */
   copyLink(source: string): void;
+  /** Shows the "Preparing to print…" dialog with how far the pages are; null closes it. `cancel` stops the work. */
+  printProgress(progress: { done: number; total: number; cancel: () => void } | null): void;
+  /** A short note at the bottom of the window (a snackbar). */
+  showNote(text: string): void;
 }
 
 /** Built once per tab in App.tsx; later tasks fill the nullable fields. */
@@ -142,7 +147,7 @@ function saveToLibrary(save: SaveController | null): Behaviour {
   return { run: () => void save?.requestSave().catch(() => {}), enabled: () => save !== null && SAVABLE.has(save.state.kind) };
 }
 
-/** The commands for an open document. Rotate, two-page, presentation, the rail, find and print come later. */
+/** The commands for an open document. Rotate, two-page, presentation and find come later. */
 export function createCommands(ctx: ViewerContext): ViewerCommands {
   const pages = () => ctx.pageList.current;
   const source = ctx.params.source;
@@ -153,6 +158,7 @@ export function createCommands(ctx: ViewerContext): ViewerCommands {
     'file.download': { run: () => downloadOriginal(ctx.opened.loaded.blob, ctx.opened.loaded.displayName), enabled: always },
     'file.copyLink': { run: () => link !== null && ctx.ui.copyLink(link), enabled: () => link !== null },
     'file.saveToLibrary': saveToLibrary(ctx.save),
+    'file.print': { run: () => void printDocument(ctx), enabled: always },
     'view.fitWidth': { run: () => pages()?.zoomTo({ kind: 'fit-width' }), enabled: always },
     'view.fitPage': { run: () => fitPage(pages(), ctx.store), enabled: always },
     'view.zoomIn': { run: () => pages()?.zoomStep(1), enabled: () => scale() < MAX_SCALE - LIMIT_EPSILON },

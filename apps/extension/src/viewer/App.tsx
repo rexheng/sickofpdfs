@@ -45,6 +45,7 @@ import type { SaveControllerImpl } from './save/save-controller';
 import { SaveAskDialog } from './save/SaveAskDialog';
 import { StatusChip, useSaveView } from './save/StatusChip';
 import { useSave } from './save/use-save';
+import { PrintProgressDialog } from './print/PrintProgressDialog';
 import { installShortcuts, type ShortcutDef } from './shortcuts';
 import { FileAccessDialog } from './ui/FileAccessDialog';
 import { LargeFileNotice } from './ui/LargeFileNotice';
@@ -153,6 +154,7 @@ export function App() {
   const pageField = useRef<HTMLInputElement>(null);
   const [dialog, setDialog] = useState<'shortcuts' | 'about' | null>(null);
   const [note, setNote] = useState<{ text: string } | null>(null);
+  const [printing, setPrinting] = useState<{ done: number; total: number; cancel: () => void } | null>(null);
   const ui = useMemo<ViewerUi>(
     () => ({
       openInChrome: escape,
@@ -163,6 +165,8 @@ export function App() {
       showShortcuts: () => setDialog('shortcuts'),
       showAbout: () => setDialog('about'),
       copyLink: (link) => void copyLink(link).then((ok) => setNote({ text: ok ? 'Link copied' : 'Couldn’t copy the link. Try again.' })),
+      printProgress: setPrinting,
+      showNote: (text) => setNote({ text }),
     }),
     [escape],
   );
@@ -221,6 +225,7 @@ export function App() {
       <ShortcutsDialog open={dialog === 'shortcuts'} onOpenChange={(open) => !open && setDialog(null)} commands={commands} />
       <AboutDialog open={dialog === 'about'} onOpenChange={(open) => !open && setDialog(null)} />
       <SaveAskDialog save={save} />
+      {printing !== null && <PrintProgressDialog done={printing.done} total={printing.total} onCancel={printing.cancel} />}
       <Snackbar note={note} />
     </div>
   );
