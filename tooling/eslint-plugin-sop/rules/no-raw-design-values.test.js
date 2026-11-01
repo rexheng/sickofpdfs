@@ -28,6 +28,8 @@ cssTester.run('no-raw-design-values', rule, {
     'a { margin: 0px; padding: 0 0 0 0; top: auto; height: auto; flex: 1 1 0 }',
     'a { grid-template-columns: 1fr 2fr; width: calc(100% - var(--space-2)); border: 1px solid var(--drive-row-divider) }',
     'a { border-top-width: 1px; border-image-width: 1 }',
+    // viewport units are layout values, not design values
+    'a { height: 100vh; min-height: 100dvh; max-height: 100svh; width: 100vw; inset-block-start: 10lvh; font-size: var(--x); padding: 5vmin 5vmax }',
     // not lengths, colours or fonts
     'a { opacity: 0.5; z-index: 2; line-height: 1.5; font-weight: 500; transition: opacity 200ms ease; transform: rotate(45deg) }',
     'a { font-family: var(--gm3-sys-font-family-body); font: var(--gm3-sys-typescale-body-medium); font-size: var(--gm3-sys-font-size-body) }',
@@ -58,7 +60,7 @@ cssTester.run('no-raw-design-values', rule, {
     { code: 'a { margin: 0 auto 1rem }', errors: [{ messageId: 'rawLength' }] },
     { code: 'a { margin: 8px 12px }', errors: [{ messageId: 'rawLength' }, { messageId: 'rawLength' }] },
     { code: 'a { width: calc(100% - 8px) }', errors: [{ messageId: 'rawLength' }] },
-    { code: 'a { height: 100vh }', errors: [{ messageId: 'rawLength' }] },
+    { code: 'a { min-height: calc(100vh - 8px) }', errors: [{ messageId: 'rawLength' }] },
     { code: 'a { font-size: 14px }', errors: [{ messageId: 'rawLength' }] },
     { code: 'a { border-bottom: 2px solid var(--drive-row-divider) }', errors: [{ messageId: 'rawLength' }] },
     { code: 'a { border-radius: 0.5px }', errors: [{ messageId: 'rawLength' }] },
@@ -84,6 +86,7 @@ jsxTester.run('no-raw-design-values', rule, {
     "<div style={{ margin: 0, padding: '0', opacity: 0.5, zIndex: 3, flex: 1, lineHeight: 1.5, fontWeight: 500 }} />",
     "<div style={{ borderBottom: '1px solid var(--drive-row-divider)', borderWidth: 1, height: 'auto', gridTemplateColumns: '1fr 2fr' }} />",
     "<div style={{ background: 'transparent', color: 'currentColor', boxShadow: 'none' }} />",
+    "<div style={{ height: '100vh', minWidth: '50vw' }} />",
     "<div style={{ fontFamily: 'var(--gm3-sys-font-family-body)', boxShadow: 'var(--gm3-sys-elevation-2)' }} />",
     // not the style attribute, not an inline object, or not static: out of scope
     "<div className={{ color: '#fff' }} data-x={{ padding: 12 }} />",

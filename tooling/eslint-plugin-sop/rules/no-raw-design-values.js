@@ -7,8 +7,8 @@
 // Both feed a value, as a CSS syntax tree, to the same analysis. JSX strings are parsed with the CSS parser that
 // @eslint/css uses.
 //
-// Allowed without a token: 0, 1px (hairlines), %, fr, auto, transparent, currentColor, inherit and none (plus the other
-// CSS-wide keywords). Files under packages/ui/src/tokens/ are exempt: that is where the values are defined.
+// Allowed without a token: 0, 1px (hairlines), %, fr, auto, viewport units (vh, vw, ...), transparent, currentColor,
+// inherit and none (plus the other CSS-wide keywords). Files under packages/ui/src/tokens/ are exempt: that is where the values are defined.
 import { parse, toPlainObject } from '@eslint/css-tree';
 
 const TOKENS_DIR = /(^|\/)packages\/ui\/src\/tokens\//u;
@@ -39,13 +39,12 @@ const NAMED_COLORS = new Set(
   ).split(' '),
 );
 
-const VIEWPORT_UNITS = ['vw', 'vh', 'vi', 'vb', 'vmin', 'vmax'].flatMap((u) => [u, `s${u}`, `l${u}`, `d${u}`]);
-// Absolute and relative length units. `%`, `fr`, and time, angle and resolution units are not lengths.
+// Absolute and relative length units. Not listed, so allowed: `%`, `fr`, time, angle and resolution units, and the
+// viewport units (vw, vh, vi, vb, vmin, vmax and their s/l/d variants), which are layout values, not design values.
 const LENGTH_UNITS = new Set([
   'px', 'em', 'rem', 'ex', 'rex', 'cap', 'rcap', 'ch', 'rch', 'ic', 'ric', 'lh', 'rlh',
   'cm', 'mm', 'q', 'in', 'pt', 'pc',
   'cqw', 'cqh', 'cqi', 'cqb', 'cqmin', 'cqmax',
-  ...VIEWPORT_UNITS,
 ]);
 
 // Properties whose value can hold a named colour. Custom properties count, so a new token cannot be declared outside
@@ -213,7 +212,7 @@ export default {
     messages: {
       rawColor: "Raw colour '{{value}}' in '{{property}}'. Use a colour token from packages/ui/src/tokens, such as var(--gm3-sys-color-primary).",
       rawLength:
-        "Raw length '{{value}}' in '{{property}}'. Use a spacing or size token, such as var(--space-2). Without a token only 0, 1px, %, fr and auto are allowed.",
+        "Raw length '{{value}}' in '{{property}}'. Use a spacing or size token, such as var(--space-2). Without a token only 0, 1px, %, fr, auto and viewport units are allowed.",
       rawFont: "Raw font in '{{property}}'. Use a font token from packages/ui/src/tokens.",
       rawShadow: "Raw shadow in '{{property}}'. Use an elevation token from packages/ui/src/tokens.",
     },
