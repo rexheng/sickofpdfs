@@ -284,3 +284,4 @@ export function planPdfImport(read: PdfAnnotation[], known: { refs: { pdfRef: st
   - **W-O2:** a comparison with Chrome's own Screen AI OCR on the owner's Windows laptop. The tooling is ready (report §9).
   - **W-O1:** threads and WebGPU speed against the 3 s visible page p95 and 20 pages a minute.
 - **7.x:** find a clearer public-domain German scan for the German floor; the Kafka sample is too blurry for any engine. Phase 3 and 7.2 agree on one onnxruntime-web build: plain wasm unless W-O1 picks WebGPU (+3.2 MiB zipped).
+- **8.4 (from the 8.1 triage):** importing a PDF reuses note ids written into the file (/NM), and the pure mapping cannot see the library. So opening a "Download with notes" copy could clash with the original's notes. 8.4 only ever inserts. Any id already in use gets a new id, and the duplicate check stays on the PDF annotation ids, so nothing is ever overwritten.
