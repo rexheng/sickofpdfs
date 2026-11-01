@@ -61,11 +61,13 @@ test.describe('You click a PDF link', () => {
     const cited = server.url('/h/plain.pdf');
     const viewer = await openViewer(first);
     const tabs = context.pages().length;
-    // A link in the PDF's page, as the viewer will draw it. The viewer is a stub, so the link is put where it would be.
+    // A stand-in for a link in the PDF's page. The viewer root is fixed over the whole window, so the link is fixed
+    // above it. When the PDF link layer exists, this should click a real link instead.
     await viewer.evaluate((href) => {
       const link = document.createElement('a');
       link.href = href;
       link.textContent = 'Cited paper (PDF)';
+      link.style.cssText = 'position: fixed; left: 8px; bottom: 8px; z-index: 10';
       document.body.append(link);
     }, cited);
 
