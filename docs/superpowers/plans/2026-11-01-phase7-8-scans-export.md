@@ -268,3 +268,10 @@ export function planPdfImport(read: PdfAnnotation[], known: { refs: { pdfRef: st
 | Incremental save on odd files (signed, encrypted, hybrid xref) | 8.0 tests them. On failure a full rewrite keeps the same encryption. A signed file gets a plain warning that its signature will show as changed. |
 | Wrong figure outlines on scans | Confident boxes only; labelled set in Gate 2; Alt+drag always works. |
 | Bold is not offered on scans (Phase 2); raw annotation reads leak about 240 bytes each (P0-7) | Bold on scans: the spec's "strong" look would be the way, not planned. Import reads once per document, so the leak is accepted. |
+
+## Carried requirements (controller, 1 Nov 2026, from 8.0 + 8.1)
+
+- **Coordinates:** `PdfRect` in both the export plan and the import read shape is PDF user space (y up, origin at the page's lower left, before /Rotate). 8.2 must match this. Recorded in contracts §9.
+- **8.2:** write on a fresh document handle that loads only the annotated pages (PDFium rewrites every loaded object). Keep `fixXrefStreamTail`: PDFium writes a broken xref stream in the incremental tail for files that use xref streams (7 of 11 inputs).
+- **8.3:** pass `replyAppearance: 'empty'` (sample A, D8.1) until the owner's 10-minute Foxit/Acrobat check (W-F1). Add `ImportedMeta` to `CommentMeta` in `packages/core/src/model/rows.ts`. Imported Claude comments come back as author 'me' with a "from Claude" label.
+- **8.1 additions (accepted):** the optional `lineRgb`, `areaRgb`, `threadRgb` and `replyAppearance`, plus `skippedMarks` in the result.

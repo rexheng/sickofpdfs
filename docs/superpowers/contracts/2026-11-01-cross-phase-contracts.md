@@ -481,3 +481,6 @@ Each item below has a recommended default. A planner uses the default until the 
 
 ### CA10 (ratified 1 Nov 2026)
 `PushResponse.rejected?: RejectedEntry[]` (optional). Each entry has `{ table, id, hlc, code, message, retryable }`. A device drops a non-retryable rejected entry from its outbox, so "N not yet synced" can reach 0. R57: the owner may delete or restore a Claude row but not rewrite it; an owner delete beats a concurrent Claude edit, and Claude's text stays in the tombstone.
+
+### §9 note (1 Nov 2026)
+`PdfRect` is PDF user space: y up, origin at the page's lower left, before /Rotate. This holds for both the export plan and the import read shape. `planPdfExport` options gain the optional `lineRgb`, `areaRgb`, `threadRgb` and `replyAppearance` (`'hidden' | 'empty'`, default `'empty'` until W-F1), and its result gains `skippedMarks`.
