@@ -8,8 +8,8 @@ import { isArxivId } from './validators';
 // ---- positive evidence ----
 
 /** Headings are matched line by line. */
-const HEADING_ABSTRACT = /^[ \t]*(?:abstract|executive summary|résumé|zusammenfassung|resumen|riassunto|samenvatting|sommario)[ \t]*(?:[:.—–-]?[ \t]*$|[:.—–-][ \t]*\S)/im;
-const HEADING_REFERENCES = /^[ \t]*(?:\d+\.?[ \t]*|[ivx]+\.[ \t]*)?(?:references|bibliography|works cited|literature cited|literaturverzeichnis|bibliographie|références|bibliografía|bibliografia|referenzen|literatur|literatuur|referencias)[ \t]*[:.]?[ \t]*$/im;
+const HEADING_ABSTRACT = /^[ \t]*(?:abstract|executive summary|résumé|zusammenfassung|resumen|riassunto|samenvatting|sommario)[ \t]{0,30}(?:[:.—–-]?[ \t]{0,30}$|[:.—–-][ \t]{0,30}\S)/im;
+const HEADING_REFERENCES = /^[ \t]*(?:\d+\.?[ \t]*|[ivx]+\.[ \t]*)?(?:references|bibliography|works cited|literature cited|literaturverzeichnis|bibliographie|références|bibliografía|bibliografia|referenzen|literatur|literatuur|referencias)[ \t]{0,30}[:.]?[ \t]{0,30}$/im;
 const HEADING_CHAPTER = /^[ \t]*(?:chapter|lecture|week|kapitel|chapitre|capítulo|capitulo|hoofdstuk|vorlesung|woche)[ \t]+\d+|^[ \t]*(?:table of )?(?:contents|inhaltsverzeichnis|inhalt|table des matières|sommaire|índice|inhoudsopgave)[ \t]*$/im;
 const THESIS = /submitted in (?:partial )?fulfil?ment|doctor of philosophy|\bph\.?d\.? thesis|master'?s thesis|\bdissertation\b|thèse de doctorat|doktorarbeit|masterarbeit|bachelorarbeit|diplomarbeit|tesis doctoral/i;
 
@@ -57,7 +57,7 @@ export const isLatexProducer = (producer: string): boolean => LATEX_PRODUCER.tes
 
 // ---- evidence against ----
 
-const CURRENCY = /(?:[£$€₹¥]|\b(?:USD|GBP|EUR|INR|CAD|CHF)\b)\s?\d[\d,.]*|\b\d[\d.,]*[.,]\d{2}\s?(?:€|EUR|\$|£)/g;
+const CURRENCY = /(?:[£$€₹¥]|\b(?:USD|GBP|EUR|INR|CAD|CHF)\b)\s?\d[\d,.]{0,14}|\b\d[\d.,]{0,14}[.,]\d{2}\s?(?:€|EUR|\$|£)/g;
 export function currencyCount(t: string): number {
   return t.match(CURRENCY)?.length ?? 0;
 }
@@ -89,6 +89,16 @@ export interface AdminGroup {
   /** Words that are also common in readings: the group counts only when `needed` distinct ones appear. */
   weak?: readonly RegExp[];
   needed?: number;
+  /**
+   * How much this group counts when the chip picks a "looks like …" phrase. Generic groups (invoice and bank wording,
+   * which many documents share) count 1, the rest 2. A group that names a tax authority or a tax form counts 6, so a tax
+   * return that also says "payment" and "account number" is still named a tax form. This does not touch the score.
+   */
+  labelPoints?: number;
+}
+
+export function labelPoints(g: AdminGroup): number {
+  return g.labelPoints ?? (g.kind === 'invoice' || g.kind === 'bank' ? 1 : 2);
 }
 
 const w = (...parts: string[]): RegExp => new RegExp(parts.join('|'), 'i');
@@ -150,7 +160,7 @@ export const ADMIN_GROUPS: readonly AdminGroup[] = [
     needed: 2,
   },
   {
-    id: 'tax-words', kind: 'tax', label: 'Tax form wording',
+    id: 'tax-words', kind: 'tax', label: 'Tax form wording', labelPoints: 6,
     strong: w('omb no', 'internal revenue service', '\\bhmrc\\b', 'self assessment', '\\butr\\b', 'social security number'),
     weak: [/taxpayer/i, /tax return/i, /\bw-?2\b/i, /\b1099\b/i],
     needed: 2,
@@ -209,11 +219,12 @@ export const ADMIN_GROUPS: readonly AdminGroup[] = [
 
 // A CV is a private document: contact details, a name, and sections such as Education and Experience. Evidence is added
 // up in points. Section headings are matched as whole lines, so a word inside a sentence never counts.
-const CV_STRONG_HEADING = /^[ \t]*(?:work experience|professional experience|relevant experience|employment history|work history|employment|experience|professional summary|career summary|career objective|personal details|personal profile|personal statement|volunteer(?:ing)? experience|key skills|technical skills|referees?)[ \t]*:?[ \t]*$/gim;
-const CV_SUPPORT_HEADING = /^[ \t]*(?:education|skills|languages|interests|hobbies|certifications|awards|publications|achievements|profile)[ \t]*:?[ \t]*$/gim;
+const CV_STRONG_HEADING = /^[ \t]*(?:work experience|professional experience|relevant experience|employment history|work history|employment|experience|professional summary|career summary|career objective|personal details|personal profile|personal statement|volunteer(?:ing)? experience|key skills|technical skills|referees?)[ \t]{0,30}:?[ \t]{0,30}$/gim;
+const CV_SUPPORT_HEADING = /^[ \t]*(?:education|skills|languages|interests|hobbies|certifications|awards|publications|achievements|profile)[ \t]{0,30}:?[ \t]{0,30}$/gim;
 const CV_TITLE = /^[ \t]*(?:curriculum vitae|cv|r\u00e9sum\u00e9|resume)[ \t]*$/im;
-const CONTACT_EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/;
-const CONTACT_PHONE = /\b(?:tel|telephone|phone|mobile|mob|cell)\b[.:]?\s*\(?\+?\d[\d ()-]{6,}\d|\+\d{1,3}[ -]?\(?\d{1,4}\)?[ -]?\d[\d -]{5,}\d/i;
+// the lookbehind makes each run of name characters be tried once, not once per character
+const CONTACT_EMAIL = /(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+/;
+const CONTACT_PHONE = /\b(?:tel|telephone|phone|mobile|mob|cell)\b[.:]?\s*\(?\+?\d[\d ()-]{6,30}\d|\+\d{1,3}[ -]?\(?\d{1,4}\)?[ -]?\d[\d -]{5,30}\d/i;
 const CONTACT_POSTCODE = /\b[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}\b|\b[A-Z]{2} \d{5}(?:-\d{4})?\b/;
 const CONTACT_PROFILE = /linkedin\.com\/in\//i;
 /** A CV is rarely longer than this; a long document with a few CV-like headings is a book or a report. */

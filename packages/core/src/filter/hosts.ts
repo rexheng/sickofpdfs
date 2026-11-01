@@ -1,6 +1,8 @@
 // What the link says about a PDF: the site it came from, and words in its path and file name. Pure string work, no
 // network. A site is matched on whole host labels ("evilarxiv.org" is not "arxiv.org").
 
+import { LINK_CHAR_CAP } from './limits';
+
 export interface LinkParts {
   /** Lower-case host without port, or '' for file links. */
   host: string;
@@ -13,7 +15,7 @@ export function parseLink(link: string | null | undefined): LinkParts | null {
   if (!link) return null;
   let url: URL;
   try {
-    url = new URL(link);
+    url = new URL(link.length > LINK_CHAR_CAP ? link.slice(0, LINK_CHAR_CAP) : link);
   } catch {
     return null;
   }

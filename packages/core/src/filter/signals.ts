@@ -12,6 +12,8 @@ import {
 import {
   ADMIN_GROUPS,
   academicWordCount,
+  labelPoints,
+  type AdminGroup,
   countCitations,
   cvEvidence,
   currencyCount,
@@ -29,6 +31,7 @@ import {
   mathSymbolCount,
   type AdminKind,
 } from './terms';
+import { capField, capPages } from './limits';
 import type { FilterInput, FilterPageSize, FilterSignal } from './types';
 
 export const BIAS = -1;
@@ -36,19 +39,15 @@ export const BIAS = -1;
 export const NO_TEXT_WORDS = 15;
 /** Admin term groups stop counting after this many. */
 const ADMIN_CAP = 5;
-/** A page is cut here before any matching, so odd input cannot make the filter slow. */
-const PAGE_CHAR_CAP = 15_000;
 
 // soft hyphen, zero-width space, non-joiner, joiner, word joiner and byte-order mark
 const INVISIBLE = new RegExp([0xad, 0x200b, 0x200c, 0x200d, 0x2060, 0xfeff].map((c) => String.fromCharCode(c)).join('|'), 'g');
 const WORD = /[\p{L}\p{N}]+/gu;
 const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu;
 
+/** The sampled pages, cut to the limits in limits.ts and tidied for matching. */
 export function normalizePages(sample: readonly string[]): string[] {
-  return sample.map((page) => {
-    const cut = page.length > PAGE_CHAR_CAP ? page.slice(0, PAGE_CHAR_CAP) : page;
-    return cut.normalize('NFKC').replaceAll(/\r\n?|\f/g, '\n').replaceAll(INVISIBLE, '');
-  });
+  return capPages(sample).map((page) => page.normalize('NFKC').replaceAll(/\r\n?|\f/g, '\n').replaceAll(INVISIBLE, ''));
 }
 
 export function countWords(text: string): number {
@@ -107,16 +106,16 @@ function mergeHost(a: HostClass, b: HostClass): HostClass {
   };
 }
 
-/** Specific kinds come before the generic invoice kind when they tie. */
+/** When two kinds tie, the more specific one comes first and the generic invoice kind last. */
 const KIND_ORDER: readonly AdminKind[] = ['tax', 'payslip', 'bank', 'ticket', 'contract', 'medical', 'insurance', 'cv', 'letter', 'personal', 'invoice'];
 
 /**
- * Kinds of admin wording, strongest first. A specific kind counts double, because invoice has many generic groups.
- * Bank counts once: invoices print an IBAN or a sort code too.
+ * The kinds of the matched admin groups, the one the chip should name first. Each group adds its `labelPoints`
+ * (invoice and bank wording 1, most others 2, tax-authority wording 6); ties go to the more specific kind.
  */
-export function rankKinds(kinds: readonly AdminKind[]): AdminKind[] {
+export function rankKinds(groups: readonly AdminGroup[]): AdminKind[] {
   const points = new Map<AdminKind, number>();
-  for (const k of kinds) points.set(k, (points.get(k) ?? 0) + (k === 'invoice' || k === 'bank' ? 1 : 2));
+  for (const g of groups) points.set(g.kind, (points.get(g.kind) ?? 0) + labelPoints(g));
   return [...points.keys()].sort((a, b) => (points.get(b) as number) - (points.get(a) as number) || KIND_ORDER.indexOf(a) - KIND_ORDER.indexOf(b));
 }
 
@@ -131,8 +130,9 @@ export function gatherEvidence(input: FilterInput): Evidence {
   const link = parseLink(input.url);
   const via = parseLink(input.viaPage);
   const host = mergeHost(classifyHost(link), classifyHost(via));
-  const name = nameWords(link, input.fileName, input.metadata.title);
-  const producer = `${input.metadata.creator ?? ''} ${input.metadata.producer ?? ''}`;
+  const fileName = capField(input.fileName);
+  const name = nameWords(link, fileName, capField(input.metadata.title));
+  const producer = `${capField(input.metadata.creator)} ${capField(input.metadata.producer)}`;
   const first = shown(input.pageSizes[0]);
 
   const signals: FilterSignal[] = [];
@@ -141,7 +141,7 @@ export function gatherEvidence(input: FilterInput): Evidence {
   };
 
   // ---- the link and file name ----
-  const arxivName = hasArxivInName(input.fileName);
+  const arxivName = hasArxivInName(fileName);
   if (host.scholarly) add('host-scholarly', 3, 'Scholarly website');
   else if (host.lms) add('host-lms', 2, 'Course website');
   else if (host.academic) add('host-academic', 1, 'University website');
@@ -195,7 +195,8 @@ export function gatherEvidence(input: FilterInput): Evidence {
   if (xfa) add('xfa-form', -2, 'Tax-form file type');
 
   // ---- evidence against ----
-  const counted = matched.slice(0, ADMIN_CAP);
+  // At most ADMIN_CAP groups count against the PDF; when more matched, the ones that say most about what it is come first
+  const counted = [...matched].sort((a, b) => labelPoints(b) - labelPoints(a)).slice(0, ADMIN_CAP);
   for (const g of counted) add(`admin:${g.id}`, -1, g.label);
 
   const money = (1000 * currencyCount(text)) / Math.max(1, words);
@@ -203,7 +204,7 @@ export function gatherEvidence(input: FilterInput): Evidence {
   else if (money >= 15) add('currency', -2, 'Many money amounts');
   else if (money >= 5) add('currency', -1, 'Money amounts');
 
-  const adminKinds = rankKinds(matched.map((g) => g.kind));
+  const adminKinds = rankKinds(matched);
 
   let score = BIAS;
   let positive = 0;

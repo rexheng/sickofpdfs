@@ -4,6 +4,7 @@
 // Each detector is narrow on purpose. A match needs a checksum or a label, so arXiv ids, DOIs, ISBNs, page numbers and
 // tables of numbers do not fire.
 
+import { capPages } from './limits';
 import type { HardBlock } from './types';
 import {
   ibanLength,
@@ -25,9 +26,6 @@ export const HARD_BLOCK_KINDS: readonly HardBlock[] = [
   'passport-line',
   'boarding-pass',
 ];
-
-/** The longest page text read. A page is far shorter than this; the cap only bounds odd input. */
-const MAX_PAGE_CHARS = 40_000;
 
 // A run of digit groups joined by single spaces or hyphens: the shape a card number is printed in.
 const DIGIT_RUN = /\d+(?:[ \u00a0-]\d+)*/g;
@@ -77,7 +75,7 @@ function hasIban(text: string): boolean {
 
 const SORT_LABELLED = /sort[\s-]?code\W{0,12}\d{2}[\s-]?\d{2}[\s-]?\d{2}(?!\d)/gi;
 const SORT_DASHED = /(?<![\d-])\d{2}-\d{2}-\d{2}(?![\d-])/g;
-const ACCOUNT_LABELLED = /(?:account|acc|a\/c)\s*(?:number|no|num|#)?\.?\s*[:#]?\s*\d{8}(?!\d)/gi;
+const ACCOUNT_LABELLED = /(?:account|acc|a\/c)\s{0,6}(?:number|no|num|#)?\.?\s{0,6}[:#]?\s{0,6}\d{8}(?!\d)/gi;
 const EIGHT_DIGITS = /(?<![\d.,/-])\d{8}(?!\d|[.,]\d)/g;
 const NEAR = 60;
 
@@ -107,13 +105,13 @@ function hasSsn(text: string): boolean {
   for (const m of text.matchAll(/(?<![\d-])(\d{3})-(\d{2})-(\d{4})(?![\d-])/g)) {
     if (ssnValid(m[1], m[2], m[3])) return true;
   }
-  for (const m of text.matchAll(/(?:\bssn\b|social\s+security\s+(?:number|no\.?))\W{0,12}(\d{3})(\d{2})(\d{4})(?!\d)/gi)) {
+  for (const m of text.matchAll(/(?:\bssn\b|social\s{1,8}security\s{1,8}(?:number|no\.?))\W{0,12}(\d{3})(\d{2})(\d{4})(?!\d)/gi)) {
     if (ssnValid(m[1], m[2], m[3])) return true;
   }
   return false;
 }
 
-const UTR = /(?:\butr\b|unique\s+tax(?:payer)?\s+reference|\btax\s+reference)[^\d\n]{0,25}(?<!\d)\d{5}\s?\d{5}(?!\d)/i;
+const UTR = /(?:\butr\b|unique\s{1,8}tax(?:payer)?\s{1,8}reference|\btax\s{1,8}reference)[^\d\n]{0,25}(?<!\d)\d{5}\s?\d{5}(?!\d)/i;
 
 function hasPassportLine(text: string): boolean {
   for (const line of text.split(/\r\n|\r|\n/)) {
@@ -133,9 +131,9 @@ const BOARDING_PASS = /(?<![A-Za-z0-9])M[1-9][A-Z][A-Z/ ]{2,19}\s?E?[A-Z0-9]{6,7
  */
 export function detectHardBlocks(texts: readonly string[]): HardBlock[] {
   const found = new Set<HardBlock>();
-  for (const raw of texts) {
+  for (const raw of capPages(texts)) {
     if (!raw) continue;
-    const text = (raw.length > MAX_PAGE_CHARS ? raw.slice(0, MAX_PAGE_CHARS) : raw).normalize('NFKC');
+    const text = raw.normalize('NFKC');
     if (!found.has('card') && hasCard(text)) found.add('card');
     if (!found.has('iban') && hasIban(text)) found.add('iban');
     if (!found.has('sort-code-account') && hasSortCodeAccount(text)) found.add('sort-code-account');
