@@ -66,7 +66,11 @@ export interface DraftJournal {
   remove(kind: JournalKind, commentId: CommentId): void;
   /** Every entry of one document. */
   list(documentId: DocumentId): JournalEntry[];
-  /** Removes every entry of one document (the PDF was forgotten). */
+  /**
+   * Removes every entry of one document (the PDF was forgotten). Only entries that parse and name that document: an entry
+   * that cannot be read or placed is never removed by a clear (R77). It shows under "Recovered notes", and only the owner's
+   * Delete there removes it (recovered-notes.ts).
+   */
   clear(documentId: DocumentId): void;
   /** Runs `fn` while holding this document's journal lock, so two tabs never adopt the same entry. */
   locked<T>(documentId: DocumentId, fn: () => Promise<T>): Promise<T>;
@@ -106,6 +110,11 @@ function parse(raw: string | null): JournalEntry | null {
   const thread = fields(e.thread);
   if (e.kind === 'comment' && e.thread !== undefined && (thread?.id !== e.threadId || thread.documentId !== e.documentId)) return null;
   return v as JournalEntry;
+}
+
+/** True when a journal entry can be placed: it parses and names its document (R77: anything else is a recovered note). */
+export function canPlace(raw: string | null): boolean {
+  return parse(raw) !== null;
 }
 
 /** Web Locks, where there are any. */
@@ -165,7 +174,7 @@ export function createDraftJournal(storage: KeyValueStorage): DraftJournal {
     clear(documentId) {
       for (const k of keys()) {
         const e = read(k);
-        if (e === null || e.documentId === documentId) removeKey(k); // an entry that cannot be read is no use to anyone
+        if (e !== null && e.documentId === documentId && k === keyOf(e.kind, e.commentId)) removeKey(k);
       }
     },
     locked(documentId, fn) {

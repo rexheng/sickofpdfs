@@ -353,6 +353,11 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
   const rootDrafts = new Map<CommentId, { highlight: MarkColor | null }>();
   /** Drafts the keeper has been given at least once. An untouched empty draft is never saved. */
   const keeperHas = new Set<CommentId>();
+  /**
+   * Drafts this page sent or threw away. A later look for drafts never brings one back: the keeper can still hold a copy
+   * for a moment after the send, and the note may have been emptied or deleted since.
+   */
+  const settledHere = new Set<CommentId>();
   /** R54: unsent edits of sent notes, by comment, in the order they began. What the editors show. */
   const edits = new Map<CommentId, SessionEditDraft>();
   let active: ThreadId | null = null;
@@ -1380,6 +1385,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
   }
 
   function dropDraft(id: CommentId): void {
+    settledHere.add(id);
     drafts.delete(id);
     rootDrafts.delete(id);
     keeperHas.delete(id);
@@ -1507,6 +1513,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       }
     }
     b.rec('comments', sent.id, null, sent);
+    settledHere.add(id);
     drafts.delete(id);
     rootDrafts.delete(id);
     // When stored, the keeper's copy is now the live row; asking it to drop that could delete the sent note, so leave
@@ -1891,7 +1898,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
 
   /** Puts a restored draft in its card: its new thread and the highlight it was to get come with it. False if not taken. */
   function adoptDraftRow(r: CommentRow): boolean {
-    if (drafts.has(r.id) || comments.has(r.id) || r.deletedAt !== null) return false;
+    if (drafts.has(r.id) || comments.has(r.id) || settledHere.has(r.id) || r.deletedAt !== null) return false;
     const stash = readStash(r);
     const row: CommentRow = { ...r, draftOfTab: tabId, meta: stash ? {} : r.meta };
     if (stash) {

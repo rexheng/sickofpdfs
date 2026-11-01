@@ -3,13 +3,14 @@
 // deleted except by that Delete.
 //
 // Two kinds:
-// - A journal draft with no document id. Test build 2 could write those (the bug R67 fixed); they can never be placed.
+// - A journal entry that cannot be placed: no document id (Test build 2 could write those, the bug R67 fixed), or any
+//   other entry the journal cannot read but that still holds text. No clear ever removes one (R77).
 // - A save-pending record (save-pending.ts) whose PDF has not been opened for RECOVER_AFTER_MS. Opening that PDF again
 //   still finishes its save and puts the notes back in place; until then, after 7 days, they show here too. The date is
 //   the record's `at`.
 // Only extension pages can read these (localStorage is per origin). Incognito keeps none.
 import type { KeyValueStorage } from './draft-journal';
-import { JOURNAL_PREFIX } from './draft-journal';
+import { canPlace, JOURNAL_PREFIX } from './draft-journal';
 import { PENDING_PREFIX, type PendingSave } from './save-pending';
 
 /** A save-pending record shows as recovered once its PDF has not been opened for this long. */
@@ -26,6 +27,14 @@ export interface RecoveredNote {
 }
 
 const fields = (v: unknown): Record<string, unknown> | null => (typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : null);
+
+function readRaw(storage: KeyValueStorage, key: string): string | null {
+  try {
+    return storage.getItem(key);
+  } catch {
+    return null;
+  }
+}
 
 function readJson(storage: KeyValueStorage, key: string): Record<string, unknown> | null {
   try {
@@ -72,8 +81,9 @@ export function listRecoveredNotes(now: number = Date.now(), storage: KeyValueSt
   if (!storage) return [];
   const out: RecoveredNote[] = [];
   for (const k of keysWith(storage, JOURNAL_PREFIX)) {
+    if (canPlace(readRaw(storage, k))) continue; // the journal brings it back when its PDF is opened
     const e = readJson(storage, k);
-    if (!e || e.documentId !== '' || typeof e.body !== 'string' || e.body.trim() === '') continue;
+    if (!e || typeof e.body !== 'string' || e.body.trim() === '') continue;
     out.push({ key: k, text: e.body, kind: e.kind === 'edit' ? 'edit' : 'note', at: typeof e.at === 'number' ? e.at : 0 });
   }
   for (const k of keysWith(storage, PENDING_PREFIX)) {
