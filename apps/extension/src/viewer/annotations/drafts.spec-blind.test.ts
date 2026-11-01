@@ -28,7 +28,7 @@ function setup(o: { tab?: TabId; hub?: PresenceHub; store?: FakeStore | null } =
   const hub = o.hub ?? new PresenceHub();
   const presence = hub.join(o.tab ?? T_A);
   const memory = { on: false };
-  const keeper = createDraftKeeper({ store: store as never, presence, memoryOnly: () => memory.on });
+  const keeper = createDraftKeeper({ store: store, presence, memoryOnly: () => memory.on });
   return { store: store!, hub, presence, keeper, memory };
 }
 

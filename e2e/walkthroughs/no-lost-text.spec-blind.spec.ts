@@ -1,7 +1,14 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../support/test';
-import { dragSelect } from '../support/drag-select';
+// Task 22's e2e/support/drag-select.ts. Until it exists, playwright.config.ts leaves this spec out (testIgnore). The ignore below
+// keeps typecheck and lint quiet in the meantime; the cast keeps the call typed. Remove the ignore when Task 22 has merged.
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore -- module not merged yet
+import { dragSelect as dragSelectFromTask22 } from '../support/drag-select';
 import { shot } from './support/takeover';
+
+type DragSelect = (page: Page, pageIndex: number, a: number, b: number) => Promise<{ ranges: readonly unknown[]; domText: string }>;
+const dragSelect = dragSelectFromTask22 as DragSelect;
 
 // Gate 1, "No lost text" (Phase 2 plan, done-when 5 and Gate 1 item 5; walkthrough 4, "You mark up and comment").
 // Written from the spec and the contracts only. It cannot pass until the viewer exists (Phase 1 Tasks 20-23: loading, the page
@@ -86,6 +93,9 @@ const KILLS = [
 ];
 
 test.describe('No lost text', () => {
+  // Needs the comment UI of Phase 2 (S13 and S14). Run with SOP_PHASE2_UI=1 once they are merged, then delete this line.
+  test.skip(process.env['SOP_PHASE2_UI'] !== '1', 'needs the Phase 2 comment UI (S13, S14)');
+
   for (const { name, kill } of KILLS) {
     test(`${name} 100 ms after the last key: the draft is back in its card, with the caret at the end`, async ({ openViewer, server }, testInfo) => {
       const url = server.url(PAPER);

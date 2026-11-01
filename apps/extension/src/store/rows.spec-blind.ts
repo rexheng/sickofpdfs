@@ -58,7 +58,7 @@ export function markRow(o: Omit<Partial<MarkRow>, 'id'> & { id: string }): MarkR
     updatedAt: 1_700_000_000_000,
     ...o,
     id: mid(o.id),
-  } as MarkRow;
+  };
 }
 
 export function threadRow(o: Omit<Partial<ThreadRow>, 'id'> & { id: string }): ThreadRow {
@@ -74,7 +74,7 @@ export function threadRow(o: Omit<Partial<ThreadRow>, 'id'> & { id: string }): T
     updatedAt: 1_700_000_000_000,
     ...o,
     id: tid(o.id),
-  } as ThreadRow;
+  };
 }
 
 export function commentRow(o: Omit<Partial<CommentRow>, 'id' | 'threadId'> & { id: string; threadId: string }): CommentRow {
@@ -90,7 +90,7 @@ export function commentRow(o: Omit<Partial<CommentRow>, 'id' | 'threadId'> & { i
     ...o,
     id: cid(o.id),
     threadId: tid(o.threadId),
-  } as CommentRow;
+  };
 }
 
 /** A comment draft owned by `tab`. */

@@ -17,7 +17,7 @@ let keeper: DraftKeeper;
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
   store = new FakeStore();
-  keeper = createDraftKeeper({ store: store as never, presence: new PresenceHub().join(T_A), memoryOnly: () => false });
+  keeper = createDraftKeeper({ store: store, presence: new PresenceHub().join(T_A), memoryOnly: () => false });
   keeper.change(draftRow({ id: 'd1', threadId: 'dt1', body: 'typed a moment ago', draftOfTab: T_A }), threadRow({ id: 'dt1', draftOfTab: T_A, anchor: textAnchor(0, 4, 30) }));
 });
 afterEach(() => {

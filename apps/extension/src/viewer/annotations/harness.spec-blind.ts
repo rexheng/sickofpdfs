@@ -40,8 +40,8 @@ export function rig(o: { save?: SaveStateLike; incognito?: boolean; noStore?: bo
     },
   });
   const session = createAnnotationSession({
-    store: o.noStore || o.incognito ? null : (view as never),
-    save: o.saveNull ? null : (save as never),
+    store: o.noStore || o.incognito ? null : (view),
+    save: o.saveNull ? null : (save),
     anchors: anchorContext(),
     drafts: keeper,
     presence,

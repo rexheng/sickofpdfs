@@ -31,11 +31,11 @@ self.onmessage = async (e: MessageEvent<Msg>) => {
     const db = await open(dir);
     let value: unknown;
     if (cmd === 'seedV1') {
-      fillV1(db as never);
+      fillV1(db);
       value = { userVersion: db.selectValue('PRAGMA user_version') };
     } else {
-      const upgraded = migrate(db as never);
-      const api = createStoreApi(db as never, { now: () => 1_700_000_100_000, hlc: new Hlc('devOPFS', () => 1_700_000_100_000), publish: () => undefined });
+      const upgraded = migrate(db);
+      const api = createStoreApi(db, { now: () => 1_700_000_100_000, hlc: new Hlc('devOPFS', () => 1_700_000_100_000), publish: () => undefined });
       if (cmd === 'upgradeAndWrite') {
         await api.writeAnnotations([
           { table: 'threads', op: 'upsert', row: threadRow({ id: 'new-thread', anchor: textAnchor(1, 3, 40), createdAt: 1_700_000_050_000 }) },

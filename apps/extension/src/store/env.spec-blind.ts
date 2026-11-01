@@ -20,17 +20,17 @@ export interface StoreEnv {
 export function wrapStore(db: Db, deviceId = 'devA'): StoreEnv {
   const clock = { t: 1_700_000_000_000 };
   const publish = vi.fn<(c: StoreChange) => void>();
-  const api = createStoreApi(db as never, { now: () => clock.t, hlc: new Hlc(deviceId, () => clock.t), publish });
+  const api = createStoreApi(db, { now: () => clock.t, hlc: new Hlc(deviceId, () => clock.t), publish });
   return { db, api, clock, publish, changes: () => publish.mock.calls.map((c) => c[0]) };
 }
 
 /** A fresh database at the current schema, with one saved document (DOC) so notes have something to belong to. */
 export async function freshStore(opts: { document?: boolean } = {}): Promise<StoreEnv> {
   const db = await openMemoryDb();
-  migrate(db as never);
+  migrate(db);
   const env = wrapStore(db);
   if (opts.document !== false) {
-    await env.api.saveDocument(SAMPLE_INPUT as never);
+    await env.api.saveDocument(SAMPLE_INPUT);
     quiet(env);
   }
   return env;
@@ -44,6 +44,6 @@ export function quiet(env: StoreEnv): void {
 
 /** Saves the second sample document (DOC2) and goes quiet again. */
 export async function saveSecondDocument(env: StoreEnv): Promise<void> {
-  await env.api.saveDocument(SAMPLE_INPUT_2 as never);
+  await env.api.saveDocument(SAMPLE_INPUT_2);
   quiet(env);
 }

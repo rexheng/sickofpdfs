@@ -15,7 +15,7 @@
 import { vi } from 'vitest';
 import type { Anchor, CommentRow, DocumentId, MarkRow, ThreadRow } from '../../../../../packages/core/src/index';
 import type { CommentId, TabId, ThreadId } from '../../../../../packages/core/src/ids';
-import type { StoreChange } from '../../store/change-bus';
+import type { StoreChange } from './boundary';
 import { DOC, DOC2, T_A, T_B, T_C } from '../../store/rows.spec-blind';
 import type { DraftKeeper } from './drafts';
 import type { TabPresence } from './tab-presence';
@@ -108,7 +108,7 @@ export class FakeStore {
     return this.calls.filter((c) => c.method === method).length;
   }
   writeCalls(): string[] {
-    return this.calls.filter((c) => ['writeAnnotations', 'saveDraft', 'sendDraft'].includes(c.method)).map((c) => c.method);
+    return this.calls.filter((c) => ['writeAnnotations', 'saveDraft', 'sendDraft', 'discardDraft'].includes(c.method)).map((c) => c.method);
   }
   private h = () => `${String(1_700_000_000_000 + ++this.stamp).padStart(13, '0')}-0000-fake`;
   private emit(c: StoreChange): void {
@@ -159,9 +159,9 @@ export class FakeStore {
       docOf.set(table, row.documentId);
       this.log.push(`${table}:${op}:${row.id}`);
     }
-    this.marks = tables.marks as never;
-    this.threads = tables.threads as never;
-    this.comments = tables.comments as never;
+    this.marks = tables.marks;
+    this.threads = tables.threads;
+    this.comments = tables.comments;
     for (const [table, ids] of changed) this.emit({ table, ids: [...ids], op: 'upsert', documentId: docOf.get(table), origin: 'tab', ...(o?.tabId ? { tabId: o.tabId } : {}) } as StoreChange);
   }
 
@@ -205,6 +205,21 @@ export class FakeStore {
       claimed.push(structuredClone(mine));
     }
     return claimed;
+  }
+  /** Contract addition (triage ruling): the new threads of a tab's drafts, so a restored draft knows where it sits. */
+  async listDraftThreads(documentId: DocumentId, tabId: TabId): Promise<ThreadRow[]> {
+    this.calls.push({ method: 'listDraftThreads', args: [documentId, tabId] });
+    return [...this.threads.values()].filter((t) => t.documentId === documentId && t.draftOfTab === tabId && t.deletedAt === null).map((t) => structuredClone(t));
+  }
+  /** Contract addition (triage ruling): deletes an unsent draft and its empty new thread. Never touches a comment that was sent. */
+  async discardDraft(commentId: CommentId): Promise<void> {
+    this.calls.push({ method: 'discardDraft', args: [commentId] });
+    if (this.gate) await this.gate;
+    const c = this.comments.get(commentId);
+    if (!c?.draftOfTab) return;
+    this.comments.delete(commentId);
+    const t = this.threads.get(c.threadId);
+    if (t?.draftOfTab && ![...this.comments.values()].some((x) => x.threadId === t.id)) this.threads.delete(t.id);
   }
   /** A draft thread row, as saveDraft(row, thread) stored it. A test can read it; the contract gives callers no method for it. */
   draftThread(id: ThreadId): ThreadRow | undefined {
@@ -286,6 +301,7 @@ export class FakeKeeper implements DraftKeeper {
   pending = new Map<string, { row: CommentRow & { draftOfTab: TabId }; thread?: ThreadRow }>();
   calls: { method: string; args: unknown[] }[] = [];
   memoryOnly = false;
+  private threads = new Map<string, ThreadRow>();
   constructor(private store: FakeStore | null, private presence: TabPresence) {}
   change(row: CommentRow & { draftOfTab: TabId }, thread?: ThreadRow): void {
     this.calls.push({ method: 'change', args: [structuredClone(row), thread && structuredClone(thread)] });
@@ -298,17 +314,24 @@ export class FakeKeeper implements DraftKeeper {
       if (this.store && !this.memoryOnly) await this.store.saveDraft(row, thread);
     }
   }
+  /** Like the real keeper: forget the draft and ask the store to discard it. A comment that was sent is never touched (the store's rule). */
   drop(id: CommentId): void {
     this.calls.push({ method: 'drop', args: [id] });
     this.pending.delete(id);
-    const c = this.store?.comments.get(id);
-    if (c?.draftOfTab) this.store!.comments.delete(id);
+    if (this.store && !this.memoryOnly) void this.store.discardDraft(id);
   }
   async restore(documentId: DocumentId): Promise<CommentRow[]> {
     this.calls.push({ method: 'restore', args: [documentId] });
     if (!this.store) return [...this.pending.values()].map((p) => p.row);
     await this.store.claimDrafts(documentId, this.presence.tabId, await this.presence.liveTabs());
+    for (const t of await this.store.listDraftThreads(documentId, this.presence.tabId)) this.threads.set(t.id, t);
     return this.store.listDrafts(documentId, this.presence.tabId);
+  }
+  draftThread(threadId: ThreadId): ThreadRow | undefined {
+    return [...this.pending.values()].find((p) => p.thread?.id === threadId)?.thread ?? this.threads.get(threadId);
+  }
+  dispose(): void {
+    this.calls.push({ method: 'dispose', args: [] });
   }
   called(method: string): number {
     return this.calls.filter((c) => c.method === method).length;

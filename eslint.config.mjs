@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import css from '@eslint/css';
 import js from '@eslint/js';
 import reactHooks from 'eslint-plugin-react-hooks';
@@ -6,8 +7,23 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 import sop from './tooling/eslint-plugin-sop/index.js';
 
+// Spec-blind tests that run the real store import Task 28's files and its sqlite-wasm dependency, so until Task 28 exists their
+// types cannot resolve and every line reports an unsafe-any error. They are linted again by themselves once store-api.ts is there.
+// Delete this block when Task 28 has merged.
+const needTask28 = existsSync(new URL('./apps/extension/src/store/store-api.ts', import.meta.url))
+  ? []
+  : [
+      'apps/extension/src/store/{db,env,v1-data,v1-fixture}.spec-blind.ts',
+      'apps/extension/src/store/opfs-peer.spec-blind.worker.ts',
+      'apps/extension/src/store/{schema-v2,annotations}.spec-blind.test.ts',
+      'apps/extension/src/store/durability.spec-blind.browser.test.ts',
+      'apps/extension/src/viewer/annotations/stack.spec-blind.ts',
+      'apps/extension/src/viewer/annotations/{no-lost-text,edit-draft}.spec-blind.test.ts',
+    ];
+
 export default defineConfig(
   globalIgnores([
+    ...needTask28,
     '**/dist/**',
     '**/.output/**',
     '**/.wxt/**',

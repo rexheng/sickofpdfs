@@ -12,75 +12,27 @@
 //     it is sent, when an empty new note is cancelled, or when the owner discards it."
 //   spec: "Note drafts stay local; only saved notes sync."; "The same document open in two tabs stays in step; a draft belongs
 //     to the tab where it was started."; CLAUDE.md: "no lost notes"; "nothing saved from non-learning PDFs".
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { TabId } from '../../../../../packages/core/src/ids';
 import { count, ftsHits, outboxRows, reopen } from '../../store/db.spec-blind';
 import { freshStore, wrapStore, type StoreEnv } from '../../store/env.spec-blind';
 import { migrate } from '../../store/migrate';
 import { T_A, T_B, T_C } from '../../store/rows.spec-blind';
-import type { StoreChange } from '../../store/change-bus';
-import { createDraftKeeper } from './drafts';
-import { DOC, FakeSave, PresenceHub, anchorContext, makeTextAnchor, range, type SaveStateLike } from './fakes.spec-blind';
-import { createAnnotationSession } from './session';
+import { DOC, makeTextAnchor, range, type SaveStateLike } from './fakes.spec-blind';
+import { Stack, pump, type Tab } from './stack.spec-blind';
 
 const SENTENCE = range(0, 4, 29);
 const WORD = range(0, 30, 39);
 
-/** A change bus like BroadcastChannel: every listener gets every event, a moment later. */
-class Bus {
-  private listeners = new Set<(c: StoreChange) => void>();
-  emit = (c: StoreChange) => void Promise.resolve().then(() => this.listeners.forEach((cb) => cb(c)));
-  on = (cb: (c: StoreChange) => void) => (this.listeners.add(cb), () => this.listeners.delete(cb));
-}
-
-function connect(env: StoreEnv, bus: Bus) {
-  env.publish.mockImplementation(bus.emit);
-  return new Proxy(env.api, {
-    get(target, key) {
-      if (key === 'onChange') return bus.on;
-      if (key === 'close') return () => undefined;
-      const v = Reflect.get(target, key) as unknown;
-      return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v;
-    },
-  });
-}
-
-let hub: PresenceHub;
-let bus: Bus;
-let clock: { t: number };
+let stack: Stack;
 beforeEach(() => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
-  const target = new EventTarget();
-  vi.stubGlobal('window', target);
-  vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
-  vi.stubGlobal('addEventListener', target.addEventListener.bind(target));
-  vi.stubGlobal('removeEventListener', target.removeEventListener.bind(target));
-  hub = new PresenceHub();
-  bus = new Bus();
-  clock = { t: 1_700_000_000_000 };
+  stack = Stack.install();
 });
-afterEach(() => {
-  vi.useRealTimers();
-  vi.unstubAllGlobals();
-});
-const pump = async (ms = 0) => {
-  for (let i = 0; i < 3; i++) await vi.advanceTimersByTimeAsync(ms / 3);
-  await vi.advanceTimersByTimeAsync(0);
-};
+afterEach(() => Stack.uninstall());
 
 /** One viewer tab on the real store. */
-function openTab(env: StoreEnv, tab: TabId, saveState: SaveStateLike = { kind: 'saved', documentId: DOC, undoable: false }) {
-  const store = connect(env, bus);
-  const presence = hub.join(tab);
-  const save = new FakeSave(saveState);
-  const keeper = createDraftKeeper({ store: store as never, presence, memoryOnly: () => save.state.kind !== 'saved' });
-  const session = createAnnotationSession({
-    store: store as never, save: save as never, anchors: anchorContext(), drafts: keeper, presence,
-    makeTextAnchor, documentId: () => save.documentId(), incognito: false, now: () => ++clock.t,
-  });
-  return { tab, session, keeper, save, presence };
-}
-type Tab = ReturnType<typeof openTab>;
+const openTab = (env: StoreEnv, tab: TabId, saveState?: SaveStateLike): Tab => stack.openTab(env, tab, saveState);
+const hub = { crash: (tab: TabId) => stack.hub.crash(tab) };
 
 async function startNote(t: Tab, body: string, at = SENTENCE) {
   const { threadId, commentId } = t.session.startThread(await makeTextAnchor([at]), { highlight: 1 });
@@ -130,7 +82,7 @@ describe('the tab is killed while typing', () => {
     const diskAtKill = await reopen(env.db); // the renderer dies here
     hub.crash(T_A);
 
-    migrate(diskAtKill as never);
+    migrate(diskAtKill);
     const env2 = wrapStore(diskAtKill, 'devA2');
     const b = openTab(env2, T_B);
     await pump(50);
@@ -245,9 +197,9 @@ describe('what typing leaves behind', () => {
 });
 
 describe('nothing is stored for a paper that is not saved', () => {
-  it.each([
-    { name: 'the owner said "no"', state: { kind: 'memory-only' } as SaveStateLike },
-    { name: 'the save question is still open', state: { kind: 'asking' } as SaveStateLike },
+  it.each<{ name: string; state: SaveStateLike }>([
+    { name: 'the owner said "no"', state: { kind: 'memory-only' } },
+    { name: 'the save question is still open', state: { kind: 'asking' } },
   ])('$name: marks, notes, replies and drafts leave no row in any table', async ({ state }) => {
     const env = await freshStore();
     const a = openTab(env, T_A, state);

@@ -1,11 +1,25 @@
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { playwright } from '@vitest/browser-playwright';
 import { configDefaults, defineConfig } from 'vitest/config';
 
 const repoRoot = fileURLToPath(new URL('.', import.meta.url));
 
+// Spec-blind tests that run the real store over real SQLite import Task 28's files (and its sqlite-wasm dependency), so
+// before Task 28 exists they cannot even load. They switch on by themselves the moment store-api.ts is there.
+// Delete this block when Task 28 has merged.
+const needTask28 = existsSync(new URL('./apps/extension/src/store/store-api.ts', import.meta.url))
+  ? []
+  : [
+      '**/store/schema-v2.spec-blind.test.ts',
+      '**/store/annotations.spec-blind.test.ts',
+      '**/store/durability.spec-blind.browser.test.ts',
+      '**/viewer/annotations/no-lost-text.spec-blind.test.ts',
+      '**/viewer/annotations/edit-draft.spec-blind.test.ts',
+    ];
+
 // Never collected, by either project. spikes/** is the throwaway Phase 0 package with its own Playwright suite.
-const exclude = [...configDefaults.exclude, '**/.output/**', '**/.wxt/**', 'test-assets/**', 'spikes/**'];
+const exclude = [...needTask28, ...configDefaults.exclude, '**/.output/**', '**/.wxt/**', 'test-assets/**', 'spikes/**'];
 
 export default defineConfig({
   test: {

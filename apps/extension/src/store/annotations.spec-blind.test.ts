@@ -25,10 +25,10 @@ import { migrate } from './migrate';
 import { ANCHORS, DOC, DOC2, T_A, T_B, T_C, cid, commentRow, draftRow, markRow, pageOf, textAnchor, threadRow } from './rows.spec-blind';
 
 type Op = Parameters<StoreEnv['api']['writeAnnotations']>[0][number];
-const up = (table: Op['table'], row: MarkRow | ThreadRow | CommentRow): Op => ({ table, op: 'upsert', row } as Op);
-const del = (table: Op['table'], row: MarkRow | ThreadRow | CommentRow): Op => ({ table, op: 'soft-delete', row } as Op);
-const restore = (table: Op['table'], row: MarkRow | ThreadRow | CommentRow): Op => ({ table, op: 'restore', row } as Op);
-const stamped = <T extends object>(row: T) => ({ ...row, rev: expect.any(Number), hlc: expect.any(String) });
+const up = (table: Op['table'], row: MarkRow | ThreadRow | CommentRow): Op => ({ table, op: 'upsert', row });
+const del = (table: Op['table'], row: MarkRow | ThreadRow | CommentRow): Op => ({ table, op: 'soft-delete', row });
+const restore = (table: Op['table'], row: MarkRow | ThreadRow | CommentRow): Op => ({ table, op: 'restore', row });
+const stamped = <T extends object>(row: T) => ({ ...row, rev: expect.any(Number) as number, hlc: expect.any(String) as string });
 const HLC = /^\d{13}-[0-9a-f]{4}-.+$/;
 
 /** A sent thread with a root comment and a highlight, the shape Ctrl+Alt+M leaves behind. */
@@ -74,7 +74,7 @@ describe('writing and listing notes', () => {
 
   it('stamps hlc and rev itself and ignores the caller\'s values; a later write gets a later stamp', async () => {
     const env = await freshStore();
-    await env.api.writeAnnotations([up('marks', { ...M1, rev: 99, hlc: 'bogus' } as MarkRow)]);
+    await env.api.writeAnnotations([up('marks', { ...M1, rev: 99, hlc: 'bogus' })]);
     const first = (await env.api.listAnnotations(DOC)).marks[0]!;
     expect(first.rev).not.toBe(99);
     expect(first.hlc).not.toBe('bogus');
@@ -148,7 +148,8 @@ describe('deleting and restoring (a soft delete keeps a tombstone)', () => {
     env.clock.t += 10;
     await env.api.writeAnnotations([restore('marks', live!), restore('comments', C1)]);
     const back = await env.api.listAnnotations(DOC);
-    expect(back.marks).toEqual([stamped({ ...live!, deletedAt: null })]);
+    // a restore is a write: the stamp and the update time move on, nothing else changes
+    expect(back.marks).toEqual([stamped({ ...live!, deletedAt: null, updatedAt: expect.any(Number) as number })]);
     expect(back.comments).toEqual([expect.objectContaining({ id: 'c1', body: C1.body, deletedAt: null })]);
     expect(compareHlc(back.marks[0]!.hlc, live!.hlc)).toBeGreaterThan(0); // delete and restore are writes: each moves the stamp on
   });
