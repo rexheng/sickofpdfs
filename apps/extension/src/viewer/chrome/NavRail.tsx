@@ -1,4 +1,4 @@
-import { IconButton } from '@sop/ui';
+import { IconButton, type IconName } from '@sop/ui';
 import { type LinkTarget, type OutlineItem, type PageSize, type RenderScheduler, useViewerState, type ViewerStore } from '@sop/viewer';
 import { OutlinePanel, ThumbnailRail } from '@sop/viewer/react';
 import { type ReactNode, useState } from 'react';
@@ -21,6 +21,16 @@ export interface NavRailProps {
   onToggle(this: void): void;
   /** The page list. It sits beside the rail; in a window under 1100 px the rail lies over it instead. */
   children: ReactNode;
+  /** More tabs after Thumbnails and Outline (the figures feature's Figures tab), each in the outline's width. */
+  tabs?: readonly RailTab[];
+}
+
+/** A tab of the rail that a feature adds: its toggle, and what it shows. */
+export interface RailTab {
+  id: string;
+  icon: IconName;
+  label: string;
+  panel: ReactNode;
 }
 
 /**
@@ -28,15 +38,17 @@ export interface NavRailProps {
  * Thumbnails and Outline (the selected one on a #333537 disc), then the thumbnails or the outline. A pill at the bottom
  * left hides the rail, and shows it again. The rail starts open when the window is 1100 px wide or more (Reader).
  */
-export function NavRail({ store, scheduler, pages, outline, onPage, onOutline, onToggle, children }: NavRailProps) {
+export function NavRail({ store, scheduler, pages, outline, onPage, onOutline, onToggle, children, tabs }: NavRailProps) {
   const open = useViewerState(store, (s) => s.railOpen);
-  const [tab, setTab] = useState<'thumbnails' | 'outline'>('thumbnails');
+  const [tab, setTab] = useState<string>('thumbnails');
   const hasOutline = outline !== null && outline.length > 0;
-  const shown = tab === 'outline' && hasOutline ? 'outline' : 'thumbnails';
+  const extra = tabs?.find((t) => t.id === tab);
+  const shown = tab === 'outline' && hasOutline ? 'outline' : extra !== undefined ? extra.id : 'thumbnails';
+  const wide = shown !== 'thumbnails';
   return (
     <>
       {open && (
-        <div className={cx(styles.rail, shown === 'outline' && styles.wide)}>
+        <div className={cx(styles.rail, wide && styles.wide)}>
           <div className={styles.tools} data-viewer-chrome="">
             <IconButton
               icon="photo_library"
@@ -49,10 +61,15 @@ export function NavRail({ store, scheduler, pages, outline, onPage, onOutline, o
             {hasOutline && (
               <IconButton icon="toc" label="Outline" size={40} pressed={shown === 'outline'} className={styles.toggle} onClick={() => setTab('outline')} />
             )}
+            {tabs?.map((t) => (
+              <IconButton key={t.id} icon={t.icon} label={t.label} size={40} pressed={shown === t.id} className={styles.toggle} onClick={() => setTab(t.id)} />
+            ))}
           </div>
           <div className={styles.panel}>
             {shown === 'outline' && outline !== null ? (
               <OutlinePanel items={outline} onSelect={onOutline} />
+            ) : extra !== undefined ? (
+              extra.panel
             ) : (
               <ThumbnailRail scheduler={scheduler} pages={pages} store={store} onSelect={onPage} />
             )}
@@ -68,7 +85,7 @@ export function NavRail({ store, scheduler, pages, outline, onPage, onOutline, o
           onClick={onToggle}
         />
       </div>
-      <div className={cx(styles.pages, open && (shown === 'outline' ? styles.besideWide : styles.beside))}>{children}</div>
+      <div className={cx(styles.pages, open && (wide ? styles.besideWide : styles.beside))}>{children}</div>
     </>
   );
 }

@@ -6,6 +6,7 @@
 import type { Anchor, NormRect } from '@sop/core';
 import { type Box, computeLayout, normToCss, type PageBox, PAGE_GAP, type PageSize, resolveScale, START_ZOOM } from '@sop/viewer';
 import type { Resolution } from '../annotations/boundary';
+import { regionNoteHit } from '../figures/anchors';
 
 /** Docs' margin card (02 section 4.11; the card tokens). */
 export const CARD_WIDTH = 282;
@@ -104,6 +105,7 @@ export function pinAt(point: readonly [number, number], box: PageBox): { x: numb
 
 /** Whether a 0–1 point of page `page` falls on one of a text anchor's rects there (a few px of slack at 100%). */
 export function anchorHit(a: Anchor, page: number, u: number, v: number, slack = 0.002): boolean {
+  if (a.kind === 'area' || a.kind === 'figure') return regionNoteHit(a, page, u, v, slack); // S16: a click opens its card
   if (a.kind !== 'text') return false;
   for (const g of a.rects) {
     if (g.page !== page) continue;

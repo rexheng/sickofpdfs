@@ -12,6 +12,7 @@
 import { type Anchor, type CharPos, type DocumentId, type MarkColor, type NormRect, planStyle, resolveAnchor } from '@sop/core';
 import type { CharRange, DocHandle, FigureService, JumpHistory, PageBox, PageSize, PageTextProviderImpl, PdfBackend, SaveController, ViewerStore } from '@sop/viewer';
 import type { MarkLayerItem, MarkLayerPage, MarkLayerSource, PageLayerContext, PageListApi, TextSelectionSource } from '@sop/viewer/react';
+import type { IconName } from '@sop/ui';
 import type { ComponentType, RefObject } from 'react';
 import type { StoreClient } from '../../store/client';
 import type { CommandBehaviour, ViewerCommandId } from '../commands';
@@ -145,6 +146,8 @@ export interface ViewerFeature {
   View?: ComponentType<{ host: NotesHost }>;
   /** Drawn on every page, over the marks and under the selection and text layer (figure outlines, pins). */
   PageLayer?: ComponentType<{ host: NotesHost; box: PageBox; ctx: PageLayerContext }>;
+  /** A tab of its own in the navigation rail, after Thumbnails and Outline (S16: Figures). */
+  rail?: { icon: IconName; label: string; Panel: ComponentType<{ host: NotesHost }> };
   /**
    * CSS px the page list keeps free at its right from its very first layout, for this document (ruling R60: a PDF that
    * already has notes opens with its margin, so the page never narrows late). Read once, before the pages are drawn.

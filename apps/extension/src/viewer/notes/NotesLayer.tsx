@@ -32,6 +32,8 @@ import { keptOf } from './kept';
 import { hadNotes, rememberNotes } from './margin-at-open';
 import { publishNoteCommands, type NoteCommands } from './notes-host';
 import { notesPanel, setCardsFolded, setPanelOverPages, useNotesPanelOpen } from '../notes-panel/panel-state';
+import { useFigureCards } from '../figures/cards';
+import { openSpecialNote } from '../figures/notes-bridge';
 import styles from './NotesLayer.module.css';
 import type { NotesWiring } from './wiring';
 
@@ -89,6 +91,7 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
    * reserveAtOpen kept it). A PDF with none stays centred (R79). Once wanted it stays, so the page never slides back.
    */
   const [marginWanted, setMarginWanted] = useState(() => hadNotes(notes.opened.loaded.sha256));
+  const figureCard = useFigureCards(notes); // S16: a figure or area note's thumbnail and label
 
   const [editing, setEditingState] = useState<Editing | null>(null);
   const editingRef = useRef<Editing | null>(null);
@@ -230,6 +233,8 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
         enabled,
         run: () => {
           const t0 = performance.now();
+          // S16: a selected figure or area, or a pin on the figure under the pointer, comes before the text flow.
+          if (openSpecialNote({ session, finishOpen, openMargin, open: (target) => open(target, t0), nothingOpened })) return;
           // Read what the note is about before anything moves: opening the margin lays the pages out again.
           const ctx: CommentContext = { ranges: notes.selection(), pointer: pointerOnPage(pages.current, pointer.current) };
           if (tooMuchToMark(ctx.ranges)) {
@@ -585,6 +590,7 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
       placement,
       onShowOriginal: placement === 'moved' ? () => showOriginal(t) : undefined,
       label: anchorLabel(t.anchor),
+      figure: figureCard(t, res),
       autoFocus: focusThread === t.id,
       now,
     };

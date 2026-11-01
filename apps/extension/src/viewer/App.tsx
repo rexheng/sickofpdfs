@@ -73,6 +73,8 @@ import { FramedCard } from './ui/FramedCard';
 import { LargeFileNotice } from './ui/LargeFileNotice';
 import { CommentButton } from './notes/CommentButton';
 import { commentsFeature } from './notes/feature';
+import { AreaToolButton } from './figures/AreaToolButton';
+import { figuresFeature } from './figures/feature';
 import { LoadErrorCard } from './ui/LoadErrorCard';
 import { LocalFileCard } from './ui/LocalFileCard';
 import { PasswordDialog } from './ui/PasswordDialog';
@@ -89,6 +91,7 @@ const backend = createEmbedPdfBackend(engineAssets((p) => chrome.runtime.getURL(
 // S15 the notes panel, S16 figures). Each gets the open document's notes (NotesHost) and draws beside or on the pages.
 registerViewerFeature(commentsFeature);
 registerViewerFeature(notesPanelFeature);
+registerViewerFeature(figuresFeature);
 
 /** Where the reader was when the engine stopped, so the document opens again at the same place. */
 type Resume = Pick<ViewerSnapshot, 'zoom' | 'currentPage' | 'viewRotation' | 'spread' | 'railOpen'>;
@@ -592,7 +595,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
         commands={commands}
         view={toolbarView}
         returnFocus={returnFocus}
-        end={<><CurrentPageExtras store={store} scans={scans} source={doc.loaded.sourceUrl} onOpenInChrome={(url, page) => ui.openInChrome(url, page)} /><CommentButton /></>}
+        end={<><CurrentPageExtras store={store} scans={scans} source={doc.loaded.sourceUrl} onOpenInChrome={(url, page) => ui.openInChrome(url, page)} /><AreaToolButton commands={commands} /><CommentButton /></>}
       />
       <NavRail
         store={store}
@@ -602,6 +605,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
         onPage={nav.onPage}
         onOutline={nav.onOutline}
         onToggle={() => commands.get('view.toggleRail')?.run()}
+        tabs={notes === null ? undefined : viewerFeatures().flatMap((f) => (f.rail ? [{ id: f.id, icon: f.rail.icon, label: f.rail.label, panel: <f.rail.Panel host={notes.host} /> }] : []))}
       >
         <PageList backend={backend} doc={doc} store={store} scheduler={scheduler} apiRef={api} renderPage={renderPage} onError={onDrawError} initialReserveRight={reserveAtOpen} />
       </NavRail>

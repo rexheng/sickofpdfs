@@ -1,0 +1,52 @@
+/*
+ * What the figures feature draws over the pages, in the page list's overlay (content px, scrolling with the pages).
+ *
+ * A pin on a figure: the point note's marker (notes/NotesLayer.module.css), a 28 px round marker in the default mark
+ * colour with a white rim and Docs' comment shadow, with its number in place of the icon. Its tail (the square corner)
+ * sits on the spot it was dropped on. The page is white even in the dark viewer, so it carries data-theme="light".
+ */
+.pin {
+  /* 28 px: a point note's pin */
+  --_pin: calc(var(--space-6) + var(--space-1));
+
+  position: absolute;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  inline-size: var(--_pin);
+  block-size: var(--_pin);
+  margin: 0;
+  padding: 0;
+  border: var(--focus-ring-width) solid var(--sop-card-active-bg);
+  border-radius: 50% 50% 50% var(--space-1);
+  background-color: var(--sop-mark-1);
+  box-shadow: var(--shadow-docs-comment-active);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-docs-comment-author);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translateY(-100%);
+  transition: background-color 150ms ease-out;
+}
+
+.pin[data-active='true'] {
+  background-color: var(--sop-mark-1-active);
+}
+
+.pin:focus-visible {
+  outline: var(--focus-ring-width) solid var(--sop-mark-focus);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* While a rectangle can be drawn (the area tool is on, or Alt is held), the pages show a crosshair, text included. */
+:global([data-sop-crosshair] [data-page-index]),
+:global([data-sop-crosshair] [data-page-index] .sop-text-layer :is(span, br)) {
+  cursor: crosshair;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pin {
+    transition: none;
+  }
+}

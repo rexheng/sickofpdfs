@@ -18,7 +18,7 @@ const LAYOUT: { id: string; label: string; items: (ViewerCommandId | typeof SEPA
       'view.toggleRail',
     ],
   },
-  { id: 'tools', label: 'Tools', items: ['tools.find', 'tools.goToPage'] },
+  { id: 'tools', label: 'Tools', items: ['tools.find', 'tools.goToPage', 'tools.area'] },
   { id: 'help', label: 'Help', items: ['help.shortcuts', 'help.about'] },
 ];
 
