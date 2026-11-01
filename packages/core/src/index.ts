@@ -1,4 +1,10 @@
 export type { DocumentId, LocationId, LocationKind, Sha256 } from './ids';
+export type { Author, CommentId, MarkId, TabId, ThreadId } from './ids';
+export type { HlcStamp } from './hlc';
+export type { Anchor, CharPos, FigureFingerprint, NormRect, TextQuote } from './model/anchor';
+export type { CommentMeta, CommentRow, MarkColor, MarkRow, MarkStyle, ThreadRow } from './model/rows';
+export type { DetectedFigure, PageFigure } from './model/figures';
+export type { ClaudeReplyMeta, ConflictCopyMeta, ModelRole, PageCitation, ReplyError, WebSource } from './claude/types';
 export { createSha256, sha256Hex } from './identity/fingerprint';
 export type { Sha256Hasher } from './identity/fingerprint';
 export { canonicalLink, cleanLink } from './identity/canonical-link';
