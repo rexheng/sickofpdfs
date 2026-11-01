@@ -78,6 +78,14 @@ export const RULES = {
   captionOverlapShare: 0.4,
   /** Ours: a caption pairs on its unusual side (a figure below it, a table above it) at this handicap, in points. */
   otherSideHandicap: 4,
+  /**
+   * Ours: a line wider than this many em per char (spaces and dropped chars counted) has its words spread apart: a table
+   * row. Typeset prose, justified or not, stays near 0.5 em per char (all-caps titles and loose justified lines reach
+   * about 0.65); a column gap is several em reported as one space.
+   */
+  sparseEmPerChar: 0.7,
+  /** Ours: a sub- or superscript is set at most this share of its line's font size (it then joins the line's row). */
+  scriptSizeShare: 0.85,
 } as const;
 
 /**
@@ -121,6 +129,12 @@ interface Line {
   text: string;
   /** Chars that are not whitespace. */
   chars: number;
+  /**
+   * Its words are spread far apart: over RULES.sparseEmPerChar em of width per char, spaces and dropped chars counted.
+   * Prose stays near half an em per char; a table row's cells are separated by column gaps that PDFium reports as one
+   * space each. A sparse line is never body text.
+   */
+  sparse: boolean;
   body: boolean;
   caption: boolean;
   /** The PDFium char range of the line's runs (start inclusive, end exclusive). */
@@ -336,31 +350,49 @@ function analyseShown(input: FigureInput, tick: () => void): Analysis {
   const usedSmall = new Set<Graphic>();
   for (const [caption, parts] of paired) {
     growFigure(caption, parts, candidates, small, usedSmall, bodyLines, captions, tick);
+    let rect = absorbLines(parts.map((p) => p.rect).reduce(union), lines);
+    const objects = parts.flatMap((p) => p.objects);
+    const table = caption.table || parts.some((p) => p.table);
+    if (caption.table) {
+      // A table goes on over its text rows past its rules (a booktabs header is the only cluster): the walk goes on
+      // from the box's far side, away from the caption.
+      const grown = captionRegion(caption, lines, small, candidates, page, rect.y >= caption.rect.y, rect);
+      if (grown) {
+        rect = grown.rect;
+        objects.push(...grown.objects);
+      }
+    }
     const images = parts.reduce((n, p) => n + p.images, 0);
     const paths = parts.reduce((n, p) => n + p.paths, 0);
     found.push({
-      kind: caption.table || parts.some((p) => p.table) ? 'table' : kindOf(images, paths),
-      rect: absorbLines(parts.map((p) => p.rect).reduce(union), lines),
+      kind: table ? 'table' : kindOf(images, paths),
+      rect,
       label: caption.label,
       captionRect: caption.rect,
       confidence: 'high',
-      objectIndices: sortedUnique(parts.flatMap((p) => p.objects)),
+      objectIndices: sortedUnique(objects),
       caption: captionText(caption),
       imageSha256: null,
     });
   }
-  // A caption with no graphic candidate (a table drawn only with text): the region between it and the nearest body text.
+  // A caption with no graphic candidate (a table drawn only with text): the region between it and the nearest body text,
+  // on the caption's usual side, else on its other side (a table captioned below, with body text under the caption).
   for (const caption of captions) {
     if (paired.has(caption)) continue;
     tick();
-    const region = (caption.algorithm ? ruledRegion(caption, small, lines, captions) : null) ?? captionRegion(caption, lines, small, candidates, page);
+    const ruled = caption.algorithm ? ruledRegion(caption, small, lines, captions) : null;
+    const text = ruled ? null : (captionRegion(caption, lines, small, candidates, page, caption.below) ?? captionRegion(caption, lines, small, candidates, page, !caption.below));
+    const region = ruled ?? text;
     if (!region || found.some((f) => intersects(f.rect, region.rect))) continue;
+    // A figure caption's text region that a graphic ended, or that holds no graphic and under three rows of text, is the
+    // strip of axis labels between the caption and a figure it did not pair with: never outlined (ours).
+    const strip = !!text && !caption.table && !caption.algorithm && (text.byCandidate || (text.images + text.paths === 0 && text.rows < 3));
     found.push({
       kind: caption.table ? 'table' : kindOf(region.images, region.paths),
       rect: region.rect,
       label: caption.label,
       captionRect: caption.rect,
-      confidence: 'high',
+      confidence: strip ? 'medium' : 'high',
       objectIndices: sortedUnique(region.objects),
       caption: captionText(caption),
       imageSha256: null,
@@ -405,33 +437,49 @@ function captionText(caption: Caption): PageFigure['caption'] {
 
 // ---- text ---------------------------------------------------------------------------------------------------------
 
-/** Lines: runs on one baseline band, joined left to right while the gap between them is under 0.8 × the font size. */
+/**
+ * Lines: runs on one baseline band, joined left to right while the gap between them is under 0.8 × the font size. A
+ * run is on a row when its centre is within 0.35 × the smaller height of the centre of the row's largest run, or when it
+ * is a sub- or superscript of that run (ours: set in a smaller size, its centre inside the run's box). Without the
+ * second rule a raised "+" in "N₂H⁺ (1–0)" sits on a row of its own and leaves a gap that splits a caption's first line.
+ */
 function buildLines(runs: TextRun[]): Line[] {
   const pieces = runs
-    .map((r) => ({
-      rect: r.rect,
-      size: r.fontSize,
-      text: r.text.replace(/[\p{Cc}￾￿]/gu, ''), // control chars (PDFium's \r\n), U+FFFE and U+FFFF
-      cy: r.rect.y + r.rect.height / 2,
-      start: r.charStart,
-      end: r.charStart + r.charCount,
-      joinsNext: r.text.endsWith('￾'),
-    }))
+    .map((r) => {
+      const visible = r.text.replace(/\p{Cc}/gu, ''); // control chars (PDFium's \r\n)
+      return {
+        rect: r.rect,
+        size: r.fontSize,
+        text: visible.replace(/[￾￿]/gu, ''), // and U+FFFE and U+FFFF
+        units: visible.length, // every char drawn, dropped ones (U+FFFF) too: for the width per char
+        cy: r.rect.y + r.rect.height / 2,
+        start: r.charStart,
+        end: r.charStart + r.charCount,
+        joinsNext: r.text.endsWith('￾'),
+      };
+    })
     .filter((p) => p.text.trim() !== '' && p.rect.width > 0 && p.rect.height > 0)
     .sort((a, b) => a.cy - b.cy);
+  type Piece = (typeof pieces)[number];
   const lines: Line[] = [];
-  let row: typeof pieces = [];
+  let row: Piece[] = [];
+  let main: Piece | null = null; // the row's largest run
   const flush = () => {
     row.sort((a, b) => a.rect.x - b.rect.x);
-    let current: typeof pieces = [];
+    let current: Piece[] = [];
     const emit = () => {
       if (current.length === 0) return;
       let text = '';
+      let units = 0;
       let rect = nth(current, 0).rect;
       let best = nth(current, 0);
       for (const [k, p] of current.entries()) {
-        if (k > 0) text += p.rect.x - right(nth(current, k - 1).rect) > 0.15 * p.size ? ' ' : '';
+        if (k > 0 && p.rect.x - right(nth(current, k - 1).rect) > 0.15 * p.size) {
+          text += ' ';
+          units++;
+        }
         text += p.text;
+        units += p.units;
         rect = union(rect, p.rect);
         if (p.text.length > best.text.length) best = p;
       }
@@ -440,6 +488,7 @@ function buildLines(runs: TextRun[]): Line[] {
         size: best.size,
         text: text.trim(),
         chars: text.replace(/\s/g, '').length,
+        sparse: rect.width > RULES.sparseEmPerChar * best.size * Math.max(1, units),
         body: false,
         caption: false,
         start: Math.min(...current.map((p) => p.start)),
@@ -455,11 +504,22 @@ function buildLines(runs: TextRun[]): Line[] {
     }
     emit();
     row = [];
+    main = null;
   };
+  const centreIn = (p: Piece, r: Rect) => p.cy >= r.y && p.cy <= bottom(r);
+  const script = (small: Piece, big: Piece) => small.size <= RULES.scriptSizeShare * big.size && centreIn(small, big.rect);
   for (const p of pieces) {
-    const anchor = row[0];
-    if (anchor && Math.abs(p.cy - anchor.cy) > 0.35 * Math.min(p.rect.height, anchor.rect.height)) flush();
+    if (main) {
+      const m: Piece = main;
+      const same =
+        Math.abs(p.cy - m.cy) <= 0.35 * Math.min(p.rect.height, m.rect.height) ||
+        script(p, m) ||
+        // The row so far holds only this run's raised scripts (they sort before it).
+        row.every((q) => script(q, p));
+      if (!same) flush();
+    }
     row.push(p);
+    if (!main || p.size > main.size) main = p;
   }
   flush();
   return lines.sort((a, b) => a.rect.y - b.rect.y || a.rect.x - b.rect.x);
@@ -473,17 +533,19 @@ function buildLines(runs: TextRun[]): Line[] {
  * `lines` is sorted by top, so the lines within reach of a line are near it in the list.
  */
 function classifyBody(lines: Line[], tick: () => void): { bodySize: number; column: number } {
+  // Sparse lines (table rows) are left out of the body size and the column: on a page that is mostly table, the
+  // table's rows would otherwise set both.
   const bySize = new Map<number, number>();
-  for (const l of lines) bySize.set(Math.round(l.size * 2) / 2, (bySize.get(Math.round(l.size * 2) / 2) ?? 0) + l.chars);
+  for (const l of lines) if (!l.sparse) bySize.set(Math.round(l.size * 2) / 2, (bySize.get(Math.round(l.size * 2) / 2) ?? 0) + l.chars);
   let bodySize = 0;
   let most = -1;
   for (const [size, chars] of bySize) if (chars > most) [bodySize, most] = [size, chars];
   const widths = lines
-    .filter((l) => Math.abs(l.size - bodySize) <= RULES.bodySizeTolerance && l.chars >= 10)
+    .filter((l) => !l.sparse && Math.abs(l.size - bodySize) <= RULES.bodySizeTolerance && l.chars >= 10)
     .map((l) => l.rect.width)
     .sort((a, b) => a - b);
   const column = widths[Math.min(widths.length - 1, Math.floor(0.8 * widths.length))] ?? 0;
-  for (const l of lines) l.body = column > 0 && l.rect.width >= RULES.bodyWidthShare * column && l.size >= bodySize - RULES.bodySizeTolerance;
+  for (const l of lines) l.body = column > 0 && !l.sparse && l.rect.width >= RULES.bodyWidthShare * column && l.size >= bodySize - RULES.bodySizeTolerance;
   // A body line alone in its block (no body-wide line of its size within 0.6 em above or below, captions aside) is a
   // subcaption, a heading or a table's header row.
   const neighbour = (i: number) => {
@@ -520,7 +582,7 @@ function classifyBody(lines: Line[], tick: () => void): { bodySize: number; colu
     return lo;
   };
   for (const l of lines) {
-    if (l.body) continue;
+    if (l.body || l.sparse) continue;
     for (let j = firstFrom(l.rect.y - tallest); j < lines.length && nth(lines, j).rect.y < bottom(l.rect); j++) {
       tick();
       const o = nth(lines, j);
@@ -1035,45 +1097,82 @@ function absorbLines(rect: Rect, lines: Line[]): Rect {
 /** At least half of `r` lies inside `outer` (ours: a subcaption under a panel often pokes out a point). */
 const mostlyInside = (r: Rect, outer: Rect) => Math.max(0, xOverlap(r, outer)) * Math.max(0, yOverlap(r, outer)) >= 0.5 * area(r) && area(r) > 0;
 
+/** Half or more of the line's visible chars are letters: words, not a row of numbers. */
+const wordy = (l: Line) => {
+  const visible = l.text.replace(/\s/g, '');
+  return (visible.match(/\p{L}/gu)?.length ?? 0) >= 0.5 * visible.length;
+};
+
+/** A caption's text region (captionRegion): the pieces it took, how many rows, and whether a graphic candidate ended it. */
+interface Region extends Graphic {
+  rows: number;
+  /** The walk stopped at a graphic candidate within reach: the region is the strip between the caption and a graphic. */
+  byCandidate: boolean;
+}
+
 /**
- * The region between a caption with no graphic candidate and the nearest body text, below a table or algorithm caption
- * and above a figure caption: the non-body lines and small graphics in the caption's column, each within 24 pt of the
- * last (and, once two row gaps are known, within twice their median), up to body text, another caption, a candidate or
- * the page's margin band. Null with fewer than two such pieces.
+ * The region between a caption and the nearest body text, on the given side (`down`: below the caption): the non-body
+ * lines and small graphics in the caption's column, each within 24 pt of the last, up to body text, another caption, a
+ * candidate or the page's margin band. For a figure caption, once two row gaps are known, a gap over twice their median
+ * (and over 8 pt) also ends it: the space after a float before the next heading or paragraph. A table's rows are often
+ * set in groups with blank rows between them, so a table region goes on over such gaps (ours) and ends at body text.
+ * With a `seed` (a table's paired box), the walk starts at the seed's far edge and the region holds the seed, up to the
+ * last closing rule passed (a rule under the seed, at least 90% as wide): a booktabs table whose rule cluster covers
+ * only its header grows over its text rows to its bottom rule (ours). Null when there is no such rule (seeded), or with
+ * fewer than two pieces (unseeded).
  */
-function captionRegion(caption: Caption, lines: Line[], small: Graphic[], candidates: Candidate[], page: { width: number; height: number }): Graphic | null {
-  const down = caption.below;
-  const column = columnOf(caption.rect, lines);
+function captionRegion(caption: Caption, lines: Line[], small: Graphic[], candidates: Candidate[], page: { width: number; height: number }, down: boolean, seed: Rect | null = null): Region | null {
+  const column = columnOf(seed ? union(caption.rect, seed) : caption.rect, lines);
   const band = RULES.marginBandShare * page.height;
   const none: number[] = [];
+  const start = seed ? (down ? bottom(seed) : seed.y) : down ? bottom(caption.rect) : caption.rect.y;
+  const within = seed ? grow(seed, 1) : null;
+  // With a seed, the region ends at the table's closing rule: a rule at least 90% as wide as the seed, under it.
+  const closing = (g: Graphic) => !!seed && g.rule === true && g.rect.height < RULES.ruleThickness && xOverlap(g.rect, seed) >= 0.9 * seed.width;
+  // A table's walk ends at prose, not at a body-wide line of numbers: that is one of its rows (ours).
+  const ends = (l: Line) => l.caption || (l.body && (!caption.table || wordy(l)));
   const pieces = [
-    ...lines.map((l) => ({ rect: l.rect, images: 0, paths: 0, objects: none, stop: l.body || l.caption })),
-    ...small.map((g) => ({ ...g, stop: false })),
-    ...candidates.map((c) => ({ rect: c.rect, images: 0, paths: 0, objects: none, stop: true })),
-  ].filter((p) => !inside(p.rect, caption.rect) && xOverlap(p.rect, column) > 0 && (down ? p.rect.y >= bottom(caption.rect) - 1 : bottom(p.rect) <= caption.rect.y + 1));
+    ...lines.map((l) => ({ rect: l.rect, images: 0, paths: 0, objects: none, stop: ends(l), candidate: false, closing: false, line: l })),
+    // A graphic that overlaps a candidate (the frame drawn around a figure) is the figure's, not this region's.
+    ...small.map((g) => ({ ...g, stop: candidates.some((c) => intersects(c.rect, g.rect)), candidate: false, closing: closing(g), line: null })),
+    ...candidates.map((c) => ({ rect: c.rect, images: 0, paths: 0, objects: none, stop: true, candidate: true, closing: false, line: null })),
+  ].filter((p) => !inside(p.rect, caption.rect) && !(within && inside(p.rect, within)) && xOverlap(p.rect, column) > 0 && (down ? p.rect.y >= start - 1 : bottom(p.rect) <= start + 1));
   pieces.sort((a, b) => (down ? a.rect.y - b.rect.y : bottom(b.rect) - bottom(a.rect)));
-  let frontier = down ? bottom(caption.rect) : caption.rect.y;
-  let region: Graphic | null = null;
-  let count = 0;
+  let frontier = start;
+  let region: Region | null = seed ? { rect: seed, images: 0, paths: 0, objects: [], rows: 1, byCandidate: false } : null;
+  let count = seed ? 2 : 0;
+  let closed: Region | null = null; // the region up to the last closing rule passed (seeded walks)
   const gaps: number[] = []; // between the region's rows
   let last: Rect | null = null;
+  let firstLine = true;
   for (const p of pieces) {
     const distance = down ? p.rect.y - frontier : frontier - bottom(p.rect);
+    // A seed goes on only into a table row: its first line past the seed is sparse, numbers, or one cell of several
+    // on its row. A table note or a heading under a whole table is not (ours).
+    if (seed && p.line && firstLine) {
+      firstLine = false;
+      const l = p.line;
+      if (!(l.sparse || !wordy(l) || lines.some((o) => o !== l && xOverlap(o.rect, column) > 0 && yOverlap(o.rect, l.rect) >= 0.5 * Math.min(o.rect.height, l.rect.height)))) return null;
+    }
     const newRow = !last || yOverlap(p.rect, last) < 0.5 * Math.min(p.rect.height, last.height);
-    // Once two row gaps are known, a gap over twice their median (and over 8 pt) ends the region: the space after a
-    // float before the next heading or paragraph.
     const median = [...gaps].sort((a, b) => a - b)[Math.floor(gaps.length / 2)] ?? 0;
-    const limit = gaps.length >= 2 ? Math.min(RULES.growGap, Math.max(8, 2 * median)) : RULES.growGap;
-    if (p.stop || distance > limit) break;
+    const limit = gaps.length >= 2 && !caption.table ? Math.min(RULES.growGap, Math.max(8, 2 * median)) : RULES.growGap;
+    if (distance > limit) break;
+    if (p.stop) {
+      if (region && p.candidate) region.byCandidate = true;
+      break;
+    }
     if (region && newRow) gaps.push(Math.max(0, distance)); // rows whose boxes overlap (tall maths) count as 0
     if (down ? bottom(p.rect) > page.height - band : p.rect.y < band) break;
     region = region
-      ? { rect: union(region.rect, p.rect), images: region.images + p.images, paths: region.paths + p.paths, objects: region.objects.concat(p.objects) }
-      : { rect: p.rect, images: p.images, paths: p.paths, objects: p.objects };
+      ? { ...region, rect: union(region.rect, p.rect), images: region.images + p.images, paths: region.paths + p.paths, objects: region.objects.concat(p.objects), rows: region.rows + (newRow ? 1 : 0) }
+      : { rect: p.rect, images: p.images, paths: p.paths, objects: p.objects, rows: 1, byCandidate: false };
     count++;
     last = p.rect;
     frontier = down ? Math.max(frontier, bottom(p.rect)) : Math.min(frontier, p.rect.y);
+    if (p.closing) closed = region;
   }
+  if (seed) return closed;
   return count >= 2 ? region : null;
 }
 
