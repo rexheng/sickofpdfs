@@ -478,3 +478,6 @@ Each item below has a recommended default. A planner uses the default until the 
 - Hypothesis on PDF quote anchoring, using the position as a page-order hint: https://github.com/hypothesis/client/issues/3705
 - Hypothesis on a fuzzy fallback silently re-anchoring to look-alike text (opened 31 Jul 2026): https://github.com/hypothesis/client/issues/7571
 - Hypothesis fuzzy anchoring strategy (position, then quote, then context-aware fuzzy match): https://web.hypothes.is/blog/fuzzy-anchoring/
+
+### CA10 (ratified 1 Nov 2026)
+`PushResponse.rejected?: RejectedEntry[]` (optional). Each entry has `{ table, id, hlc, code, message, retryable }`. A device drops a non-retryable rejected entry from its outbox, so "N not yet synced" can reach 0. R57: the owner may delete or restore a Claude row but not rewrite it; an owner delete beats a concurrent Claude edit, and Claude's text stays in the tombstone.

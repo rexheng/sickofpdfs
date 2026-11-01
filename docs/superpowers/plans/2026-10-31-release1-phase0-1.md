@@ -3831,6 +3831,7 @@ Each item below is binding for the task named.
   - Form info is computed once per fingerprint (R38).
 - **Task 12.** A positive control for each extension API the network gate relies on (R22).
 - **Task 28.** On `createDocument` failure, re-check `getContexts` (the offscreen-broker race). OPFS writes go in 4–16 MiB chunks (R34).
+- **Task 32 (R56, 1 Nov).** The store keeps `synchronous=FULL`. The no-lost-text gate is a tab kill 100 ms after the last key, which a slow box passes because the offscreen store survives the tab. A whole-browser kill 100 ms after the last key is measured on the reference laptop (worker save p99 must be under about 80 ms there); never trade durability for it.
 - **Task 32.** Add these to the Windows checklist:
   - alignment at DPR 1.5;
   - Blink ascent and descent;

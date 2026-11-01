@@ -247,3 +247,11 @@ Each next to its Drive reference, at 360 px and on desktop.
 - **Two badge writers** (backup and sync): CL11 adds a source to Phase 3's `badge.ts`, and whichever merges second adds the one line.
 - **CL13 and CL14 depend on CA6.** If Phase 2 or 3 built that UI against the extension, they slip until it is isolated.
 - **Not in this plan:** "Answer with my Claude plan" (spec, Claude part 1, marked Release 2). It is a small follow-up on the connector; the controller assigns it.
+
+## Carried requirements (controller, 1 Nov 2026, from CL1+CL2)
+
+- **CL4:** after every `apply` or `noop` result, record `entry.hlc` in `applied_entry(device, table_name, row_id, hlc, at)` in the same D1 batch, and pass `processedUpTo` to `mergeEntry`. Without this replay memory, a replayed log can add a spurious conflict copy or bring back a deleted note.
+- **CL7:** the daily job prunes `applied_entry` rows older than 30 days.
+- **CL9:** drop a non-retryable entry from the outbox when `PushResponse.rejected` lists it (CA10, ratified). Decide whether the emptied duplicate after `planReparent` is hidden or trashed.
+- **Ruling R57 (Claude rows):** the owner may soft-delete or restore a Claude comment or mark, but never rewrite it. The owner's delete beats a concurrent Claude edit, and Claude's newer text is kept in the tombstone, so a restore brings it back.
+- **Task 28:** `compareHlc` must agree with CL2's `compareStamps` on well-formed stamps (time, then hex counter, then device).
