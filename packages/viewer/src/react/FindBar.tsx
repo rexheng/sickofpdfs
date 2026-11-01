@@ -24,6 +24,12 @@ export interface FindBarProps {
   focusRequest?: number;
   /** Enter went past the last hit to the first ('first'), or Shift+Enter past the first to the last ('last'). */
   onWrap?(this: void, to: 'first' | 'last'): void;
+  /**
+   * The viewer's scan check already says this document is a scan (its pages are pictures with no text). The bar then
+   * says so at once, before anything is typed and while the search runs, instead of only after every page has been
+   * searched. If the search does find text, its count takes over.
+   */
+  scanned?: boolean;
 }
 
 /** What the count says: "3 of 12", "No results", or nothing while there is nothing to say. */
@@ -35,7 +41,7 @@ function countText(s: FindState, query: string): string {
 
 const hitKey = (s: FindState, h: SearchHit) => `${s.query}\u0000${h.pageIndex}:${h.start}:${h.count}`;
 
-export function FindBar({ controller, onJump, onSelectMatch, onClose, initialQuery = '', focusRequest = 0, onWrap }: FindBarProps): JSX.Element {
+export function FindBar({ controller, onJump, onSelectMatch, onClose, initialQuery = '', focusRequest = 0, onWrap, scanned = false }: FindBarProps): JSX.Element {
   const subscribe = useCallback((cb: () => void) => controller.subscribe(cb), [controller]);
   const state = useSyncExternalStore(subscribe, () => controller.state);
   const [query, setQuery] = useState(initialQuery);
@@ -95,8 +101,11 @@ export function FindBar({ controller, onJump, onSelectMatch, onClose, initialQue
   };
 
   const count = countText(state, query);
-  const searching = query.trim() !== '' && count === '' && !state.complete;
   const none = state.hits.length === 0;
+  const typed = query.trim() !== '';
+  // A finished search knows for sure; until then (or before anything is typed) the scan check speaks for it.
+  const scanNote = typed && state.complete ? state.noText === true : scanned && none;
+  const searching = typed && count === '' && !state.complete && !scanNote;
   return (
     // Esc anywhere in the bar (the box or a button) closes it.
     <div role="search" aria-label="Find in document" className={styles.bar} data-viewer-chrome="" onKeyDown={onKeyDown}>
@@ -120,16 +129,19 @@ export function FindBar({ controller, onJump, onSelectMatch, onClose, initialQue
           {searching ? <span className={styles.searching}>Searching…</span> : count}
         </span>
         <span className={styles.separator} />
-        <IconButton icon="keyboard_arrow_up" label="Previous match" shortcut="Shift+Enter" disabled={none} onClick={() => step(-1)} />
-        <IconButton icon="keyboard_arrow_down" label="Next match" shortcut="Enter" disabled={none} onClick={() => step(1)} />
+        <IconButton icon="keyboard_arrow_up" label="Previous match" shortcut="Shift+Enter" disabled={none} disabledReason={NO_MATCHES} onClick={() => step(-1)} />
+        <IconButton icon="keyboard_arrow_down" label="Next match" shortcut="Enter" disabled={none} disabledReason={NO_MATCHES} onClick={() => step(1)} />
         <IconButton icon="close" label="Close" shortcut="Esc" onClick={onClose} />
       </div>
       <p role="status" className={styles.note}>
-        {state.complete && state.noText && query.trim() !== '' ? SCAN_NOTE : null}
+        {scanNote ? SCAN_NOTE : null}
       </p>
     </div>
   );
 }
 
+/** Why Previous and Next are greyed out. */
+const NO_MATCHES = 'there are no matches to go to';
+
 /** A document whose pages have no text at all: say why nothing is found. */
-const SCAN_NOTE = "This is a scan, so there's no text to search yet";
+const SCAN_NOTE = 'This is a scan, so there’s no text to search yet';

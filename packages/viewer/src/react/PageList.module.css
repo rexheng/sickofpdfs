@@ -12,12 +12,12 @@
   /* eslint-disable-next-line css/use-baseline -- a Chrome-only extension (minimum Chrome 128; Chrome has it since 94) */
   scrollbar-gutter: stable;
   background-color: var(--drive-app-bg);
+  /*
+   * No ring of its own: an outline here is painted under the pages, so only slivers of it showed at the window's
+   * edges. The viewer draws the reading area's ring over the pages, and only when the keyboard brought the focus
+   * here (apps/extension NavRail.module.css, `data-keyboard-focus`).
+   */
   outline: none;
-}
-
-.scroller:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring-color);
-  outline-offset: calc(-1 * var(--focus-ring-width));
 }
 
 .sizer {

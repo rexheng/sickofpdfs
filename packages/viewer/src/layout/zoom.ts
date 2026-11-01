@@ -10,8 +10,15 @@ export const PAGE_GAP = 16;
 /** CSS px per point: a page at scale 1 shows at its printed size on a 96 dpi screen. */
 export const PT_TO_CSS = 96 / 72;
 
-/** How the page size is chosen: fit the width, fit the whole page, or a fixed scale (1 = 100%). */
-export type ZoomMode = { kind: 'fit-width' } | { kind: 'fit-page' } | { kind: 'scale'; scale: number };
+/**
+ * How the page size is chosen: fit the width, fit the whole page, or a fixed scale (1 = 100%). Fit width may carry a
+ * `max`: the viewer opens at fit width no larger than 100% (ruling R61, as Chrome and Drive open), so a wide window
+ * shows the page at its printed size and a narrow one shrinks it to fit. Ctrl+0 is fit width with no cap.
+ */
+export type ZoomMode = { kind: 'fit-width'; max?: number } | { kind: 'fit-page' } | { kind: 'scale'; scale: number };
+
+/** The zoom a document opens at (ruling R61): fit width, capped at 100%. */
+export const START_ZOOM: ZoomMode = { kind: 'fit-width', max: 1 };
 
 /** One page per row, or two side by side ((1,2), (3,4), …). */
 export type Spread = 'none' | 'two-page';
@@ -65,7 +72,7 @@ export function rowsOf(count: number, spread: Spread): number[][] {
 
 /**
  * The scale for `mode`. Fit width: the widest row fills the viewport width less PAGE_GAP on each side (and between the
- * two pages of a spread). Fit page: the whole of each row fits the viewport. Pass every page for fit width and the
+ * two pages of a spread), up to its `max` when it has one. Fit page: the whole of each row fits the viewport. Pass every page for fit width and the
  * current page (or spread) for fit page. Clamped to 25–400%.
  */
 export function resolveScale(
@@ -81,7 +88,7 @@ export function resolveScale(
     const rowWidth = sizes.reduce((sum, s) => sum + s.width, 0) * PT_TO_CSS;
     const rowHeight = Math.max(...sizes.map((s) => s.height)) * PT_TO_CSS;
     const byWidth = (viewport.width - 2 * PAGE_GAP - (row.length - 1) * PAGE_GAP) / rowWidth;
-    const fit = mode.kind === 'fit-width' ? byWidth : Math.min(byWidth, (viewport.height - 2 * PAGE_GAP) / rowHeight);
+    const fit = mode.kind === 'fit-width' ? Math.min(byWidth, mode.max ?? Infinity) : Math.min(byWidth, (viewport.height - 2 * PAGE_GAP) / rowHeight);
     best = Math.min(best, fit);
   }
   return Number.isFinite(best) && best > 0 ? clampScale(best) : best === Infinity ? 1 : MIN_SCALE;

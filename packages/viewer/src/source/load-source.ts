@@ -195,7 +195,8 @@ class Collector {
 
   private checkHead(): void {
     if (this.head === null) return;
-    if (!hasMagic(this.head)) throw new PdfLoadError('not-pdf');
+    // The size read so far: 0 says the file was empty (the card words that case apart).
+    if (!hasMagic(this.head)) throw new PdfLoadError('not-pdf', { size: this.size });
     this.head = null;
   }
 }

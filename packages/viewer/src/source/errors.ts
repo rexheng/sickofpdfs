@@ -3,6 +3,7 @@
  * - `http`: the server answered with an error status (`detail.status`).
  * - `network`: the request failed or broke off.
  * - `not-pdf`: the bytes do not start with `%PDF-` within the first 1024 bytes (a login page served as a PDF).
+ *   `detail.size` is the bytes read so far, so 0 means the file was empty.
  * - `too-large`: more than the limit (`detail.size`: the announced or the counted size).
  * - `file-access`: a `file://` address could not be read (Chrome's "Allow access to file URLs" is off, or the file
  *   is gone).

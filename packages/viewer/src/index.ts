@@ -37,6 +37,7 @@ export {
   PAGE_GAP,
   PT_TO_CSS,
   resolveScale,
+  START_ZOOM,
   stepZoom,
   wheelZoom,
   ZOOM_STEPS,
