@@ -304,7 +304,7 @@ test('nothing is journaled before a save or after an Undo, and nothing in Incogn
 test('after the reload, a dead viewer tab reopens by itself at its page and adopts the draft of the tab that is gone; a second crash soon after is not reloaded again', async ({ context, openViewer, server }) => {
   test.setTimeout(240_000);
   const { selectPassage, startNote, LINES } = await import('../../e2e/walkthroughs/support/marks.spec-blind');
-  const { ownerReloadsAfterCrash } = await import('../../e2e/support/crash');
+  const { ownerReloadsAfterCrash, lookInside } = await import('../../e2e/support/crash');
   const { hooks } = await import('../../e2e/support/test');
   const dir = await userDataDir(context);
   const a = await openPaper(openViewer, server, ATTENTION);
@@ -337,11 +337,13 @@ test('after the reload, a dead viewer tab reopens by itself at its page and adop
       async () => {
         const r = await look.evaluate(async (id) => {
           const ctx = await chrome.runtime.getContexts({ contextTypes: ['TAB' as chrome.runtime.ContextType] });
-          const t = await chrome.tabs.get(id!);
           const held = ((await navigator.locks.query()).held ?? []).map((l) => l.name ?? '').filter((n) => n.startsWith('sop-tab:')).map((n) => n.slice(8));
           const j = Object.values(localStorage).map((v) => { try { return JSON.parse(v) as { tab?: string; body?: string }; } catch { return null; } }).find((x) => x?.body?.startsWith('Typed in A'));
-          return { live: ctx.some((c) => c.tabId === id), url: t.url ?? '', owner: j?.tab ?? null, held };
+          return { live: ctx.some((c) => c.tabId === id), owner: j?.tab ?? null, held };
         }, bTabId);
+        // Without the tabs permission the address of our own tab is hidden from the extension: read it inside the tab.
+        const url = (await (await lookInside(context, b)).eval<string>('location.href')) ?? '';
+        Object.assign(r, { url });
         report = JSON.stringify(r);
         return r.live && r.owner !== null && r.owner !== aTab && r.held.includes(r.owner);
       },
@@ -373,8 +375,11 @@ test('after the reload, a dead viewer tab reopens by itself at its page and adop
 
 test('screens of the way back: the blocked page while terminated, the Reload button, the PDF tab back with its draft', async ({ context, openViewer, server }, testInfo) => {
   test.setTimeout(180_000);
-  const { selectPassage, startNote, noteBox, readBox, LINES } = await import('../../e2e/walkthroughs/support/marks.spec-blind');
+  const { selectPassage, startNote, LINES } = await import('../../e2e/walkthroughs/support/marks.spec-blind');
+  const { lookInside, draftsIn } = await import('../../e2e/support/crash');
+  const { writeFile, mkdir } = await import('node:fs/promises');
   const shots = testInfo.outputPath('shots');
+  await mkdir(shots, { recursive: true });
   const a = await openPaper(openViewer, server, ATTENTION);
   await saveFirst(a);
   await selectPassage(a, ATTENTION, LINES.l3);
@@ -383,30 +388,26 @@ test('screens of the way back: the blocked page while terminated, the Reload but
   await a.keyboard.type(typed, { delay: 10 });
   await sleep(100);
   await a.screenshot({ path: `${shots}/1-typing.png` });
-  const viewerUrl = a.url();
   const cdp = await context.newCDPSession(a);
   void cdp.send('Page.crash').catch(() => undefined);
   await Promise.race([new Promise<void>((r) => a.once('crash', () => r())), sleep(10_000)]);
-  await a.close().catch(() => undefined);
 
-  // The owner presses Reload on the crashed tab before reloading the extension: Chrome's "blocked" page.
-  const blocked = await context.newPage();
-  await blocked.goto(viewerUrl).catch(() => undefined);
-  await sleep(500);
-  await blocked.screenshot({ path: `${shots}/2-blocked-while-terminated.png` });
+  // The owner presses Reload on the crashed tab before reloading the extension: Chrome's "blocked" page, in the same tab.
+  const tab = await lookInside(context, a);
+  const again = await context.newCDPSession(a);
+  await again.send('Page.reload').catch(() => undefined);
+  await sleep(1500);
+  await writeFile(`${shots}/2-blocked-while-terminated.png`, await tab.screenshot());
   const ext = await extensionsPage(context);
   await ext.reload();
   await sleep(800);
   await ext.screenshot({ path: `${shots}/3-extensions-page-reload-button.png` });
   const t = Date.now();
   await ext.locator('#terminated-reload-button').filter({ visible: true }).click();
-  // The "blocked" tab is one of ours with no live page: the service worker reloads it, and the draft comes back in it.
-  const box = noteBox(blocked);
-  await expect(box).toBeVisible({ timeout: 30_000 });
-  await expect.poll(async () => (await readBox(box)).text, { timeout: 15_000 }).toBe(typed);
+  // The tab is a noted viewer with no live page: the service worker reloads it, and the draft comes back in it.
+  await expect.poll(() => draftsIn(tab), { timeout: 30_000 }).toEqual([typed]);
   const back = Date.now() - t;
-  await sleep(500);
-  await blocked.bringToFront();
-  await blocked.screenshot({ path: `${shots}/4-back-with-the-draft.png` });
-  console.log(`\n=== the blocked tab reloaded by itself and showed the draft ${back} ms after the Reload click; caret at end ${(await readBox(box)).caretAtEnd}; shots in ${shots} ===\n`);
+  await sleep(800);
+  await writeFile(`${shots}/4-back-with-the-draft.png`, await tab.screenshot());
+  console.log(`\n=== the crashed tab, showing the blocked page, reloaded by itself and held the draft ${back} ms after the Reload click; shots in ${shots} ===\n`);
 });
