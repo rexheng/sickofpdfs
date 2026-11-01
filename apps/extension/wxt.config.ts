@@ -37,6 +37,8 @@ export default defineConfig({
     minimum_chrome_version: '128',
     incognito: 'split',
     icons: { 16: 'icon/16.png', 32: 'icon/32.png', 48: 'icon/48.png', 128: 'icon/128.png' },
+    // The toolbar icon opens the library (background/open-library.ts).
+    action: { default_title: 'Open your library' },
     // Least privilege: each entry is used by the takeover, the store or the viewer. No tabs, downloads, scripting,
     // activeTab, history, clipboard, nativeMessaging or identity. (tabs.update, tabs.create and tabs.onRemoved need no
     // permission, and Chrome fills a sender's tab.url from the host permission for that page.)

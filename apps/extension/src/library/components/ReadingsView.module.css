@@ -1,0 +1,90 @@
+.view {
+  display: flex;
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+/* After the name in a row: a star and a note count, in the secondary colour, 4 px apart. */
+.badges {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-row);
+  font-variation-settings: "opsz" 17;
+}
+
+.badge {
+  display: inline-flex;
+}
+
+.notes {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+/* Above the grid, as Drive's: the sort field with its arrow in the 24 px circle, and Sort at the right. */
+.gridHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  block-size: var(--header-row-h);
+}
+
+.gridSort {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+  block-size: var(--btn-h);
+  margin: 0;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--shape-chip);
+  background: transparent;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-table-header);
+  font-variation-settings: "opsz" 17;
+  cursor: pointer;
+}
+
+.gridSort:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.gridSort:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.sortChip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--sop-sort-chip);
+  block-size: var(--sop-sort-chip);
+  border-radius: var(--shape-full);
+  background-color: var(--drive-sort-chip-bg);
+  color: var(--drive-row-selected-fg);
+}
+
+.loadMore {
+  grid-column: 1 / -1;
+  block-size: 1px;
+}
+
+/* Trash: a quiet line under the title, on Drive's tonal surface. */
+.note {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  margin-block-end: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--shape-chip);
+  background-color: var(--gm3-sys-color-surface-container);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}

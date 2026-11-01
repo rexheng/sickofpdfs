@@ -1,0 +1,19 @@
+/* The file pickers behind "+ New": in the page (a click on them is what opens the picker) but never seen. */
+.picker {
+  position: fixed;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dialogText {
+  margin: 0 0 var(--space-4);
+}
+
+.fieldError {
+  margin: var(--space-2) 0 0;
+  color: var(--gm3-sys-color-error);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
