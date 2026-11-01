@@ -18,6 +18,7 @@ import {
   wordsOf,
   th,
   type CharRange,
+  type Opened,
   type Word,
 } from '../support/tl-blind.spec-blind';
 
@@ -26,6 +27,26 @@ test.setTimeout(240_000);
 const PER_FIXTURE = 45;
 
 /** Words spread over the page, the same ones every run. Every word of a small page; a seeded stride over a big one. */
+/**
+ * The boxes of the page's links, in client px. Triage note (navprint): a double-click on a word under a link follows
+ * the link on its first click, as in Chrome's viewer, so words under `a.sop-link` are skipped. Links are read at idle
+ * time (at most 500 ms after the page is drawn), hence the short wait.
+ */
+async function linkBoxes(page: Opened['page'], pageIndex: number): Promise<{ x: number; y: number; w: number; h: number }[]> {
+  await page.waitForTimeout(800);
+  return page.evaluate(
+    (i) =>
+      [...document.querySelectorAll(`[data-page-index="${i}"] a.sop-link`)].map((a) => {
+        const r = a.getBoundingClientRect();
+        return { x: r.x, y: r.y, w: r.width, h: r.height };
+      }),
+    pageIndex,
+  );
+}
+
+const underLink = (boxes: { x: number; y: number; w: number; h: number }[], at: { x: number; y: number }): boolean =>
+  boxes.some((b) => at.x >= b.x - 1 && at.x <= b.x + b.w + 1 && at.y >= b.y - 1 && at.y <= b.y + b.h + 1);
+
 function sample(words: Word[], n: number, seed: string): Word[] {
   if (words.length <= n) return words;
   const random = rng(seed);
@@ -44,13 +65,19 @@ test('double-clicking a word selects that whole word, on at least 95% of words a
     const glyphs = await glyphsOf(o.page, o.pageIndex);
     const map = await pageMap(o.page, o.pageIndex);
     const words = sample(wordsOf(glyphs, fx.dir === 'rtl' ? 'he' : 'en', { rtl: fx.dir === 'rtl' }), PER_FIXTURE, `dbl-${fx.name}`);
+    const links = await linkBoxes(o.page, o.pageIndex);
     let ok = 0;
+    let skipped = 0;
     for (const w of words) {
       // The glyph in the middle of the word, as a reader aims.
       const visible = glyphs.slice(w.start, w.end).filter(isVisible);
       if (visible.length === 0) continue;
       const target = visible[Math.floor(visible.length / 2)];
       const at = centreOf(map, target);
+      if (underLink(links, at)) {
+        skipped++;
+        continue;
+      }
       await o.page.mouse.move(at.x, at.y);
       await o.page.mouse.dblclick(at.x, at.y);
       const ranges: CharRange[] = await th(o.page).eval((h) => {
@@ -68,10 +95,11 @@ test('double-clicking a word selects that whole word, on at least 95% of words a
         misses.push(`${fx.name}: "${w.text}" [${w.start}, ${w.end}) got ${mine.length === 1 ? `[${mine[0].start}, ${mine[0].end}) trimmed [${a}, ${b})` : JSON.stringify(ranges)}`);
       }
     }
-    rows.push(`${fx.name}: ${ok}/${words.length}`);
+    rows.push(`${fx.name}: ${ok}/${words.length - skipped}${skipped > 0 ? ` (${skipped} under links skipped)` : ''}`);
     if (fx.name === 'resnet-p1') {
-      // A picture of one double-click, for the record.
-      const w = words[Math.floor(words.length / 2)];
+      // A picture of one double-click, for the record (on a word that is not under a link).
+      const free = words.filter((x) => !underLink(links, centreOf(map, glyphs[Math.floor((x.start + x.end) / 2)])));
+      const w = free[Math.floor(free.length / 2)];
       const g = glyphs[Math.floor((w.start + w.end) / 2)];
       const at = centreOf(map, g);
       await o.page.mouse.dblclick(at.x, at.y);

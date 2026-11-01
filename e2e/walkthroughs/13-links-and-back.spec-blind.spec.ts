@@ -91,13 +91,13 @@ test('a contents link jumps to its section and Back returns to the exact spot, z
   expect(strays.opened, 'no new tab or window').toEqual([]);
 });
 
-test('a chain of jumps is one step back, and Alt+Left is left to the browser', async ({ openViewer, server }, testInfo) => {
+test('a chain of jumps is one step back, and Alt+Left goes Back once', async ({ openViewer, server }, testInfo) => {
   const page = await openViewer(server.url(navUrl));
   await waitForFirstPage(page);
   await placeAt(page, 100);
   const h0 = await historyInfo(page);
 
-  // Alt+Left is the browser's Back. The viewer must neither use it for its own arrow-key paging nor swallow it.
+  // Alt+Left is the browser's Back. The viewer must not use it for its own arrow-key paging, nor swallow it without going Back.
   await page.evaluate(() => {
     const w = window as unknown as { __altLeft: boolean[] };
     w.__altLeft = [];
@@ -127,7 +127,9 @@ test('a chain of jumps is one step back, and Alt+Left is left to the browser', a
 
   await page.keyboard.press('Alt+ArrowLeft');
   await expect.poll(() => page.evaluate(() => (window as unknown as { __altLeft: boolean[] }).__altLeft.length), { message: 'the page saw Alt+Left' }).toBe(1);
-  expect(await page.evaluate(() => (window as unknown as { __altLeft: boolean[] }).__altLeft[0]), 'the viewer does not swallow Alt+Left (preventDefault would stop the browser going Back)').toBe(false);
+  // Triage note (navprint): the viewer may run Alt+Left itself (history.back()) and prevent Chrome's copy, so the key
+  // goes Back once wherever the focus is. What counts is one Back; a viewer that swallows the key must go Back itself.
+  const prevented = await page.evaluate(() => (window as unknown as { __altLeft: boolean[] }).__altLeft[0]);
   // A real Chrome window goes Back on Alt+Left. The automated browser has no window frame to take that key, so if it did not move, use the Back button's call.
   let moved = false;
   for (const stop = Date.now() + 1_200; Date.now() < stop && !moved; ) {
@@ -135,6 +137,7 @@ test('a chain of jumps is one step back, and Alt+Left is left to the browser', a
     if (!moved) await page.waitForTimeout(100);
   }
   if (!moved) {
+    expect(prevented, 'the viewer swallowed Alt+Left (preventDefault stops the browser going Back) but did not go Back itself').toBe(false);
     testInfo.annotations.push({ type: 'note', description: 'Alt+Left reached the page but the automated browser did not act on it; history.back() was used instead' });
     await page.goBack();
   }

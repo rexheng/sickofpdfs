@@ -150,17 +150,21 @@ test.describe('a narrow window', () => {
     await expect(hidePill(page)).toBeHidden();
     expect((await thumbs(page)).filter((t) => t.onScreen), 'no thumbnails on screen').toEqual([]);
     await snap(page, testInfo, '12-narrow-shut');
+    const pageOneShut = (await shoot(page)).canvases.find((c) => c.page === 0);
 
     await page.keyboard.press('F4');
     await expectRailOpen(page, true);
     await expect.poll(async () => (await thumbs(page)).length, { message: 'the rail shows thumbnails', timeout: 8_000 }).toBeGreaterThan(2);
     await snap(page, testInfo, '12-narrow-open');
-    // Still reading page 1 with the rail open, and the page is not hidden behind it.
+    // Still reading page 1 with the rail open. Triage note (navprint): under 1100 px the plan lays the rail over the
+    // pages ("F4 overlays it"; the pages do not reflow), so the check is that page 1 stays where it was, not that the
+    // rail leaves it uncovered.
     const shot = await shoot(page);
     const pageOne = shot.canvases.find((c) => c.page === 0);
-    const t1 = await thumb(page, 1);
     expect(pageOne, 'page 1 is on screen').toBeDefined();
-    expect(t1!.rect.x + t1!.rect.width, 'the rail does not cover the page').toBeLessThanOrEqual(pageOne!.x + 1);
+    expect(pageOneShut, 'page 1 was on screen before').toBeDefined();
+    expect(Math.abs(pageOne!.x - pageOneShut!.x), 'the rail lies over the pages: page 1 does not move').toBeLessThanOrEqual(1);
+    expect(Math.abs(pageOne!.cssWidth - pageOneShut!.cssWidth), 'and does not shrink').toBeLessThanOrEqual(1);
   });
 });
 

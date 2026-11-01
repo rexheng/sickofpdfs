@@ -14,7 +14,10 @@ export interface ViewPosition {
   scale: number;
 }
 
-/** Jumps inside the document (links, outline, search results), kept in the page's history so Back returns (Task 24). */
+/**
+ * Jumps inside the document (links, search results, next note), kept in the page's history so Back returns (Task 24).
+ * Thumbnail and outline clicks are not jumps.
+ */
 export interface JumpHistory {
   jumpTo(target: LinkTarget & { kind: 'page' }, from: ViewPosition): void;
   dispose(): void;

@@ -110,6 +110,12 @@ export async function openFixture(
   page.on('pageerror', (e) => errors.push(e.message));
   await page.setViewportSize(o.viewport ?? VIEW_100);
   await page.waitForFunction(() => (globalThis as unknown as { __sopTest?: { viewerState?: () => string } }).__sopTest?.viewerState?.() === 'ready', undefined, { timeout: 20_000 });
+  // Triage note (navprint): the navigation rail (Task 24) starts open in a window 1100 px wide or more and takes 196 px.
+  // These sizes were chosen so the window holds the whole page, so the rail is shut (F4) to give the pages the window.
+  if (await th(page).eval((h) => h.viewer.snapshot().railOpen)) {
+    await page.keyboard.press('F4');
+    await page.waitForFunction(() => !(globalThis as unknown as { __sopTest: { viewer: { snapshot(): { railOpen: boolean } } } }).__sopTest.viewer.snapshot().railOpen);
+  }
   const scale = o.scale ?? 1;
   await setZoom(page, scale);
   await th(page).eval((h, i) => h.viewer.scrollTo(i), fx.page);

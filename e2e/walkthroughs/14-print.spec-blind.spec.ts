@@ -26,7 +26,7 @@ const HINT = /Use Ctrl\+P or File\s*(?:→|->)\s*Print to print this PDF\./;
 /** The displayed size of each mixed.pdf page, in points: the media box, turned for /Rotate 90 and 270. */
 const MIXED_SHEETS = MIXED_PAGES.map((p) => (p.rotate % 180 === 90 ? { w: p.height, h: p.width } : { w: p.width, h: p.height }));
 
-test('Ctrl+P shows "Preparing to print… n / total" with a Cancel button, and Cancel stops it and leaves nothing behind', async ({ context, openViewer, server }, testInfo) => {
+test('Ctrl+P shows "Preparing to print… n of total" with a Cancel button, and Cancel stops it and leaves nothing behind', async ({ context, openViewer, server }, testInfo) => {
   await useRecordingPrint(context);
   const page = await openViewer(server.url('/f/scan-120.pdf'));
   await waitForFirstPage(page, 45_000);
@@ -45,7 +45,8 @@ test('Ctrl+P shows "Preparing to print… n / total" with a Cancel button, and C
   expect.soft(await page.getByRole('dialog').or(page.getByRole('alertdialog')).filter({ hasText: /Preparing to print/ }).count(), 'the progress is in a dialog').toBe(1);
   const progress = async (): Promise<{ done: number; total: number }> => {
     const text = await page.evaluate(() => document.body.innerText).catch(() => '');
-    const m = /Preparing to print\D*(\d+)\s*\/\s*(\d+)/.exec(text);
+    // Triage note (navprint): the Task 27 brief asks for plain words ("12 of 40"), so "of" counts as well as "/".
+    const m = /Preparing to print\D*(\d+)\s*(?:\/|of)\s*(\d+)/.exec(text);
     return m ? { done: Number(m[1]), total: Number(m[2]) } : { done: -1, total: -1 };
   };
   const first = await progress();
