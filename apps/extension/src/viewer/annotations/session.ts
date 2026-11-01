@@ -52,6 +52,7 @@ import {
   type CommentRow,
   type DocumentId,
   type DraftKeeper,
+  type EditDraft,
   type MarkColor,
   type MarkId,
   type MarkRow,
@@ -103,7 +104,15 @@ export interface AnnotationState {
   mode: 'stored' | 'pending-save' | 'memory-only' | 'view-only';
   /** Changes the store would not take after the retries. Empty when all is well. */
   parked: ParkedBatch[];
+  /**
+   * R54: edits of sent notes that are not sent yet, oldest first. After a reload these are the edits this tab adopted;
+   * the card reopens its editor with this text. The live text (`comments`) stays as it is until the edit is sent.
+   */
+  editDrafts: SessionEditDraft[];
 }
+
+/** An unsent edit of a sent note (R54). */
+export type SessionEditDraft = Pick<EditDraft, 'commentId' | 'threadId' | 'body'>;
 
 export interface AnnotationSession {
   readonly tabId: TabId;
@@ -120,7 +129,21 @@ export interface AnnotationSession {
   typeDraft(id: CommentId, body: string): void;
   send(id: CommentId): Promise<void>;
   cancel(id: CommentId): Promise<void>;
+  /**
+   * Sends an edit of a sent note: the live text becomes `body`. If an edit was open (`typeEdit`), it is closed once the
+   * new text is written. On a draft it is `typeDraft`.
+   */
   editComment(id: CommentId, body: string): Promise<void>;
+  /**
+   * R54: opens the editor on a sent note of the owner. Returns the text the editor starts with: the unsent edit if there
+   * is one (typed earlier, or restored after a reload), otherwise the live text. Null when the note cannot be edited
+   * (a Claude reply, a draft, a note that is gone, or a view-only PDF). Nothing is stored until the first `typeEdit`.
+   */
+  startEdit(id: CommentId): string | null;
+  /** R54: one keystroke of an edit. Like `typeDraft`: the text is saved by the draft keeper as a tab-owned edit draft. */
+  typeEdit(id: CommentId, body: string): void;
+  /** R54: the edit is thrown away. The live text never changed; the edit draft is closed in the store. */
+  cancelEdit(id: CommentId): Promise<void>;
   removeComment(id: CommentId): Promise<void>;
   removeThread(id: ThreadId): Promise<void>;
   threadAt(r: CharRange): ThreadId | null;
@@ -310,6 +333,8 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
   const rootDrafts = new Map<CommentId, { highlight: MarkColor | null }>();
   /** Drafts the keeper has been given at least once. An untouched empty draft is never saved. */
   const keeperHas = new Set<CommentId>();
+  /** R54: unsent edits of sent notes, by comment, in the order they began. What the editors show. */
+  const edits = new Map<CommentId, SessionEditDraft>();
   let active: ThreadId | null = null;
   let focusedMark: MarkId | null = null;
 
@@ -381,6 +406,8 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
         threadIds: b.ops.filter((o) => o.table === 'threads' && o.op !== 'soft-delete').map((o) => o.row.id as ThreadId),
         markIds: b.ops.filter((o) => o.table === 'marks' && o.op !== 'soft-delete').map((o) => o.row.id as MarkId),
       })),
+      // An edit of a note that is gone (deleted in another tab) is hidden; the keeper keeps it and it comes back with the note.
+      editDrafts: [...edits.values()].filter((e) => comments.has(e.commentId)).map((e) => ({ ...e })),
     };
     return snap;
   }
@@ -523,6 +550,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     compactQueue();
     // Drafts that could not be saved until now are given to the keeper again.
     for (const c of drafts.values()) if (c.body !== '') pushDraft(c);
+    for (const e of edits.values()) pushEdit(e.commentId, e.body);
     void pump();
     void refresh().then(adoptDraftsImpl);
   }
@@ -1213,7 +1241,10 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
   /** Removes a thread and its comments. Marks are separate rows and stay. */
   function removeThreadChange(thread: ThreadRow, b: ReturnType<typeof builder>): void {
     b.rec('threads', thread.id, thread, null);
-    for (const c of liveCommentsOf(thread.id)) b.rec('comments', c.id, c, null);
+    for (const c of liveCommentsOf(thread.id)) {
+      b.rec('comments', c.id, c, null);
+      if (edits.has(c.id)) closeEdit(c.id); // the delete closes it in the store too
+    }
     for (const dr of [...drafts.values()]) if (dr.threadId === thread.id) cancelDraft(dr.id);
   }
 
@@ -1242,6 +1273,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     if (thread && all[0]?.id === c.id) return removeThreadImpl(thread.id); // the first comment is the thread
     const b = builder();
     b.rec('comments', c.id, c, null);
+    if (edits.has(c.id)) closeEdit(c.id);
     return commit(b.build());
   }
 
@@ -1251,6 +1283,12 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       return null;
     }
     const c = comments.get(id);
+    if (edits.has(id)) {
+      // The editor closes now. Until the new text is written, the keeper keeps it as the edit draft (R54), so a crash
+      // before the write lands brings the editor back with this text.
+      if (c && body.trim() !== '' && body !== c.body) pushEdit(id, body);
+      edits.delete(id);
+    }
     if (!c || c.author !== 'me' || body === c.body) return null; // the owner may delete a Claude reply but not rewrite it
     // Emptying a note removes the note and keeps its highlight.
     if (body.trim() === '') return removeCommentImpl(id);
@@ -1267,6 +1305,72 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     // An untouched empty draft is not worth saving. Once text has been saved, an emptied draft is saved too.
     if (body !== '' || keeperHas.has(id)) pushDraft(next);
     emit();
+  }
+
+  // ------------------------------------------------------------ R54: unsent edits of sent notes
+
+  /** A sent note of the owner, which may be edited. Claude's replies are never rewritten. */
+  function editableComment(id: CommentId): CommentRow | null {
+    const c = comments.get(id);
+    return c && c.author === 'me' && c.draftOfTab === null && editable() ? c : null;
+  }
+
+  /**
+   * Gives the keeper the edit's text. Like drafts, only a stored PDF writes; otherwise the text stays in this session
+   * and goes to the keeper the moment the PDF is saved (onBecameStored).
+   */
+  function pushEdit(id: CommentId, body: string): void {
+    const c = comments.get(id);
+    if (mode !== 'stored' || !c) return;
+    try {
+      d.drafts.changeEdit(c, body);
+    } catch (e) {
+      report(e, 'drafts.changeEdit');
+    }
+  }
+
+  /** The edit is over: forget it here and close it in the store (after any save of it that is on its way). */
+  function closeEdit(id: CommentId): void {
+    edits.delete(id);
+    try {
+      d.drafts.dropEdit(id);
+    } catch (e) {
+      report(e, 'drafts.dropEdit');
+    }
+  }
+
+  function typeEditImpl(id: CommentId, body: string): void {
+    const c = editableComment(id);
+    if (!c) return;
+    const had = edits.get(id);
+    if (had && had.body === body) return;
+    // A new edit goes to the end, so the list stays in the order the edits began.
+    edits.set(id, { commentId: id, threadId: c.threadId, body });
+    pushEdit(id, body);
+    emit();
+  }
+
+  /** The edits the keeper restored (this tab's, and those it adopted from tabs that are gone). Typed text here wins. */
+  function takeRestoredEdits(documentId: DocumentId): boolean {
+    let list: EditDraft[];
+    try {
+      list = d.drafts.editDrafts(documentId);
+    } catch (e) {
+      report(e, 'drafts.editDrafts');
+      return false;
+    }
+    let any = false;
+    for (const e of list) {
+      if (edits.has(e.commentId)) continue;
+      edits.set(e.commentId, { commentId: e.commentId, threadId: e.threadId, body: e.body });
+      any = true;
+    }
+    return any;
+  }
+
+  /** True once a batch has left the queue, written. A batch still queued, in flight or parked is not. */
+  function written(b: Batch | null): boolean {
+    return b === null || (inflight !== b && !queue.includes(b) && !parked.includes(b));
   }
 
   // ------------------------------------------------------------ undo and redo
@@ -1496,10 +1600,9 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       keeperHas.add(row.id);
       last = row.threadId;
     }
-    if (last) {
-      if (active === null) active = last;
-      emit();
-    }
+    const restoredEdits = !disposed && takeRestoredEdits(id);
+    if (last && active === null) active = last;
+    if (last || restoredEdits) emit();
   }
 
   // ------------------------------------------------------------ placement
@@ -1679,7 +1782,49 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
         return null;
       }),
 
-    editComment: (id, body) => mutate('editComment', () => (editable() ? editCommentImpl(id, body) : null)),
+    editComment(id, body) {
+      let wasEditing = false;
+      let done: Committed | null = null;
+      return mutate('editComment', () => {
+        if (!editable()) return null;
+        wasEditing = edits.has(id);
+        done = editCommentImpl(id, body);
+        if (wasEditing) emit();
+        return done;
+      }).then(() => {
+        // R54: the edit is over once the new text is written; the store closed it in that same write. Still queued or
+        // parked: the keeper keeps the edit draft, and the store closes it when the write lands.
+        if (!wasEditing || !written(done?.batch ?? null)) return;
+        const newer = edits.get(id); // a new edit began while this one was written: it gets its own edit session
+        try {
+          d.drafts.dropEdit(id);
+        } catch (e) {
+          report(e, 'drafts.dropEdit');
+        }
+        if (newer) pushEdit(id, newer.body);
+      });
+    },
+
+    startEdit(id) {
+      const c = editableComment(id);
+      return c ? (edits.get(id)?.body ?? c.body) : null;
+    },
+
+    typeEdit(id, body) {
+      try {
+        typeEditImpl(id, body);
+      } catch (e) {
+        report(e, 'typeEdit');
+      }
+    },
+
+    cancelEdit: (id) =>
+      mutate('cancelEdit', () => {
+        const had = edits.has(id);
+        closeEdit(id);
+        if (had) emit();
+        return null;
+      }),
     removeComment: (id) => mutate('removeComment', () => (editable() ? removeCommentImpl(id) : null)),
     removeThread: (id) => mutate('removeThread', () => (editable() ? removeThreadImpl(id) : null)),
 

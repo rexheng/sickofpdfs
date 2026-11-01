@@ -156,9 +156,6 @@ export interface TabPresence {
   close(): void;
 }
 
-export interface DraftKeeper {
-  change(row: CommentRow & { draftOfTab: TabId }, thread?: ThreadRow): void;
-  flush(): Promise<void>;
-  drop(id: CommentId): void;
-  restore(documentId: DocumentId): Promise<CommentRow[]>;
-}
+// S8 has merged: the keeper is its own (drafts.ts), with the R54 edit calls (changeEdit, dropEdit, editDrafts).
+export type { DraftKeeper } from './drafts';
+export type { EditDraft } from '../../store/annotations';

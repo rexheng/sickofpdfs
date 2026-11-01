@@ -7,9 +7,7 @@ const repoRoot = fileURLToPath(new URL('.', import.meta.url));
 
 
 // Never collected, by either project. spikes/** is the throwaway Phase 0 package with its own Playwright suite.
-// R54 edit-draft tests drive the S9 session's edit calls, which are not built yet. The S9-edit slice deletes this list.
-const waitForS9Edit = ['**/viewer/annotations/edit-draft.spec-blind.test.ts'];
-const exclude = [...waitForS9Edit, ...configDefaults.exclude, '**/.output/**', '**/.wxt/**', 'test-assets/**', 'spikes/**'];
+const exclude = [...configDefaults.exclude, '**/.output/**', '**/.wxt/**', 'test-assets/**', 'spikes/**'];
 
 export default defineConfig({
   test: {

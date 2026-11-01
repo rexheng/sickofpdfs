@@ -15,9 +15,9 @@ import type { AnnotationSession } from './session';
 
 type Fn = (...args: unknown[]) => unknown;
 const NAMES = {
-  start: ['startEdit', 'beginEdit', 'openEdit'],
-  type: ['typeEdit', 'typeEditDraft', 'editDraft', 'updateEditDraft'],
-  cancel: ['cancelEdit', 'discardEdit', 'cancelEditDraft'],
+  start: ['startEdit'],
+  type: ['typeEdit'],
+  cancel: ['cancelEdit'],
 };
 
 function find(session: AnnotationSession, names: string[]): Fn | undefined {
