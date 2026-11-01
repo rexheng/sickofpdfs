@@ -3814,3 +3814,28 @@ Pre-flight rulings (`.superpowers/sdd/2026-10-31-release1-phase0-1/preflight-rul
 - **R18:** concrete assertions replace every comment-only body; P0-6e asserts its values; the perf smoke fails on zero measures and waits for the named mark only; the IndexedDB probe uses a positive control (Tasks 5, 6, 13–17, 19–31); one `touchLocation` and `recordOpen` call site (Task 30); one print stub (Task 27).
 - **R19:** `__sopTest` is installed by the test-only `src/testing/test-hooks.ts`, injected into `--mode test` builds by a Vite plugin. Production code publishes to `viewer/runtime.ts`. Tests cover the boundary and the build (Conventions, Tasks 12, 29).
 - **R20:** `viewer-url.ts` moved to Task 12; the e2e CI job moved to Task 12; the shared `contracts.ts` and `save/types.ts` are created in Task 23 and imported by Tasks 24, 25, 30; the viewer's store wiring and `isIncognito` moved to Task 28.
+
+## Carried requirements (2026-11-01, standing rule 5)
+
+Each item below is binding for the task named.
+
+- **Task 22. Selection is drawn like Chrome's viewer, not by the browser (R44, from the owner's look at the P0-4 screenshot).** Native `::selection` over the per-span text layer looks ragged: line boxes have uneven heights, neighbouring lines overlap into darker bands, and edges are jagged.
+  - Make native selection invisible: `::selection { background: transparent }`, while keeping the DOM selection for copy, find and screen readers.
+  - Map the selected DOM range to a character range with `charRangeFromDomRange`.
+  - Paint the highlight from PDFium's own merged line rectangles, `FPDFText_CountRects` and `FPDFText_GetRect`, which are exported and are what Chrome's viewer uses. Draw them in one overlay per page, in one colour, as a single path, so overlaps never darken.
+  - Use the same rectangle source later for highlight, underline and strikethrough marks.
+  - Visual review: a screenshot of the same ResNet p1 abstract selection next to Chrome's own viewer. Uniform line heights, no overlap bands, edges that follow the text.
+  - Also: R27 (glyph-inclusive drag), R28 (double-click selects the whole word on ≥ 95% of words), committed tests for the snap=0 and 2 px nudge controls, and `\u` escapes for invisible characters.
+- **Task 15.** A committed regression test for crash rejection, plus a watchdog for a hung or out-of-memory worker. The text-runs method needs its own name, so that EmbedPDF's `getPageTextRuns` is not overridden.
+  - The `getFormInfo` port asserts `pagesWalked === pageCount` on non-forms and decides how read-only and hidden widgets count.
+  - Form info is computed once per fingerprint (R38).
+- **Task 12.** A positive control for each extension API the network gate relies on (R22).
+- **Task 28.** On `createDocument` failure, re-check `getContexts` (the offscreen-broker race). OPFS writes go in 4–16 MiB chunks (R34).
+- **Task 32.** Add these to the Windows checklist:
+  - alignment at DPR 1.5;
+  - Blink ascent and descent;
+  - the Hebrew fallback font;
+  - `endOfContent` on Chrome 128–147;
+  - bold coverage at 150%;
+  - W-B1..W-B3.
+- **Phase 2 figures.** A labelled set of 30 papers, with precision and recall asserted, and a time budget on text runs and `findFigures`.
