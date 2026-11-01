@@ -1,0 +1,32 @@
+/*
+ * The margin column lives in the page list's overlay, which ignores the pointer; the cards take it back. Cards are
+ * placed by top and left in content px, so they scroll with the pages. A card that moves to make room glides there
+ * (150 ms, as Docs' cards do), except while the pages themselves are laid out again (zoom, rotation, a resize), when
+ * the cards must stay with their lines.
+ */
+.column {
+  position: absolute;
+  inset: 0;
+}
+
+.column > .card {
+  position: absolute;
+  pointer-events: auto;
+  transition:
+    top 150ms ease-out,
+    translate 150ms ease-out,
+    box-shadow 150ms ease-out;
+}
+
+.column[data-animate="false"] > .card {
+  transition:
+    translate 150ms ease-out,
+    box-shadow 150ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .column > .card,
+  .column[data-animate="false"] > .card {
+    transition: none;
+  }
+}

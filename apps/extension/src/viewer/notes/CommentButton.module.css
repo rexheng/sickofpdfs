@@ -1,0 +1,19 @@
+/*
+ * Drive's "Comment" text button in the pill (02 section 4.10, signed-in view): the pill's own text style, Google Sans
+ * Text 14/20 500 in on-surface-variant (#c4c7c5), with the 20 px add_comment icon, 32 px tall like the pill's icon
+ * buttons, and the same 8% hover layer.
+ */
+.button {
+  block-size: var(--icon-btn);
+  margin-inline-start: var(--space-2);
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.button:hover:not(:disabled) {
+  background-color: var(--icon-btn-hover);
+}
+
+.button:disabled {
+  opacity: 0.38;
+  cursor: default;
+}

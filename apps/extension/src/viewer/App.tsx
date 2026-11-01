@@ -67,6 +67,8 @@ import { EngineStoppedCard } from './ui/EngineStoppedCard';
 import { FileAccessDialog } from './ui/FileAccessDialog';
 import { FramedCard } from './ui/FramedCard';
 import { LargeFileNotice } from './ui/LargeFileNotice';
+import { CommentButton } from './notes/CommentButton';
+import { NotesLayer } from './notes/NotesLayer';
 import { LoadErrorCard } from './ui/LoadErrorCard';
 import { LocalFileCard } from './ui/LocalFileCard';
 import { PasswordDialog } from './ui/PasswordDialog';
@@ -477,7 +479,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
         onGoToPage={goToPage}
         onZoom={zoom}
         pageFieldRef={pageFieldRef}
-        end={<CurrentPageExtras store={store} scans={scans} source={doc.loaded.sourceUrl} onOpenInChrome={(url) => ui.openInChrome(url)} />}
+        end={<><CurrentPageExtras store={store} scans={scans} source={doc.loaded.sourceUrl} onOpenInChrome={(url) => ui.openInChrome(url)} /><CommentButton /></>}
       />
       <NavRail
         store={store}
@@ -493,6 +495,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       {find.view}
       {notes !== null && viewerFeatures().map((f) => f.View && <f.View key={f.id} host={notes.host} />)}
       {notes !== null && <MarkupMenu input={notes.input} commands={commands} />}
+      <NotesLayer doc={doc} pageText={pageText} textLayers={textLayers} pages={api} store={store} />
     </>
   );
 });
