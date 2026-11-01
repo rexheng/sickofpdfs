@@ -7,6 +7,7 @@ import '@sop/ui/base.css';
 import { registerFonts } from '@sop/ui';
 import {
   createEmbedPdfBackend,
+  createPageTextProvider,
   createViewerStore,
   displayNameFor,
   ENGINE_WORKERS,
@@ -252,7 +253,9 @@ const Reader = memo(function Reader({ doc, params, rootRef, pageFieldRef, ui, on
     () => new RenderScheduler(backend, doc.open.doc, { concurrency: ENGINE_WORKERS, previewWidthPx: 160, previewCache: 300 }),
   );
   const [scans] = useState(() => new ScanDetector(backend, doc.open.doc, doc.open.pages));
-  const [textLayers] = useState(() => new TextLayerController({ source: textSource(doc), pages: doc.open.pages, fontUrl: chrome.runtime.getURL(TEXT_LAYER_FONT) }));
+  // The page text everything reads (the text layer now; marks and find later): one glyph cache for the document.
+  const [pageText] = useState(() => createPageTextProvider(backend, doc.open.doc));
+  const [textLayers] = useState(() => new TextLayerController({ source: pageText, pages: doc.open.pages, fontUrl: chrome.runtime.getURL(TEXT_LAYER_FONT) }));
   const api = useRef<PageListApi | null>(null);
   const commands = useMemo(() => {
     const ctx: ViewerContext = {
@@ -308,18 +311,6 @@ const Reader = memo(function Reader({ doc, params, rootRef, pageFieldRef, ui, on
 
 /** The text layer's font: the engine's bundled Noto Sans (the spike measured canvas and DOM widths within 0.02 px with it). */
 const TEXT_LAYER_FONT = 'pdf/NotoSans-Regular.ttf';
-
-/**
- * Where the text layer reads glyphs and selection rects. (Once PageTextProvider is in, it is passed here instead, so
- * marks, find and the text layer share one glyph cache.)
- */
-function textSource(doc: OpenedDocument) {
-  const d = doc.open.doc;
-  return {
-    glyphs: (pageIndex: number) => backend.getPageGlyphs(d, pageIndex),
-    rects: (pageIndex: number, start: number, count: number) => backend.getTextRangeRects(d, pageIndex, start, count),
-  };
-}
 
 /** What follows the page in view: `#page=N` in the address, and the scan hint. Kept apart so the page list does not re-render. */
 function CurrentPageExtras(p: { store: ViewerStore; scans: ScanDetector; source: string | null; onOpenInChrome: (url: string) => void }) {

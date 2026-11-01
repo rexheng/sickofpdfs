@@ -125,7 +125,7 @@ export class TextLayerController {
   mount(index: number, host: HTMLElement, path: SVGPathElement): PageTextLayer {
     const s: PageState = {
       index,
-      size: this.o.pages[index]!,
+      size: this.o.pages[index],
       host,
       path,
       box: null,

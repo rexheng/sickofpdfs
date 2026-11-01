@@ -42,8 +42,8 @@ export function charRangeFromDomRange(root: HTMLElement, range: Range): CharRang
     if (!range.intersectsNode(layer)) continue;
     const texts = selectableTexts(layer);
     if (texts.length === 0) continue;
-    const last = texts[texts.length - 1]!;
-    const start = layer.contains(range.startContainer) ? boundary(texts, range.startContainer, range.startOffset, 'start') : texts[0]!.start;
+    const last = texts[texts.length - 1];
+    const start = layer.contains(range.startContainer) ? boundary(texts, range.startContainer, range.startOffset, 'start') : texts[0].start;
     const end = layer.contains(range.endContainer) ? boundary(texts, range.endContainer, range.endOffset, 'end') : last.start + last.node.length;
     if (end > start) out.push({ pageIndex: pageOf(layer), start, end });
   }
@@ -57,10 +57,10 @@ function boundary(texts: SpanText[], node: Node, offset: number, side: 'start' |
   at.setStart(node, offset);
   if (side === 'start') {
     const next = texts.find((t) => at.comparePoint(t.node, t.node.length) > 0);
-    return next ? next.start : texts[texts.length - 1]!.start + texts[texts.length - 1]!.node.length;
+    return next ? next.start : texts[texts.length - 1].start + texts[texts.length - 1].node.length;
   }
   const prev = texts.findLast((t) => at.comparePoint(t.node, 0) < 0);
-  return prev ? prev.start + prev.node.length : texts[0]!.start;
+  return prev ? prev.start + prev.node.length : texts[0].start;
 }
 
 /** The char ranges the document's selection covers inside `viewerRoot`'s text layers, in page order; [] for none. */
@@ -96,7 +96,7 @@ function startPosition(layer: HTMLElement, charIndex: number): { node: Text; off
 function endPosition(layer: HTMLElement, charIndex: number): { node: Text; offset: number } | null {
   const texts = selectableTexts(layer);
   for (let k = texts.length - 1; k >= 0; k--) {
-    const t = texts[k]!;
+    const t = texts[k];
     if (t.start < charIndex) return { node: t.node, offset: Math.min(t.node.length, charIndex - t.start) };
   }
   return null;

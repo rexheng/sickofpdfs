@@ -87,7 +87,7 @@ export function direction(angle: number): [number, number] {
   const q = angle / 90;
   if (Math.abs(q - Math.round(q)) < 1e-6) {
     const k = ((Math.round(q) % 4) + 4) % 4;
-    return [[1, 0, -1, 0][k]!, [0, 1, 0, -1][k]!];
+    return [[1, 0, -1, 0][k], [0, 1, 0, -1][k]];
   }
   const t = (angle * Math.PI) / 180;
   return [Math.cos(t), Math.sin(t)];
@@ -132,10 +132,10 @@ export function lineBreakJoins(g: PageGlyphs): Map<number, string> {
   const joins = new Map<number, string>();
   const glyphs = g.glyphs;
   for (let i = 0; i < glyphs.length; i++) {
-    const first = glyphs[i]!;
+    const first = glyphs[i];
     if (!isBreak(first) || !first.generated) continue;
     let after = i;
-    while (after < glyphs.length && isBreak(glyphs[after]!) && glyphs[after]!.generated) after++;
+    while (after < glyphs.length && isBreak(glyphs[after]) && glyphs[after].generated) after++;
     const join = breakJoin(glyphs, i, after);
     if (join !== null) joins.set(i, join);
     i = after - 1;
@@ -146,7 +146,7 @@ export function lineBreakJoins(g: PageGlyphs): Map<number, string> {
 
 function breakJoin(glyphs: Glyph[], at: number, after: number): string | null {
   let pi = at - 1;
-  while (pi >= 0 && !hasBox(glyphs[pi]!) && !isBreak(glyphs[pi]!)) pi--;
+  while (pi >= 0 && !hasBox(glyphs[pi]) && !isBreak(glyphs[pi])) pi--;
   const p = glyphs[pi];
   const n = glyphs[after];
   if (!p || !n || !hasBox(p) || !hasBox(n) || angleDelta(p.angle, n.angle) > 0.5) return null;
@@ -180,7 +180,7 @@ function modelChars(g: PageGlyphs): string[] {
   const out = glyphs.map((c) => c.text);
   for (const [at, join] of joins) {
     out[at] = join;
-    for (let k = at + 1; k < glyphs.length && isBreak(glyphs[k]!) && glyphs[k]!.generated; k++) out[k] = '';
+    for (let k = at + 1; k < glyphs.length && isBreak(glyphs[k]) && glyphs[k].generated; k++) out[k] = '';
   }
   modelCache.set(g, out);
   return out;
@@ -201,12 +201,12 @@ export function glyphUnits(g: PageGlyphs): GlyphUnit[] {
   const glyphs = g.glyphs;
   const joins = lineBreakJoins(g);
   for (let i = 0; i < glyphs.length; i++) {
-    const c = glyphs[i]!;
+    const c = glyphs[i];
     const join = joins.get(i);
     if (join !== undefined) {
       // A joined break: its first char shows `join` (a space, placed in the gap like a generated space) or nothing.
       let end = i + 1;
-      while (end < glyphs.length && isBreak(glyphs[end]!) && glyphs[end]!.generated) end++;
+      while (end < glyphs.length && isBreak(glyphs[end]) && glyphs[end].generated) end++;
       for (let k = i; k < end; k++) {
         const shown = k === i && join !== '';
         units.push({ start: k, end: k + 1, text: shown ? join : '', box: null, angle: c.angle, fontSize: c.fontSize, generated: true, lineBreak: false, hidden: !shown, hyphen: false });
@@ -214,12 +214,12 @@ export function glyphUnits(g: PageGlyphs): GlyphUnit[] {
       i = end - 1;
       continue;
     }
-    const pair = isHigh(c.text) && i + 1 < glyphs.length && isLow(glyphs[i + 1]!.text);
+    const pair = isHigh(c.text) && i + 1 < glyphs.length && isLow(glyphs[i + 1].text);
     const lineBreak = isBreak(c);
     units.push({
       start: i,
       end: pair ? i + 2 : i + 1,
-      text: pair ? c.text + glyphs[i + 1]!.text : c.text,
+      text: pair ? c.text + glyphs[i + 1].text : c.text,
       box: hasBox(c) ? { ...c.box } : null,
       angle: c.angle,
       fontSize: c.fontSize,
@@ -233,9 +233,9 @@ export function glyphUnits(g: PageGlyphs): GlyphUnit[] {
   // Ligature expansions: consecutive units with the very same PDFium box share it equally along û.
   for (let i = 0; i < units.length; ) {
     let j = i + 1;
-    const box = units[i]!.box;
-    if (box) while (j < units.length && units[j]!.box && sameBox(units[j]!.box!, box) && units[j]!.angle === units[i]!.angle) j++;
-    if (j - i > 1) splitAlongText(units.slice(i, j), box!, units[i]!.angle);
+    const box = units[i].box;
+    if (box) while (j < units.length && units[j].box && sameBox(units[j].box!, box) && units[j].angle === units[i].angle) j++;
+    if (j - i > 1) splitAlongText(units.slice(i, j), box!, units[i].angle);
     i = j;
   }
   return units;
@@ -297,14 +297,14 @@ export function buildTextItems(g: PageGlyphs, measure: (text: string, cssFont: s
   const placed: (Placed | null)[] = units.map((u) => (u.box ? place(u, u.box, scale, u.angle, u.fontSize) : null));
   // A unit with no box (a generated space) takes the gap between its neighbours on the line.
   for (let i = 0; i < units.length; i++) {
-    const u = units[i]!;
+    const u = units[i];
     if (placed[i] || u.lineBreak || u.hidden) continue;
     let p = i - 1;
-    while (p >= 0 && !placed[p] && !units[p]!.lineBreak) p--;
+    while (p >= 0 && !placed[p] && !units[p].lineBreak) p--;
     let n = i + 1;
-    while (n < units.length && !placed[n] && !units[n]!.lineBreak) n++;
-    const prev = p >= 0 && !units[p]!.lineBreak ? placed[p] : null;
-    const next = n < units.length && !units[n]!.lineBreak ? placed[n] : null;
+    while (n < units.length && !placed[n] && !units[n].lineBreak) n++;
+    const prev = p >= 0 && !units[p].lineBreak ? placed[p] : null;
+    const next = n < units.length && !units[n].lineBreak ? placed[n] : null;
     const ref = prev ?? next;
     if (!ref) continue; // nowhere to put it: not shown
     let u0 = prev ? prev.u1 : next!.u0;
@@ -326,17 +326,17 @@ export function buildTextItems(g: PageGlyphs, measure: (text: string, cssFont: s
     widths = [];
   };
   const fits = (cand: Placed[], w: number[], s: number) => {
-    const first = cand[0]!;
-    const last = cand[cand.length - 1]!;
+    const first = cand[0];
+    const last = cand[cand.length - 1];
     const start = s > 0 ? first.u0 : first.u1;
     const end = s > 0 ? last.u1 : last.u0;
-    const total = w[w.length - 1]!;
+    const total = w[w.length - 1];
     if (!(total > 0)) return false;
     const sx = Math.abs(end - start) / total;
     for (let k = 0; k < cand.length; k++) {
-      const near = start + s * sx * (k > 0 ? w[k - 1]! : 0);
-      const far = start + s * sx * w[k]!;
-      const p = cand[k]!;
+      const near = start + s * sx * (k > 0 ? w[k - 1] : 0);
+      const far = start + s * sx * w[k];
+      const p = cand[k];
       if (Math.abs(near - (s > 0 ? p.u0 : p.u1)) > DRIFT_PX || Math.abs(far - (s > 0 ? p.u1 : p.u0)) > DRIFT_PX) return false;
     }
     return true;
@@ -344,7 +344,7 @@ export function buildTextItems(g: PageGlyphs, measure: (text: string, cssFont: s
   const text = (p: Placed) => p.unit.text;
 
   for (let i = 0; i < units.length; i++) {
-    const u = units[i]!;
+    const u = units[i];
     if (u.lineBreak) {
       emit();
       const last = items[items.length - 1];
@@ -368,15 +368,15 @@ export function buildTextItems(g: PageGlyphs, measure: (text: string, cssFont: s
       widths = [measure(text(p), cssFont(p.fsPx))];
       continue;
     }
-    if (!compatible(span[span.length - 1]!, p)) {
+    if (!compatible(span[span.length - 1], p)) {
       emit();
       span = [p];
       widths = [measure(text(p), cssFont(p.fsPx))];
       continue;
     }
     const cand = [...span, p];
-    const s = span.length === 1 ? (p.u0 + p.u1 >= span[0]!.u0 + span[0]!.u1 ? 1 : -1) : sign;
-    const w = [...widths, measure(cand.map(text).join(''), cssFont(span[0]!.fsPx))];
+    const s = span.length === 1 ? (p.u0 + p.u1 >= span[0].u0 + span[0].u1 ? 1 : -1) : sign;
+    const w = [...widths, measure(cand.map(text).join(''), cssFont(span[0].fsPx))];
     if (fits(cand, w, s)) {
       span = cand;
       widths = w;
@@ -392,7 +392,7 @@ export function buildTextItems(g: PageGlyphs, measure: (text: string, cssFont: s
   return items;
 
   function toItem(ps: Placed[], s: number): TextItem {
-    const first = ps[0]!;
+    const first = ps[0];
     const str = ps.map(text).join('');
     const dir = ps.length > 1 ? (s > 0 ? 'ltr' : 'rtl') : RTL_SCRIPT.test(str) ? 'rtl' : 'ltr';
     const u0 = Math.min(...ps.map((p) => p.u0));
@@ -433,7 +433,7 @@ export function wordAt(g: PageGlyphs, charIndex: number): { start: number; end: 
   let text = '';
   for (let i = 0; i < chars.length; i++) {
     at.push(text.length);
-    text += chars[i]!.replace(NOT_TEXT, '');
+    text += chars[i].replace(NOT_TEXT, '');
   }
   const segmenter = new Intl.Segmenter(undefined, { granularity: 'word' });
   const seg = segmenter.segment(text).containing(at[charIndex]);
@@ -443,9 +443,9 @@ export function wordAt(g: PageGlyphs, charIndex: number): { start: number; end: 
   let start = -1;
   let end = -1;
   for (let i = 0; i < chars.length; i++) {
-    const len = chars[i]!.replace(NOT_TEXT, '').length;
+    const len = chars[i].replace(NOT_TEXT, '').length;
     if (len === 0) continue;
-    if (at[i]! >= s0 && at[i]! < s1) {
+    if (at[i] >= s0 && at[i] < s1) {
       if (start < 0) start = i;
       end = i + 1;
     }
