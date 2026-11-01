@@ -1156,16 +1156,35 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
     return { left: this.h.float(mem), top: this.h.float(mem + 4), right: this.h.float(mem + 8), bottom: this.h.float(mem + 12) };
   }
 
-  /** FPDFText_GetText for chars [start, start + count): exactly one UTF-16 code unit per char, nothing removed. */
+  /**
+   * The text of chars [start, start + count): exactly one UTF-16 code unit per char, so text[k] is char start + k.
+   *
+   * FPDFText_GetText does not keep to that. It leaves out the chars whose Unicode value is 0, 2 or 3 (the codes of glyphs
+   * a font has no mapping for, such as the tick labels of a plot) and the chars beyond the BMP (the italic letters of
+   * maths), so on those pages everything after the first one sits too early and the tail of the buffer stays empty. It
+   * returns the number of units it wrote, terminator included: when that is count + 1 nothing was left out and its text is
+   * used as it is. Otherwise each char is read with FPDFText_GetUnicode, and a char that has no single unit of text gets
+   * U+FFFF, which getPageText strips and anchoring folds away, as it does U+FFFE.
+   */
   private rawText(textPage: number, start: number, count: number): string {
     if (count <= 0) return '';
     const buf = this.x.malloc(2 * (count + 1));
     try {
-      this.x.FPDFText_GetText(textPage, start, count, buf);
-      return this.h.utf16(buf, count);
+      if (this.x.FPDFText_GetText(textPage, start, count, buf) === count + 1) return this.h.utf16(buf, count);
     } finally {
       this.x.free(buf);
     }
+    let text = '';
+    for (let from = 0; from < count; from += 4096) {
+      const units: number[] = [];
+      for (let k = from; k < Math.min(count, from + 4096); k++) {
+        const unicode = this.x.FPDFText_GetUnicode(textPage, start + k);
+        const left = unicode === 0 || unicode === 2 || unicode === 3 || unicode > 0xffff; // the chars GetText leaves out
+        units.push(left ? 0xffff : unicode);
+      }
+      text += String.fromCharCode(...units);
+    }
+    return text;
   }
 
   /** A PDFium call that writes UTF-16LE with a NUL and returns the byte count, NUL included, whatever the buffer. */
