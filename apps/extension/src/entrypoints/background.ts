@@ -1,4 +1,5 @@
 import { defineBackground } from 'wxt/utils/define-background';
+import { installCrashRecovery } from '../background/crash-recovery';
 import { installStoreBroker } from '../background/store-broker';
 import { installFileFallback } from '../background/takeover/file-fallback';
 import { installGrants } from '../background/takeover/grants';
@@ -15,5 +16,6 @@ export default defineBackground(() => {
   installRequestLog();
   installTabLifecycle();
   installStoreBroker();
+  installCrashRecovery();
   registerTakeover().catch((error: unknown) => console.error('sickofpdfs: the takeover is not registered', error));
 });
