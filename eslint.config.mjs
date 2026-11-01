@@ -112,6 +112,16 @@ export default defineConfig(
     ],
     rules: { 'no-restricted-imports': 'off', 'no-restricted-syntax': 'off' },
   },
+  // The backup (Phase 3, S13) never reaches the secrets store: no backup file may hold the key. Its folder is barred by the default
+  // block above already; it is named here on purpose, with the Backup section, which sits in the settings folder that is allowed.
+  // These entries come after the allowed list, so they win.
+  {
+    files: ['apps/extension/src/backup/**', 'apps/extension/src/store/backup-api.ts', 'apps/extension/src/library/settings/{Backup*,use-backup}.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [LOCAL_ONLY_IMPORT_PATTERN] }],
+      'no-restricted-syntax': ['error', ...LOCAL_ONLY_SYNTAX],
+    },
+  },
 
   // Design tokens: colours, lengths, fonts and shadows come from packages/ui/src/tokens (see the rule for the details)
   {
