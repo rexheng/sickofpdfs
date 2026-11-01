@@ -20,6 +20,8 @@ test-assets/
 .vitest/
 apps/extension/.output/
 apps/extension/public/pdf/
+apps/extension/public/ort/
+apps/extension/public/models/
 .venv-fixtures/
 # the web library is built into the Worker's static assets (CL13); only the placeholder is committed
 apps/cloud/public/*

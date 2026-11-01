@@ -28,6 +28,9 @@ export default defineConfig(
     '**/.vitest-attachments/**',
     '.superpowers/**',
     'test-assets/**',
+    // third-party files the build copies in (onnxruntime-web's runtime, the tie-breaker model): not our code
+    'apps/extension/public/ort/**',
+    'apps/extension/public/models/**',
     // the throwaway Phase 0 package has its own tooling and is not part of the workspace
     'spikes/**',
     // research notes and third-party reference copies

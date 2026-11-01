@@ -6,9 +6,9 @@
   "description": "The sickofpdfs Chrome extension (Manifest V3, built with WXT).",
   "scripts": {
     "postinstall": "wxt prepare",
-    "assets": "node scripts/copy-engine-assets.mjs",
-    "build": "node scripts/copy-engine-assets.mjs && wxt build && node scripts/check-no-cdn.mjs .output/chrome-mv3",
-    "build:e2e": "node scripts/copy-engine-assets.mjs && wxt build --mode test && node scripts/check-no-cdn.mjs .output/chrome-mv3-test",
+    "assets": "node scripts/copy-engine-assets.mjs && node scripts/copy-ort-assets.mjs && node scripts/fetch-minilm.mjs",
+    "build": "pnpm assets && node scripts/minilm-prototypes.mjs --check && wxt build && node scripts/check-no-cdn.mjs .output/chrome-mv3",
+    "build:e2e": "pnpm assets && node scripts/minilm-prototypes.mjs --check && wxt build --mode test && node scripts/check-no-cdn.mjs .output/chrome-mv3-test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -17,6 +17,7 @@
     "@sop/viewer": "workspace:*",
     "@sqlite.org/sqlite-wasm": "3.54.1-build1",
     "@wxt-dev/module-react": "1.2.2",
+    "onnxruntime-web": "1.31.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "wxt": "0.21.5"
