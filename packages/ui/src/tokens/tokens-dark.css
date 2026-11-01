@@ -1,0 +1,89 @@
+/*
+ * Dark VIEWER-CHROME theme: the look of Drive's file preview and Chrome's own PDF viewer (02 sections 3.1 and 4.10).
+ * It is not a dark mode for PDF pages.
+ *
+ * Switch it on with data-theme="dark" on the viewer root (or on <html>). Without a data-theme attribute the page
+ * follows the operating system's colour scheme; data-theme="light" pins the light theme.
+ *
+ * Only the colours that differ from tokens.css are set here. A token that aliases another token
+ * (--drive-app-bg, --drive-row-divider) is declared again, because var() is resolved where it is declared,
+ * so the :root alias would keep the light value inside a dark subtree.
+ *
+ * Both selectors are in one rule on purpose. tokens.css imports this file before its own :root block, and a bare
+ * [data-theme='dark'] on <html> has the same specificity as :root, so it would lose to the light values.
+ * `:root[data-theme='dark']` is more specific than :root, so the theme wins on <html> in either file order.
+ */
+[data-theme='dark'],
+:root[data-theme='dark'] {
+  --gm3-sys-color-background: #131314;
+  --gm3-sys-color-on-background: #e3e3e3;
+  --gm3-sys-color-surface: #131314;
+  --gm3-sys-color-surface-dim: #131314;
+  --gm3-sys-color-surface-bright: #37393b;
+  --gm3-sys-color-surface-container-lowest: #0e0e0e;
+  --gm3-sys-color-surface-container-low: #1b1b1b;
+  --gm3-sys-color-surface-container: #1e1f20;
+  --gm3-sys-color-surface-container-high: #282a2c;
+  --gm3-sys-color-surface-container-highest: #333537;
+  --gm3-sys-color-surface-variant: #444746;
+  --gm3-sys-color-on-surface: #e3e3e3;
+  --gm3-sys-color-on-surface-variant: #c4c7c5;
+  --gm3-sys-color-outline: #8e918f;
+  --gm3-sys-color-outline-variant: #444746;
+  --gm3-sys-color-primary: #a8c7fa;
+  --gm3-sys-color-on-primary: #062e6f;
+  --gm3-sys-color-primary-container: #0842a0;
+  --gm3-sys-color-on-primary-container: #d3e3fd;
+  --gm3-sys-color-secondary: #7fcfff;
+  --gm3-sys-color-secondary-container: #004a77;
+  --gm3-sys-color-on-secondary-container: #c2e7ff;
+  --gm3-sys-color-tertiary: #6dd58c;
+  --gm3-sys-color-error: #f2b8b5;
+  --gm3-sys-color-on-error: #601410;
+  --gm3-sys-color-error-container: #8c1d18;
+  --gm3-sys-color-on-error-container: #f9dedc;
+  --gm3-sys-color-inverse-surface: #e3e3e3;
+  --gm3-sys-color-inverse-on-surface: #303030;
+  --gm3-sys-color-inverse-primary: #0b57d0;
+  --drive-app-bg: var(--gm3-sys-color-surface-container-low);
+  --drive-row-divider: var(--gm3-sys-color-outline-variant);
+  --focus-ring-color: var(--viewer-focus);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --gm3-sys-color-background: #131314;
+    --gm3-sys-color-on-background: #e3e3e3;
+    --gm3-sys-color-surface: #131314;
+    --gm3-sys-color-surface-dim: #131314;
+    --gm3-sys-color-surface-bright: #37393b;
+    --gm3-sys-color-surface-container-lowest: #0e0e0e;
+    --gm3-sys-color-surface-container-low: #1b1b1b;
+    --gm3-sys-color-surface-container: #1e1f20;
+    --gm3-sys-color-surface-container-high: #282a2c;
+    --gm3-sys-color-surface-container-highest: #333537;
+    --gm3-sys-color-surface-variant: #444746;
+    --gm3-sys-color-on-surface: #e3e3e3;
+    --gm3-sys-color-on-surface-variant: #c4c7c5;
+    --gm3-sys-color-outline: #8e918f;
+    --gm3-sys-color-outline-variant: #444746;
+    --gm3-sys-color-primary: #a8c7fa;
+    --gm3-sys-color-on-primary: #062e6f;
+    --gm3-sys-color-primary-container: #0842a0;
+    --gm3-sys-color-on-primary-container: #d3e3fd;
+    --gm3-sys-color-secondary: #7fcfff;
+    --gm3-sys-color-secondary-container: #004a77;
+    --gm3-sys-color-on-secondary-container: #c2e7ff;
+    --gm3-sys-color-tertiary: #6dd58c;
+    --gm3-sys-color-error: #f2b8b5;
+    --gm3-sys-color-on-error: #601410;
+    --gm3-sys-color-error-container: #8c1d18;
+    --gm3-sys-color-on-error-container: #f9dedc;
+    --gm3-sys-color-inverse-surface: #e3e3e3;
+    --gm3-sys-color-inverse-on-surface: #303030;
+    --gm3-sys-color-inverse-primary: #0b57d0;
+    --drive-app-bg: var(--gm3-sys-color-surface-container-low);
+    --drive-row-divider: var(--gm3-sys-color-outline-variant);
+    --focus-ring-color: var(--viewer-focus);
+  }
+}

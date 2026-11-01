@@ -63,6 +63,11 @@ export default defineConfig(
     plugins: { css },
     language: 'css/css',
     extends: [css.configs.recommended],
+    rules: {
+      // Tokens are declared in packages/ui/src/tokens, not in the file that uses them, so ESLint cannot resolve a
+      // var(--token) file by file. packages/ui/src/tokens/tokens.test.ts checks that every var(--x) is declared.
+      'css/no-invalid-properties': ['error', { allowUnknownVariables: true }],
+    },
   },
 
   // Design tokens: colours, lengths, fonts and shadows come from packages/ui/src/tokens (see the rule for the details)

@@ -4,9 +4,26 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./tokens.css": "./src/tokens/tokens.css",
+    "./tokens-dark.css": "./src/tokens/tokens-dark.css",
+    "./base.css": "./src/base.css"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "icons:mdi": "node scripts/extract-mdi.mjs"
+  },
+  "dependencies": {
+    "@fontsource-variable/google-sans": "5.3.2",
+    "@fontsource-variable/google-sans-flex": "5.3.2",
+    "material-symbols": "0.48.2",
+    "radix-ui": "1.8.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@iconify-json/mdi": "1.2.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0"
   }
 }

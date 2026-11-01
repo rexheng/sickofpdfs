@@ -1,0 +1,204 @@
+/*
+ * Design tokens: the one place where colours, fonts, lengths and shadows are written as raw values.
+ * Every other CSS file and inline style uses var(--token); the lint rule sop/no-raw-design-values enforces that.
+ *
+ * Part 1 is the :root block of docs/research/02-drive-visual-spec.md section 3.1, copied as it is (values measured on
+ * Google Drive, 2026-10-31). Part 2 adds what the viewer and the components need, in the same block.
+ * The dark viewer-chrome theme is in tokens-dark.css (imported here, so one import is enough) and is switched on with
+ * data-theme="dark" on the viewer root.
+ */
+@import './tokens-dark.css';
+
+/* ===== Part 1: Drive tokens, verbatim from 02 section 3.1 ===== */
+:root {
+  /* ===== GM3 system colours — LIGHT. Exact copy of Drive's production block [css] ===== */
+  --gm3-sys-color-primary: #0b57d0;
+  --gm3-sys-color-on-primary: #ffffff;
+  --gm3-sys-color-primary-container: #d3e3fd;
+  --gm3-sys-color-on-primary-container: #0842a0;
+  --gm3-sys-color-primary-fixed: #d3e3fd;
+  --gm3-sys-color-primary-fixed-dim: #a8c7fa;
+  --gm3-sys-color-on-primary-fixed: #041e49;
+  --gm3-sys-color-on-primary-fixed-variant: #0842a0;
+  --gm3-sys-color-inverse-primary: #a8c7fa;
+  --gm3-sys-color-secondary: #00639b;
+  --gm3-sys-color-on-secondary: #ffffff;
+  --gm3-sys-color-secondary-container: #c2e7ff;
+  --gm3-sys-color-on-secondary-container: #004a77;
+  --gm3-sys-color-secondary-fixed: #c2e7ff;
+  --gm3-sys-color-secondary-fixed-dim: #7fcfff;
+  --gm3-sys-color-on-secondary-fixed: #001d35;
+  --gm3-sys-color-on-secondary-fixed-variant: #004a77;
+  --gm3-sys-color-tertiary: #146c2e;
+  --gm3-sys-color-on-tertiary: #ffffff;
+  --gm3-sys-color-tertiary-container: #c4eed0;
+  --gm3-sys-color-on-tertiary-container: #0f5223;
+  --gm3-sys-color-tertiary-fixed: #c4eed0;
+  --gm3-sys-color-tertiary-fixed-dim: #6dd58c;
+  --gm3-sys-color-on-tertiary-fixed: #072711;
+  --gm3-sys-color-on-tertiary-fixed-variant: #0f5223;
+  --gm3-sys-color-error: #b3261e;
+  --gm3-sys-color-on-error: #ffffff;
+  --gm3-sys-color-error-container: #f9dedc;
+  --gm3-sys-color-on-error-container: #8c1d18;
+  --gm3-sys-color-background: #ffffff;
+  --gm3-sys-color-on-background: #1f1f1f;
+  --gm3-sys-color-surface: #ffffff;
+  --gm3-sys-color-surface-bright: #ffffff;
+  --gm3-sys-color-surface-dim: #d3dbe5;
+  --gm3-sys-color-surface-container-lowest: #ffffff;
+  --gm3-sys-color-surface-container-low: #f8fafd;   /* app background behind the white content card */
+  --gm3-sys-color-surface-container: #f0f4f9;       /* menus, grid cards, Docs comment sidebar */
+  --gm3-sys-color-surface-container-high: #e9eef6;  /* search bar, Docs comment card in the sidebar */
+  --gm3-sys-color-surface-container-highest: #dde3ea;
+  --gm3-sys-color-surface-variant: #e1e3e1;
+  --gm3-sys-color-on-surface: #1f1f1f;              /* primary text */
+  --gm3-sys-color-on-surface-variant: #444746;      /* secondary text, icons */
+  --gm3-sys-color-outline: #747775;                 /* outlined buttons and chips, segmented button */
+  --gm3-sys-color-outline-variant: #c4c7c5;         /* row and table dividers */
+  --gm3-sys-color-inverse-surface: #303030;         /* tooltip background [live] */
+  --gm3-sys-color-inverse-on-surface: #f2f2f2;      /* tooltip text [live] */
+  --gm3-sys-color-scrim: #000000;
+  --gm3-sys-color-shadow: #000000;
+
+  /* ===== Drive-specific derived values ([live]/[px]) ===== */
+  --drive-app-bg: var(--gm3-sys-color-surface-container-low);       /* #f8fafd */
+  --drive-content-bg: #ffffff;                                      /* main content card */
+  --drive-row-divider: var(--gm3-sys-color-outline-variant);        /* 1px #c4c7c5 */
+  --drive-row-hover: #ededed;            /* = rgba(31,31,31,.08) over white [px] */
+  --drive-row-selected-bg: #c2e7ff;      /* [live] */
+  --drive-row-selected-fg: #004a77;      /* [live] text in a selected row */
+  --drive-row-selected-hover: #b2daf4;   /* = #c2e7ff + 8% #004a77 [px] */
+  --drive-focus-ring: #0b57d0;           /* 2px outer [px] */
+  --drive-focus-ring-inner: #d3e3fd;     /* 2px inner [px] */
+  --drive-sort-chip-bg: #c2e7ff;         /* 24px circle behind the sort arrow in the "Name" header; arrow #004a77 [live] */
+  --drive-avatar-placeholder-bg: #f8fafd;/* 24px owner avatar circle [live] */
+
+  /* State-layer opacities (GM3) [css] + [px] */
+  --gm3-state-hover: 0.08;
+  --gm3-state-focus: 0.10;   /* [inf] GM3 default */
+  --gm3-state-pressed: 0.10; /* [inf] GM3 default */
+  --gm3-state-disabled-content: 0.38; /* [live] disabled menu item opacity */
+
+  /* File-type icon colours (Drive 2025–26 set) [live] */
+  --filetype-pdf: #FC413D;
+  --filetype-docs: #3186FF;
+  --filetype-text: #3186FF;
+  --filetype-sheets: #00AF57;
+  --filetype-folder: #444746;
+
+  /* ===== Elevation (GM3, Google variant), as used in Drive CSS [css] ===== */
+  --elev-1: 0 1px 2px 0 rgba(60,64,67,.3), 0 1px 3px 1px rgba(60,64,67,.15);
+  --elev-2: 0 1px 2px 0 rgba(60,64,67,.3), 0 2px 6px 2px rgba(60,64,67,.15);  /* menus: measured ~10px falloff [px] */
+  --elev-3: 0 1px 3px 0 rgba(60,64,67,.3), 0 4px 8px 3px rgba(60,64,67,.15);  /* Docs active comment card uses the rgba(0,0,0,…) form [live] */
+  --elev-4: 0 2px 3px 0 rgba(60,64,67,.3), 0 6px 10px 4px rgba(60,64,67,.15); /* [inf] GM3 */
+  --elev-5: 0 4px 4px 0 rgba(60,64,67,.3), 0 8px 12px 6px rgba(60,64,67,.15); /* [inf] GM3 */
+  --shadow-docs-comment-active: 0 1px 3px 0 rgba(0,0,0,.3), 0 4px 8px 3px rgba(0,0,0,.15); /* [live] */
+  --shadow-pdf-page: 0 4px 15px 2px rgba(0,0,0,.35);   /* Drive viewer page [live] */
+
+  /* ===== Shape ===== */
+  --shape-full: 9999px;
+  --shape-content-card: 16px;      /* [live] main white card */
+  --shape-new-button: 16px;        /* [img] + clone */
+  --shape-nav-item: 16px;          /* 32px-tall pill [img] */
+  --shape-search: 24px;            /* 48px-tall pill [img] */
+  --shape-grid-card: 12px;         /* [live] */
+  --shape-grid-thumb: 4px;         /* [live] */
+  --shape-menu: 4px;               /* [live] light and dark menus */
+  --shape-tooltip: 4px;            /* [live] */
+  --shape-header-cell-hover: 8px 8px 0 0; /* [live] th radius */
+  --shape-chip: 8px;               /* GM3 filter chip [css default] */
+  --shape-docs-comment: 12px;      /* [live] */
+  --shape-docs-sidebar: 16px;      /* [live] */
+
+  /* ===== Typography roles. Families exactly as Drive declares them [live] ===== */
+  --font-text: "Google Sans Text", "Google Sans", Roboto, Arial, sans-serif;
+  --font-display: "Google Sans", Roboto, Arial, sans-serif;
+  --font-flex: "Google Sans Flex", "Google Sans Text", "Google Sans", Roboto, Arial, sans-serif;
+  --font-wordmark: "Product Sans", "Google Sans", Arial, sans-serif; /* substitute Google Sans */
+
+  --type-body: 400 14px/20px var(--font-text);          /* body default */
+  --type-row: 400 14px/20px var(--font-text);           /* secondary columns, colour #444746 */
+  --type-row-name: 500 14px/20px var(--font-text);      /* file name, #1f1f1f (live signed-out view; see §4.6 note) */
+  --type-table-header: 500 14px/20px var(--font-text);  /* #444746; active sort column #1f1f1f */
+  --type-page-title: 400 24px/32px var(--font-display); /* "My Drive", folder name */
+  --type-wordmark: 400 22px/48px var(--font-wordmark);  /* "Drive" next to the logo */
+  --type-menu-item: 400 14px/20px var(--font-flex);
+  --type-menu-shortcut: 500 11px/16px var(--font-display); /* letter-spacing .1px [live] */
+  --type-text-button: 500 14px/20px var(--font-flex);   /* "Sort", row "Download" */
+  --type-button-gs: 500 14px/36px var(--font-display);  /* "Download all"; letter-spacing .14px [live] */
+  --type-tooltip: 400 12px/16px var(--font-text);       /* letter-spacing .1px [live] */
+  --type-viewer-title: 400 18px/20px var(--font-display);
+  --type-viewer-toolbar: 500 14px/20px var(--font-text);
+  --type-docs-comment-author: 500 14px/20px var(--font-display);   /* letter-spacing .1px */
+  --type-docs-comment-time: 400 12px/16px var(--font-display);     /* letter-spacing .1px */
+  --type-docs-comment-body: 400 14px/20px var(--font-display);     /* colour #444746 */
+  --type-docs-sidebar-title: 400 22px/28px var(--font-display);    /* "Comments", #444746 */
+
+  /* ===== Layout and dimensions ===== */
+  --topbar-h: 64px;            /* [live] content card starts at y=63–64 */
+  --nav-w: 256px;              /* [img] 224px pill + 16px inset on each side */
+  --nav-item-h: 32px;          /* [img] 31.25px at 1.6× ≈ 32 */
+  --nav-item-pill-w: 224px;    /* [img] */
+  --nav-item-inset-x: 16px;    /* [img] */
+  --nav-icon-x: 32px;          /* icon left edge from window left [img, ±2] */
+  --nav-label-x: 68px;         /* label left edge from window left [img] */
+  --new-btn-h: 56px;           /* [img] 55.6px */
+  --new-btn-min-w: 100px;      /* [img] ~101px with the "+ New" content */
+  --search-h: 48px;            /* [img] 49.4px */
+  --search-max-w: 720px;       /* [inf] */
+  --content-card-right-gap: 16px; /* [img] + [live] (bottom gap 16px) */
+  --row-h: 48px;               /* [live] */
+  --header-row-h: 48px;        /* [live] */
+  --grid-folder-card: 220px 48px; /* [live] at 1440 width; 6 columns, ~17px gaps */
+  --grid-file-card: 220px 220px;  /* [live] square; thumbnail 204×164 inset 8px, starts 48px from top */
+
+  /* ===== Part 2: additions (same :root block) ===== */
+
+  /* Spacing scale (4 px grid) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-14: 56px;
+  --space-16: 64px;
+
+  /* Viewer dimensions, 02 section 4.10 */
+  --viewer-header-h: 64px;
+  --viewer-pill-h: 48px;
+  --viewer-pill-pad: 8px;
+  --icon-btn: 32px;
+  --icon-btn-lg: 40px;
+  --menubar-btn-h: 24px;
+  --menu-dark-w: 288px;
+  --menu-dark-item-h: 36px; /* Drive's measured dark viewer menu; the 32px row below is the light library menu */
+  --menu-item-h: 32px;
+  --menu-separator-gap: 8px;
+  --page-gap: 16px;
+  --rail-w: 196px;
+  --thumb-num-w: 28px;
+  --menu-light-min-w: 320px;
+
+  /* Viewer colours */
+  --viewer-page-placeholder: rgba(68,71,70,.2);
+  --viewer-icon-hover: #3e4041; /* 8% #c4c7c5 over #333537 */
+  --viewer-focus: #a8c7fa;
+
+  /* Icons: Material Symbols Outlined at wght 400, drawn at opsz 20 or 24 (02 section 6.1) */
+  --font-icons: "Material Symbols Outlined";
+  --icon-size-20: 20px;
+  --icon-size-24: 24px;
+
+  /* Keyboard focus ring (base.css). The dark theme swaps the colour for --viewer-focus. */
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --focus-ring-color: var(--drive-focus-ring);
+
+  /* The letters of the PDF file tile: the tile is cut out of the glyph, so this shows through the cut-out */
+  --filetype-glyph: #ffffff;
+}

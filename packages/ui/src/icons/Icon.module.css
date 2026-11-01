@@ -1,0 +1,45 @@
+/*
+ * One Material Symbols Outlined glyph, drawn from the bundled variable font by its ligature name.
+ * Drive's settings (02 section 6.1): FILL 0 (1 when selected), wght 400, GRAD 0, opsz 20 or 24 to match the size.
+ * The box is exactly the icon size and clips, so an icon that is still loading, or a name that is not a symbol,
+ * never pushes the layout around.
+ */
+.icon {
+  --_fill: 0;
+  --_opsz: 24;
+  --_size: var(--icon-size-24);
+
+  display: inline-block;
+  flex: none;
+  inline-size: var(--_size);
+  block-size: var(--_size);
+  overflow: hidden;
+  vertical-align: middle;
+  font-family: var(--font-icons);
+  font-style: normal;
+  font-weight: 400;
+  font-size: var(--_size);
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  direction: ltr;
+  font-feature-settings: "liga";
+  font-variation-settings: "FILL" var(--_fill), "wght" 400, "GRAD" 0, "opsz" var(--_opsz);
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+}
+
+.s20 {
+  --_opsz: 20;
+  --_size: var(--icon-size-20);
+}
+
+.s24 {
+  --_opsz: 24;
+  --_size: var(--icon-size-24);
+}
+
+.filled {
+  --_fill: 1;
+}

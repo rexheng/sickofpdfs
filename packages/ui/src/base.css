@@ -1,0 +1,41 @@
+/*
+ * Base type, colour and focus ring. Import after tokens.css:
+ *   import '@sop/ui/tokens.css'; import '@sop/ui/base.css';
+ *
+ * Optical size: Drive's text face "Google Sans Text" is Google Sans at opsz 17, and its titles are opsz 18
+ * (02 section 2). The text roles pin 17 and the display roles pin 18, whatever the font size.
+ */
+
+body {
+  margin: 0;
+  background: var(--gm3-sys-color-background);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+  -webkit-font-smoothing: antialiased;
+}
+
+.sop-text-role {
+  font-family: var(--font-text);
+  font-variation-settings: "opsz" 17;
+}
+
+.sop-display-role,
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-variation-settings: "opsz" 18;
+}
+
+/* Menus, menu bars and text buttons use Google Sans Flex first (02 section 1). Flex keeps automatic optical sizing. */
+.sop-flex-role {
+  font-family: var(--font-flex);
+  font-optical-sizing: auto;
+}
+
+/* Keyboard focus: a 2 px ring. Light: --drive-focus-ring (#0b57d0). Dark viewer chrome: --viewer-focus (#a8c7fa). */
+:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}

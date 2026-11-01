@@ -1,0 +1,13 @@
+.tile {
+  display: block;
+  flex: none;
+}
+
+.pdf {
+  color: var(--filetype-pdf);
+}
+
+/* Shows through the letters that are cut out of the tile, so they are white on the red, on any background. */
+.letters {
+  fill: var(--filetype-glyph);
+}
