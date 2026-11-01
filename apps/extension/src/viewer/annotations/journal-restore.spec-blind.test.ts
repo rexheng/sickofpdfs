@@ -311,8 +311,7 @@ describe('a draft that is over leaves nothing behind', () => {
   it('crash between the store confirming a send and the keeper being told: the sent text is never overwritten and the stale entry does not live on', async () => {
     // The contract is silent on this window: `sent()` never ran, so the journal still has the entry. The store refuses a
     // draft write for a sent comment (contracts section 3: not-a-draft), as the real one does. What must hold: the sent text
-    // stays, and the entry cannot come back on every later open. (Whether the first restore also returns the stale draft
-    // once is not pinned here; it is reported.)
+    // stays, and the entry cannot come back on every later open. R66 settles the first restore too: it shows no card.
     class StrictStore extends FakeStore {
       override async saveDraft(...args: Parameters<FakeStore['saveDraft']>): Promise<void> {
         const had = this.comments.get(args[0].id);
@@ -331,7 +330,7 @@ describe('a draft that is over leaves nothing behind', () => {
     crash(r, a);
 
     const b = openTab(r, T_B);
-    await b.keeper.restore(DOC);
+    expect(await b.keeper.restore(DOC)).toEqual([]); // R66: sent with this very text, so the stale entry is dropped and no card is shown
     await b.keeper.flush().catch(() => undefined);
     await vi.advanceTimersByTimeAsync(10_000);
     expect(r.store.comments.get('d1')).toMatchObject({ body: 'what I sent', draftOfTab: null });

@@ -29,6 +29,7 @@ import type { TabPresence } from './tab-presence';
  */
 export type DraftStore = Pick<
   AnnotationsApi,
+  | 'listAnnotations'
   | 'saveDraft'
   | 'listDrafts'
   | 'claimDrafts'
@@ -414,6 +415,9 @@ export function createDraftKeeper(d: {
    * - a draft that was being sent or cancelled when its tab went is finished: the store's delete is asked for again;
    * - a text the store has not confirmed (`pending`) is newer than the store's: it wins, and is written to the store;
    * - a text the store confirmed is already there (or was sent or deleted since): the store's row stands;
+   * - R66: an entry whose comment the store already has as a sent row with the same text (the tab went between the store
+   *   confirming the send and `sent()`; for an edit, between the live text being written and `dropEdit()`) is dropped without
+   *   being shown. A text that differs from the sent one is never dropped;
    * - every entry this tab adopts names this tab as its owner from now on.
    */
   function fromJournal(
@@ -423,6 +427,7 @@ export function createDraftKeeper(d: {
     storeEdits: EditDraft[] | null,
     typedHere: Set<CommentId>,
     editedHere: Set<CommentId>,
+    sent: ReadonlyMap<CommentId, CommentRow>,
   ): void {
     if (!journal) return;
     const tabId = d.presence.tabId;
@@ -455,6 +460,8 @@ export function createDraftKeeper(d: {
             any = true;
           }
           journalDraft(e); // this tab owns it now
+        } else if (sent.get(j.commentId)?.body === j.body) {
+          journal.remove('comment', j.commentId); // R66: it was sent after all; this copy is stale
         } else if (j.pending && j.row) {
           // The store never had this draft (the tab went before its first write landed): it comes back from the journal.
           const thread = j.thread ? { ...j.thread, draftOfTab: tabId } : undefined;
@@ -483,6 +490,8 @@ export function createDraftKeeper(d: {
             any = true;
           }
           journalEdit(x);
+        } else if (sent.get(j.commentId)?.body === j.body) {
+          journal.remove('edit', j.commentId); // R66: the live text is this text, so the edit was applied; this copy is stale
         } else if (j.pending) {
           // Never reached the store. If it was sent or cancelled after all, the store refuses it (edit-closed) and it goes.
           const y: EditEntry = { ...newSlot(), commentId: j.commentId, threadId: j.threadId, documentId: j.documentId, editId: j.editId, body: j.body, updatedAt: j.at };
@@ -668,7 +677,19 @@ export function createDraftKeeper(d: {
         } catch (err) {
           report(null, err);
         }
-        if (journal) fromJournal(documentId, new Set(live), new Set(rows.map((r) => r.id)), storeEdits, typedHere, editedHere);
+        if (journal) {
+          // R66: the comments the store has as sent, to spot a journal entry for text that was sent just before the crash.
+          // Read only when an entry could be adopted; if it cannot be read, the entry is shown (text is never dropped).
+          const sent = new Map<CommentId, CommentRow>();
+          if (typeof store.listAnnotations === 'function' && journal.list(documentId).some((j) => !j.closing && (j.tab === tabId || !live.includes(j.tab)))) {
+            try {
+              for (const c of (await store.listAnnotations(documentId)).comments) sent.set(c.id, c);
+            } catch (err) {
+              report(null, err);
+            }
+          }
+          fromJournal(documentId, new Set(live), new Set(rows.map((r) => r.id)), storeEdits, typedHere, editedHere, sent);
+        }
       };
       await (journal ? journal.locked(documentId, adopt) : adopt());
       return own();
