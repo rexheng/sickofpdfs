@@ -240,6 +240,7 @@
   --shape-banner: 12px;
 
   /* Stacking order of the layers that Radix portals into <body> */
+  --z-viewer-float: 10;  /* viewer chrome that floats over the pages (the find bar), above every page layer */
   --z-dialog: 900;
   --z-menu: 1000;
   --z-tooltip: 1100;
@@ -262,6 +263,18 @@
   --shape-thumb: 8px;               /* thumbnail corners */
   --viewer-rail-pill-bg: rgba(30,31,32,.92); /* "Hide navigation pane", bottom left, radius 0 100px 100px 0 */
   --outline-indent: 12px;           /* each outline level steps in this far [inf] */
+
+  /*
+   * Find (Task 25): every hit in Google yellow (#fbbc04), the current one in Google orange (#fa7b17), as Chrome tells
+   * the active match apart. They are drawn over the page's own text, so each stays light enough for black text under it
+   * to read (about 5:1 or better against the band).
+   */
+  --find-hit: rgba(251,188,4,.4);
+  --find-current: rgba(250,123,23,.5);
+  --find-field-w: 240px;            /* Chrome's find box is about this wide */
+  --find-field-h: 32px;
+  --find-count-w: 80px;             /* "999 of 999" without the bar changing width */
+  --find-note-w: 360px;             /* the scan note wraps at this width */
 
   /* ===== Phase 2: marks, figures, comment cards and the notes panel (plan S4, contracts D5) ===== */
   /*

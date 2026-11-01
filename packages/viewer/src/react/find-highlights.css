@@ -1,0 +1,42 @@
+/*
+ * Find's hits on a page (FindHighlights): under the selection and the text layer, never in the way of the pointer.
+ * Each hit is its own path, so tests and the inspector can count them; hits never overlap, so none draws darker.
+ */
+.sop-find {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.sop-find-hit {
+  fill: var(--find-hit);
+}
+
+.sop-find-current {
+  fill: var(--find-current);
+}
+
+/* After Esc: the hit the bar was on, in the selection's colour, for a moment. */
+.sop-find-linger {
+  fill: var(--text-selection);
+  animation: sop-find-linger 1200ms ease-in forwards;
+}
+
+@keyframes sop-find-linger {
+  0%,
+  70% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sop-find-linger {
+    animation: none;
+  }
+}

@@ -35,6 +35,7 @@ import { ShortcutsDialog } from './chrome/ShortcutsDialog';
 import { Snackbar } from './chrome/Snackbar';
 import { Toolbar } from './chrome/Toolbar';
 import { commandShortcuts, createCommands, createIdleCommands, type ViewerCommands, type ViewerContext, type ViewerUi } from './commands';
+import { useReaderFind } from './find';
 import { FormBanner, useFormBounce } from './forms/FormBanner';
 import { maybeLeaveFrame, wantsFullTab } from './frame-escape';
 import { railStartsOpen, useOutline, useRailFitsWindow, useReaderNavigation } from './navigation';
@@ -287,6 +288,8 @@ const Reader = memo(function Reader({ doc, params, rootRef, pageFieldRef, ui, sa
   const nav = useReaderNavigation({ backend, doc, store, api });
   const outline = useOutline(backend, doc);
   useRailFitsWindow(store);
+  // Find jumps through the same history as links, so Back returns from each jump to a hit (Task 25).
+  const find = useReaderFind({ backend, doc, store, api, pageText, textLayers, jumps: nav.jumps, root: rootRef });
   const commands = useMemo(() => {
     const ctx: ViewerContext = {
       params,
@@ -296,13 +299,14 @@ const Reader = memo(function Reader({ doc, params, rootRef, pageFieldRef, ui, sa
       scheduler,
       root: rootRef.current ?? document.body,
       jumps: nav.jumps,
-      find: null,
+      find: find.controller,
+      openFind: find.open,
       save,
       pageList: api,
       ui,
     };
     return createCommands(ctx);
-  }, [params, doc, store, scheduler, rootRef, ui, save, nav.jumps]);
+  }, [params, doc, store, scheduler, rootRef, ui, save, nav.jumps, find.controller, find.open]);
   useEffect(() => {
     onChrome({ commands, store });
     return () => onChrome(null);
@@ -318,16 +322,18 @@ const Reader = memo(function Reader({ doc, params, rootRef, pageFieldRef, ui, sa
       }),
     [store, scans, textLayers],
   );
-  // Each page's layers: the text layer, and the links above it (Task 24).
+  // Each page's layers: find's highlights under the text layer (Task 25), and the links above it (Task 24).
+  const findLayer = find.pageLayer;
   const linksFor = nav.renderPage;
   const renderPage = useCallback(
     (box: PageBox, ctx: PageLayerContext) => (
       <>
+        {findLayer(box, ctx)}
         <TextLayer controller={textLayers} box={box} ctx={ctx} />
         {linksFor(box)}
       </>
     ),
-    [textLayers, linksFor],
+    [textLayers, findLayer, linksFor],
   );
   const goToPage = useCallback((index: number) => void api.current?.goToPage(index), []);
   const zoom = useCallback((mode: ZoomMode) => api.current?.zoomTo(mode), []);
@@ -353,6 +359,7 @@ const Reader = memo(function Reader({ doc, params, rootRef, pageFieldRef, ui, sa
       >
         <PageList backend={backend} doc={doc} store={store} scheduler={scheduler} apiRef={api} renderPage={renderPage} />
       </NavRail>
+      {find.view}
     </>
   );
 });

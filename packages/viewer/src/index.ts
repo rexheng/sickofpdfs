@@ -72,3 +72,7 @@ export {
 } from './text-layer/items';
 export { loadTextLayerFont, measureTextLayerText, renderTextLayer, TEXT_LAYER_CLASS, type TextLayerHandle } from './text-layer/text-layer';
 export { charAtPoint, charRangeFromDomRange, domPositionOfChar, getSelectionRanges, selectCharRanges, type CharRange } from './text-layer/char-map';
+
+// Find (Task 25): the search behind Ctrl+F, over page text folded as anchoring folds it.
+export { createFindController, type FindControllerOptions } from './find/find-controller';
+export { contentPointToPage, pagePointToContent } from './layout/page-space';

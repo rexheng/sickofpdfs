@@ -69,6 +69,8 @@ export interface ViewerContext {
   jumps: JumpHistory | null;
   /** Filled by Task 25. */
   find: FindController | null;
+  /** Ctrl+F (Task 25): opens the find bar, or selects its words when it is open. */
+  openFind?: () => void;
   /** Filled by Task 30. */
   save: SaveController | null;
   /** The page list's zoom and scroll moves, while it is mounted. */
@@ -164,6 +166,7 @@ export function createCommands(ctx: ViewerContext): ViewerCommands {
     'view.zoomIn': { run: () => pages()?.zoomStep(1), enabled: () => scale() < MAX_SCALE - LIMIT_EPSILON },
     'view.zoomOut': { run: () => pages()?.zoomStep(-1), enabled: () => scale() > MIN_SCALE + LIMIT_EPSILON },
     'view.toggleRail': { run: () => ctx.store.set({ railOpen: !ctx.store.get().railOpen }), enabled: always, checked: () => ctx.store.get().railOpen },
+    'tools.find': { run: () => ctx.openFind?.(), enabled: () => ctx.openFind !== undefined },
     'tools.goToPage': { run: () => ctx.ui.focusPageField(), enabled: always },
     'help.shortcuts': { run: () => ctx.ui.showShortcuts(), enabled: always },
     'help.about': { run: () => ctx.ui.showAbout(), enabled: always },

@@ -9,6 +9,7 @@
     "./ids": "./src/ids.ts",
     "./canonical-link": "./src/identity/canonical-link.ts",
     "./save": "./src/save/types.ts",
+    "./text-fold": "./src/anchoring/text-fold.ts",
     "./sync": "./src/sync/index.ts",
     "./connector": "./src/connector/index.ts"
   },

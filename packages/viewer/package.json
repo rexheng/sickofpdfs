@@ -17,6 +17,7 @@
     "@embedpdf/models": "2.15.1",
     "@embedpdf/pdfium": "2.15.1",
     "@sop/core": "workspace:*",
+    "@sop/ui": "workspace:*",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },

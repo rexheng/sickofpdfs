@@ -19,7 +19,7 @@ export interface ToolbarProps {
 
 /**
  * Drive's toolbar pill (02 section 4.10), 16 px in, in a 48 px row under the header: "Page [n] / N", Download and
- * Print, then zoom out, the zoom level (a menu of fit modes and presets) and zoom in.
+ * Print, then zoom out, the zoom level (a menu of fit modes and presets) and zoom in, then Find (Ctrl+F).
  */
 export function Toolbar({ commands, store, pageCount, onGoToPage, onZoom, pageFieldRef, end }: ToolbarProps) {
   // The zoom buttons grey out at 25% and 400%; the store's scale is what changes that.
@@ -44,14 +44,19 @@ export function Toolbar({ commands, store, pageCount, onGoToPage, onZoom, pageFi
           <ZoomMenu scale={scale} commands={commands} onZoom={onZoom} />
           {button('view.zoomIn')}
         </span>
+        <ToolbarSeparator />
+        {button('tools.find')}
         {end !== undefined && <span className={styles.end}>{end}</span>}
       </PillToolbar>
     </div>
   );
 }
 
-/** The toolbar's icons for its commands (Drive's: a minus and a plus for zoom, not magnifiers). */
-const TOOLBAR_ICONS: Partial<Record<ViewerCommandId, ViewerCommand['icon']>> = { 'view.zoomOut': 'remove', 'view.zoomIn': 'add' };
+/**
+ * The toolbar's icons for its commands (Drive's: a minus and a plus for zoom, not magnifiers). Find is the plain
+ * magnifier people look for, not the menu's page-and-magnifier.
+ */
+const TOOLBAR_ICONS: Partial<Record<ViewerCommandId, ViewerCommand['icon']>> = { 'view.zoomOut': 'remove', 'view.zoomIn': 'add', 'tools.find': 'search' };
 
 function CommandButton({ cmd }: { cmd: ViewerCommand | undefined }) {
   if (cmd === undefined) return null;

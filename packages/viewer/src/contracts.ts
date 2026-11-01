@@ -30,6 +30,8 @@ export interface FindState {
   current: number;
   /** Every page has been searched. */
   complete: boolean;
+  /** Every page has been searched and none has any text (a scan without recognised text): there is nothing to find. */
+  noText?: boolean;
 }
 
 /** Ctrl+F (Task 25). */
