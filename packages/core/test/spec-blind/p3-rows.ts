@@ -97,7 +97,8 @@ export interface HistoryRowLike {
   openCount: number;
   readingMs: number;
   lastPosition: { page: number; offset: number; zoom: number } | null;
-  pagesVisited: number[];
+  /** triage: a base64 bitset, bit i = page i, as the sync wire and the backup format (`HistoryRow`) hold it. */
+  pagesVisited: string;
   rev: number;
   hlc: HlcStamp;
 }
@@ -120,7 +121,7 @@ export function historyRow(documentId: DocumentId, o: Partial<HistoryRowLike> = 
     openCount: 2,
     readingMs: 12 * MIN,
     lastPosition: { page: 3, offset: 0.25, zoom: 1 },
-    pagesVisited: [0, 1, 2, 3],
+    pagesVisited: 'Dw==', // pages 0 to 3
     rev: 1,
     hlc: stamp(T0),
     ...o,

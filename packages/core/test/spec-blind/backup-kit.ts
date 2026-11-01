@@ -101,8 +101,19 @@ export function dumpOf(t: Tables): Record<string, unknown> {
   return { ...t, tables: t };
 }
 
+/**
+ * triage (spec gap 4): `blobStored` is this computer's own state (are the bytes in its file storage). A restore writes a new
+ * document with `false` until restore copies its PDF in, and keeps the local value otherwise, so libraries compare without it.
+ */
+function comparable(table: TableName, r: any): any {
+  if (table !== 'documents' || r === null || typeof r !== 'object') return r;
+  const rest = { ...r };
+  delete rest.blobStored;
+  return rest;
+}
+
 export function byKey(t: Tables, table: TableName): Map<string, any> {
-  return new Map((t[table] as any[]).map((r) => [keyOf(table, r), r]));
+  return new Map((t[table] as any[]).map((r) => [keyOf(table, r), comparable(table, r)]));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -177,7 +188,8 @@ type RestoreStyle = { name: string; call: (f: RestoreFn, local: Tables, backup: 
 
 const RESTORE_NAMES = ['planRestore', 'restorePlan', 'planRestoreMerge', 'planMerge', 'mergeRestore', 'restoreMerge', 'mergeLibraries', 'mergeLibrary', 'mergeBackup', 'mergeDumps', 'restoreLibrary', 'restoreFromBackup', 'restore'];
 const RESTORE_STYLES: RestoreStyle[] = [
-  { name: '(local, backup)', call: (f, l, b) => f(dumpOf(l), dumpOf(b)) },
+  // triage: the plan's signature is planRestore(local, backup, compareHlc); the real comparer is passed
+  { name: '(local, backup, compareHlc)', call: (f, l, b) => f(dumpOf(l), dumpOf(b), compareHlc) },
   { name: '(backup, local)', call: (f, l, b) => f(dumpOf(b), dumpOf(l)) },
   { name: '({ local, backup })', call: (f, l, b) => f({ local: dumpOf(l), backup: dumpOf(b) }) },
   { name: '(local tables, backup tables)', call: (f, l, b) => f(l, b) },
@@ -227,7 +239,7 @@ export function sorted<T>(table: TableName, rows: readonly T[]): T[] {
 
 /** A library in a form `toEqual` can compare: every table sorted by key. */
 export function canonical(t: Tables): Record<TableName, unknown[]> {
-  return Object.fromEntries(TABLE_NAMES.map((n) => [n, sorted(n, t[n] as unknown[])])) as Record<TableName, unknown[]>;
+  return Object.fromEntries(TABLE_NAMES.map((n) => [n, sorted(n, t[n] as unknown[]).map((r) => comparable(n, r))])) as Record<TableName, unknown[]>;
 }
 
 /** The newer of two rows by stamp, as the contract orders them. */
@@ -297,9 +309,10 @@ function folderAfter(result: unknown, readingOf: Reading, given: string[], today
   };
   if (result && typeof result === 'object' && !Array.isArray(result)) {
     const o = result as Record<string, unknown>;
+    // triage: what is removed is read first. A `keep` list names only the nightly copies kept, not the other files in the folder.
     const keep = Object.keys(o).find((k) => /keep|retain|remain/i.test(k));
-    if (keep) return new Set([...stringsIn(o[keep]).flatMap(match), ...Object.keys(o).filter((k) => /write|create|add|new|today/i.test(k)).flatMap((k) => stringsIn(o[k]).flatMap(match))]);
     const drop = Object.keys(o).filter((k) => /remove|delete|prune|drop|stale|expire|old/i.test(k));
+    if (keep && drop.length === 0) return new Set([...stringsIn(o[keep]).flatMap(match), ...Object.keys(o).filter((k) => /write|create|add|new|today/i.test(k)).flatMap((k) => stringsIn(o[k]).flatMap(match))]);
     if (drop.length > 0) {
       const gone = new Set(drop.flatMap((k) => stringsIn(o[k]).flatMap(match)));
       // a file the function says it will write under a name that is not tonight's is a file in the folder too

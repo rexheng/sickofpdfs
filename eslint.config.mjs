@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import css from '@eslint/css';
 import js from '@eslint/js';
 import reactHooks from 'eslint-plugin-react-hooks';
@@ -6,7 +7,9 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 import sop from './tooling/eslint-plugin-sop/index.js';
 
-
+// Phase 3 pack T3 imports S9's apps/extension/src/store/fts-query.ts, built in parallel. Until it exists the import cannot resolve
+// and the typed rules report unsafe-any errors. It is linted again by itself once the file is there. Delete when S9 has merged.
+const needS9 = existsSync(new URL('./apps/extension/src/store/fts-query.ts', import.meta.url)) ? [] : ['apps/extension/src/store/fts-query.spec-blind.test.ts'];
 
 const LOCAL_ONLY_MESSAGE = 'The local-only store holds secrets. Only viewer and settings code may import it (ruling R14).';
 const LOCAL_ONLY_IMPORT_PATTERN = { group: ['**/local-only', '**/local-only/**'], message: LOCAL_ONLY_MESSAGE };
@@ -19,6 +22,7 @@ const LOCAL_ONLY_SYNTAX = [
 
 export default defineConfig(
   globalIgnores([
+    ...needS9,
     '**/dist/**',
     '**/.output/**',
     '**/.wxt/**',

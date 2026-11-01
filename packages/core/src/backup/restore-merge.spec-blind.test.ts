@@ -132,7 +132,7 @@ describe('restore: the newer stamp wins', () => {
   }
   const KINDS: Kind[] = [
     { table: 'documents', make: (s, ms, rev) => documentRow(D1, { title: `title from ${s}`, hlc: stamp(ms), rev }), read: (r) => r.title },
-    { table: 'aliases', parents, make: (s, ms, rev) => aliasRow(A1, D1, { similarity: s === 'local' ? 0.996 : 0.999, hlc: stamp(ms), rev }), read: (r) => r.similarity },
+    // triage: aliases are not here. As in sync (contracts section 7), two aliases of one fingerprint merge field by field; see below.
     { table: 'locations', parents, make: (s, ms, rev) => locationRow(D1, { canonical: 'https://example.org/one.pdf', viaPage: `https://example.org/${s}`, hlc: stamp(ms), rev }), read: (r) => r.viaPage },
     { table: 'marks', parents, make: (s, ms, rev) => ({ ...markRow({ id: uuid(1, 'm'), documentId: D1, page: 0, color: s === 'local' ? 1 : 3, hlc: stamp(ms) }), rev }), read: (r) => r.color },
     { table: 'threads', parents, make: (s, ms, rev) => ({ ...threadRow({ id: T_ONE, documentId: D1, page: 0, hlc: stamp(ms) }), placement: s === 'local' ? 'placed' : 'unplaced', rev }), read: (r) => r.placement },
@@ -157,6 +157,15 @@ describe('restore: the newer stamp wins', () => {
     const fromLocal = await run(k, NEW, OLD);
     expect(k.read(fromLocal), 'the local row is newer').toBe(k.read(k.make('local', 0, 0)));
     expect(fromLocal.hlc).toBe(stamp(NEW));
+  });
+
+  it('aliases (triage: as sync merges them): for one document, the earliest createdAt, the highest similarity and the newer stamp', async () => {
+    const a = (similarity: number, createdAt: number, ms: number) => aliasRow(A1, D1, { similarity, createdAt, hlc: stamp(ms) });
+    for (const [local, backup] of [[a(0.996, T0 + MIN, NEW), a(0.999, T0, OLD)], [a(0.999, T0, OLD), a(0.996, T0 + MIN, NEW)]]) {
+      const out = await restore(tables({ ...parents, aliases: [local] }), tables({ ...parents, aliases: [backup] }));
+      expect(out.after.aliases).toHaveLength(1);
+      expect(out.after.aliases[0]).toMatchObject({ documentId: D1, similarity: 0.999, createdAt: T0, hlc: stamp(NEW) });
+    }
   });
 
   it('stamps are compared as stamps: by time, then counter, then device, not as text', async () => {

@@ -35,7 +35,7 @@ export interface ExportCase {
 /** The extension's viewer page, as `chrome.runtime.getURL('viewer.html')` would give it. */
 export const VIEWER_BASE = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop/viewer.html';
 
-type ExportMarkdownFn = (doc: unknown, marks: readonly MarkRow[], threads: readonly ThreadRow[], comments: readonly CommentRow[], options?: unknown) => string;
+type ExportMarkdownFn = (doc: unknown, marks: readonly MarkRow[], threads: readonly ThreadRow[], comments: readonly CommentRow[]) => string;
 const exportMarkdown = (markdown as Record<string, unknown>).exportMarkdown as ExportMarkdownFn;
 
 export const WEB = 'https://example.org/papers/did.pdf';
@@ -49,24 +49,17 @@ export function exportMd(c: ExportCase = {}): string {
   if (seen.web) locations.push(locationRow(row.id, { kind: 'url', canonical: seen.web }));
   if (seen.file) locations.push(locationRow(row.id, { kind: 'file', canonical: seen.file }));
   const best = locations.find((l) => l.kind === 'url') ?? locations[0] ?? null;
-  const docArg = {
-    ...row,
-    // the same document, reachable under the names an implementation might read it by
-    doc: row,
-    row,
-    location: best,
-    locations,
-  };
+  // triage: the export reads the document row plus `sourceLink` (the canonical link; only http(s) counts) and `viewerBase`.
+  // The best location is passed as it is, so a file-only document hands over its file URL and the export must not write it.
+  const docArg = { ...row, sourceLink: best?.canonical ?? null, viewerBase: VIEWER_BASE };
   const marks = c.marks ?? [];
   const threads = c.threads ?? [];
   const comments = c.comments ?? [];
-  const options = { locations, location: best, viewerBase: VIEWER_BASE };
   deepFreeze(docArg);
   deepFreeze(marks);
   deepFreeze(threads);
   deepFreeze(comments);
-  deepFreeze(options);
-  return exportMarkdown(docArg, marks, threads, comments, options);
+  return exportMarkdown(docArg, marks, threads, comments);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
