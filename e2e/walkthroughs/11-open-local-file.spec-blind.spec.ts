@@ -34,7 +34,7 @@ test.describe('file access not allowed (a fresh Chrome profile)', () => {
     const page = await openViewer(pathToFileURL(REAL.paper50.file).href);
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible({ timeout: 15_000 });
-    await expect(dialog.getByText('Allow access to file URLs')).toBeVisible();
+    await expect(dialog.getByRole('heading', { name: 'Allow access to file URLs' })).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Open extension settings' })).toBeVisible();
     await snap(page, testInfo, '11-file-access-dialog');
 

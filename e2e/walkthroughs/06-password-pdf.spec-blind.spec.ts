@@ -50,7 +50,9 @@ test('a password PDF asks, refuses a wrong password plainly, and opens with the 
   expect(c, 'page 1 is on screen').toBeDefined();
   const ink = inkBox(s.img, s.ratio, { x: c!.x, y: c!.y, width: c!.cssWidth, height: c!.cssHeight }, 128);
   expect(ink, 'page 1 shows its text ("Secret page 1")').not.toBeNull();
-  expect(ink!.top, 'at the top').toBeLessThan(0.2);
+  // inkBox measures against the part of the page that is on screen; the question is where the text is on the whole page.
+  const shownH = Math.min(c!.y + c!.cssHeight, s.scroller.y + s.scroller.height) - c!.y;
+  expect((ink!.top * shownH) / c!.cssHeight, 'at the top of the page').toBeLessThan(0.2);
   expect(ink!.right, 'and in the left half').toBeLessThan(0.5);
   await expect(page.getByText('Incorrect password. Try again.'), 'the old complaint is gone').toBeHidden();
 });

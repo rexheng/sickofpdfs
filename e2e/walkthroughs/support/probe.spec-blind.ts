@@ -155,7 +155,8 @@ export function installProbe(bar: BarGeometry): void {
       const boxes = hooks()?.viewer?.pageBoxes() ?? [];
       const out: CanvasRead[] = [];
       for (const c of canvases()) {
-        if (!inView(c)) continue;
+        // A page also holds a hidden preview canvas under its full render; only what is shown counts.
+        if (!inView(c) || getComputedStyle(c).visibility === 'hidden') continue;
         const r = c.getBoundingClientRect();
         const read = await readStrip(c);
         out.push({ page: pageOf(c, boxes), ...read, x: r.left, y: r.top, cssWidth: r.width, cssHeight: r.height, backingWidth: c.width, backingHeight: c.height });
