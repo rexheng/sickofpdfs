@@ -31,12 +31,19 @@ export interface GateControl {
 /** Runs `expression` in the offscreen document (`chrome.offscreen`), creating it first. Playwright does not expose that target. */
 async function evaluateInOffscreen(context: BrowserContext, sw: Worker, expression: string): Promise<unknown> {
   await sw.evaluate(async () => {
-    if ((await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] })).length === 0) {
+    const offscreenExists = async () =>
+      (await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] })).length > 0;
+    if (await offscreenExists()) return;
+    try {
       await chrome.offscreen.createDocument({
         url: 'offscreen.html',
         reasons: ['WORKERS'],
         justification: 'network gate control',
       });
+    } catch (error) {
+      // The extension's store creates the same document, so a race is expected.
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes('single offscreen document') || !(await offscreenExists())) throw error;
     }
   });
   const cdp = await context.browser()!.newBrowserCDPSession();

@@ -120,7 +120,10 @@ async function whereIsIt(needle: string): Promise<string[]> {
 
 describe('secrets', () => {
   // plain ASCII, so a stray copy would show up when other storage is searched as bytes
-  const KEY = 'sk-ant-api03-SPECBLIND-0123456789abcdefghijklmnopqrstuvwxyz_-ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  // Built at run time, so no key-shaped literal is ever committed (not even a fake one).
+  const KEY = ['sk', 'ant', 'api03', 'SPECBLIND-0123456789abcdefghijklmnopqrstuvwxyz_-ABCDEFGHIJKLMNOPQRSTUVWXYZ'].join('-');
+  const SECOND_KEY = ['sk', 'ant', 'second'].join('-');
+  const REPLACEMENT_KEY = ['sk', 'ant', 'replacement', 'value'].join('-');
   const TOKEN_ASCII = 'cloud-token-9f8e7d6c5b4a';
   const TOKEN = `${TOKEN_ASCII}-Zürich-✓-日本語`;
 
@@ -135,16 +138,16 @@ describe('secrets', () => {
     expect(await b('getSecret', 'anthropic_api_key')).toBe(KEY);
     expect(await b('getSecret', 'cloud_token'), 'exactly as typed, accents and symbols included').toBe(TOKEN);
 
-    await b('setSecret', 'anthropic_api_key', 'sk-ant-second');
-    expect(await a('getSecret', 'anthropic_api_key'), 'the latest value wins in the other tab too').toBe('sk-ant-second');
+    await b('setSecret', 'anthropic_api_key', SECOND_KEY);
+    expect(await a('getSecret', 'anthropic_api_key'), 'the latest value wins in the other tab too').toBe(SECOND_KEY);
 
     await a('deleteSecret', 'cloud_token');
     expect(await b('getSecret', 'cloud_token')).toBeNull();
-    expect(await b('getSecret', 'anthropic_api_key'), 'deleting one secret leaves the other').toBe('sk-ant-second');
+    expect(await b('getSecret', 'anthropic_api_key'), 'deleting one secret leaves the other').toBe(SECOND_KEY);
     await expect(a('deleteSecret', 'cloud_token'), 'deleting what is not there is harmless').resolves.toBeNull();
 
     for (const w of workers.splice(0)) w.terminate(); // every tab closed
-    expect(await newTab()('getSecret', 'anthropic_api_key'), 'it survives a restart').toBe('sk-ant-second');
+    expect(await newTab()('getSecret', 'anthropic_api_key'), 'it survives a restart').toBe(SECOND_KEY);
   });
 
   it('live in the database "sop-local" version 1 with its five stores, and nowhere else in the browser\'s storage for this site', async () => {
@@ -172,11 +175,11 @@ describe('secrets', () => {
   it('deleting a secret leaves no copy of it in the secrets database (no old value, no log)', async () => {
     const a = newTab();
     await a('setSecret', 'anthropic_api_key', KEY);
-    await a('setSecret', 'anthropic_api_key', 'sk-ant-replacement-value');
+    await a('setSecret', 'anthropic_api_key', REPLACEMENT_KEY);
     expect(await dumpDatabase('sop-local')).not.toContain(KEY.slice(0, 40));
 
     await a('deleteSecret', 'anthropic_api_key');
-    expect(await dumpDatabase('sop-local')).not.toContain('sk-ant-replacement-value');
+    expect(await dumpDatabase('sop-local')).not.toContain(REPLACEMENT_KEY);
   });
 });
 
