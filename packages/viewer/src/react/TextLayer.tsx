@@ -100,7 +100,7 @@ export class TextLayerController {
   private readonly glyphLoads = new Map<number, Promise<PageGlyphs>>();
   private readonly units = new WeakMap<PageGlyphs, GlyphUnit[]>();
   private readonly readyWaiters = new Map<number, (() => void)[]>();
-  private readonly fontReady: Promise<void>;
+  private fontReady: Promise<void> | null = null;
   private readonly rectSource: RectSource;
   private root: HTMLElement | null = null;
   private observer: IntersectionObserver | null = null;
@@ -111,10 +111,6 @@ export class TextLayerController {
   private paintFrame = 0;
 
   constructor(private readonly o: TextLayerControllerOptions) {
-    this.fontReady = loadTextLayerFont(o.fontUrl).catch((err: unknown) => {
-      // Without the font the layer still works; its char edges are only as good as the fallback font's.
-      console.error('sickofpdfs: the text-layer font did not load', err);
-    });
     this.rectSource = {
       rects: (p, s, c) => o.source.rects(p, s, c),
       glyphs: (p) => this.glyphs(p),
@@ -233,6 +229,11 @@ export class TextLayerController {
     if (s.building || s.disposed || !s.visible || !s.ctx || this.isReady(s)) return;
     s.building = true;
     try {
+      // Loaded with the first layer, after the first page is drawn, so it never competes with that.
+      this.fontReady ??= loadTextLayerFont(this.o.fontUrl).catch((err: unknown) => {
+        // Without the font the layer still works; its char edges are only as good as the fallback font's.
+        console.error('sickofpdfs: the text-layer font did not load', err);
+      });
       await this.fontReady;
       await s.ctx.whenPainted();
       await this.scrollIdle();

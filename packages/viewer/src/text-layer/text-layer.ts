@@ -28,7 +28,8 @@
 // - One bundled font for every span (TEXT_LAYER_FONT_FAMILY, set on the layer); measuring and rendering both use
 //   font-kerning none and font-variant-ligatures none. No Firefox font-size quantisation (the extension is Chrome only).
 // - Each span has data-start (its first PDFium char index); a PDFium joined line-end hyphen is shown as an
-//   unselectable "-" so copied text drops it, as getTextRange does.
+//   unselectable "-", and a char with no text (U+FFFF) is unselectable too, so selected text drops them as getTextRange
+//   does.
 // - The page's rotation (its /Rotate plus the viewer's) turns the whole layer ([data-main-rotation], from pdf.js
 //   web/pdf_viewer.css).
 // - The browser's own selection highlight is transparent: the viewer paints the selection itself from PDFium's line
@@ -37,7 +38,7 @@
 //   handler is the viewer's (TextLayer.tsx), not pdf.js's.
 import type { Rotation } from '../backend/types';
 import type { PageBox } from '../layout/page-layout';
-import { cssFont, itemsScale, PDFIUM_HYPHEN, TEXT_LAYER_FONT_FAMILY, type TextItem } from './items';
+import { cssFont, itemsScale, NO_TEXT, PDFIUM_HYPHEN, TEXT_LAYER_FONT_FAMILY, type TextItem } from './items';
 
 /** The class of a text layer's root element. */
 export const TEXT_LAYER_CLASS = 'sop-text-layer';
@@ -106,7 +107,7 @@ class TextLayer {
         this.#container.append(el);
         line = { el, item, text: '' };
       }
-      line.text += item.str === PDFIUM_HYPHEN ? '' : item.str;
+      line.text += item.str === PDFIUM_HYPHEN || item.str === NO_TEXT ? '' : item.str;
       this.#appendText(item);
       if (item.hasEOL) {
         this.#finishLine(line);
@@ -139,6 +140,7 @@ class TextLayer {
     const angle = Math.atan2(b, a);
     const fontHeight = Math.hypot(a, b);
     const hyphen = item.str === PDFIUM_HYPHEN;
+    const unselectable = hyphen || item.str === NO_TEXT;
     const text = hyphen ? '-' : item.str;
 
     const divStyle = textDiv.style;
@@ -150,7 +152,7 @@ class TextLayer {
     // Screen readers read the line's text instead (render()).
     textDiv.setAttribute('aria-hidden', 'true');
     textDiv.dataset.start = String(item.start);
-    if (hyphen) textDiv.className = 'sop-unselectable';
+    if (unselectable) textDiv.className = 'sop-unselectable';
     textDiv.textContent = text;
     textDiv.dir = item.dir;
 

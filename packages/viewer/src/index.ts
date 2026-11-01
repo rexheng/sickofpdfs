@@ -57,6 +57,7 @@ export {
   glyphUnits,
   lineAt,
   lineBreakJoins,
+  NO_TEXT,
   normalizeCopiedText,
   PDFIUM_HYPHEN,
   TEXT_LAYER_FONT_FAMILY,

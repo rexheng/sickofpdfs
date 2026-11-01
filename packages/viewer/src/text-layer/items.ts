@@ -39,6 +39,11 @@ export const TEXT_LAYER_FONT_FAMILY = '"sop-text-layer", sans-serif';
 export const cssFont = (sizePx: number) => `${sizePx}px ${TEXT_LAYER_FONT_FAMILY}`;
 /** FPDFText_GetText's mark for a line-end hyphen that PDFium joins across the break; getTextRange drops it. */
 export const PDFIUM_HYPHEN = '\ufffe';
+/**
+ * PageGlyphs.text for a char that has no single UTF-16 unit of text (a maths italic letter beyond the BMP, or a glyph
+ * whose font maps it to nothing); getTextRange drops it.
+ */
+export const NO_TEXT = '\uffff';
 /** Largest predicted-vs-PDFium edge error allowed inside one item before it is split. */
 export const DRIFT_PX = 0.5;
 
@@ -70,7 +75,10 @@ export interface GlyphUnit {
   lineBreak: boolean;
   /** Part of a joined line break that shows nothing: not in the layer, and not copied. */
   hidden: boolean;
-  /** PDFium's joined line-end hyphen (PDFIUM_HYPHEN): shown, but not selectable or copied. */
+  /**
+   * PDFium's joined line-end hyphen (PDFIUM_HYPHEN), or a char with no text (NO_TEXT): an item of its own, shown but not
+   * selectable or copied, as getTextRange drops it.
+   */
   hyphen: boolean;
 }
 
@@ -226,7 +234,7 @@ export function glyphUnits(g: PageGlyphs): GlyphUnit[] {
       generated: c.generated,
       lineBreak,
       hidden: false,
-      hyphen: c.text === PDFIUM_HYPHEN,
+      hyphen: c.text === PDFIUM_HYPHEN || c.text === NO_TEXT,
     });
     if (pair) i++;
   }
@@ -287,7 +295,7 @@ function compatible(a: Placed, b: Placed): boolean {
  *   font size or line band changes, at line breaks, and wherever the drift rule says.
  * - A generated space (or a joined line break shown as a space) is placed in the gap between its neighbours; '\r\n'
  *   ends the item (hasEOL). The chars of a joined break that show nothing end the item without a line break.
- * - PDFium's joined line-end hyphen is an item of its own (the layer shows it unselectable).
+ * - PDFium's joined line-end hyphen, and a char with no text, is an item of its own (the layer shows it unselectable).
  * - A span's direction comes from its first two chars' order along û (rtl when the second lies before the first); a
  *   one-char span is rtl when its char is in an RTL script.
  * `measure(text, cssFont)` must measure like the layer renders: font-kerning none, ligatures none, white-space pre.
