@@ -16,6 +16,7 @@ import { engineAssets } from '../backend/embedpdf/assets';
 import { createEmbedPdfBackend } from '../backend/embedpdf/backend';
 import type { PdfBackend, Rotation } from '../backend/types';
 import { createPageTextProvider } from '../text/page-text';
+import { markLineRects } from './geometry';
 
 const ASSETS = engineAssets((path) => new URL(`/apps/extension/public/${path}`, globalThis.location.href).href);
 const SLOW = 90_000;
@@ -149,12 +150,15 @@ describe('painting', () => {
   });
 
   it('lines set at the leading of their type size meet without a darker band or a seam', async () => {
-    // 11 pt type on 11 pt leading: the engine's rectangles of neighbouring lines touch (or overlap by a hair)
+    // 11 pt type on 11 pt leading. Triage (selection polish, after the base-14 font change): a mark is painted with
+    // markLineRects (anchor-context.ts markNormRects), one band a line at 1.2 font sizes with overlaps cut in half, not
+    // with the engine's raw rectangles. Those follow the font's box, and PDFium's built-in Helvetica gives 10.3 pt lines on
+    // this 11 pt pitch, 0.58 pt apart: painting them raw showed a seam that no mark or selection ever paints.
     const { bytes } = await typesetPdf(PAPER_PARAGRAPHS[1], { wrapAt: 74, fontSize: 11, leading: 11 });
     const info = await open(bytes);
     try {
       const text = await info.text.text(0);
-      const rects = await info.text.rects(0, 0, text.length);
+      const rects = await markLineRects(info.text, 0, 0, text.length);
       const page = info.pages[0];
       const marks: PaintMark[] = [{ id: 'm', style: 'highlight', color: 1, rects: rects.map((r) => pdfRectToNorm(r, page)) }];
       const view: View = { width: page.width, height: page.height, rotation: page.rotation, scale: 1.5, viewRotation: 0 };
