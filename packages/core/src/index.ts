@@ -40,6 +40,8 @@ export { CLAUDE_LABEL, SUBJ_BOLD, SUBJ_DOCUMENT_NOTE, SUBJ_PAGE_NOTE, SUBJ_THREA
 export type { NmPart, ParsedNm } from './export/nm';
 export { commentPlainText, noteText, plainToMarkdown } from './export/note-text';
 export type { NoteTextRefs } from './export/note-text';
+export { MARKDOWN_FORMAT, exportMarkdown, notesFileName } from './export/markdown';
+export type { ExportComment, ExportDocument, ExportMark, ExportThread } from './export/markdown-input';
 export { ANNOT_FLAG, NOTE_ICON_SIZE, normToUser, planPdfExport, pointToUser, quadPoints, unionRect, userToNorm, userToPoint } from './export/pdf-mapping';
 export type { NormRectsByPage, PageGeometry, PdfAnnotationPlan, PdfExportInput, PdfExportOptions, PdfExportPlan, PdfSubtype, PdfUserRect, Rgb } from './export/pdf-mapping';
 export { nearestMarkColor, planPdfImport } from './export/pdf-import';
