@@ -10,10 +10,14 @@ pnpm -C spikes/phase0 fixtures            # SOP_FIXTURE_SRC=<folder> copies inst
 pnpm -C spikes/phase0 fixtures:scan       # scan-600.pdf for P0-3 (about 4 minutes, 178 MB)
 pnpm -C spikes/phase0 fixtures:textlayer  # tl-*.pdf for P0-4 (a few seconds)
 pnpm -C spikes/phase0 fixtures:objects    # objects.pdf and tagged.pdf for P0-10 (a few seconds)
+# fixtures:big (the 1 / 1.5 / 1.9 GiB files for P0-6d): not run (R33, stubbed by user decision; the script was dropped)
+pnpm -C spikes/phase0/ts7 install         # P0-9's own package: TypeScript 7.0.2, typescript-eslint 8.72.1, eslint 10.14.0
 pnpm -C spikes/phase0 build
 pnpm -C spikes/phase0 exec playwright test
 pnpm -C spikes/phase0 report              # rewrites the table below
 ```
+
+Run `playwright test` and `report` as two commands, not `playwright test && report`. A check recorded as FAIL or BLOCKED (P0-8, P0-9) makes `playwright test` exit non-zero, so `&&` would skip the report.
 
 Each check writes `spikes/phase0/results/P0-<n>.json` through `tests/record.ts`. A test that fails writes a FAIL entry with its error, so a failed check still gets a row.
 
@@ -26,21 +30,23 @@ Result values: PASS, FAIL, BLOCKED, NOT RUN, and MIXED. MIXED means some variant
 <!-- results:start -->
 | Check | Name | Result | Measured | Notes |
 | --- | --- | --- | --- | --- |
-| P0-1 | EmbedPDF renders in MV3 with bundled wasm and fonts | PASS | v2-blob first page 250 ms; v2-file first page 179 ms |  |
-| P0-2 | Zero network beyond the PDF | PASS | 2 requested URLs in the net log, all 127.0.0.1:40845: /font-fixture.pdf, /paper-50.pdf | Chromium's own service requests left out: clients2.google.com, accounts.google.com, www.google.com, update.googleapis.com |
-| P0-3 | 600-page scan scrolls with no blank page over 150 ms | PASS | workers=1 steady: blank p50 0 / p95 0 / max 0 ms over 34 pages; workers=1 jump: blank p50 52.9 / p95 56.3 / max 56.3 ms over 3 pages; workers=2 steady: blank p50 0 / p95 0 / max 0 ms over 32 pages; workers=2 jump: blank p50 49.3 / p95 49.6 / max 49.6 ms over 3 pages |  |
+| P0-1 | EmbedPDF renders in MV3 with bundled wasm and fonts | PASS | v2-blob first page 251 ms; v2-file first page 212 ms |  |
+| P0-2 | Zero network beyond the PDF | PASS | 2 requested URLs in the net log, all 127.0.0.1:43901: /font-fixture.pdf, /paper-50.pdf | Chromium's own service requests left out: clients2.google.com, accounts.google.com, www.google.com, update.googleapis.com |
+| P0-3 | 600-page scan scrolls with no blank page over 150 ms | PASS | workers=1 steady: blank p50 0 / p95 0 / max 0 ms over 34 pages; workers=1 jump: blank p50 50.3 / p95 50.7 / max 50.7 ms over 3 pages; workers=2 steady: blank p50 0 / p95 0 / max 0 ms over 34 pages; workers=2 jump: blank p50 49.3 / p95 50.4 / max 50.4 ms over 3 pages |  |
 | P0-4 | Text-layer selection suite | PASS | two-column@100% drag 20/20; two-column@100% edge 0.509 px, overlap 1; two-column@200% drag 20/20; two-column@200% edge 0.506 px, overlap 1; rotated-table@100% drag 20/20; rotated-table@100% edge 0.472 px, overlap 0.999; rotated-table@200% drag 20/20; rotated-table@200% edge 0.468 px, overlap 1; ligatures@100% drag 20/20; ligatures@100% edge 0.485 px, overlap 1; ligatures@200% drag 20/20; ligatures@200% edge 0.506 px, overlap 1; maths@100% drag 20/20; maths@100% edge 0.477 px, overlap 0.999; maths@200% drag 20/20; maths@200% edge 0.505 px, overlap 0.999; rtl@100% drag 20/20; rtl@100% edge 0.507 px, overlap 1; rtl@200% drag 20/20; rtl@200% edge 0.512 px, overlap 1; rotated-page@100% drag 20/20; rotated-page@100% edge 0.509 px, overlap 1; rotated-page@200% drag 20/20; rotated-page@200% edge 0.506 px, overlap 1; resnet-p1@100% drag 20/20; resnet-p1@100% edge 0.516 px, overlap 0.973; resnet-p1@200% drag 20/20; resnet-p1@200% edge 0.516 px, overlap 0.998; attention-p1@100% drag 20/20; attention-p1@100% edge 0.521 px, overlap 0.973; attention-p1@200% drag 20/20; attention-p1@200% edge 0.509 px, overlap 0.999; attention-p2@100% drag 20/20; attention-p2@100% edge 0.521 px, overlap 0.998; attention-p2@200% drag 20/20; attention-p2@200% edge 0.521 px, overlap 0.999; two-column select-all = PDFium text (2163 chars); = truth; rotated-table select-all = PDFium text (205 chars); = truth but for PDFium line breaks (R26 engine limit); ligatures select-all = PDFium text (57 chars); = truth; maths select-all = PDFium text (202 chars); = truth but for PDFium line breaks (R26 engine limit); rtl select-all = PDFium text (245 chars); rotated-page select-all = PDFium text (2163 chars); = truth; resnet-p1 select-all = PDFium text (4258 chars); attention-p1 select-all = PDFium text (2855 chars); attention-p2 select-all = PDFium text (4249 chars); column drag: 1 range, 37 chars, no column-2 lower text; rtl: 77/85 spans rtl; drags both ways [[0,249]] and [[0,249]] | vs truth first difference at 40: " station Statio n D e pth T e " vs " station Station Depth Tempera"; vs truth first difference at 37: "as an area of x 2 square units" vs "as an area of x2 square units." |
-| P0-5 | Bold as a glyph-outline overlay | PASS | 17/17 PDFium functions that getGlyphOutlines calls are in the wasm and the wrapper; @100%: 20 words (116 glyphs) p95 22.5 ms (first 22.5, p50 12.4), ink coverage 0.966, spill 0.003; glyph argument: unicode 116; whole page 2458 glyphs in 174.2 ms, coverage 0.956, spill 0.076, unicode 2453, ligature 4, hyphen 1, 0 undrawn; @200%: 20 words (116 glyphs) p95 18.1 ms (first 18.1, p50 9.9), ink coverage 0.985, spill 0.002; glyph argument: unicode 116; whole page 2458 glyphs in 180.9 ms, coverage 0.993, spill 0.067, unicode 2453, ligature 4, hyphen 1, 0 undrawn | @100% screenshots: spikes/phase0/results/bold-zoom1.png, spikes/phase0/results/bold-zoom1-detail.png, spikes/phase0/results/bold-zoom1-page.png; @200% screenshots: spikes/phase0/results/bold-zoom2.png, spikes/phase0/results/bold-zoom2-detail.png, spikes/phase0/results/bold-zoom2-page.png |
-| P0-6 | 300 MB tab↔offscreen moves; the 1 GB open limit | PASS, PART DEFERRED | 6a port: 300 MiB to offscreen 2 ms, back 0.4 ms, round trip with the offscreen hash 1326.4 ms; detached after each send true; SHA-256 matches both ways; 6b OPFS: 300 MiB in 2691.4 ms (tab write 1164.2 ms, offscreen stream and hash 1526.5 ms); SHA-256 matches; 6c runtime.sendMessage: the 300 MiB ArrayBuffer arrived as object {} (receivedBytes null, error none) in 1.1 ms; small control message answered | DEFERRED: 1 GiB open limit not measured (stubbed by user decision); MAX_OPEN_BYTES stays 1 GiB, and larger files go to Chrome's viewer per the spec |
-| P0-7 | Form-field detection | PASS | nber-w29000: formType acroform, firstFillablePage null, 133/133 pages walked, widgets {}, 40.3 ms, fillable false; lse-cep-dp1800: formType acroform, firstFillablePage null, 89/89 pages walked, widgets {}, 1 ms, fillable false; nature-s41586-021-03819-2-alphafold: formType acroform, firstFillablePage null, 12/12 pages walked, widgets {}, 7.9 ms, fillable false; lecture-notes-mit-6.006-lec1: formType acroform, firstFillablePage null, 5/5 pages walked, widgets {}, 6.4 ms, fillable false; HMRC SA100: formType acroform, firstFillablePage 2, 3/10 pages walked, widgets {"TEXTFIELD":4}, 6 ms, fillable true; IRS W-9: formType xfa-foreground, firstFillablePage null, 0/6 pages walked, widgets {}, 0.4 ms, fillable true; NBER w29000 (133 pages): detection 26.6 ms, 133 pages walked; pdf-lib textfield (push button on page 1, field on page 2): formType acroform, firstFillablePage 1, 2/2 pages walked, widgets {"PUSHBUTTON":1,"TEXTFIELD":1}, 2.4 ms; pdf-lib checkbox (push button on page 1, field on page 2): formType acroform, firstFillablePage 1, 2/2 pages walked, widgets {"PUSHBUTTON":1,"CHECKBOX":1}, 1.7 ms; pdf-lib radiobutton (push button on page 1, field on page 2): formType acroform, firstFillablePage 1, 2/2 pages walked, widgets {"PUSHBUTTON":1,"RADIOBUTTON":2}, 1.6 ms; pdf-lib combobox (push button on page 1, field on page 2): formType acroform, firstFillablePage 1, 2/2 pages walked, widgets {"PUSHBUTTON":1,"COMBOBOX":1}, 1.6 ms; pdf-lib listbox (push button on page 1, field on page 2): formType acroform, firstFillablePage 1, 2/2 pages walked, widgets {"PUSHBUTTON":1,"LISTBOX":1}, 3.7 ms; pdf-lib push button + signature: formType acroform, firstFillablePage null, 2/2 pages walked, widgets {"PUSHBUTTON":1,"SIGNATURE":1}, 1.8 ms, fillable false; pdf-lib widgets outside /Fields: formType acroform, firstFillablePage 1, 2/2 pages walked, widgets {"PUSHBUTTON":1,"TEXTFIELD":1}, 3 ms; no /AcroForm (paper-50): none; /XFA: xfa-foreground; /XFA + /NeedsRendering: xfa-full; 0/0/0 pages walked; empty /AcroForm (3 pages, no annotations) ×20001: wasm heap in use 1931264 → 1959936 bytes (28672 = 1.4 bytes a call); EPDFPage_GetAnnotRaw leak on NBER (1026 annotations a call, ×100 calls): wasm heap in use +24538112 bytes = 239 bytes an annotation, 245381 bytes for the one call a document gets |  |
+| P0-5 | Bold as a glyph-outline overlay | PASS | 17/17 PDFium functions that getGlyphOutlines calls are in the wasm and the wrapper; @100%: 20 words (116 glyphs) p95 25.9 ms (first 25.9, p50 9.9), ink coverage 0.966, spill 0.003; glyph argument: unicode 116; whole page 2458 glyphs in 191.1 ms, coverage 0.956, spill 0.076, unicode 2453, ligature 4, hyphen 1, 0 undrawn; @200%: 20 words (116 glyphs) p95 23.8 ms (first 23.8, p50 14.6), ink coverage 0.985, spill 0.002; glyph argument: unicode 116; whole page 2458 glyphs in 204.2 ms, coverage 0.993, spill 0.067, unicode 2453, ligature 4, hyphen 1, 0 undrawn | @100% screenshots: spikes/phase0/results/bold-zoom1.png, spikes/phase0/results/bold-zoom1-detail.png, spikes/phase0/results/bold-zoom1-page.png; @200% screenshots: spikes/phase0/results/bold-zoom2.png, spikes/phase0/results/bold-zoom2-detail.png, spikes/phase0/results/bold-zoom2-page.png |
+| P0-6 | 300 MB tab↔offscreen moves; the 1 GB open limit | PASS, PART DEFERRED | 6a port: 300 MiB to offscreen 2 ms, back 0.5 ms, round trip with the offscreen hash 1291.5 ms; detached after each send true; SHA-256 matches both ways; 6b OPFS: 300 MiB in 2515.4 ms (tab write 1036.3 ms, offscreen stream and hash 1478.4 ms); SHA-256 matches; 6c runtime.sendMessage: the 300 MiB ArrayBuffer arrived as object {} (receivedBytes null, error none) in 1.7 ms; small control message answered | DEFERRED: 1 GiB open limit not measured (stubbed by user decision); MAX_OPEN_BYTES stays 1 GiB, and larger files go to Chrome's viewer per the spec |
+| P0-7 | Form-field detection | PASS | nber-w29000: formType acroform, firstFillablePage null, 133/133 pages walked, widgets {}, 27.1 ms, fillable false; lse-cep-dp1800: formType acroform, firstFillablePage null, 89/89 pages walked, widgets {}, 1.9 ms, fillable false; nature-s41586-021-03819-2-alphafold: formType acroform, firstFillablePage null, 12/12 pages walked, widgets {}, 11.2 ms, fillable false; lecture-notes-mit-6.006-lec1: formType acroform, firstFillablePage null, 5/5 pages walked, widgets {}, 1.3 ms, fillable false; HMRC SA100: formType acroform, firstFillablePage 2, 3/10 pages walked, widgets {"TEXTFIELD":4}, 2.9 ms, fillable true; IRS W-9: formType xfa-foreground, firstFillablePage null, 0/6 pages walked, widgets {}, 0.5 ms, fillable true; NBER w29000 (133 pages): detection 29.6 ms, 133 pages walked; pdf-lib textfield (push button on page 1, field on page 2): formType acroform, firstFillablePage 1, 2/2 pages walked, widgets {"PUSHBUTTON":1,"TEXTFIELD":1}, 1.9 ms; pdf-lib checkbox (push button on page 1, field on page 2): formType acroform, firstFillablePage 1, 2/2 pages walked, widgets {"PUSHBUTTON":1,"CHECKBOX":1}, 2.3 ms; pdf-lib radiobutton (push button on page 1, field on page 2): formType acroform, firstFillablePage 1, 2/2 pages walked, widgets {"PUSHBUTTON":1,"RADIOBUTTON":2}, 1.7 ms; pdf-lib combobox (push button on page 1, field on page 2): formType acroform, firstFillablePage 1, 2/2 pages walked, widgets {"PUSHBUTTON":1,"COMBOBOX":1}, 1.7 ms; pdf-lib listbox (push button on page 1, field on page 2): formType acroform, firstFillablePage 1, 2/2 pages walked, widgets {"PUSHBUTTON":1,"LISTBOX":1}, 4.1 ms; pdf-lib push button + signature: formType acroform, firstFillablePage null, 2/2 pages walked, widgets {"PUSHBUTTON":1,"SIGNATURE":1}, 2.3 ms, fillable false; pdf-lib widgets outside /Fields: formType acroform, firstFillablePage 1, 2/2 pages walked, widgets {"PUSHBUTTON":1,"TEXTFIELD":1}, 2.8 ms; no /AcroForm (paper-50): none; /XFA: xfa-foreground; /XFA + /NeedsRendering: xfa-full; 0/0/0 pages walked; empty /AcroForm (3 pages, no annotations) ×20001: wasm heap in use 1931264 → 1959936 bytes (28672 = 1.4 bytes a call); EPDFPage_GetAnnotRaw leak on NBER (1026 annotations a call, ×100 calls): wasm heap in use +24538112 bytes = 239 bytes an annotation, 245381 bytes for the one call a document gets |  |
 | P0-8 | Backup-folder permission from an extension origin | BLOCKED | BLOCKED: 8a: the directory picker cannot be driven. showDirectoryPicker() rejected at once with "AbortError: Failed to execute 'showDirectoryPicker' on 'Window': Intercepted by Page.setInterceptFileChooserDialog()."; Playwright's filechooser event did not fire in 5 s; CDP Page.fileChooserOpened fired 1× (mode selectSingle, backendNodeId none); Chrome/153.0.8010.12 (HeadlessChrome, Playwright 1.63.0); BLOCKED: 8b: no handle to restart with, because 8a's picker cannot be driven. Not an 8b result: a folder dropped with CDP and stored in IndexedDB: read granted, readwrite prompt when dropped; after a restart read prompt, readwrite prompt; PASS: 8c: handle: a folder dropped with CDP (read granted, readwrite prompt), the picker being undrivable. requestPermission({mode:'readwrite'}) with no user activation (userActivation.isActive false, handle was prompt) -> "SecurityError: Failed to execute 'requestPermission' on 'FileSystemHandle': User activation is required to request permissions."; after: prompt. Control with a user gesture (userActivation.isActive true) -> "pending" after 3003 ms | Playwright's crPage ignores Page.fileChooserOpened without a backendNodeId, which a File System Access picker never has, and CDP has no command that answers one. Picking is left to the Windows run: W-B1..W-B3; Whether the picker's handle reports granted or prompt after a restart, and whether the "Allow on every visit" prompt appears, is left to W-B1 |
 | P0-9 | TypeScript 7 with typescript-eslint | FAIL | Version 7.0.2; tsc --noEmit -p . exit 0, no output; eslint --format json src exit 2, no JSON report: typescript-eslint does not support TS 7.0. Please see https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/#running-side-by-side-with-typescript-6.0 to run typescript-eslint using the TS 6 API. See also https://github.com/typescript-eslint/typescript-eslint/issues/10940 for tracking typescript-eslint's support for TS >=7.1 Oops! Something went wrong! :( ESLint: 10.14.0 Error: typescript-eslint does not support TS 7.0. | typescript-eslint 8.72.1 declares the peer typescript ">=4.8.4 <6.1.0"; installed typescript 7.0.2 is outside that range |
-| P0-10 | Page objects find figures within 20 ms a page | PASS | objects.pdf p1: 93 objects (1 image, 48 path, 44 text) in 1 ms, truncated false; image (72, 90, 216 × 144) 432×288 px DCTDecode; PDFium functions not exported: none; objects.pdf p1 detection in 13.7 ms: Figure 1 image high (72, 90, 216 × 144) IoU 1; Figure 2 vector high (330, 90, 200 × 140) IoU 1; Table 1 table high (72, 416.9, 302 × 85.2) IoU 0.933; tagged.pdf p1 structure tree: 11 elements (Document, H1, NonStruct, P, Figure, Caption); Figure alt "Bar chart of test scores", marked-content ids [2]; detection: Figure 1 image high (72, 142.5, 225 × 135); objects.pdf p1: 44 text runs; caption run "Figure 1: A photo." at (72, 238.9, 74.9 × 14.2), 9 pt, chars 0+18; 50 paper pages (5 papers × 10): objects + detection p50 1.7 / p95 5.5 / max 7.5 ms (first call, text page still to load: p50 3.6 / p95 9.7 / max 20.2 ms); objects a page median 285, max 1079; 45 figures (43 captioned); slowest nature-s41586-021-03819-2-alphafold p4 7.5 ms; ResNet p1 labels [Figure 1]; objects.pdf p2 (50,000 rectangles): stopped at 11072 objects in 15.3 ms, truncated true |  |
+| P0-10 | Page objects find figures within 20 ms a page | PASS | objects.pdf p1: 93 objects (1 image, 48 path, 44 text) in 1.5 ms, truncated false; image (72, 90, 216 × 144) 432×288 px DCTDecode; PDFium functions not exported: none; objects.pdf p1 detection in 18.1 ms: Figure 1 image high (72, 90, 216 × 144) IoU 1; Figure 2 vector high (330, 90, 200 × 140) IoU 1; Table 1 table high (72, 416.9, 302 × 85.2) IoU 0.933; tagged.pdf p1 structure tree: 11 elements (Document, H1, NonStruct, P, Figure, Caption); Figure alt "Bar chart of test scores", marked-content ids [2]; detection: Figure 1 image high (72, 142.5, 225 × 135); objects.pdf p1: 44 text runs; caption run "Figure 1: A photo." at (72, 238.9, 74.9 × 14.2), 9 pt, chars 0+18; 50 paper pages (5 papers × 10): objects + detection p50 2 / p95 7.3 / max 9.3 ms (first call, text page still to load: p50 4 / p95 12.7 / max 24.6 ms); objects a page median 285, max 1079; 45 figures (43 captioned); slowest nature-s41586-021-03819-2-alphafold p2 9.3 ms; ResNet p1 labels [Figure 1]; objects.pdf p2 (50,000 rectangles): stopped at 8320 objects in 17.2 ms, truncated true |  |
 <!-- results:end -->
 
 ## Notes
 
 All numbers so far come from Chrome for Testing 153.0.8010.12 on Linux, launched by Playwright 1.63.0 with `channel: 'chromium'` in the new headless mode.
+
+The results table above comes from the gate run (Task 10, 2026-11-01): every check once, in one `playwright test` run, with nothing else running on the machine. The notes below give each task's own runs, some made while other test runs shared the machine. Where a gate-run number moved by more than 20% from the earlier table, the Decision section lists it.
 
 ### P0-1 EmbedPDF in MV3
 
@@ -256,7 +262,7 @@ All numbers so far come from Chrome for Testing 153.0.8010.12 on Linux, launched
 
 ### P0-6 300 MB between a tab and the offscreen document
 
-- **6a–6c PASS. 6d and 6e (the 1 GiB open limit) were not run: the user stubbed them.** There are no 1 / 1.5 / 1.9 GiB fixtures and no `big-open` check. `MAX_OPEN_BYTES` stays 1 GiB, and larger files go to Chrome's viewer, as the spec says. The Task 10 engine rule asks for a P0-6d PASS, so the gate needs a ruling on that rule.
+- **6a–6c PASS. 6d and 6e (the 1 GiB open limit) were not run: the user stubbed them.** There are no 1 / 1.5 / 1.9 GiB fixtures and no `big-open` check. `MAX_OPEN_BYTES` stays 1 GiB, and larger files go to Chrome's viewer, as the spec says. The Task 10 engine rule asked for a P0-6d PASS; ruling R33 takes P0-6d out of that rule (deferred, not a failure), so the Decision does not depend on it.
 - **Results**, all 300 MiB of `crypto.getRandomValues` bytes, with SHA-256 compared on both sides:
 
 | Transport | Recorded run | Four earlier runs | Bar |
@@ -301,26 +307,28 @@ All numbers so far come from Chrome for Testing 153.0.8010.12 on Linux, launched
 
 ### P0-7 Form-field detection
 
-- **PASS.** `getFormInfo` runs in the engine worker. The 7 brief tests pass with their assertions unchanged; 10 more pin down the rule and the leak (below). Cold worker, timed inside the worker:
+- **PASS.** `getFormInfo` runs in the engine worker. The 7 brief tests pass with their assertions unchanged; 10 more pin down the rule and the leak (below). Cold worker, timed inside the worker, in the gate run:
 
 | Fixture | Pages | formType | firstFillablePage | Pages walked | Time |
 | --- | --- | --- | --- | --- | --- |
-| NBER w29000 | 133 | acroform | none | 133 | 24–40 ms (bar: < 200 ms) |
-| LSE CEP dp1800 | 89 | acroform | none | 89 | 1–2 ms |
-| Nature AlphaFold | 12 | acroform | none | 12 | 8–11 ms |
-| MIT 6.006 lec 1 | 5 | acroform | none | 5 | 2–6 ms |
-| HMRC SA100 (4 text fields) | 10 | acroform | 2 (the third page) | 3 | 3–6 ms |
-| **IRS W-9** | 6 | **xfa-foreground** | none (XFA is not walked) | 0 | 0.4 ms |
+| NBER w29000 | 133 | acroform | none | 133 | 27.1 ms; 29.6 ms in the timing test (bar: < 200 ms) |
+| LSE CEP dp1800 | 89 | acroform | none | 89 | 1.9 ms |
+| Nature AlphaFold | 12 | acroform | none | 12 | 11.2 ms |
+| MIT 6.006 lec 1 | 5 | acroform | none | 5 | 1.3 ms |
+| HMRC SA100 (4 text fields) | 10 | acroform | 2 (the third page) | 3 | 2.9 ms |
+| **IRS W-9** | 6 | **xfa-foreground** | none (XFA is not walked) | 0 | 0.5 ms |
+
+  - **NBER over every recorded run:** 25–40 ms (Task 7's two runs, made while Tasks 8 and 9 ran, gave 40.3 / 26.6 ms and 25.4 / 31.5 ms). The small files vary between runs by a few milliseconds.
 
   - **The W-9 reports `xfa-foreground`** (`/AcroForm` has `/XFA`, and the catalog has no `/NeedsRendering true`). `hasFillableFields` is true by the `xfa` prefix. A scratch walk of its AcroForm layer found 8 checkboxes and 15 text fields on page 1.
   - **The four hyperref-style papers have no widgets at all** (`widgets {}`), not just no fillable ones. The SA100 has 4 text fields on its first three pages.
 - **Field types.** EmbedPDF's `PDF_FORM_FIELD_TYPE` has the same values as PDFium's `FPDF_FORMFIELD_*` for 0–7: UNKNOWN 0, PUSHBUTTON 1, CHECKBOX 2, RADIOBUTTON 3, COMBOBOX 4, LISTBOX 5, TEXTFIELD 6, SIGNATURE 7 (8–15 are its XFA kinds). PDFium's own answers on pdf-lib documents (`fixtures/out/forms/`, made by `scripts/make-forms-fixture.mjs`) confirm the numbers: each of the five fillable kinds counts after a push button on page 1 (`firstFillablePage` 1), and a push button plus a signature field make no form.
 - **Form types.** `FPDF_GetFormType` gives `none` for a file without `/AcroForm` (paper-50), `xfa-foreground` for `/XFA`, and `xfa-full` for `/XFA` with `/NeedsRendering true`. Only the W-9 and these synthetic files cover the XFA values.
-- **The walk differs from the plan, which says `getPageAnnoWidgets` on each page.** It reads each page's `/Annots` raw (`EPDFPage_GetAnnotCountRaw`, `EPDFPage_GetAnnotRaw`), asks each Widget its type with `FPDFAnnot_GetFormFieldType`, through one form-fill environment per call, and loads no page. NBER, first call in a cold worker (8 runs of each):
+- **The walk differs from the plan, which says `getPageAnnoWidgets` on each page.** It reads each page's `/Annots` raw (`EPDFPage_GetAnnotCountRaw`, `EPDFPage_GetAnnotRaw`), asks each Widget its type with `FPDFAnnot_GetFormFieldType`, through one form-fill environment per call, and loads no page. NBER, first call in a cold worker (8 scratch runs of each, while Tasks 8 and 9 shared the machine):
 
 | Walk | Time |
 | --- | --- |
-| Raw annotations (recorded) | 25–50 ms |
+| Raw annotations (the walk `getFormInfo` uses) | 25–50 ms; the gate run, alone: 27.1 and 29.6 ms |
 | `FPDF_LoadPage` + `FPDFPage_GetAnnot` on every page, one environment | 183–232 ms |
 | The same, skipping pages whose raw annotation count is 0 | 140–208 ms |
 | EmbedPDF's `getPageAnnoWidgets` on every page (9 fresh documents in a warm worker; it also writes an `/NM` into every annotation) | 127–215 ms |
@@ -427,13 +435,91 @@ All numbers so far come from Chrome for Testing 153.0.8010.12 on Linux, launched
 ## Handed to the Windows checklist
 
 - P0-5: bold timing and look at 150% scaling on Windows. The overlay and its rasterisation grow with DPR, and Windows text rendering may differ from PDFium's bitmaps.
-- P0-6b: the OPFS move on Windows, where real-time antivirus scanning of the profile folder may slow writes. Headless Linux uses 2.7–3.7 s of the 5 s bar.
-- P0-7: detection time on the NBER paper (25–50 ms here, bar 200 ms) and the raw-annotation leak rate, on the reference laptop.
+- P0-6b: the OPFS move on Windows, where real-time antivirus scanning of the profile folder may slow writes. Headless Linux uses 2.5–3.7 s of the 5 s bar (2.5 s in the gate run).
+- P0-7: detection time on the NBER paper (27–30 ms here in the gate run, 25–50 ms over every run, bar 200 ms) and the raw-annotation leak rate, on the reference laptop.
 - W-B1 (P0-8): pick a folder, restart Chrome and note `queryPermission`, and whether the three-way "Allow on every visit" prompt appears. Open `chrome-extension://<id>/spike.html?check=backup-folder` of the built extension (the id is on chrome://extensions) and use its "Pick backup folder", "Check permission" and "Request permission" buttons. "Request permission" waits for your answer to the prompt and shows it.
 - W-B2 (P0-8): pick a folder inside `G:\My Drive` (Google Drive for desktop), write `backup-probe.txt`, and confirm it appears on drive.google.com within 2 minutes. Use the same page (`chrome-extension://<id>/spike.html?check=backup-folder`) and its "Pick backup folder" button, which writes `backup-probe.txt`. Chrome may refuse the root of `G:\My Drive`; if it does, pick a sub-folder of it.
 - W-B3 (P0-8): the same for a OneDrive folder. Chrome may refuse the OneDrive root; if it does, pick a sub-folder of it.
-- P0-10: detection time per page on the reference laptop (the perf-gate job), with the page and its text page loaded and with the text page still to load. Headless Linux gives p95 5–7 ms and 10–14 ms.
+- P0-10: detection time per page on the reference laptop (the perf-gate job), with the page and its text page loaded and with the text page still to load. Headless Linux gives p95 5–7.5 ms and 10–14 ms (7.3 and 12.7 ms in the gate run).
 
 ## Decision
 
-Written at the Phase 0 gate (Task 10).
+Written at the Phase 0 gate (Task 10), 2026-11-01, from the gate run in the results table.
+
+- **The gate run.** It ran every check once, in one `playwright test` run with one worker, from 04:56 to 05:00 UTC. Nothing else ran on the machine apart from Task 11's worktree checkout, a file copy made during P0-4's drag tests, which have no timing bar.
+  - 92 tests passed. The one failure is P0-9, an accepted outcome (R36). P0-8's BLOCKED parts are expected (R39).
+  - These are headless-Linux smoke numbers. Task 32 measures the budgets again on the reference laptop.
+
+```text
+ENGINE          = embedpdf-v2
+ENGINE_WORKERS  = 1
+MAX_OPEN_BYTES  = 1073741824
+STORE_TRANSPORT = sw-brokered-port
+TOOLING_TS      = 6.0.3
+BOLD            = glyph-outline
+FIGURES         = objects+captions
+GLYPH_ARG       = unicode
+```
+
+- `ENGINE = embedpdf-v2` (the engine rule). Every input to the rule passed:
+  - P0-1 `v2-file`: PASS, first page in 212 ms.
+  - P0-2: PASS. Only the two PDFs were requested.
+  - P0-3: PASS with both 1 and 2 workers. No page was ever blank in the steady scroll, and the worst jump was 50.7 ms, against a bar of 150 ms.
+  - P0-4: PASS. All 360 drag pairs matched. On 9 of 9 pages the select-all text equals PDFium's text, which is the R26 yardstick. Alignment passes on every page, RTL included.
+  - P0-7: PASS. NBER took 27.1 and 29.6 ms, against a bar of 200 ms. This uses the raw-annotation walk (R37). Its leak of about 240 bytes an annotation is accepted for Release 1 (R38).
+
+  P0-6d was deferred and is not part of the rule (R33). Neither the v3 branch nor the pdf.js branch applies.
+- **Engine variant: `v2-file`.** Production uses our own module worker, loaded from a `chrome-extension://` file URL. It calls PDFium through `PdfiumNative` in that worker.
+  - This is the variant the engine rule names, and the only one P0-2 checked. So P0-2 does not need a re-run.
+  - `v2-blob`, EmbedPDF's stock `createPdfiumWorkerEngine`, also passed P0-1, but production does not use it. It takes each page through an extra RGBA → PNG → `ImageBitmap` step: 251 ms to the first page, against 212 ms for `v2-file`. Its font loader also runs inside a `blob:` worker that neither the page nor the service worker can see.
+- `ENGINE_WORKERS = 1` (R25). P0-3 passes with both worker counts, but 2 workers were not faster on this 4-core runner. In Task 2's diagnostic run:
+  - full-render p95 went from 369 to 480 ms;
+  - preview p95 went from 73 to 138 ms;
+  - the longest long task went from 119 to 144 ms.
+
+  Phase 1 moves to `min(2, max(1, hardwareConcurrency / 4))` only if the Windows perf gate shows a gain.
+- `MAX_OPEN_BYTES = 1073741824`: a stub constant (R33). P0-6d was not run, by the user's decision, so the "P0-6d FAIL → lower it" branch does not apply. Files over 1 GiB open in Chrome's viewer (Task 20).
+- `STORE_TRANSPORT = sw-brokered-port`: P0-6a PASS.
+  - 300 MiB reached the offscreen document in 2 ms and came back in 0.5 ms. The buffer was detached after each send, so it was transferred, not copied.
+  - P0-6c shows that `runtime.sendMessage` cannot carry the bytes.
+  - Task 28 writes to OPFS in 4–16 MiB chunks (R34). 6b took 2.5 s, against a bar of 5 s.
+- `TOOLING_TS = 6.0.3`: P0-9 FAIL, so not 7.0.2. TypeScript 7.0.2 type-checks the probe, but typescript-eslint 8.72.1 refuses to load under TypeScript 7. R36 picks TypeScript 6.0.3.
+- `BOLD = glyph-outline`: P0-5 PASS.
+  - p95 was 25.9 ms at 100% and 23.8 ms at 200%, against a bar of 50 ms.
+  - Ink coverage was 0.966 and 0.985, against a bar of 0.95.
+
+  Bold is not "strong", so the user does not need to approve it.
+- `FIGURES = objects+captions`: P0-10 PASS on timing.
+  - On 50 paper pages, p95 was 7.3 ms and the maximum 9.3 ms, against bars of 20 and 40 ms.
+  - The page with 50,000 objects stops after 17.2 ms, against a bar of 25 ms.
+  - Rulings R30–R32 set how these were measured and matched. Run sizes are effective sizes (R30). The 15 ms object budget starts after the page and its text page load (R31). A caption pairs with the figure on either side of it (R32).
+- `GLYPH_ARG = unicode` (P0-5; Task 4's note). `FPDFFont_GetGlyphPath` takes the char's Unicode value. All 116 glyphs of the passage, and 2,453 of the page's 2,458, are drawn by their Unicode value. The ligature rule (U+FB01) draws 4 more and the joined-hyphen rule (U+002D) 1. No glyph needed its char code, and none was left undrawn.
+- **Not blocking.**
+  - P0-8 (8a and 8b BLOCKED, 8c PASS) goes to the Windows checklist as W-B1 to W-B3 (R39).
+  - P0-9 decides `TOOLING_TS` only.
+  - P0-6d and 6e are deferred (R33).
+
+**Workers seen in P0-1 and P0-2** (a follow-up from Task 1). The render check returns the scheme of each worker it starts, plus worker error events and CSP violations, but the specs do not record them. A scratch run of the same render check on the gate build, not a committed test, gave:
+
+| Engine | Workers started | Worker error events | CSP violations | Font requests |
+| --- | --- | --- | --- | --- |
+| `v2-blob` | 3, all `blob:`: the PDFium worker and 2 PNG encoders | 0 | 0 | `chrome-extension://…/pdf/NotoSans-Regular.ttf`, `…/NotoSansHans-Regular.otf` |
+| `v2-file` | 1, `chrome-extension:` | 0 | 0 | the same two |
+
+P0-2 runs the same render check with `v2-file`, so it starts the same single `chrome-extension:` worker. Task 1's runs saw the same workers.
+
+**Gate-run numbers that moved by more than 20% from the earlier table.** Every one is still inside its bar.
+- P0-5:
+  - at 200%: p95 went from 18.1 to 23.8 ms (+31%) and p50 from 9.9 to 14.6 ms (+47%);
+  - at 100%: p50 went from 12.4 to 9.9 ms (−20%).
+- P0-6: 6a's return went from 0.4 to 0.5 ms, and 6c from 1.1 to 1.7 ms. Both are under 2 ms.
+- P0-7:
+  - NBER in the fixture test went from 40.3 to 27.1 ms (−33%).
+  - The small files, each 1–11 ms, moved by up to 5 ms either way: LSE 1 → 1.9, Nature 7.9 → 11.2, MIT 6.4 → 1.3, SA100 6 → 2.9, pdf-lib text field 2.4 → 1.9, checkbox 1.7 → 2.3 and signature 1.8 → 2.3 ms.
+- P0-10:
+  - On the 50 pages, p95 went from 5.5 to 7.3 ms (+33%) and the maximum from 7.5 to 9.3 ms (+24%).
+  - First calls: p95 went from 9.7 to 12.7 ms (+31%) and the maximum from 20.2 to 24.6 ms (+22%).
+  - On objects.pdf page 1, the objects took 1.5 ms instead of 1 ms. Detection, a cold first call that the tests do not assert, took 18.1 ms instead of 13.7.
+  - The page with 50,000 objects now stops at 8,320 objects instead of 11,072.
+
+  P0-10 ran second, right after P0-1. These are run-to-run differences in short timings, not slowdowns from other work on the machine.
