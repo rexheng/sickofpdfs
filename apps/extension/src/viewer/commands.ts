@@ -134,7 +134,15 @@ function fitPage(pages: PageListApi | null, store: ViewerStore): void {
   void pages.goToPage(page);
 }
 
-/** The commands for an open document. Rotate, two-page, presentation, the rail, find, print and save come later. */
+/** The save states the chip and Ctrl+Alt+S can save from: the PDF is not in the library, and not in Incognito. */
+const SAVABLE = new Set(['unsure', 'not-learning', 'memory-only', 'asking']);
+
+/** Ctrl+Alt+S and File → Save to library (Task 30). A failed save is told by the App's note, so it is not rethrown. */
+function saveToLibrary(save: SaveController | null): Behaviour {
+  return { run: () => void save?.requestSave().catch(() => {}), enabled: () => save !== null && SAVABLE.has(save.state.kind) };
+}
+
+/** The commands for an open document. Rotate, two-page, presentation, the rail, find and print come later. */
 export function createCommands(ctx: ViewerContext): ViewerCommands {
   const pages = () => ctx.pageList.current;
   const source = ctx.params.source;
@@ -144,6 +152,7 @@ export function createCommands(ctx: ViewerContext): ViewerCommands {
     'file.openInChrome': { run: () => source !== null && ctx.ui.openInChrome(source), enabled: () => source !== null },
     'file.download': { run: () => downloadOriginal(ctx.opened.loaded.blob, ctx.opened.loaded.displayName), enabled: always },
     'file.copyLink': { run: () => link !== null && ctx.ui.copyLink(link), enabled: () => link !== null },
+    'file.saveToLibrary': saveToLibrary(ctx.save),
     'view.fitWidth': { run: () => pages()?.zoomTo({ kind: 'fit-width' }), enabled: always },
     'view.fitPage': { run: () => fitPage(pages(), ctx.store), enabled: always },
     'view.zoomIn': { run: () => pages()?.zoomStep(1), enabled: () => scale() < MAX_SCALE - LIMIT_EPSILON },

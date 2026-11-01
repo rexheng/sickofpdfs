@@ -38,6 +38,10 @@ import { maybeLeaveFrame, wantsFullTab } from './frame-escape';
 import { type LargeFileBounce, type OpenDocumentDeps, type OpenedDocument, openDocument, type OpenOutcome, openPickedFile } from './open-document';
 import { publishRuntime, type ViewerHooks, type ViewerState } from './runtime';
 import { openInChrome } from './open-in-chrome';
+import type { SaveControllerImpl } from './save/save-controller';
+import { SaveAskDialog } from './save/SaveAskDialog';
+import { StatusChip, useSaveView } from './save/StatusChip';
+import { useSave } from './save/use-save';
 import { installShortcuts, type ShortcutDef } from './shortcuts';
 import { FileAccessDialog } from './ui/FileAccessDialog';
 import { LargeFileNotice } from './ui/LargeFileNotice';
@@ -159,6 +163,13 @@ export function App() {
     }),
     [escape],
   );
+  // The library save (Task 30): the status chip and the first-mark question.
+  const opened = view.kind === 'ready' ? view.doc : null;
+  const onSaveFailure = useCallback(
+    (what: 'save' | 'forget') => setNote({ text: what === 'save' ? 'Couldn’t save this PDF to your library. Try again.' : 'Couldn’t undo the save. Try again.' }),
+    [],
+  );
+  const save = useSave({ opened, params, backend, onFailure: onSaveFailure });
   const [reader, setReader] = useState<ReaderChrome | null>(null);
   const canEscape = source !== null && !leaving;
   const idleCommands = useMemo(() => createIdleCommands({ source, canOpenInChrome: canEscape, ui }), [source, canEscape, ui]);
@@ -167,7 +178,8 @@ export function App() {
   useEffect(() => installShortcuts(commandShortcuts(commands)), [commands]);
   // The menus read each command's state when they are built: build them again whenever the view changes.
   const viewVersion = useViewVersion(live?.store ?? null);
-  const menus = useMemo(() => buildMenus(commands), [commands, viewVersion]); // eslint-disable-line react-hooks/exhaustive-deps -- viewVersion is the trigger
+  const saveKind = useSaveView(save).state?.kind; // File → Save to library follows the save state
+  const menus = useMemo(() => buildMenus(commands), [commands, viewVersion, saveKind]); // eslint-disable-line react-hooks/exhaustive-deps -- viewVersion and saveKind are the triggers
 
   return (
     <div ref={root} className={styles.app}>
@@ -178,6 +190,7 @@ export function App() {
         // The error card carries its own "Open in Chrome's viewer"; one is enough on screen.
         onOpenInChrome={!canEscape || view.kind === 'error' ? null : () => escape(source)}
         chromeRefused={chromeRefused}
+        status={save !== null && <StatusChip save={save} />}
       />
       <div className={styles.content}>
         {leaving && (
@@ -186,7 +199,7 @@ export function App() {
           </p>
         )}
         {view.kind === 'ready' && (
-          <Reader doc={view.doc} params={params} rootRef={root} pageFieldRef={pageField} ui={ui} onChrome={setReader} />
+          <Reader doc={view.doc} params={params} rootRef={root} pageFieldRef={pageField} ui={ui} save={save} onChrome={setReader} />
         )}
         {!leaving && view.kind === 'loading' && prompt === null && (
           <div role="progressbar" aria-label="Loading the PDF" className={styles.progress} />
@@ -202,6 +215,7 @@ export function App() {
       {prompt !== null && <PasswordDialog retry={prompt.retry} attempt={prompt.attempt} onSubmit={prompt.resolve} />}
       <ShortcutsDialog open={dialog === 'shortcuts'} onOpenChange={(open) => !open && setDialog(null)} commands={commands} />
       <AboutDialog open={dialog === 'about'} onOpenChange={(open) => !open && setDialog(null)} />
+      <SaveAskDialog save={save} />
       <Snackbar note={note} />
     </div>
   );
@@ -237,6 +251,8 @@ interface ReaderProps {
   rootRef: RefObject<HTMLDivElement | null>;
   pageFieldRef: RefObject<HTMLInputElement | null>;
   ui: ViewerUi;
+  /** The library save (Task 30): made when the PDF opens, in `checking` until the store answers. */
+  save: SaveControllerImpl | null;
   /** The commands for this document and its view state, for the header's menus and the keys; null when it goes. */
   onChrome: (chrome: ReaderChrome | null) => void;
 }
@@ -245,7 +261,7 @@ interface ReaderProps {
  * The open document: the toolbar pill, the page list, its keys, the scan hint, and its test hooks. Memoised: the header
  * re-renders App when the view changes (its menus), and that must not re-render the page list.
  */
-const Reader = memo(function Reader({ doc, params, rootRef, pageFieldRef, ui, onChrome }: ReaderProps) {
+const Reader = memo(function Reader({ doc, params, rootRef, pageFieldRef, ui, save, onChrome }: ReaderProps) {
   const [store] = useState(() =>
     createViewerStore({ currentPage: Math.min(doc.open.pageCount - 1, Math.max(0, (params.page ?? 1) - 1)) }),
   );
@@ -267,12 +283,12 @@ const Reader = memo(function Reader({ doc, params, rootRef, pageFieldRef, ui, on
       root: rootRef.current ?? document.body,
       jumps: null,
       find: null,
-      save: null,
+      save,
       pageList: api,
       ui,
     };
     return createCommands(ctx);
-  }, [params, doc, store, scheduler, rootRef, ui]);
+  }, [params, doc, store, scheduler, rootRef, ui, save]);
   useEffect(() => {
     onChrome({ commands, store });
     return () => onChrome(null);

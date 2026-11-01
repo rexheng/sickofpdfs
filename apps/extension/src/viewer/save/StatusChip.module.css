@@ -1,0 +1,14 @@
+/* The status chip and its Undo, at the right of the header before "Open in Chrome's viewer". */
+.status {
+  display: flex;
+  flex: 0 1 auto;
+  gap: var(--space-1);
+  align-items: center;
+  min-inline-size: 0;
+}
+
+/* A long "Not saved: …" label shortens with an ellipsis instead of pushing the file name out (the chip is flex: none). */
+.chip.chip {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+}

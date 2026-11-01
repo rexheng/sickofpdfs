@@ -2,7 +2,9 @@
  * What the viewer publishes about itself for tests to read. Production code writes here with `publishRuntime`;
  * nothing in this file is global, and nothing in production reads it. Later tasks add fields.
  */
+import type { DocumentId, SaveState } from '@sop/core';
 import type { CharRange, PageBox, PagePoint, PdfBackend, ViewerSnapshot } from '@sop/viewer';
+import type { BlobStore } from '../store/blob-store';
 import type { StoreClient } from '../store/client';
 import type { OpenedDocument } from './open-document';
 
@@ -40,6 +42,19 @@ export interface ViewerRuntime {
   selectionRanges(): CharRange[];
   /** The centre of char `charIndex`'s PDFium box on page `pageIndex`, in client px (NaN while its text layer is not built). */
   glyphCenter(pageIndex: number, charIndex: number): { x: number; y: number };
+  /** The copies of saved PDFs (Task 30). Null in Incognito. */
+  blobStore: BlobStore | null;
+  /** The open PDF's library save (Task 30), once its controller exists. */
+  save: SaveHooks;
+}
+
+/** The save controller as tests (and Phase 2's first mark) drive it. */
+export interface SaveHooks {
+  state(): SaveState;
+  /** The library document, while the PDF is saved; null otherwise. */
+  documentId(): DocumentId | null;
+  /** What the first mark or note does on a PDF that is not saved: resolves once it is saved, or the question shows. */
+  firstMark(): Promise<void>;
 }
 
 let registry: Partial<ViewerRuntime> = {};

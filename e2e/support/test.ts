@@ -342,6 +342,35 @@ export async function grepOpfs(page: Page, dir: string, needle: string): Promise
   );
 }
 
+/**
+ * The files under the OPFS folder `dir` of `page`'s origin (from the OPFS root, searched recursively), as paths from that
+ * root and sorted: `opfsList(page, 'pdf')` gives `['pdf/ab/ab12….pdf']` for one stored PDF (blob-store.ts's layout).
+ * A folder that does not exist holds no files: `[]`.
+ */
+export async function opfsList(page: Page, dir: string): Promise<string[]> {
+  return page.evaluate(async (dir) => {
+    const parts = dir.split('/').filter(Boolean);
+    let folder = await navigator.storage.getDirectory();
+    for (const part of parts) {
+      try {
+        folder = await folder.getDirectoryHandle(part);
+      } catch {
+        return [];
+      }
+    }
+    const out: string[] = [];
+    const walk = async (d: FileSystemDirectoryHandle, prefix: string): Promise<void> => {
+      for await (const handle of d.values()) {
+        const path = `${prefix}/${handle.name}`;
+        if (handle.kind === 'directory') await walk(handle, path);
+        else out.push(path);
+      }
+    };
+    await walk(folder, parts.join('/'));
+    return out.map((p) => p.replace(/^\//, '')).sort();
+  }, dir);
+}
+
 /** What `probeIdb` found. */
 export interface IdbProbe {
   existed: boolean;

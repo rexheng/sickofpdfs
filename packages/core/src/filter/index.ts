@@ -3,6 +3,7 @@ export { detectHardBlocks, hardBlockApplies, HARD_BLOCK_KINDS } from './hard-blo
 export { listMatches } from './rules';
 export { EDGE_PAGES, needsSecondLook, sampleIndexes, SECOND_LOOK_PAGES, secondLookIndexes } from './sample';
 export { nudge, nudgeAmount, NUDGE_LIMIT } from './nudge';
+export { STAND_IN_REASONS, standInFilter } from './stand-in';
 export type { Similarities } from './nudge';
 export type {
   FilterDecision,

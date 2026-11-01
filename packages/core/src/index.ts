@@ -7,6 +7,8 @@ export type { CommentMeta, CommentRow, MarkColor, MarkRow, MarkStyle, ThreadRow 
 export type { DocumentRow, LocationRow, PageHit, StoreStats } from './model/rows';
 export type { DetectedFigure, PageFigure } from './model/figures';
 export type { SaveState } from './save/types';
+export { reduceSave } from './save/save-machine';
+export type { SaveEffect, SaveEvent } from './save/save-machine';
 export type {
   CitableBlock, ClaudeReplyMeta, ClaudeStreamEvent, ClaudeTurnRequest, ClientTool, ConflictCopyMeta, ContextPack, DocumentMap, FigurePack,
   ModelChoice, ModelRole, PageCitation, Passage, RegionImage, ReplyError, WebSource,
