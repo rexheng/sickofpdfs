@@ -52,6 +52,20 @@ export interface PageListApi {
   pdfPointAt(x: number, y: number): PagePoint | null;
   /** Where a page point is now, in client px. */
   clientPointOf(p: PagePoint): { x: number; y: number };
+  /**
+   * Keeps `px` CSS px free at the right of the pages for the notes margin (Phase 2): the pages centre and fit in the rest
+   * of the width, and the scroll area grows by `px`. The page point under `keep` (client px) stays where it is on screen;
+   * without one, the line at the top of the view does.
+   */
+  setReserveRight(px: number, keep?: { clientX: number; clientY: number }): void;
+  /** The width kept free at the right (setReserveRight). */
+  reserveRight(): number;
+  /**
+   * A layer inside the scroll area, above the pages, that scrolls with them (the notes margin draws its cards here). Its
+   * coordinates are the layout's: CSS px from the top-left of the scroll area, as pageBoxes() gives them. It ignores the
+   * pointer itself; its children take it back. Null until the first layout.
+   */
+  overlayHost(): HTMLElement | null;
 }
 
 export interface PageListProps {
@@ -97,6 +111,11 @@ function scaleFor(zoom: ZoomMode, viewport: Viewport, pages: PageSize[], fitPage
   return resolveScale(zoom, viewport, row.map((i) => pages[i]), { viewRotation, spread });
 }
 
+/** The part of the viewport the pages lay out and fit in: all of it less the width kept for the notes margin. */
+function pageArea(viewport: Viewport, reserve: number): Viewport {
+  return { width: Math.max(1, viewport.width - reserve), height: viewport.height };
+}
+
 /** The page whose box holds content point `c`, or the nearest one. */
 function nearestPage(layout: PageLayout, c: { x: number; y: number }): number {
   const near = visibleRange(layout, c.y - 1, 2, 1);
@@ -127,6 +146,9 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError }:
   const viewRotation = useViewerState(store, (s) => s.viewRotation);
   const spread = useViewerState(store, (s) => s.spread);
   const [viewport, setViewport] = useState<Viewport | null>(null);
+  // CSS px kept free at the right for the notes margin: the pages lay out and fit in the rest (setReserveRight).
+  const [reserve, setReserve] = useState(0);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const [dpr, setDpr] = useState(() => window.devicePixelRatio || 1);
   const [range, setRange] = useState({ first: 0, last: -1 });
   const [driver] = useState(() => new PageDriver(scheduler, pages, store.get().currentPage));
@@ -138,14 +160,15 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError }:
     reportError.current = onError;
   });
 
-  const scale = viewport ? scaleFor(zoom, viewport, pages, fitPage.current, viewRotation, spread) : store.get().scale;
+  const area = useMemo(() => (viewport ? pageArea(viewport, reserve) : null), [viewport, reserve]);
+  const scale = area ? scaleFor(zoom, area, pages, fitPage.current, viewRotation, spread) : store.get().scale;
   const layout = useMemo(
-    () => (viewport ? computeLayout(pages, { scale, viewRotation, spread, viewportWidth: viewport.width }) : null),
-    [pages, scale, viewRotation, spread, viewport],
+    () => (area ? computeLayout(pages, { scale, viewRotation, spread, viewportWidth: area.width }) : null),
+    [pages, scale, viewRotation, spread, area],
   );
-  const latest = useRef({ layout, viewport, scale, viewRotation, spread, dpr });
+  const latest = useRef({ layout, viewport, scale, viewRotation, spread, dpr, reserve });
   useLayoutEffect(() => {
-    latest.current = { layout, viewport, scale, viewRotation, spread, dpr };
+    latest.current = { layout, viewport, scale, viewRotation, spread, dpr, reserve };
   });
 
   /** The page point at a client point (or at the viewport centre), to keep in place across a re-layout. */
@@ -261,7 +284,7 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError }:
           store.set({ zoom: mode });
           return;
         }
-        const next = scaleFor(mode, v.viewport, pages, fitPage.current, v.viewRotation, v.spread);
+        const next = scaleFor(mode, pageArea(v.viewport, v.reserve), pages, fitPage.current, v.viewRotation, v.spread);
         if (next !== v.scale) pendingAnchor.current = anchorAt(anchor);
         flushSync(() => store.set({ zoom: mode, scale: next }));
       },
@@ -355,6 +378,19 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError }:
         const c = pagePointToContent(drawn(b), pages[p.pageIndex], p);
         return { x: c.x - s.scrollLeft + rect.left, y: c.y - s.scrollTop + rect.top };
       },
+      setReserveRight(px, keep) {
+        const next = Math.max(0, Math.round(px));
+        if (next === latest.current.reserve) return;
+        const s = el();
+        if (s && latest.current.layout) {
+          const rect = s.getBoundingClientRect();
+          pendingAnchor.current = anchorAt(keep ?? { clientX: rect.left + s.clientWidth / 2, clientY: rect.top });
+        }
+        latest.current = { ...latest.current, reserve: next };
+        flushSync(() => setReserve(next));
+      },
+      reserveRight: () => latest.current.reserve,
+      overlayHost: () => overlayRef.current,
     };
     return self;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- anchorAt reads refs only
@@ -394,10 +430,11 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError }:
   return (
     <div ref={scrollerRef} role="document" aria-label={doc.loaded.displayName} tabIndex={0} className={styles.scroller}>
       {layout && (
-        <div className={styles.sizer} style={{ width: layout.width, height: Math.ceil(layout.height) }}>
+        <div className={styles.sizer} style={{ width: layout.width + reserve, height: Math.ceil(layout.height) }}>
           {mounted.map((i) => (
             <PageView key={i} box={layout.boxes[i]} device={deviceSizes[i]} dpr={dpr} driver={driver} renderPage={renderPage} />
           ))}
+          <div ref={overlayRef} className={styles.overlay} />
         </div>
       )}
     </div>

@@ -66,3 +66,11 @@
   z-index: 3;
   mix-blend-mode: multiply;
 }
+
+/* Above the pages and their layers, scrolling with them: the notes margin. Only its children take the pointer. */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
