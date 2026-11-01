@@ -14,8 +14,12 @@
 //   (d) every open tab follows an Undo back to "Not sure" and drops the undone mark;
 //   (e) Undo clears the PDF's localStorage too;
 //   (f) a save a note started has no Undo chip at all.
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { dragSelect } from '../support/drag-select';
+import { TEST_ASSETS } from '../support/server';
+import { settle, setZoom, waitForTextLayer } from '../support/tl-blind.spec-blind';
 import { store as storeOf, waitForStore, ZERO_STATS } from '../support/store-probe.spec-blind';
 import { expect, hooks, test, type FixtureServer } from '../support/test';
 import {
@@ -306,3 +310,139 @@ test.describe('a save that fails (R67 a)', () => {
     await shot(page, testInfo, 'saved-on-try-again');
   });
 });
+
+// ---------------------------------------------------------------------------------------------------------------------
+// R67 tightened (1 Nov 2026), from the independent security read 3 (secread3-report.md, findings 1 to 4). A second
+// download of the same book (the same bytes plus a comment line, so another fingerprint with the same text) is still
+// "checking" for seconds after it opens, because the library holds a book with the same page count.
+
+/** Serves a second download of the book: the same pages, another fingerprint. Returns its address. */
+async function serveBookCopy(server: FixtureServer): Promise<string> {
+  const bytes = await readFile(join(TEST_ASSETS, BOOK.file));
+  server.serveSequence('/s/book-copy.pdf', [new Uint8Array(Buffer.concat([bytes, Buffer.from('\n% a second download of the same book\n')]))]);
+  return server.url('/s/book-copy.pdf');
+}
+
+/** Opens `url` the way openPaper opens a fixture: wide window, rail shut, 100%, page 1's text layer built. */
+async function openAt(openViewer: Parameters<typeof openPaper>[0], url: string): Promise<Page> {
+  const page = await openViewer(url);
+  await page.setViewportSize({ width: 1280, height: 1160 });
+  await page.waitForFunction(() => (globalThis as unknown as { __sopTest?: { viewerState?: () => string } }).__sopTest?.viewerState?.() === 'ready', undefined, { timeout: 30_000 });
+  if (await hooks(page).eval((h) => h.viewer.snapshot().railOpen)) await page.keyboard.press('F4');
+  await setZoom(page, 1);
+  await waitForTextLayer(page, 0);
+  await settle(page);
+  return page;
+}
+
+const saveKind = (page: Page): Promise<string> => hooks(page).eval((h) => h.save.state().kind);
+
+test.describe('R67 tightened: a second download still being identified (secread3 findings 1 and 2)', () => {
+  for (const what of ['a mark', 'a note'] as const) {
+    test(`${what} made on the second download while it is "checking": tab A's first-mark Undo goes, and nothing B made can be undone away`, async ({ openViewer, server }, testInfo) => {
+      const copyUrl = await serveBookCopy(server);
+      const a = await openNotSure(openViewer, server, BOOK);
+      await selectAWord(a, BOOK);
+      await a.keyboard.press('h');
+      const id = await waitSaved(a, 60_000);
+      await expect(undoChip(a), 'tab A: the first mark saved the book, with Undo').toBeVisible({ timeout: 5000 });
+
+      const b = await openAt(openViewer, copyUrl);
+      expect(await saveKind(b), 'tab B is still working out which PDF it is').toBe('checking');
+      await selectAWord(b, BOOK);
+      if (what === 'a mark') await b.keyboard.press('h');
+      else {
+        await startNote(b);
+        await b.keyboard.type('keep this', { delay: 10 });
+      }
+      await expect(undoChip(a), "tab A's Undo goes at once: it would delete what tab B made").toHaveCount(0, { timeout: 3000 });
+      await shot(a, testInfo, 'tab-a-no-undo');
+
+      await expect.poll(() => libraryId(b), { timeout: 60_000, message: 'tab B finds the copy is the same book' }).toBe(id);
+      if (what === 'a mark') {
+        await expect.poll(async () => (await storeOf(b).call<{ marks: unknown[] }>('listAnnotations', id)).marks.length, { timeout: 15_000, message: "both tabs' marks are kept" }).toBe(2);
+      } else {
+        await b.close();
+        const again = await openAt(openViewer, copyUrl);
+        await expect.poll(() => noteText(again).catch(() => ''), { timeout: 60_000, message: "tab B's note is kept" }).toBe('keep this');
+      }
+    });
+  }
+
+  test('a note typed while the second download is "checking" survives the tab closing before it knows', async ({ openViewer, server }, testInfo) => {
+    const copyUrl = await serveBookCopy(server);
+    const first = await openNotSure(openViewer, server, BOOK);
+    await notSureChip(first).click(); // the owner saves the book
+    const id = await waitSaved(first, 60_000);
+    await first.close();
+
+    const b = await openAt(openViewer, copyUrl);
+    expect(await saveKind(b), 'still working out which PDF it is').toBe('checking');
+    await selectAWord(b, BOOK);
+    await startNote(b);
+    await b.keyboard.type('remember me', { delay: 10 });
+    expect(await saveKind(b), 'and still checking when the tab closes').toBe('checking');
+    await shot(b, testInfo, 'typed-while-checking');
+    await b.close({ runBeforeUnload: true });
+
+    const again = await openAt(openViewer, copyUrl);
+    await expect.poll(() => noteText(again).catch(() => ''), { timeout: 60_000, message: 'the note is back' }).toBe('remember me');
+    expect(await libraryId(again), 'in the saved book').toBe(id);
+    await shot(again, testInfo, 'note-back');
+  });
+});
+
+test.describe('R67 tightened: no Undo for a save that carries a note (secread3 findings 3 and 4)', () => {
+  test('a note whose save failed, then sent with Enter once the engine recovers: the save has no Undo', async ({ openViewer, server }, testInfo) => {
+    const page = await openNotSure(openViewer, server, ATTENTION);
+    await hooks(page).eval((h) => {
+      const b = h.backend as unknown as { getPageText(doc: unknown, i: number): Promise<string>; __real?: unknown };
+      const real = b.getPageText.bind(b);
+      b.__real = real;
+      b.getPageText = (doc, i) => (i >= 5 && i < 10 ? Promise.reject(new Error('engine-failed: test')) : real(doc, i));
+    });
+    await selectPassage(page, ATTENTION, LINES.l11);
+    await startNote(page);
+    await page.keyboard.type('My important note', { delay: 10 });
+    await expect(page.getByRole('button', { name: /couldn.t save\. try again/i })).toBeVisible({ timeout: 15_000 });
+    await hooks(page).eval((h) => {
+      const b = h.backend as unknown as { getPageText: unknown; __real: unknown };
+      b.getPageText = b.__real;
+    });
+    await page.keyboard.press('Enter');
+    await waitSaved(page, 15_000);
+    await neverUndo(page, 3000, 'a save that carries a note never offers Undo');
+    await shot(page, testInfo, 'sent-after-failed-save');
+  });
+
+  test('two tabs closed mid-save: the next open shows "Saving your notes…", finishes the save with no Undo, and both marks are back', async ({ openViewer, server }, testInfo) => {
+    const a = await openNotSure(openViewer, server, BOOK);
+    const b = await openNotSure(openViewer, server, BOOK);
+    await a.bringToFront();
+    await selectAWord(a, BOOK);
+    await a.keyboard.press('h');
+    await expect(savingChip(a), 'tab A is saving').toBeVisible({ timeout: 3000 });
+    await b.bringToFront();
+    await dragSelect(b, 0, ...(await secondWord(b)));
+    await b.keyboard.press('h');
+    await b.waitForTimeout(300);
+    expect(await libraryId(a), 'nothing is in the library yet').toBeNull();
+    await a.close({ runBeforeUnload: true });
+    await b.close({ runBeforeUnload: true });
+
+    const again = await openAt(openViewer, address(server, BOOK));
+    await expect(again.getByText(/^saving your notes/i), 'the chip says the notes are being saved').toBeVisible({ timeout: 30_000 });
+    await shot(again, testInfo, 'saving-your-notes');
+    await waitSaved(again, 60_000);
+    await neverUndo(again, 2500, 'a save finished on reopen never offers Undo');
+    await expect.poll(() => hooks(again).eval((h) => h.annotations?.state().marks.length ?? 0), { timeout: 15_000, message: 'both marks are back' }).toBe(2);
+  });
+});
+
+/** The glyph range of the second long word on page 1 (the first is what selectAWord takes). */
+async function secondWord(page: Page): Promise<[number, number]> {
+  const text = await hooks(page).eval((h) => h.backend.getPageText(h.doc()!.open.doc, 0));
+  const words = [...text.matchAll(/[A-Za-z]{6,}/gu)];
+  const w = words[1] ?? words[0];
+  return [w.index, w.index + w[0].length - 1];
+}
