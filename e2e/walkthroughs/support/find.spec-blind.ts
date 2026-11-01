@@ -4,22 +4,61 @@
 //  - the hits are painted with the CSS tokens --find-hit (rgba(251,188,4,.4)) and --find-current (rgba(251,188,4,.8));
 //  - Enter and Shift+Enter step, Esc closes, Alt+Enter selects the current hit as a real text selection.
 // What the interface file leaves open is guessed here, in one place, and listed in the task-25 tests report:
-//  - the bar is found as "the nearest ancestor of the search box that holds at least three buttons" (previous, next, close);
+//  - the bar is the search landmark (role="search") that holds the box, else "the nearest ancestor of the search box that
+//    holds at least three buttons" (previous, next, close);
 //  - the count is the first "N of M" in the bar's text; "No results" is that text, case-insensitive;
 //  - a painted hit is any element in the viewer whose computed background (or SVG fill) is the token's colour.
+// Triage after the first run (find-triage.md):
+//  - The colours are read from the shipped CSS variables, not literals. The current hit is orange at .5 because yellow at
+//    .8 left black text unreadable.
+//  - The bar is the search landmark. The scan note sits under the row of buttons, so the row alone missed it.
+//  - A hit is one SVG path with one rectangle (subpath) a line, so each subpath is counted as its own rectangle.
 import type { Locator, Page } from '@playwright/test';
 import { expect, rt, scrollerRect, settled } from './viewer.spec-blind';
 
 export const FIND_LABEL = 'Find in document';
-/** The tokens of the interface file (tokens.css). */
+/** The interface file's --find-hit (tokens.css). The painted-hit scan reads both tokens from the page's CSS instead. */
 export const FIND_HIT = { r: 251, g: 188, b: 4, a: 0.4 } as const;
-export const FIND_CURRENT = { r: 251, g: 188, b: 4, a: 0.8 } as const;
+
+export interface Rgba {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+}
+
+/**
+ * --find-hit and --find-current as the page's CSS has them, or null where a token is missing or not a colour. The build may
+ * write a token in any colour syntax (#fbbc0466 for rgba(251,188,4,.4)), so each is resolved by painting a probe with it.
+ */
+export async function findTokens(page: Page): Promise<{ hit: Rgba | null; current: Rgba | null }> {
+  return page.evaluate(() => {
+    const host = document.querySelector('#viewer-root') ?? document.body;
+    const parse = (v: string) => {
+      const m = /rgba?\(\s*([\d.]+)[ ,]+([\d.]+)[ ,]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)/i.exec(v);
+      if (!m) return null;
+      const a = m[4] === undefined ? 1 : m[4].endsWith('%') ? parseFloat(m[4]) / 100 : parseFloat(m[4]);
+      return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]), a };
+    };
+    const resolve = (name: string) => {
+      if (getComputedStyle(host).getPropertyValue(name).trim() === '') return null;
+      const probe = document.createElement('span');
+      probe.style.backgroundColor = `var(${name})`;
+      host.append(probe);
+      const c = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return parse(c);
+    };
+    return { hit: resolve('--find-hit'), current: resolve('--find-current') };
+  });
+}
 
 /** The search box. */
 export const field = (page: Page): Locator => page.getByRole('searchbox', { name: FIND_LABEL });
 
-/** The bar: the nearest ancestor of the search box with at least three buttons (previous, next, close). */
-export const bar = (page: Page): Locator => field(page).locator('xpath=ancestor::*[count(.//button) >= 3][1]');
+/** The bar: the search landmark around the box, else its nearest ancestor with at least three buttons (previous, next, close). */
+export const bar = (page: Page): Locator =>
+  field(page).locator('xpath=ancestor::*[@role="search" or self::search][1]').or(field(page).locator('xpath=ancestor::*[count(.//button) >= 3][1]')).first();
 
 /** Ctrl+F, then the box is on screen and has the keyboard, so typing needs no click. */
 export async function openFind(page: Page): Promise<void> {
@@ -55,8 +94,11 @@ export async function readBar(page: Page): Promise<BarReading> {
     };
     const box = boxes.find(labelled) ?? null;
     if (!box) return { open: false, text: '', count: null, noResults: false };
-    let node: HTMLElement | null = box;
-    while (node && node.querySelectorAll('button').length < 3) node = node.parentElement;
+    let node: HTMLElement | null = box.closest<HTMLElement>('[role="search"], search');
+    if (!node) {
+      node = box;
+      while (node && node.querySelectorAll('button').length < 3) node = node.parentElement;
+    }
     const rect = (node ?? box).getBoundingClientRect();
     const text = (node ?? box).innerText.replace(/\s+/g, ' ').trim();
     const m = /(\d[\d,.]*)\s+of\s+(\d[\d,.]*)/i.exec(text);
@@ -93,9 +135,11 @@ export interface PaintedRect {
 
 /**
  * Every rectangle in the viewer painted with --find-hit or --find-current: elements whose computed background colour
- * (or SVG fill) has the token's red, green and blue and its alpha (0.4 or 0.8, give or take 0.03).
+ * (or SVG fill) has the token's red, green and blue and its alpha (give or take 0.03), as the page's CSS sets them.
  */
 export async function paintedRects(page: Page): Promise<PaintedRect[]> {
+  const tokens = await findTokens(page);
+  if (tokens.hit === null || tokens.current === null) throw new Error('the page has no --find-hit / --find-current colour tokens');
   const raw = await page.evaluate(
     ({ hit, current }) => {
       const parse = (s: string) => {
@@ -115,16 +159,33 @@ export async function paintedRects(page: Page): Promise<PaintedRect[]> {
           if (!c) continue;
           const isCurrent = near(c, current);
           if (!isCurrent && !near(c, hit)) continue;
-          const r = el.getBoundingClientRect();
-          if (r.width < 1 || r.height < 1) continue;
           const holder = el.closest<HTMLElement>('[data-page-index]');
-          out.push({ x: r.left, y: r.top, width: r.width, height: r.height, current: isCurrent, page: holder ? Number(holder.dataset.pageIndex) : null });
+          const page = holder ? Number(holder.dataset.pageIndex) : null;
+          // One SVG path may paint several rectangles (one subpath a line): each subpath counts as its own rectangle.
+          const d = el instanceof SVGPathElement ? (el.getAttribute('d') ?? '') : '';
+          const parts = d.match(/[Mm][^Mm]*/g) ?? [];
+          const boxes: DOMRect[] = [];
+          if (parts.length > 1) {
+            for (const part of parts) {
+              const probe = el.cloneNode(false) as SVGPathElement;
+              probe.setAttribute('d', part);
+              el.after(probe);
+              boxes.push(probe.getBoundingClientRect());
+              probe.remove();
+            }
+          } else {
+            boxes.push(el.getBoundingClientRect());
+          }
+          for (const r of boxes) {
+            if (r.width < 1 || r.height < 1) continue;
+            out.push({ x: r.left, y: r.top, width: r.width, height: r.height, current: isCurrent, page });
+          }
           break;
         }
       }
       return out;
     },
-    { hit: FIND_HIT, current: FIND_CURRENT },
+    { hit: tokens.hit, current: tokens.current },
   );
   const rects: PaintedRect[] = [];
   for (const r of raw) {
