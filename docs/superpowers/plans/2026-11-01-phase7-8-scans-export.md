@@ -271,7 +271,7 @@ export function planPdfImport(read: PdfAnnotation[], known: { refs: { pdfRef: st
 
 ## Carried requirements (controller, 1 Nov 2026, from 8.0 + 8.1)
 
-- **Coordinates:** `PdfRect` in both the export plan and the import read shape is PDF user space (y up, origin at the page's lower left, before /Rotate). 8.2 must match this. Recorded in contracts §9.
+- **Coordinates:** the export plan and the import read shape use a separate type, `PdfUserRect`, in PDF user space (y up, origin at the page's lower left, before /Rotate). The engine's `PdfRect` (top-left origin) is unchanged. 8.1 renames its type to `PdfUserRect`, and 8.2 must match. Recorded in contracts §9.
 - **8.2:** write on a fresh document handle that loads only the annotated pages (PDFium rewrites every loaded object). Keep `fixXrefStreamTail`: PDFium writes a broken xref stream in the incremental tail for files that use xref streams (7 of 11 inputs).
 - **8.3:** pass `replyAppearance: 'empty'` (sample A, D8.1) until the owner's 10-minute Foxit/Acrobat check (W-F1). Add `ImportedMeta` to `CommentMeta` in `packages/core/src/model/rows.ts`. Imported Claude comments come back as author 'me' with a "from Claude" label.
 - **8.1 additions (accepted):** the optional `lineRgb`, `areaRgb`, `threadRgb` and `replyAppearance`, plus `skippedMarks` in the result.
