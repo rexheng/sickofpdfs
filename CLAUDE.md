@@ -43,6 +43,11 @@ The owner has learning disabilities and is highly intelligent. Write to them pla
    - Test code in a brief is guidance.
    - Small differences go in the task report and need no formal ruling.
 8. **The owner's hands-on testing is the main critic.** The four critics (visual, experience, code/security, student) run once per test build, on the real extension, with screenshots.
+9. **Fewer unit tests, more user tests** (owner, 2026-11-01).
+   - **Default test: a user test.** Playwright drives the real built extension in Chromium the way the owner would: open a PDF, scroll, select, right-click, mark, comment, reload, check the note is still there. It takes a screenshot at the key moments.
+   - **Where the scenarios come from.** They are the spec's walkthroughs ("How it feels to use"), and each feature adds or extends one.
+   - **When unit tests are allowed.** Only for logic that is tricky and cheap to test in isolation: anchoring, canonical links, the learning filter, sync merge, export mapping. Use table-driven cases with no trivial tests.
+   - **What not to test.** Don't test getters, renders or wiring at unit level. The user test covers those.
 
 ## Standing constraints
 
