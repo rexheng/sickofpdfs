@@ -26,6 +26,19 @@
     "src/store/durability.spec-blind.browser.test.ts",
     "src/viewer/annotations/stack.spec-blind.ts",
     "src/viewer/annotations/no-lost-text.spec-blind.test.ts",
-    "src/viewer/annotations/edit-draft.spec-blind.test.ts"
+    "src/viewer/annotations/edit-draft.spec-blind.test.ts",
+    "src/store/library.spec-blind.ts",
+    "src/store/documents.spec-blind.test.ts",
+    "src/store/identity.spec-blind.test.ts",
+    "src/store/search-forget.spec-blind.test.ts",
+    "src/store/forget-file.spec-blind.browser.test.ts",
+    "src/store/forget-file.spec-blind.worker.ts",
+    "src/store/client.spec-blind.browser.test.ts",
+    // Task 29's (delete these when Task 29 has merged)
+    "src/store/blob-store.spec-blind.browser.test.ts",
+    "src/store/device-id.spec-blind.browser.test.ts",
+    "src/store/device-id.spec-blind.worker.ts",
+    "src/local-only/secrets-store.spec-blind.browser.test.ts",
+    "src/local-only/secrets-store.spec-blind.worker.ts"
   ]
 }
