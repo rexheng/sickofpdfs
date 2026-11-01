@@ -46,7 +46,7 @@ The owner has learning disabilities and is highly intelligent. Write to them pla
 
 ## Standing constraints
 
-- Never put model identifiers in commits, PR text, code, comments or docs. Commit messages end with the Co-Authored-By and Claude-Session trailer lines given by the session.
+- Never put model ID strings (such as `claude-…` ids) in commits, PR text, code, comments or docs. The one exception is the Co-Authored-By and Claude-Session trailer lines the session gives, which end every commit message.
 - Push to the feature branch (currently `release1/phase0-1`). Never open a PR unless asked.
 - Third-party images (press, Google, clones) stay out of the repo. `docs/research/drive-refs/third-party/` is gitignored.
 - Secrets go in GitHub or Cloudflare secrets, never in chat or the repo. The API key and tokens live in an extension-private store that content scripts cannot read.
