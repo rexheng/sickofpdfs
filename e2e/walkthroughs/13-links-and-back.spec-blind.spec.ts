@@ -230,7 +230,7 @@ test('a drag that starts on a link selects text instead of following it; Alt ign
   const at = (x: number) => bringIntoView(page, 0, x, y);
   const startFlat = await at(sentence.x + 20);
   const stayIn = await at(sentence.x + 80); // still inside the link (the link is 100 pt wide)
-  const lineEnd = await at(SENTENCE_END_X); // past the last word
+  const lineEnd = await at(SENTENCE_END_X); // on the last glyph (triage, linkdrag: 540 pt was blank space, and the selection stops at the last text the pointer crossed)
   const place = await placeOf(page);
   const h0 = await historyInfo(page);
 

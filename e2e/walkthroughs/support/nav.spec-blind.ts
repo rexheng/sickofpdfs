@@ -63,8 +63,12 @@ export const NAV_LINKS = {
 } as const satisfies Record<string, NavLink>;
 export type NavLinkId = keyof typeof NAV_LINKS;
 
-/** The end of the sentence line (page points): the blank space after its last word. */
-export const SENTENCE_END_X = 540;
+/**
+ * The end of the sentence line (page points): inside its last glyph, the full stop. In Helvetica 12 pt the sentence is 395.5 pt
+ * wide, so it ends at 467.5. A drag must end ON the text: a pointer over the blank space after the line does not move the
+ * selection's end, so where the selection stops there depends on the last text the pointer crossed.
+ */
+export const SENTENCE_END_X = 466;
 
 const PAGE_H = BAR.pageHeight;
 
