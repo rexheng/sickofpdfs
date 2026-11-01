@@ -19,7 +19,7 @@ import { Dialog, Icon, type CardPlacement } from '@sop/ui';
 import { useViewerState, type ViewerStore } from '@sop/viewer';
 import type { PageListApi } from '@sop/viewer/react';
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import type { CommentId, CommentRow, Resolution, ThreadId, ThreadRow } from '../annotations/boundary';
 import { TOO_MUCH_FOR_A_NOTE, tooMuchToMark } from '../annotations/mark-input';
 import type { NotesHost } from '../annotations/wire';
@@ -255,6 +255,7 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
   // The room at the right of the pages: the margin's, kept whenever the pages fit with it (from the first layout:
   // reserveAtOpen), so a first note moves nothing; the notes panel's while it is open. Neither ever changes the zoom.
   // A page that does not fit beside the panel stays where it is, under the panel, and can be scrolled out from under it.
+  const [, relaidOut] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
     const a = pages.current;
     if (!a) return;
@@ -262,6 +263,9 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
     if (a.reserveRight() === want) return;
     a.glide();
     a.setReserveRight(want, undefined, { scroll: panelOpen });
+    // The pages may have moved inside a scroll area of the same size, which layoutTick does not see. The page list lays
+    // them out once this effect is done, so the cards are placed again just after, before the browser paints.
+    queueMicrotask(() => flushSync(relaidOut));
   }, [panelOpen, pages, host]);
 
   // Whether the cards fit beside the pages at their size, measured after every layout (layoutTick). While the rail is
