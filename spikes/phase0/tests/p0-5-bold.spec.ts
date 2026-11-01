@@ -5,8 +5,9 @@ import { test } from './fixtures';
 import { record } from './record';
 
 // The brief's tests, with their assertions unchanged. Additions: each test writes its measurements with
-// record(), and the zoom tests save the gate-review screenshots (results/bold-zoom<z>.png and a close-up of the
-// bold passage) before asserting, so a failing run still leaves them. Fixture: `fixtures` (the attention paper).
+// record(), and the zoom tests save the gate-review screenshots before asserting, so a failing run still leaves
+// them: results/bold-zoom<z>.png, a close-up of the bold passage, and the whole page in bold (a diagnostic).
+// Fixture: `fixtures` (the attention paper).
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const shown = (path: string) => relative(repoRoot, path);
 const n3 = (n: number) => Math.round(n * 1000) / 1000;
@@ -29,8 +30,9 @@ for (const zoom of [1, 2]) {
   test(`P0-5 @${zoom * 100}%: 20 words in bold overlay < 50 ms p95, covering ≥ 95% of glyph ink`, async ({ spikePage, spikeScreenshot, server }) => {
     const r = await spikePage({ check: 'bold', file: server.url('classifier/learning/arxiv-1706.03762-attention.pdf'), page: 0, words: 20, zoom, reps: 10 });
     const shots = [
-      await spikeScreenshot(`bold-zoom${zoom}.png`, { selector: '#page' }),
-      await spikeScreenshot(`bold-zoom${zoom}-detail.png`, { clip: r.detailClip }),
+      await spikeScreenshot(`bold-zoom${zoom}.png`, { selector: '#page' }), // the 20 words in bold
+      await spikeScreenshot(`bold-zoom${zoom}-detail.png`, { clip: r.detailClip }), // their lines, close up
+      await spikeScreenshot(`bold-zoom${zoom}-page.png`, { selector: '#page-all' }), // every glyph on the page in bold
     ];
     await record('P0-5', {
       pass: r.p95Ms < 50 && r.inkCoverage >= 0.95 && r.spillFraction <= 0.10,

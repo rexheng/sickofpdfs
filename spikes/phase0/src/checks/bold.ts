@@ -8,7 +8,7 @@
 //       attention paper's abstract), `reps` times. Each rep starts from a painted frame without bold and is timed
 //       from the request to the <path> elements in the DOM. The last rep's overlay stays on screen for the
 //       screenshots and is rasterised for ink coverage and spill (see `coverage`). The same is measured for the
-//       whole page's text, as a diagnostic.
+//       whole page's text, as a diagnostic, and shown in a second copy of the page (#page-all) below the first.
 import { createFileWorkerEngine } from '../engine/client';
 import type { Glyph, GlyphArgForms, GlyphOutline, PageGlyphs, Rect } from '../engine/spike-native';
 import { withTimeout } from './render';
@@ -248,7 +248,7 @@ export async function run(params: URLSearchParams) {
   const passage = coverage(base, await rasterise(svg, width, height), width, height, deviceChars(charStart, charStart + charCount));
   const passageForms = await engine.call<GlyphArgForms>('glyphArgForms', doc.docId, pageIndex, charStart, charCount);
 
-  // Diagnostic: every char on the page, in one call, drawn into a detached copy of the overlay.
+  // Diagnostic: every char on the page, in one call, in a second copy of the page below the first.
   const tPage = performance.now();
   const pageOutlines = await withTimeout(engine.call<GlyphOutline[]>('getGlyphOutlines', doc.docId, pageIndex, 0, glyphs.length), STEP_TIMEOUT_MS, 'getGlyphOutlines (page)');
   const pageMs = round(performance.now() - tPage, 1);
@@ -256,6 +256,13 @@ export async function run(params: URLSearchParams) {
   pageSvg.append(boldPaths(pageOutlines, glyphs));
   const page = coverage(base, await rasterise(pageSvg, width, height), width, height, deviceChars(0, glyphs.length));
   const pageForms = await engine.call<GlyphArgForms>('glyphArgForms', doc.docId, pageIndex, 0, glyphs.length);
+  const pageAllDiv = pageDiv.cloneNode(false) as HTMLDivElement;
+  pageAllDiv.id = 'page-all';
+  pageAllDiv.style.top = `${2 * MARGIN + cssHeight}px`;
+  const canvasAll = canvas.cloneNode(false) as HTMLCanvasElement;
+  canvasAll.getContext('2d')!.drawImage(canvas, 0, 0);
+  pageAllDiv.append(canvasAll, pageSvg);
+  document.body.append(pageAllDiv);
 
   // A close-up for the gate review: the passage's lines, with two lines of context above and below.
   const shown = glyphs.slice(charStart, charStart + charCount).filter((g) => !g.generated && g.box.width > 0);
