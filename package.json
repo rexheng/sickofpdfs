@@ -33,12 +33,20 @@
     "pdf-lib": "1.17.1",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.1",
+    "vite": "8.3.5",
     "vitest": "5.0.5"
   },
   "pnpm": {
     "patchedDependencies": {
       "@embedpdf/engines@2.15.1": "patches/@embedpdf__engines@2.15.1.patch",
       "@embedpdf/pdfium@2.15.1": "patches/@embedpdf__pdfium@2.15.1.patch"
+    },
+    "peerDependencyRules": {
+      "ignoreMissing": [
+        "preact",
+        "svelte",
+        "vue"
+      ]
     }
   }
 }

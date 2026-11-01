@@ -5,6 +5,9 @@
 // The list is packages/viewer/src/backend/embedpdf/engine-files.json (pdfium.wasm, four NotoSans styles and
 // NotoSansHans-Regular.otf). The packages are resolved from @sop/viewer, the package that pins them (exact 2.15.1 and
 // 1.0.0), so the extension needs no copies of those dependencies.
+//
+// The Vitest browser project also runs it before any test (its globalSetup), so the browser tests never depend on an
+// earlier build having filled public/pdf/.
 import { createRequire } from 'node:module';
 import { copyFile, mkdir, readFile, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -14,7 +17,6 @@ const repo = fileURLToPath(new URL('../../../', import.meta.url));
 const viewer = join(repo, 'packages/viewer');
 const out = join(repo, 'apps/extension/public/pdf');
 const require = createRequire(join(viewer, 'package.json'));
-const list = JSON.parse(await readFile(join(viewer, 'src/backend/embedpdf/engine-files.json'), 'utf8'));
 
 /** The root folder of an installed package: walk up from its entry point to the package.json naming it. */
 async function packageRoot(name) {
@@ -32,13 +34,19 @@ async function packageRoot(name) {
   }
 }
 
-await mkdir(out, { recursive: true });
-let bytes = 0;
-for (const f of [list.wasm, ...list.fonts]) {
-  const from = join(await packageRoot(f.package), f.from);
-  const to = join(out, f.file);
-  await copyFile(from, to);
-  bytes += (await stat(to)).size;
-  console.log(`engine assets: ${f.package}/${f.from} → public/pdf/${f.file}`);
+/** Copies every engine file into apps/extension/public/pdf/. Also the Vitest browser project's globalSetup. */
+export default async function copyEngineAssets() {
+  const list = JSON.parse(await readFile(join(viewer, 'src/backend/embedpdf/engine-files.json'), 'utf8'));
+  await mkdir(out, { recursive: true });
+  let bytes = 0;
+  for (const f of [list.wasm, ...list.fonts]) {
+    const from = join(await packageRoot(f.package), f.from);
+    const to = join(out, f.file);
+    await copyFile(from, to);
+    bytes += (await stat(to)).size;
+  }
+  console.log(`engine assets: ${1 + list.fonts.length} files, ${(bytes / 2 ** 20).toFixed(1)} MiB in apps/extension/public/pdf/`);
 }
-console.log(`engine assets: ${1 + list.fonts.length} files, ${(bytes / 2 ** 20).toFixed(1)} MiB in apps/extension/public/pdf/`);
+
+// Run as a script (`node scripts/copy-engine-assets.mjs`), not when imported.
+if (process.argv[1] === fileURLToPath(import.meta.url)) await copyEngineAssets();

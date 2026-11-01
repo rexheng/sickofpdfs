@@ -25,6 +25,9 @@ export default defineConfig({
           name: 'browser',
           include: ['**/*.browser.test.{ts,tsx}'],
           exclude,
+          // Fills apps/extension/public/pdf/ (pdfium.wasm and the fallback fonts) from the installed packages before any
+          // test, so engine tests never depend on an earlier extension build.
+          globalSetup: ['./apps/extension/scripts/copy-engine-assets.mjs'],
           browser: {
             enabled: true,
             provider: playwright(),
