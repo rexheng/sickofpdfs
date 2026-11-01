@@ -72,7 +72,8 @@ export function visibleRange(l: PageLayout, scrollTop: number, viewportHeight: n
     else hi = mid;
   }
   let first = lo;
-  while (first > 0 && b[first - 1].top === b[first].top) first--;
+  // lo is b.length when the band lies below the last page (a zoom anchored under a short document's only page).
+  while (first > 0 && first < b.length && b[first - 1].top === b[first].top) first--;
   if (first >= b.length || b[first].top >= bottom) return { first: 0, last: -1 };
   let last = first;
   while (last + 1 < b.length && b[last + 1].top < bottom) last++;
