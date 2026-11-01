@@ -25,7 +25,7 @@ const FONT_CSS = ['@fontsource/noto-serif/400.css', '@fontsource/noto-sans-hebre
 const PREINSTALLED_CHROMIUM = '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome';
 
 // The P0-4 spec's normalisation, then with no whitespace at all (see the header).
-const norm = (s) => s.normalize('NFKC').replace(/­/g, '').replace(/\s+/g, ' ').trim();
+const norm = (s) => s.normalize('NFKC').replace(/\u00ad/g, '').replace(/\s+/g, ' ').trim();
 const squash = (s) => norm(s).replace(/\s+/g, '');
 
 /** A fontsource CSS file with every src replaced by its woff2 file as a data: URL. */
