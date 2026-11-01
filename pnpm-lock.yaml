@@ -53,7 +53,11 @@ importers:
 
   apps/cloud: {}
 
-  packages/core: {}
+  packages/core:
+    dependencies:
+      hash-wasm:
+        specifier: 4.12.0
+        version: 4.12.0
 
   packages/ui:
     dependencies:
@@ -1423,6 +1427,9 @@ packages:
   globals@17.13.0:
     resolution: {integrity: sha512-RwMTC61u7hrG3ZJMkZQOK4JLJrKS8QtoTii63EmWvFXHqycY9FObBJQCbsLxSO8kjKhWE5kV1GC+Vb1g3RI0Zg==}
     engines: {node: '>=18'}
+
+  hash-wasm@4.12.0:
+    resolution: {integrity: sha512-+/2B2rYLb48I/evdOIhP+K/DD2ca2fgBjp6O+GBEnCDk2e4rpeXIK8GvIyRPjTezgmWn9gmKwkQjjx6BtqDHVQ==}
 
   hashery@1.5.1:
     resolution: {integrity: sha512-iZyKG96/JwPz1N55vj2Ie2vXbhu440zfUfJvSwEqEbeLluk7NnapfGqa7LH0mOsnDxTF85Mx8/dyR6HfqcbmbQ==}
@@ -3393,6 +3400,8 @@ snapshots:
       is-glob: 4.0.3
 
   globals@17.13.0: {}
+
+  hash-wasm@4.12.0: {}
 
   hashery@1.5.1:
     dependencies:
