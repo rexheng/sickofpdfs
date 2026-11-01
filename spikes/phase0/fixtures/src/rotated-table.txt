@@ -1,0 +1,6 @@
+Table 2. Water samples by station
+Station Depth Temperature Salinity
+North bank 12 m 14.2 C 35.1
+Old mill 3 m 16.8 C 34.6
+Bridge 7 m 15.5 C 34.9
+South bank 9 m 15.0 C 35.0

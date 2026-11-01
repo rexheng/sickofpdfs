@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>tl-rotated-table</title>
+<!-- scripts/make-textlayer-fixtures.mjs adds the bundled Noto Serif @font-face rules here. -->
+<style>
+  @page { size: Letter; margin: 0; }
+  html, body { margin: 0; }
+  body { padding: 0.75in; font: 11pt/1.4 'Noto Serif'; color: #000; }
+  h1 { font-size: 13pt; font-weight: 400; margin: 0; }
+  /* Rotated about its top-left corner: the table reads bottom to top, as a landscape table in a paper does. */
+  .rotated { position: absolute; left: 1.5in; top: 8in; transform: rotate(-90deg); transform-origin: 0 0; }
+  table { border-collapse: collapse; }
+  th, td { border: 0.75pt solid #000; padding: 4pt 10pt; text-align: left; font-weight: 400; }
+</style>
+</head>
+<body>
+<h1>Table 2. Water samples by station</h1>
+<div class="rotated">
+<table>
+  <tr><th>Station</th><th>Depth</th><th>Temperature</th><th>Salinity</th></tr>
+  <tr><td>North bank</td><td>12 m</td><td>14.2 C</td><td>35.1</td></tr>
+  <tr><td>Old mill</td><td>3 m</td><td>16.8 C</td><td>34.6</td></tr>
+  <tr><td>Bridge</td><td>7 m</td><td>15.5 C</td><td>34.9</td></tr>
+  <tr><td>South bank</td><td>9 m</td><td>15.0 C</td><td>35.0</td></tr>
+</table>
+</div>
+</body>
+</html>

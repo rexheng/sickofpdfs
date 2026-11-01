@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>tl-ligatures</title>
+<!-- scripts/make-textlayer-fixtures.mjs adds the bundled Noto Serif @font-face rules here.
+     Standard ligatures are on (the default), so fi, fl, ff and ffi print as single glyphs. -->
+<style>
+  @page { size: Letter; margin: 0; }
+  html, body { margin: 0; }
+  body { padding: 0.75in; font: 24pt/1.4 'Noto Serif'; color: #000; }
+  p { margin: 0 0 0.5em; }
+  .small { font-size: 11pt; }
+</style>
+</head>
+<body>
+<p>office, fluffy, affine, file</p>
+<p class="small">office, fluffy, affine, file</p>
+</body>
+</html>
