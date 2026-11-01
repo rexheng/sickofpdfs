@@ -1,0 +1,148 @@
+{
+  "files": {
+    "ppocr/PP-OCRv5_mobile_det/inference.onnx": {
+      "sha256": "a431985659dc921974177a95adcfbb90fd9e51989a5e04d70d0b75f597b6e61d",
+      "bytes": 4826518,
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det_onnx/resolve/e6f4fa85f00e168c862bc462aebca69eef9b3d3d/inference.onnx"
+    },
+    "ppocr/PP-OCRv5_mobile_det/inference.yml": {
+      "sha256": "98069072e1b6b37d727fd9d9f11725faa46d6ea0de012f2ed26caea011c37699",
+      "bytes": 903,
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det_onnx/resolve/e6f4fa85f00e168c862bc462aebca69eef9b3d3d/inference.yml"
+    },
+    "ppocr/PP-OCRv5_mobile_rec/inference.onnx": {
+      "sha256": "da72dc72ca4dc220df0dfde68c1dedc31c58d3e76a25871122e5056227d50092",
+      "bytes": 16534782,
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_rec_onnx/resolve/ed152b8b495f84de93cda5709d768548a9127622/inference.onnx"
+    },
+    "ppocr/PP-OCRv5_mobile_rec/inference.yml": {
+      "sha256": "5dfeb2777f6d0db8177d8128a8acfcf6e6276dc4ac73ea3bf0dc06d6a5e85d8e",
+      "bytes": 148345,
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_rec_onnx/resolve/ed152b8b495f84de93cda5709d768548a9127622/inference.yml"
+    },
+    "ppocr/latin_PP-OCRv5_mobile_rec/inference.onnx": {
+      "sha256": "7888113072263cb471b93f66dd5e2ad70548dc526fa1ace760d0d973dd121498",
+      "bytes": 8042023,
+      "url": "https://huggingface.co/PaddlePaddle/latin_PP-OCRv5_mobile_rec_onnx/resolve/89d3a50e2c27e2e7cceeab0e944c25c807d5db4f/inference.onnx"
+    },
+    "ppocr/latin_PP-OCRv5_mobile_rec/inference.yml": {
+      "sha256": "0bbe984570f597af3638e50bdf2e8276f3ab26a61966096538b3b0d1849f5c84",
+      "bytes": 6817,
+      "url": "https://huggingface.co/PaddlePaddle/latin_PP-OCRv5_mobile_rec_onnx/resolve/89d3a50e2c27e2e7cceeab0e944c25c807d5db4f/inference.yml"
+    },
+    "ppocr/en_PP-OCRv5_mobile_rec/inference.onnx": {
+      "sha256": "b5f833dfc5d0eb71da397b4efa06ebeee9b431b690a47d6af40d77d8eabc557f",
+      "bytes": 7848423,
+      "url": "https://huggingface.co/PaddlePaddle/en_PP-OCRv5_mobile_rec_onnx/resolve/3fafbc3b5dcf93dd72add9f48368be8a3a2cd33b/inference.onnx"
+    },
+    "ppocr/en_PP-OCRv5_mobile_rec/inference.yml": {
+      "sha256": "27e91d0582f40168aa218303c76e184bc78fa7a5d105aad0cfbad8458b441067",
+      "bytes": 3964,
+      "url": "https://huggingface.co/PaddlePaddle/en_PP-OCRv5_mobile_rec_onnx/resolve/3fafbc3b5dcf93dd72add9f48368be8a3a2cd33b/inference.yml"
+    },
+    "ppocr/PP-OCRv6_tiny_det/inference.onnx": {
+      "sha256": "193bab7a04fca699a6c82e6abb5b81bdb28177f0abd4062552b04908dafb19f8",
+      "bytes": 1780590,
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_det_onnx/resolve/2ba1506c0380b8f0b03dd142459aac66d4421f6c/inference.onnx"
+    },
+    "ppocr/PP-OCRv6_tiny_det/inference.yml": {
+      "sha256": "3ac018be6f97499a08faa3bbdeb33640968d9307f6736d152902747a9f259593",
+      "bytes": 883,
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_det_onnx/resolve/2ba1506c0380b8f0b03dd142459aac66d4421f6c/inference.yml"
+    },
+    "ppocr/PP-OCRv6_small_det/inference.onnx": {
+      "sha256": "d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e",
+      "bytes": 9880512,
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/28fe5895c24fd108c19eb3e8479f4ab385fbfc62/inference.onnx"
+    },
+    "ppocr/PP-OCRv6_small_det/inference.yml": {
+      "sha256": "193f435274bf9f0b5f71a929bbfbcf148282df7e633b34e7c373e8f44741b516",
+      "bytes": 885,
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/28fe5895c24fd108c19eb3e8479f4ab385fbfc62/inference.yml"
+    },
+    "ppocr/PP-OCRv6_medium_det/inference.onnx": {
+      "sha256": "eb13b44b25bb36f89528b68720af8a61d9cf381176107f465db1757b65d086e1",
+      "bytes": 62032837,
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_det_onnx/resolve/61323801669c338b7891481ec7bac61ce31b576a/inference.onnx"
+    },
+    "ppocr/PP-OCRv6_medium_det/inference.yml": {
+      "sha256": "7298d5ead546584af2504d03355f881ac7a7bc0eb1e282d3e159277c1d0af871",
+      "bytes": 886,
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_det_onnx/resolve/61323801669c338b7891481ec7bac61ce31b576a/inference.yml"
+    },
+    "ppocr/PP-OCRv6_tiny_rec/inference.onnx": {
+      "sha256": "9ef676d6ed3c88256a2d92c640c44f25b0c40947e111b14b8be8f594091563e6",
+      "bytes": 4462639,
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_rec_onnx/resolve/2612ab37152ae0a677521bae4e1e3d4fb4cf7c30/inference.onnx"
+    },
+    "ppocr/PP-OCRv6_tiny_rec/inference.yml": {
+      "sha256": "66170210bad538e83fff3c4a3867e547d6bf20b50d64b20347c4b913f3034ea1",
+      "bytes": 55571,
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_rec_onnx/resolve/2612ab37152ae0a677521bae4e1e3d4fb4cf7c30/inference.yml"
+    },
+    "ppocr/PP-OCRv6_small_rec/inference.onnx": {
+      "sha256": "5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634",
+      "bytes": 21159378,
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/b8f84f0b80c529de40b4fbb3544b84fa7233a513/inference.onnx"
+    },
+    "ppocr/PP-OCRv6_small_rec/inference.yml": {
+      "sha256": "ab078671bb49f06228eadccd34f1bb501e157f7a047095ffb943ba81512c77d1",
+      "bytes": 150579,
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/b8f84f0b80c529de40b4fbb3544b84fa7233a513/inference.yml"
+    },
+    "ppocr/PP-OCRv6_medium_rec/inference.onnx": {
+      "sha256": "9c09abf0957f7968c7586464b7397b84ad2387a0497a351af40e9acc71b673ba",
+      "bytes": 76554979,
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_rec_onnx/resolve/50c7eacafc52fa7bcf4194e8cd08e46f8558504b/inference.onnx"
+    },
+    "ppocr/PP-OCRv6_medium_rec/inference.yml": {
+      "sha256": "991b700facf5b50a7de193468207d5f4255b538dde0d312ae3b7c7a9b6873129",
+      "bytes": 150580,
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_rec_onnx/resolve/50c7eacafc52fa7bcf4194e8cd08e46f8558504b/inference.yml"
+    },
+    "tessdata_fast/eng.traineddata": {
+      "sha256": "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2",
+      "bytes": 4113088,
+      "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/eng.traineddata"
+    },
+    "tessdata_fast/fra.traineddata": {
+      "sha256": "ced037562e8c80c13122dece28dd477d399af80911a28791a66a63ac1e3445ca",
+      "bytes": 1130365,
+      "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/fra.traineddata"
+    },
+    "tessdata_fast/deu.traineddata": {
+      "sha256": "19d219bbb6672c869d20a9636c6816a81eb9a71796cb93ebe0cb1530e2cdb22d",
+      "bytes": 1525436,
+      "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/deu.traineddata"
+    },
+    "tessdata_best/eng.traineddata": {
+      "sha256": "8280aed0782fe27257a68ea10fe7ef324ca0f8d85bd2fd145d1c2b560bcb66ba",
+      "bytes": 15400601,
+      "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/main/eng.traineddata"
+    },
+    "tessdata_best/fra.traineddata": {
+      "sha256": "907743d98915c91a3906dfbf6e48b97598346698fe53aaa797e1a064ffcac913",
+      "bytes": 3972885,
+      "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/main/fra.traineddata"
+    },
+    "tessdata_best/deu.traineddata": {
+      "sha256": "8407331d6aa0229dc927685c01a7938fc5a641d1a9524f74838cdac599f0d06e",
+      "bytes": 8628461,
+      "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/main/deu.traineddata"
+    }
+  },
+  "revisions": {
+    "hf:PP-OCRv5_mobile_det_onnx": "e6f4fa85f00e168c862bc462aebca69eef9b3d3d",
+    "hf:PP-OCRv5_mobile_rec_onnx": "ed152b8b495f84de93cda5709d768548a9127622",
+    "hf:latin_PP-OCRv5_mobile_rec_onnx": "89d3a50e2c27e2e7cceeab0e944c25c807d5db4f",
+    "hf:en_PP-OCRv5_mobile_rec_onnx": "3fafbc3b5dcf93dd72add9f48368be8a3a2cd33b",
+    "hf:PP-OCRv6_tiny_det_onnx": "2ba1506c0380b8f0b03dd142459aac66d4421f6c",
+    "hf:PP-OCRv6_small_det_onnx": "28fe5895c24fd108c19eb3e8479f4ab385fbfc62",
+    "hf:PP-OCRv6_medium_det_onnx": "61323801669c338b7891481ec7bac61ce31b576a",
+    "hf:PP-OCRv6_tiny_rec_onnx": "2612ab37152ae0a677521bae4e1e3d4fb4cf7c30",
+    "hf:PP-OCRv6_small_rec_onnx": "b8f84f0b80c529de40b4fbb3544b84fa7233a513",
+    "hf:PP-OCRv6_medium_rec_onnx": "50c7eacafc52fa7bcf4194e8cd08e46f8558504b",
+    "gh:tessdata_fast": "main",
+    "gh:tessdata_best": "main"
+  }
+}

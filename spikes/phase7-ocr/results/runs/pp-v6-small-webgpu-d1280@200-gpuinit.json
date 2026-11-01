@@ -1,0 +1,468 @@
+{
+ "cfg": {
+  "kind": "ppocr",
+  "id": "pp-v6-small-webgpu-d1280",
+  "det": "PP-OCRv6_small_det",
+  "rec": "PP-OCRv6_small_rec",
+  "backend": "webgpu",
+  "threads": 1,
+  "detMaxSide": 1280
+ },
+ "dpi": 200,
+ "vis": null,
+ "curve": [],
+ "cpu": {
+  "seconds": 0.020000000000000462,
+  "perPageSeconds": null,
+  "wallSeconds": 0.02,
+  "perPageWallSeconds": null
+ },
+ "load": {
+  "start": [
+   24.66,
+   20.72,
+   18.2
+  ],
+  "end": [
+   23.94,
+   20.7,
+   18.22
+  ]
+ },
+ "init": {
+  "facts": {
+   "backend": "webgpu",
+   "detInput": [
+    "x"
+   ],
+   "recInput": [
+    "x"
+   ],
+   "dictSize": 18708,
+   "detThresh": 0.2,
+   "boxThresh": 0.45,
+   "unclipRatio": 1.4,
+   "detMaxSide": 1280,
+   "sessionCreateMs": {
+    "det": 5882,
+    "rec": 2377
+   }
+  },
+  "ms": {
+   "importOrt": 11.830000001937151,
+   "fetchModels": 523.519999999553,
+   "createSessions": 8553.765000000596,
+   "total": 9089.115000002086
+  },
+  "modelBytes": {
+   "det": 9880512,
+   "rec": 21159378
+  },
+  "probe": {
+   "crossOriginIsolated": true,
+   "sharedArrayBuffer": true,
+   "navigatorGpu": true,
+   "adapter": {
+    "info": {
+     "vendor": "google",
+     "architecture": "swiftshader",
+     "device": "",
+     "description": ""
+    },
+    "maxBufferSize": 1073741824
+   },
+   "gpuError": null,
+   "hardwareConcurrency": 4,
+   "location": "chrome-extension://fhaojnogidbacompmalepdaikhegehde",
+   "perfMemory": null
+  },
+  "ortVersion": "1.31.1"
+ },
+ "memory": {
+  "start": {
+   "totalRssMB": 1004.390625,
+   "renderers": [
+    {
+     "pid": 7802,
+     "rssMB": 137,
+     "peakMB": 137,
+     "extension": false
+    },
+    {
+     "pid": 7823,
+     "rssMB": 72,
+     "peakMB": 72,
+     "extension": false
+    },
+    {
+     "pid": 7874,
+     "rssMB": 101,
+     "peakMB": 101,
+     "extension": true
+    },
+    {
+     "pid": 7891,
+     "rssMB": 117,
+     "peakMB": 117,
+     "extension": true
+    }
+   ],
+   "gpuMB": 86,
+   "rows": [
+    {
+     "type": "browser",
+     "pid": 7685,
+     "rssMB": 195,
+     "peakMB": 196
+    },
+    {
+     "type": "zygote",
+     "pid": 7700,
+     "rssMB": 69,
+     "peakMB": 69
+    },
+    {
+     "type": "zygote",
+     "pid": 7701,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "gpu-process",
+     "pid": 7777,
+     "rssMB": 86,
+     "peakMB": 86
+    },
+    {
+     "type": "utility",
+     "pid": 7780,
+     "rssMB": 111,
+     "peakMB": 111
+    },
+    {
+     "type": "utility",
+     "pid": 7783,
+     "rssMB": 46,
+     "peakMB": 46
+    },
+    {
+     "type": "renderer",
+     "pid": 7802,
+     "rssMB": 137,
+     "peakMB": 137
+    },
+    {
+     "type": "renderer",
+     "pid": 7823,
+     "rssMB": 72,
+     "peakMB": 72
+    },
+    {
+     "type": "renderer",
+     "pid": 7874,
+     "rssMB": 101,
+     "peakMB": 101
+    },
+    {
+     "type": "renderer",
+     "pid": 7891,
+     "rssMB": 117,
+     "peakMB": 117
+    }
+   ]
+  },
+  "afterInit": {
+   "totalRssMB": 1420.23828125,
+   "renderers": [
+    {
+     "pid": 7802,
+     "rssMB": 140,
+     "peakMB": 140,
+     "extension": false
+    },
+    {
+     "pid": 7823,
+     "rssMB": 72,
+     "peakMB": 72,
+     "extension": false
+    },
+    {
+     "pid": 7874,
+     "rssMB": 101,
+     "peakMB": 101,
+     "extension": true
+    },
+    {
+     "pid": 7891,
+     "rssMB": 424,
+     "peakMB": 442,
+     "extension": true
+    }
+   ],
+   "gpuMB": 193,
+   "rows": [
+    {
+     "type": "browser",
+     "pid": 7685,
+     "rssMB": 194,
+     "peakMB": 198
+    },
+    {
+     "type": "zygote",
+     "pid": 7700,
+     "rssMB": 69,
+     "peakMB": 69
+    },
+    {
+     "type": "zygote",
+     "pid": 7701,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "gpu-process",
+     "pid": 7777,
+     "rssMB": 193,
+     "peakMB": 213
+    },
+    {
+     "type": "utility",
+     "pid": 7780,
+     "rssMB": 111,
+     "peakMB": 111
+    },
+    {
+     "type": "utility",
+     "pid": 7783,
+     "rssMB": 46,
+     "peakMB": 46
+    },
+    {
+     "type": "renderer",
+     "pid": 7802,
+     "rssMB": 140,
+     "peakMB": 140
+    },
+    {
+     "type": "renderer",
+     "pid": 7823,
+     "rssMB": 72,
+     "peakMB": 72
+    },
+    {
+     "type": "renderer",
+     "pid": 7874,
+     "rssMB": 101,
+     "peakMB": 101
+    },
+    {
+     "type": "renderer",
+     "pid": 7891,
+     "rssMB": 424,
+     "peakMB": 442
+    }
+   ]
+  },
+  "end": {
+   "totalRssMB": 1422.43359375,
+   "renderers": [
+    {
+     "pid": 7802,
+     "rssMB": 138,
+     "peakMB": 139,
+     "extension": false
+    },
+    {
+     "pid": 7823,
+     "rssMB": 72,
+     "peakMB": 72,
+     "extension": false
+    },
+    {
+     "pid": 7874,
+     "rssMB": 101,
+     "peakMB": 101,
+     "extension": true
+    },
+    {
+     "pid": 7891,
+     "rssMB": 428,
+     "peakMB": 442,
+     "extension": true
+    }
+   ],
+   "gpuMB": 193,
+   "rows": [
+    {
+     "type": "browser",
+     "pid": 7685,
+     "rssMB": 194,
+     "peakMB": 198
+    },
+    {
+     "type": "zygote",
+     "pid": 7700,
+     "rssMB": 69,
+     "peakMB": 69
+    },
+    {
+     "type": "zygote",
+     "pid": 7701,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "gpu-process",
+     "pid": 7777,
+     "rssMB": 193,
+     "peakMB": 213
+    },
+    {
+     "type": "utility",
+     "pid": 7780,
+     "rssMB": 111,
+     "peakMB": 111
+    },
+    {
+     "type": "utility",
+     "pid": 7783,
+     "rssMB": 46,
+     "peakMB": 46
+    },
+    {
+     "type": "renderer",
+     "pid": 7802,
+     "rssMB": 138,
+     "peakMB": 139
+    },
+    {
+     "type": "renderer",
+     "pid": 7823,
+     "rssMB": 72,
+     "peakMB": 72
+    },
+    {
+     "type": "renderer",
+     "pid": 7874,
+     "rssMB": 101,
+     "peakMB": 101
+    },
+    {
+     "type": "renderer",
+     "pid": 7891,
+     "rssMB": 428,
+     "peakMB": 442
+    }
+   ]
+  },
+  "peaks": [
+   {
+    "totalRssMB": 1419.21484375,
+    "renderers": [
+     {
+      "pid": 7802,
+      "rssMB": 138,
+      "peakMB": 139,
+      "extension": false
+     },
+     {
+      "pid": 7823,
+      "rssMB": 72,
+      "peakMB": 72,
+      "extension": false
+     },
+     {
+      "pid": 7874,
+      "rssMB": 101,
+      "peakMB": 101,
+      "extension": true
+     },
+     {
+      "pid": 7891,
+      "rssMB": 425,
+      "peakMB": 442,
+      "extension": true
+     }
+    ],
+    "gpuMB": 193,
+    "rows": [
+     {
+      "type": "browser",
+      "pid": 7685,
+      "rssMB": 194,
+      "peakMB": 198
+     },
+     {
+      "type": "zygote",
+      "pid": 7700,
+      "rssMB": 69,
+      "peakMB": 69
+     },
+     {
+      "type": "zygote",
+      "pid": 7701,
+      "rssMB": 70,
+      "peakMB": 70
+     },
+     {
+      "type": "gpu-process",
+      "pid": 7777,
+      "rssMB": 193,
+      "peakMB": 213
+     },
+     {
+      "type": "utility",
+      "pid": 7780,
+      "rssMB": 111,
+      "peakMB": 111
+     },
+     {
+      "type": "utility",
+      "pid": 7783,
+      "rssMB": 46,
+      "peakMB": 46
+     },
+     {
+      "type": "renderer",
+      "pid": 7802,
+      "rssMB": 138,
+      "peakMB": 139
+     },
+     {
+      "type": "renderer",
+      "pid": 7823,
+      "rssMB": 72,
+      "peakMB": 72
+     },
+     {
+      "type": "renderer",
+      "pid": 7874,
+      "rssMB": 101,
+      "peakMB": 101
+     },
+     {
+      "type": "renderer",
+      "pid": 7891,
+      "rssMB": 425,
+      "peakMB": 442
+     }
+    ]
+   }
+  ]
+ },
+ "rows": [],
+ "requests": [],
+ "serverRequests": 0,
+ "problems": [
+  "error: \u001b[0;93m2026-11-01 09:34:50.851484 [W:onnxruntime:, session_state.cc:1598 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf",
+  "error: \u001b[0;93m2026-11-01 09:34:51.088474 [W:onnxruntime:, session_state.cc:1600 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.\u001b[m"
+ ],
+ "env": {
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+  "crossOriginIsolated": true,
+  "hardwareConcurrency": 4,
+  "navigatorGpu": true,
+  "base": "chrome-extension://fhaojnogidbacompmalepdaikhegehde/"
+ },
+ "when": "2026-11-01T09:34:52.344Z"
+}

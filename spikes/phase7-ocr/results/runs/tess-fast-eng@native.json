@@ -1,0 +1,1058 @@
+{
+ "cfg": {
+  "kind": "tesseract",
+  "id": "tess-fast-eng",
+  "langs": [
+   "eng"
+  ],
+  "data": "fast",
+  "workers": 1
+ },
+ "dpi": 0,
+ "init": {
+  "facts": {
+   "langs": [
+    "eng"
+   ],
+   "data": "fast",
+   "initMs": 309
+  },
+  "ms": {
+   "total": 309.0100000016391
+  },
+  "probe": {
+   "crossOriginIsolated": true,
+   "navigatorGpu": true
+  }
+ },
+ "memory": {
+  "start": {
+   "totalRssMB": 989.671875,
+   "renderers": [
+    {
+     "pid": 7205,
+     "rssMB": 131,
+     "peakMB": 132,
+     "extension": false
+    },
+    {
+     "pid": 7212,
+     "rssMB": 71,
+     "peakMB": 71,
+     "extension": false
+    },
+    {
+     "pid": 7236,
+     "rssMB": 101,
+     "peakMB": 101,
+     "extension": true
+    },
+    {
+     "pid": 7246,
+     "rssMB": 117,
+     "peakMB": 117,
+     "extension": true
+    }
+   ],
+   "gpuMB": 79,
+   "rows": [
+    {
+     "type": "browser",
+     "pid": 7129,
+     "rssMB": 194,
+     "peakMB": 195
+    },
+    {
+     "type": "zygote",
+     "pid": 7134,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "zygote",
+     "pid": 7135,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "gpu-process",
+     "pid": 7161,
+     "rssMB": 79,
+     "peakMB": 79
+    },
+    {
+     "type": "utility",
+     "pid": 7162,
+     "rssMB": 110,
+     "peakMB": 110
+    },
+    {
+     "type": "utility",
+     "pid": 7176,
+     "rssMB": 47,
+     "peakMB": 47
+    },
+    {
+     "type": "renderer",
+     "pid": 7205,
+     "rssMB": 131,
+     "peakMB": 132
+    },
+    {
+     "type": "renderer",
+     "pid": 7212,
+     "rssMB": 71,
+     "peakMB": 71
+    },
+    {
+     "type": "renderer",
+     "pid": 7236,
+     "rssMB": 101,
+     "peakMB": 101
+    },
+    {
+     "type": "renderer",
+     "pid": 7246,
+     "rssMB": 117,
+     "peakMB": 117
+    }
+   ]
+  },
+  "afterInit": {
+   "totalRssMB": 1060.30078125,
+   "renderers": [
+    {
+     "pid": 7205,
+     "rssMB": 139,
+     "peakMB": 139,
+     "extension": false
+    },
+    {
+     "pid": 7212,
+     "rssMB": 71,
+     "peakMB": 71,
+     "extension": false
+    },
+    {
+     "pid": 7236,
+     "rssMB": 101,
+     "peakMB": 101,
+     "extension": true
+    },
+    {
+     "pid": 7246,
+     "rssMB": 180,
+     "peakMB": 185,
+     "extension": true
+    }
+   ],
+   "gpuMB": 79,
+   "rows": [
+    {
+     "type": "browser",
+     "pid": 7129,
+     "rssMB": 193,
+     "peakMB": 201
+    },
+    {
+     "type": "zygote",
+     "pid": 7134,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "zygote",
+     "pid": 7135,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "gpu-process",
+     "pid": 7161,
+     "rssMB": 79,
+     "peakMB": 79
+    },
+    {
+     "type": "utility",
+     "pid": 7162,
+     "rssMB": 111,
+     "peakMB": 111
+    },
+    {
+     "type": "utility",
+     "pid": 7176,
+     "rssMB": 47,
+     "peakMB": 47
+    },
+    {
+     "type": "renderer",
+     "pid": 7205,
+     "rssMB": 139,
+     "peakMB": 139
+    },
+    {
+     "type": "renderer",
+     "pid": 7212,
+     "rssMB": 71,
+     "peakMB": 71
+    },
+    {
+     "type": "renderer",
+     "pid": 7236,
+     "rssMB": 101,
+     "peakMB": 101
+    },
+    {
+     "type": "renderer",
+     "pid": 7246,
+     "rssMB": 180,
+     "peakMB": 185
+    }
+   ]
+  },
+  "end": {
+   "totalRssMB": 3328.0546875,
+   "renderers": [
+    {
+     "pid": 7205,
+     "rssMB": 132,
+     "peakMB": 132,
+     "extension": false
+    },
+    {
+     "pid": 7212,
+     "rssMB": 71,
+     "peakMB": 71,
+     "extension": false
+    },
+    {
+     "pid": 7236,
+     "rssMB": 101,
+     "peakMB": 101,
+     "extension": true
+    },
+    {
+     "pid": 7246,
+     "rssMB": 2449,
+     "peakMB": 3106,
+     "extension": true
+    }
+   ],
+   "gpuMB": 78,
+   "rows": [
+    {
+     "type": "browser",
+     "pid": 7129,
+     "rssMB": 195,
+     "peakMB": 201
+    },
+    {
+     "type": "zygote",
+     "pid": 7134,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "zygote",
+     "pid": 7135,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "gpu-process",
+     "pid": 7161,
+     "rssMB": 78,
+     "peakMB": 78
+    },
+    {
+     "type": "utility",
+     "pid": 7162,
+     "rssMB": 114,
+     "peakMB": 116
+    },
+    {
+     "type": "utility",
+     "pid": 7176,
+     "rssMB": 47,
+     "peakMB": 47
+    },
+    {
+     "type": "renderer",
+     "pid": 7205,
+     "rssMB": 132,
+     "peakMB": 132
+    },
+    {
+     "type": "renderer",
+     "pid": 7212,
+     "rssMB": 71,
+     "peakMB": 71
+    },
+    {
+     "type": "renderer",
+     "pid": 7236,
+     "rssMB": 101,
+     "peakMB": 101
+    },
+    {
+     "type": "renderer",
+     "pid": 7246,
+     "rssMB": 2449,
+     "peakMB": 3106
+    }
+   ]
+  },
+  "peaks": [
+   {
+    "totalRssMB": 3328.0546875,
+    "renderers": [
+     {
+      "pid": 7205,
+      "rssMB": 132,
+      "peakMB": 132,
+      "extension": false
+     },
+     {
+      "pid": 7212,
+      "rssMB": 71,
+      "peakMB": 71,
+      "extension": false
+     },
+     {
+      "pid": 7236,
+      "rssMB": 101,
+      "peakMB": 101,
+      "extension": true
+     },
+     {
+      "pid": 7246,
+      "rssMB": 2449,
+      "peakMB": 3106,
+      "extension": true
+     }
+    ],
+    "gpuMB": 78,
+    "rows": [
+     {
+      "type": "browser",
+      "pid": 7129,
+      "rssMB": 195,
+      "peakMB": 201
+     },
+     {
+      "type": "zygote",
+      "pid": 7134,
+      "rssMB": 70,
+      "peakMB": 70
+     },
+     {
+      "type": "zygote",
+      "pid": 7135,
+      "rssMB": 70,
+      "peakMB": 70
+     },
+     {
+      "type": "gpu-process",
+      "pid": 7161,
+      "rssMB": 78,
+      "peakMB": 78
+     },
+     {
+      "type": "utility",
+      "pid": 7162,
+      "rssMB": 114,
+      "peakMB": 116
+     },
+     {
+      "type": "utility",
+      "pid": 7176,
+      "rssMB": 47,
+      "peakMB": 47
+     },
+     {
+      "type": "renderer",
+      "pid": 7205,
+      "rssMB": 132,
+      "peakMB": 132
+     },
+     {
+      "type": "renderer",
+      "pid": 7212,
+      "rssMB": 71,
+      "peakMB": 71
+     },
+     {
+      "type": "renderer",
+      "pid": 7236,
+      "rssMB": 101,
+      "peakMB": 101
+     },
+     {
+      "type": "renderer",
+      "pid": 7246,
+      "rssMB": 2449,
+      "peakMB": 3106
+     }
+    ]
+   }
+  ]
+ },
+ "rows": [
+  {
+   "key": "syn-p0@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 4683.269999999553,
+   "timings": {
+    "encode": 35.79999999701977,
+    "recognize": 4647.035000000149,
+    "post": 0.25999999791383743,
+    "total": 4683.094999995083
+   },
+   "words": 69,
+   "heap": 27856057,
+   "run": 0
+  },
+  {
+   "key": "syn-p25@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 5661.544999998063,
+   "timings": {
+    "encode": 33.00499999895692,
+    "recognize": 5628.375,
+    "post": 0.13500000163912773,
+    "total": 5661.519999999553
+   },
+   "words": 412,
+   "heap": 39653526,
+   "run": 0
+  },
+  {
+   "key": "syn-p50@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 3335.580000001937,
+   "timings": {
+    "encode": 26.45499999821186,
+    "recognize": 3309.019999999553,
+    "post": 0.10000000149011612,
+    "total": 3335.574999999255
+   },
+   "words": 227,
+   "heap": 39361254,
+   "run": 0
+  },
+  {
+   "key": "syn-p75@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 4367.135000001639,
+   "timings": {
+    "encode": 25.904999997466803,
+    "recognize": 4340.985000003129,
+    "post": 0.2199999988079071,
+    "total": 4367.114999998361
+   },
+   "words": 378,
+   "heap": 39560114,
+   "run": 0
+  },
+  {
+   "key": "syn-p100@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 4286.57500000298,
+   "timings": {
+    "encode": 37.625,
+    "recognize": 4248.620000001043,
+    "post": 0.14499999955296516,
+    "total": 4286.390000000596
+   },
+   "words": 402,
+   "heap": 39594254,
+   "run": 0
+  },
+  {
+   "key": "syn-p125@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 3751.019999999553,
+   "timings": {
+    "encode": 24.20999999716878,
+    "recognize": 3726.644999999553,
+    "post": 0.11000000312924385,
+    "total": 3750.969999998808
+   },
+   "words": 414,
+   "heap": 39628550,
+   "run": 0
+  },
+  {
+   "key": "syn-p150@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 3870.344999998808,
+   "timings": {
+    "encode": 23.385000001639128,
+    "recognize": 3846.820000000298,
+    "post": 0.08999999985098839,
+    "total": 3870.295000001788
+   },
+   "words": 335,
+   "heap": 39535814,
+   "run": 0
+  },
+  {
+   "key": "syn-p175@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 3217.585000000894,
+   "timings": {
+    "encode": 23.059999998658895,
+    "recognize": 3194.429999999702,
+    "post": 0.07000000029802322,
+    "total": 3217.559999998659
+   },
+   "words": 290,
+   "heap": 39486130,
+   "run": 0
+  },
+  {
+   "key": "syn-p200@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 5001.39999999851,
+   "timings": {
+    "encode": 22.62999999895692,
+    "recognize": 4978.425000000745,
+    "post": 0.32499999925494194,
+    "total": 5001.379999998957
+   },
+   "words": 521,
+   "heap": 39812946,
+   "run": 0
+  },
+  {
+   "key": "syn-p225@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 4822.324999999255,
+   "timings": {
+    "encode": 23.529999997466803,
+    "recognize": 4798.695000000298,
+    "post": 0.08999999985098839,
+    "total": 4822.314999997616
+   },
+   "words": 382,
+   "heap": 39602782,
+   "run": 0
+  },
+  {
+   "key": "syn-p250@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 4652.219999998808,
+   "timings": {
+    "encode": 29.760000001639128,
+    "recognize": 4622.289999999106,
+    "post": 0.1600000001490116,
+    "total": 4652.210000000894
+   },
+   "words": 371,
+   "heap": 39567142,
+   "run": 0
+  },
+  {
+   "key": "syn-p275@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 4091.344999998808,
+   "timings": {
+    "encode": 26.67000000178814,
+    "recognize": 4064.589999999851,
+    "post": 0.07499999925494194,
+    "total": 4091.335000000894
+   },
+   "words": 325,
+   "heap": 39536758,
+   "run": 0
+  },
+  {
+   "key": "syn-p300@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 3605.879999998957,
+   "timings": {
+    "encode": 24.375,
+    "recognize": 3581.440000001341,
+    "post": 0.05000000074505806,
+    "total": 3605.865000002086
+   },
+   "words": 95,
+   "heap": 39181554,
+   "run": 0
+  },
+  {
+   "key": "syn-p325@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 3241.5499999970198,
+   "timings": {
+    "encode": 30.404999997466803,
+    "recognize": 3211.054999999702,
+    "post": 0.08500000089406967,
+    "total": 3241.544999998063
+   },
+   "words": 224,
+   "heap": 39332846,
+   "run": 0
+  },
+  {
+   "key": "syn-p350@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 3988.705000001937,
+   "timings": {
+    "encode": 24.070000000298023,
+    "recognize": 3964.5,
+    "post": 0.12000000104308128,
+    "total": 3988.690000001341
+   },
+   "words": 324,
+   "heap": 39507070,
+   "run": 0
+  },
+  {
+   "key": "syn-p375@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 3245.390000000596,
+   "timings": {
+    "encode": 23.604999996721745,
+    "recognize": 3221.714999999851,
+    "post": 0.06000000238418579,
+    "total": 3245.379999998957
+   },
+   "words": 275,
+   "heap": 39428334,
+   "run": 0
+  },
+  {
+   "key": "syn-p400@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 4637.20000000298,
+   "timings": {
+    "encode": 23.199999999254942,
+    "recognize": 4613.820000000298,
+    "post": 0.16499999910593033,
+    "total": 4637.184999998659
+   },
+   "words": 367,
+   "heap": 39576430,
+   "run": 0
+  },
+  {
+   "key": "syn-p425@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 3728.010000001639,
+   "timings": {
+    "encode": 32.71499999985099,
+    "recognize": 3695.195000000298,
+    "post": 0.08999999985098839,
+    "total": 3728
+   },
+   "words": 357,
+   "heap": 39543726,
+   "run": 0
+  },
+  {
+   "key": "syn-p450@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 4315.275000002235,
+   "timings": {
+    "encode": 23.04500000178814,
+    "recognize": 4292.120000001043,
+    "post": 0.08999999985098839,
+    "total": 4315.255000002682
+   },
+   "words": 335,
+   "heap": 39536510,
+   "run": 0
+  },
+  {
+   "key": "syn-p475@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 4076.184999998659,
+   "timings": {
+    "encode": 24.730000000447035,
+    "recognize": 4051.339999999851,
+    "post": 0.09999999776482582,
+    "total": 4076.169999998063
+   },
+   "words": 412,
+   "heap": 39632150,
+   "run": 0
+  },
+  {
+   "key": "syn-p500@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 3659.040000002831,
+   "timings": {
+    "encode": 26.53500000014901,
+    "recognize": 3632.419999998063,
+    "post": 0.07000000029802322,
+    "total": 3659.02499999851
+   },
+   "words": 313,
+   "heap": 39505070,
+   "run": 0
+  },
+  {
+   "key": "syn-p525@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 2254.02499999851,
+   "timings": {
+    "encode": 23.719999998807907,
+    "recognize": 2230.289999999106,
+    "post": 0.015000000596046448,
+    "total": 2254.02499999851
+   },
+   "words": 2,
+   "heap": 39026162,
+   "run": 0
+  },
+  {
+   "key": "syn-p550@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 3896.320000000298,
+   "timings": {
+    "encode": 25.58999999985099,
+    "recognize": 3870.615000002086,
+    "post": 0.10500000044703484,
+    "total": 3896.310000002384
+   },
+   "words": 202,
+   "heap": 39323738,
+   "run": 0
+  },
+  {
+   "key": "syn-p575@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 3604.164999999106,
+   "timings": {
+    "encode": 39.15500000119209,
+    "recognize": 3564.934999998659,
+    "post": 0.06500000134110451,
+    "total": 3604.155000001192
+   },
+   "words": 230,
+   "heap": 39381098,
+   "run": 0
+  },
+  {
+   "key": "deg-p0@150",
+   "width": 1275,
+   "height": 1650,
+   "wallMs": 3014.745000001043,
+   "timings": {
+    "encode": 17.989999998360872,
+    "recognize": 2996.64999999851,
+    "post": 0.0950000025331974,
+    "total": 3014.734999999404
+   },
+   "words": 402,
+   "heap": 23285462,
+   "run": 0
+  },
+  {
+   "key": "deg-p1@150",
+   "width": 1275,
+   "height": 1650,
+   "wallMs": 2201.529999997467,
+   "timings": {
+    "encode": 13.884999997913837,
+    "recognize": 2187.564999997616,
+    "post": 0.06500000134110451,
+    "total": 2201.5149999968708
+   },
+   "words": 147,
+   "heap": 22940266,
+   "run": 0
+  },
+  {
+   "key": "deg-p2@150",
+   "width": 1275,
+   "height": 1650,
+   "wallMs": 3712.995000001043,
+   "timings": {
+    "encode": 13.315000001341105,
+    "recognize": 3699.52499999851,
+    "post": 0.14500000327825546,
+    "total": 3712.9850000031292
+   },
+   "words": 535,
+   "heap": 23494446,
+   "run": 0
+  },
+  {
+   "key": "deg-p3@150",
+   "width": 1275,
+   "height": 1650,
+   "wallMs": 1448.070000000298,
+   "timings": {
+    "encode": 13.080000001937151,
+    "recognize": 1434.9549999982119,
+    "post": 0.020000003278255463,
+    "total": 1448.0550000034273
+   },
+   "words": 33,
+   "heap": 22749262,
+   "run": 0
+  },
+  {
+   "key": "deg-p4@150",
+   "width": 1275,
+   "height": 1650,
+   "wallMs": 2666.309999998659,
+   "timings": {
+    "encode": 23.385000001639128,
+    "recognize": 2642.789999999106,
+    "post": 0.12000000104308128,
+    "total": 2666.295000001788
+   },
+   "words": 409,
+   "heap": 23261858,
+   "run": 0
+  },
+  {
+   "key": "deg-p5@150",
+   "width": 1275,
+   "height": 1650,
+   "wallMs": 2173.894999999553,
+   "timings": {
+    "encode": 13.509999997913837,
+    "recognize": 2160.330000001937,
+    "post": 0.03500000014901161,
+    "total": 2173.875
+   },
+   "words": 127,
+   "heap": 22857778,
+   "run": 0
+  },
+  {
+   "key": "deg-p6@150",
+   "width": 1275,
+   "height": 1650,
+   "wallMs": 2896.495000001043,
+   "timings": {
+    "encode": 16.050000000745058,
+    "recognize": 2880.375,
+    "post": 0.05999999865889549,
+    "total": 2896.484999999404
+   },
+   "words": 301,
+   "heap": 23137786,
+   "run": 0
+  },
+  {
+   "key": "deg-p7@150",
+   "width": 1275,
+   "height": 1650,
+   "wallMs": 2293.199999999255,
+   "timings": {
+    "encode": 20.600000001490116,
+    "recognize": 2272.474999997765,
+    "post": 0.11000000312924385,
+    "total": 2293.185000002384
+   },
+   "words": 279,
+   "heap": 23098586,
+   "run": 0
+  },
+  {
+   "key": "en-modern-philosophy-p60@300",
+   "width": 1920,
+   "height": 2899,
+   "wallMs": 6278.144999999553,
+   "timings": {
+    "encode": 59.46999999880791,
+    "recognize": 6218.594999998808,
+    "post": 0.07500000298023224,
+    "total": 6278.140000000596
+   },
+   "words": 306,
+   "heap": 57774710,
+   "run": 0
+  },
+  {
+   "key": "en-modern-philosophy-p62@300",
+   "width": 1920,
+   "height": 2899,
+   "wallMs": 5919.109999999404,
+   "timings": {
+    "encode": 36.514999996870756,
+    "recognize": 5882.495000001043,
+    "post": 0.0950000025331974,
+    "total": 5919.105000000447
+   },
+   "words": 294,
+   "heap": 57786454,
+   "run": 0
+  },
+  {
+   "key": "en-modern-philosophy-p64@300",
+   "width": 1920,
+   "height": 2899,
+   "wallMs": 9662.35000000149,
+   "timings": {
+    "encode": 37.100000001490116,
+    "recognize": 9625.059999998659,
+    "post": 0.17500000074505806,
+    "total": 9662.335000000894
+   },
+   "words": 302,
+   "heap": 41071868,
+   "run": 0
+  },
+  {
+   "key": "en-modern-philosophy-p66@300",
+   "width": 1920,
+   "height": 2899,
+   "wallMs": 7837.914999999106,
+   "timings": {
+    "encode": 48.150000002235174,
+    "recognize": 7789.679999999702,
+    "post": 0.07499999925494194,
+    "total": 7837.905000001192
+   },
+   "words": 299,
+   "heap": 57784006,
+   "run": 0
+  },
+  {
+   "key": "en-prince-pauper-p72@300",
+   "width": 1920,
+   "height": 2719,
+   "wallMs": 7313.769999999553,
+   "timings": {
+    "encode": 40.91000000014901,
+    "recognize": 7272.72500000149,
+    "post": 0.13499999791383743,
+    "total": 7313.769999999553
+   },
+   "words": 362,
+   "heap": 54366110,
+   "run": 0
+  },
+  {
+   "key": "en-prince-pauper-p80@300",
+   "width": 1920,
+   "height": 2719,
+   "wallMs": 6539.285000000149,
+   "timings": {
+    "encode": 61.36500000208616,
+    "recognize": 6477.629999998957,
+    "post": 0.16499999910593033,
+    "total": 6539.160000000149
+   },
+   "words": 349,
+   "heap": 54365930,
+   "run": 0
+  },
+  {
+   "key": "en-prince-pauper-p82@300",
+   "width": 1920,
+   "height": 2719,
+   "wallMs": 5570.655000001192,
+   "timings": {
+    "encode": 36.059999998658895,
+    "recognize": 5534.505000002682,
+    "post": 0.08499999716877937,
+    "total": 5570.64999999851
+   },
+   "words": 341,
+   "heap": 54357750,
+   "run": 0
+  },
+  {
+   "key": "en-dartmoor-p80@300",
+   "width": 1920,
+   "height": 3060,
+   "wallMs": 7102.949999999255,
+   "timings": {
+    "encode": 37.66000000014901,
+    "recognize": 7065.179999999702,
+    "post": 0.08999999985098839,
+    "total": 7102.929999999702
+   },
+   "words": 208,
+   "heap": 60744670,
+   "run": 0
+  },
+  {
+   "key": "en-dartmoor-p82@300",
+   "width": 1920,
+   "height": 3060,
+   "wallMs": 7511.169999998063,
+   "timings": {
+    "encode": 61.73499999940395,
+    "recognize": 7449.35000000149,
+    "post": 0.06499999761581421,
+    "total": 7511.155000001192
+   },
+   "words": 294,
+   "heap": 60817362,
+   "run": 0
+  },
+  {
+   "key": "en-dartmoor-p84@300",
+   "width": 1920,
+   "height": 3060,
+   "wallMs": 6233.579999998212,
+   "timings": {
+    "encode": 38.78999999910593,
+    "recognize": 6194.669999998063,
+    "post": 0.10500000044703484,
+    "total": 6233.564999997616
+   },
+   "words": 267,
+   "heap": 60783682,
+   "run": 0
+  },
+  {
+   "key": "rcpt-wholefoods@200",
+   "width": 617,
+   "height": 2906,
+   "wallMs": 1789.960000000894,
+   "timings": {
+    "encode": 13.214999999850988,
+    "recognize": 1776.6500000022352,
+    "post": 0.07499999925494194,
+    "total": 1789.940000001341
+   },
+   "words": 160,
+   "heap": 19882834,
+   "run": 0
+  }
+ ],
+ "requests": [],
+ "serverRequests": 86,
+ "problems": [],
+ "env": {
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+  "crossOriginIsolated": true,
+  "hardwareConcurrency": 4,
+  "navigatorGpu": true,
+  "base": "chrome-extension://kgeebbclmckjdkkljgmjhlegfkdlongn/"
+ },
+ "when": "2026-11-01T06:31:26.644Z"
+}

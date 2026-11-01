@@ -1,0 +1,51 @@
+WHOLE FOODS MARKET
+1675 Robson Street
+Vancouver, BC
+V6G 1C8
+604.687.5288
+SALE TRANSACTION
+0.480 kg @ $26.90 /kg TARE = 0.050
+WT HOT BAR $12.91
+GST ITEM = 0000000095501
+APPLE SLS 2PK $5.69
+GST ITEM = 0240870000001
+BDRCYN KTL PTA CHP $3.50
+GST ITEM = 0708163110870
+CARIBBEAN CUP $5.03
+GST ITEM = 0296554000003
+Subtotal $27.13
+GST $27.13 @ 5.0% $1.36
+Items in Transaction: 4
+Balance to pay $28.49
+MasterCard $28.49
+Change Due $0.00
+** TRANSACTION RECORD **
+Tran. #: 16121
+Type: Purchase
+Acct: MasterCard
+Card #: xxxxxxxxxxxx2825
+Amount CAD$28.49
+Reference #:
+66244634 0012421740 H
+Auth. #: NHJQID
+WH360S04/66244634 005
+2018/08/29 18:37:39
+Debit MasterCard
+Debit MasterCard
+A0000000041010
+0000008000
+APPROVED - THANK YOU
+01-027
+No signature required
+Customer Copy
+IMPORTANT
+Retain this copy
+for your records
+GST/HST# 894696764
+Receipts are required for
+any refund.
+Thank you for shopping at
+Whole Foods Market
+www.wholefoodsmarket.com
+STORE TILL OP NO. TRANS. DATE
+WRBS 4 2156657 1320930 29/08/2018 6:37PM

@@ -1,0 +1,357 @@
+[
+ {
+  "name": "onnxruntime-web, WASM only (ort.wasm.min.mjs + threaded wasm)",
+  "files": [
+   {
+    "file": "ort/ort.wasm.min.mjs",
+    "bytes": 53725,
+    "zipBytes": 17173
+   },
+   {
+    "file": "ort/ort-wasm-simd-threaded.mjs",
+    "bytes": 24738,
+    "zipBytes": 9198
+   },
+   {
+    "file": "ort/ort-wasm-simd-threaded.wasm",
+    "bytes": 14848852,
+    "zipBytes": 3827354
+   }
+  ],
+  "bytes": 14927315,
+  "zipBytes": 3853725
+ },
+ {
+  "name": "onnxruntime-web, WebGPU build (asyncify wasm; also runs on the CPU)",
+  "files": [
+   {
+    "file": "ort/ort.webgpu.min.mjs",
+    "bytes": 70742,
+    "zipBytes": 21922
+   },
+   {
+    "file": "ort/ort-wasm-simd-threaded.asyncify.mjs",
+    "bytes": 53457,
+    "zipBytes": 19481
+   },
+   {
+    "file": "ort/ort-wasm-simd-threaded.asyncify.wasm",
+    "bytes": 28747738,
+    "zipBytes": 7131672
+   }
+  ],
+  "bytes": 28871937,
+  "zipBytes": 7173075
+ },
+ {
+  "name": "Tesseract.js worker + SIMD LSTM core (one self-contained .wasm.js)",
+  "files": [
+   {
+    "file": "tess/worker.min.js",
+    "bytes": 111307,
+    "zipBytes": 33787
+   },
+   {
+    "file": "tess/tesseract-core-simd-lstm.wasm.js",
+    "bytes": 3899472,
+    "zipBytes": 1454298
+   }
+  ],
+  "bytes": 4010779,
+  "zipBytes": 1488085
+ },
+ {
+  "name": "Tesseract.js fallback cores (no-SIMD, relaxed-SIMD)",
+  "files": [
+   {
+    "file": "tess/tesseract-core-lstm.wasm.js",
+    "bytes": 3896484,
+    "zipBytes": 1453552
+   },
+   {
+    "file": "tess/tesseract-core-relaxedsimd-lstm.wasm.js",
+    "bytes": 3905767,
+    "zipBytes": 1455761
+   }
+  ],
+  "bytes": 7802251,
+  "zipBytes": 2909313
+ },
+ {
+  "name": "tessdata_fast eng",
+  "files": [
+   {
+    "file": "models/tessdata_fast/eng.traineddata",
+    "bytes": 4113088,
+    "zipBytes": 1962137
+   }
+  ],
+  "bytes": 4113088,
+  "zipBytes": 1962137
+ },
+ {
+  "name": "tessdata_fast fra",
+  "files": [
+   {
+    "file": "models/tessdata_fast/fra.traineddata",
+    "bytes": 1130365,
+    "zipBytes": 605821
+   }
+  ],
+  "bytes": 1130365,
+  "zipBytes": 605821
+ },
+ {
+  "name": "tessdata_fast deu",
+  "files": [
+   {
+    "file": "models/tessdata_fast/deu.traineddata",
+    "bytes": 1525436,
+    "zipBytes": 850073
+   }
+  ],
+  "bytes": 1525436,
+  "zipBytes": 850073
+ },
+ {
+  "name": "tessdata_best eng (reference, not shippable)",
+  "files": [
+   {
+    "file": "models/tessdata_best/eng.traineddata",
+    "bytes": 15400601,
+    "zipBytes": 12795744
+   }
+  ],
+  "bytes": 15400601,
+  "zipBytes": 12795744
+ },
+ {
+  "name": "PP-OCRv6 tiny (det + rec)",
+  "files": [
+   {
+    "file": "models/ppocr/PP-OCRv6_tiny_det/inference.onnx",
+    "bytes": 1780590,
+    "zipBytes": 1594371
+   },
+   {
+    "file": "models/ppocr/PP-OCRv6_tiny_det/inference.yml",
+    "bytes": 883,
+    "zipBytes": 395
+   },
+   {
+    "file": "models/ppocr/PP-OCRv6_tiny_rec/inference.onnx",
+    "bytes": 4462639,
+    "zipBytes": 4104176
+   },
+   {
+    "file": "models/ppocr/PP-OCRv6_tiny_rec/inference.yml",
+    "bytes": 55571,
+    "zipBytes": 18272
+   }
+  ],
+  "bytes": 6299683,
+  "zipBytes": 5717214
+ },
+ {
+  "name": "PP-OCRv6 small (det + rec)",
+  "files": [
+   {
+    "file": "models/ppocr/PP-OCRv6_small_det/inference.onnx",
+    "bytes": 9880512,
+    "zipBytes": 7519162
+   },
+   {
+    "file": "models/ppocr/PP-OCRv6_small_det/inference.yml",
+    "bytes": 885,
+    "zipBytes": 396
+   },
+   {
+    "file": "models/ppocr/PP-OCRv6_small_rec/inference.onnx",
+    "bytes": 21159378,
+    "zipBytes": 18465787
+   },
+   {
+    "file": "models/ppocr/PP-OCRv6_small_rec/inference.yml",
+    "bytes": 150579,
+    "zipBytes": 46654
+   }
+  ],
+  "bytes": 31191354,
+  "zipBytes": 26031999
+ },
+ {
+  "name": "PP-OCRv6 medium (det + rec)",
+  "files": [
+   {
+    "file": "models/ppocr/PP-OCRv6_medium_det/inference.onnx",
+    "bytes": 62032837,
+    "zipBytes": 33178920
+   },
+   {
+    "file": "models/ppocr/PP-OCRv6_medium_det/inference.yml",
+    "bytes": 886,
+    "zipBytes": 397
+   },
+   {
+    "file": "models/ppocr/PP-OCRv6_medium_rec/inference.onnx",
+    "bytes": 76554979,
+    "zipBytes": 66703913
+   },
+   {
+    "file": "models/ppocr/PP-OCRv6_medium_rec/inference.yml",
+    "bytes": 150580,
+    "zipBytes": 46655
+   }
+  ],
+  "bytes": 138739282,
+  "zipBytes": 99929885
+ },
+ {
+  "name": "PP-OCRv5 mobile det",
+  "files": [
+   {
+    "file": "models/ppocr/PP-OCRv5_mobile_det/inference.onnx",
+    "bytes": 4826518,
+    "zipBytes": 4530383
+   },
+   {
+    "file": "models/ppocr/PP-OCRv5_mobile_det/inference.yml",
+    "bytes": 903,
+    "zipBytes": 407
+   }
+  ],
+  "bytes": 4827421,
+  "zipBytes": 4530790
+ },
+ {
+  "name": "PP-OCRv5 mobile rec (multi-script)",
+  "files": [
+   {
+    "file": "models/ppocr/PP-OCRv5_mobile_rec/inference.onnx",
+    "bytes": 16534782,
+    "zipBytes": 14020784
+   },
+   {
+    "file": "models/ppocr/PP-OCRv5_mobile_rec/inference.yml",
+    "bytes": 148345,
+    "zipBytes": 50177
+   }
+  ],
+  "bytes": 16683127,
+  "zipBytes": 14070961
+ },
+ {
+  "name": "PP-OCRv5 latin rec",
+  "files": [
+   {
+    "file": "models/ppocr/latin_PP-OCRv5_mobile_rec/inference.onnx",
+    "bytes": 8042023,
+    "zipBytes": 7317081
+   },
+   {
+    "file": "models/ppocr/latin_PP-OCRv5_mobile_rec/inference.yml",
+    "bytes": 6817,
+    "zipBytes": 2216
+   }
+  ],
+  "bytes": 8048840,
+  "zipBytes": 7319297
+ },
+ {
+  "name": "PP-OCRv5 en rec",
+  "files": [
+   {
+    "file": "models/ppocr/en_PP-OCRv5_mobile_rec/inference.onnx",
+    "bytes": 7848423,
+    "zipBytes": 7224215
+   },
+   {
+    "file": "models/ppocr/en_PP-OCRv5_mobile_rec/inference.yml",
+    "bytes": 3964,
+    "zipBytes": 1448
+   }
+  ],
+  "bytes": 7852387,
+  "zipBytes": 7225663
+ },
+ {
+  "name": "PP-OCRv6 tiny det",
+  "files": [
+   {
+    "file": "models/ppocr/PP-OCRv6_tiny_det/inference.onnx",
+    "bytes": 1780590,
+    "zipBytes": 1594371
+   },
+   {
+    "file": "models/ppocr/PP-OCRv6_tiny_det/inference.yml",
+    "bytes": 883,
+    "zipBytes": 395
+   }
+  ],
+  "bytes": 1781473,
+  "zipBytes": 1594766
+ },
+ {
+  "name": "PP-OCRv6 tiny rec",
+  "files": [
+   {
+    "file": "models/ppocr/PP-OCRv6_tiny_rec/inference.onnx",
+    "bytes": 4462639,
+    "zipBytes": 4104176
+   },
+   {
+    "file": "models/ppocr/PP-OCRv6_tiny_rec/inference.yml",
+    "bytes": 55571,
+    "zipBytes": 18272
+   }
+  ],
+  "bytes": 4518210,
+  "zipBytes": 4122448
+ },
+ {
+  "name": "PP-OCRv6 small det",
+  "files": [
+   {
+    "file": "models/ppocr/PP-OCRv6_small_det/inference.onnx",
+    "bytes": 9880512,
+    "zipBytes": 7519162
+   },
+   {
+    "file": "models/ppocr/PP-OCRv6_small_det/inference.yml",
+    "bytes": 885,
+    "zipBytes": 396
+   }
+  ],
+  "bytes": 9881397,
+  "zipBytes": 7519558
+ },
+ {
+  "name": "PP-OCRv6 small rec",
+  "files": [
+   {
+    "file": "models/ppocr/PP-OCRv6_small_rec/inference.onnx",
+    "bytes": 21159378,
+    "zipBytes": 18465787
+   },
+   {
+    "file": "models/ppocr/PP-OCRv6_small_rec/inference.yml",
+    "bytes": 150579,
+    "zipBytes": 46654
+   }
+  ],
+  "bytes": 21309957,
+  "zipBytes": 18512441
+ },
+ {
+  "name": "our OCR code (PP-OCR pipeline + worker + bench glue, unminified)",
+  "files": [
+   {
+    "file": "assets/ocr.worker-BwHqy-BC.js",
+    "bytes": 22411,
+    "zipBytes": 7706
+   }
+  ],
+  "bytes": 22411,
+  "zipBytes": 7706
+ }
+]

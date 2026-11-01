@@ -1,0 +1,476 @@
+{
+ "cfg": {
+  "kind": "ppocr",
+  "id": "pp-v5-latin-webgpu-d1280",
+  "det": "PP-OCRv5_mobile_det",
+  "rec": "latin_PP-OCRv5_mobile_rec",
+  "backend": "webgpu",
+  "threads": 1,
+  "detMaxSide": 1280
+ },
+ "dpi": 200,
+ "vis": null,
+ "curve": [],
+ "cpu": {
+  "seconds": 0.009999999999999787,
+  "perPageSeconds": null,
+  "wallSeconds": 0.004,
+  "perPageWallSeconds": null
+ },
+ "load": {
+  "start": [
+   22.44,
+   20.17,
+   17.99
+  ],
+  "end": [
+   23.76,
+   20.48,
+   18.11
+  ]
+ },
+ "init": {
+  "facts": {
+   "backend": "webgpu",
+   "detInput": [
+    "x"
+   ],
+   "recInput": [
+    "x"
+   ],
+   "dictSize": 836,
+   "detThresh": 0.3,
+   "boxThresh": 0.6,
+   "unclipRatio": 1.5,
+   "detMaxSide": 1280,
+   "sessionCreateMs": {
+    "det": 6070,
+    "rec": 1652
+   }
+  },
+  "ms": {
+   "importOrt": 23.399999998509884,
+   "fetchModels": 195.15000000223517,
+   "createSessions": 7722.320000000298,
+   "total": 7940.870000001043
+  },
+  "modelBytes": {
+   "det": 4826518,
+   "rec": 8042023
+  },
+  "probe": {
+   "crossOriginIsolated": true,
+   "sharedArrayBuffer": true,
+   "navigatorGpu": true,
+   "adapter": {
+    "info": {
+     "vendor": "google",
+     "architecture": "swiftshader",
+     "device": "",
+     "description": ""
+    },
+    "maxBufferSize": 1073741824
+   },
+   "gpuError": null,
+   "hardwareConcurrency": 4,
+   "location": "chrome-extension://fhaojnogidbacompmalepdaikhegehde",
+   "perfMemory": null
+  },
+  "ortVersion": "1.31.1"
+ },
+ "memory": {
+  "start": {
+   "totalRssMB": 994.65234375,
+   "renderers": [
+    {
+     "pid": 7248,
+     "rssMB": 128,
+     "peakMB": 128,
+     "extension": false
+    },
+    {
+     "pid": 7255,
+     "rssMB": 72,
+     "peakMB": 72,
+     "extension": false
+    },
+    {
+     "pid": 7279,
+     "rssMB": 101,
+     "peakMB": 101,
+     "extension": true
+    },
+    {
+     "pid": 7288,
+     "rssMB": 117,
+     "peakMB": 117,
+     "extension": true
+    }
+   ],
+   "gpuMB": 84,
+   "rows": [
+    {
+     "type": "browser",
+     "pid": 7159,
+     "rssMB": 195,
+     "peakMB": 196
+    },
+    {
+     "type": "zygote",
+     "pid": 7169,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "zygote",
+     "pid": 7170,
+     "rssMB": 69,
+     "peakMB": 69
+    },
+    {
+     "type": "gpu-process",
+     "pid": 7196,
+     "rssMB": 84,
+     "peakMB": 84
+    },
+    {
+     "type": "utility",
+     "pid": 7210,
+     "rssMB": 111,
+     "peakMB": 111
+    },
+    {
+     "type": "utility",
+     "pid": 7238,
+     "rssMB": 47,
+     "peakMB": 47
+    },
+    {
+     "type": "renderer",
+     "pid": 7248,
+     "rssMB": 128,
+     "peakMB": 128
+    },
+    {
+     "type": "renderer",
+     "pid": 7255,
+     "rssMB": 72,
+     "peakMB": 72
+    },
+    {
+     "type": "renderer",
+     "pid": 7279,
+     "rssMB": 101,
+     "peakMB": 101
+    },
+    {
+     "type": "renderer",
+     "pid": 7288,
+     "rssMB": 117,
+     "peakMB": 117
+    }
+   ]
+  },
+  "afterInit": {
+   "totalRssMB": 1373.69921875,
+   "renderers": [
+    {
+     "pid": 7248,
+     "rssMB": 139,
+     "peakMB": 139,
+     "extension": false
+    },
+    {
+     "pid": 7255,
+     "rssMB": 72,
+     "peakMB": 72,
+     "extension": false
+    },
+    {
+     "pid": 7279,
+     "rssMB": 101,
+     "peakMB": 101,
+     "extension": true
+    },
+    {
+     "pid": 7288,
+     "rssMB": 398,
+     "peakMB": 452,
+     "extension": true
+    }
+   ],
+   "gpuMB": 172,
+   "rows": [
+    {
+     "type": "browser",
+     "pid": 7159,
+     "rssMB": 195,
+     "peakMB": 196
+    },
+    {
+     "type": "zygote",
+     "pid": 7169,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "zygote",
+     "pid": 7170,
+     "rssMB": 69,
+     "peakMB": 69
+    },
+    {
+     "type": "gpu-process",
+     "pid": 7196,
+     "rssMB": 172,
+     "peakMB": 208
+    },
+    {
+     "type": "utility",
+     "pid": 7210,
+     "rssMB": 112,
+     "peakMB": 112
+    },
+    {
+     "type": "utility",
+     "pid": 7238,
+     "rssMB": 47,
+     "peakMB": 47
+    },
+    {
+     "type": "renderer",
+     "pid": 7248,
+     "rssMB": 139,
+     "peakMB": 139
+    },
+    {
+     "type": "renderer",
+     "pid": 7255,
+     "rssMB": 72,
+     "peakMB": 72
+    },
+    {
+     "type": "renderer",
+     "pid": 7279,
+     "rssMB": 101,
+     "peakMB": 101
+    },
+    {
+     "type": "renderer",
+     "pid": 7288,
+     "rssMB": 398,
+     "peakMB": 452
+    }
+   ]
+  },
+  "end": {
+   "totalRssMB": 1377.15625,
+   "renderers": [
+    {
+     "pid": 7248,
+     "rssMB": 139,
+     "peakMB": 139,
+     "extension": false
+    },
+    {
+     "pid": 7255,
+     "rssMB": 72,
+     "peakMB": 72,
+     "extension": false
+    },
+    {
+     "pid": 7279,
+     "rssMB": 101,
+     "peakMB": 101,
+     "extension": true
+    },
+    {
+     "pid": 7288,
+     "rssMB": 401,
+     "peakMB": 452,
+     "extension": true
+    }
+   ],
+   "gpuMB": 172,
+   "rows": [
+    {
+     "type": "browser",
+     "pid": 7159,
+     "rssMB": 195,
+     "peakMB": 196
+    },
+    {
+     "type": "zygote",
+     "pid": 7169,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "zygote",
+     "pid": 7170,
+     "rssMB": 69,
+     "peakMB": 69
+    },
+    {
+     "type": "gpu-process",
+     "pid": 7196,
+     "rssMB": 172,
+     "peakMB": 208
+    },
+    {
+     "type": "utility",
+     "pid": 7210,
+     "rssMB": 112,
+     "peakMB": 112
+    },
+    {
+     "type": "utility",
+     "pid": 7238,
+     "rssMB": 47,
+     "peakMB": 47
+    },
+    {
+     "type": "renderer",
+     "pid": 7248,
+     "rssMB": 139,
+     "peakMB": 139
+    },
+    {
+     "type": "renderer",
+     "pid": 7255,
+     "rssMB": 72,
+     "peakMB": 72
+    },
+    {
+     "type": "renderer",
+     "pid": 7279,
+     "rssMB": 101,
+     "peakMB": 101
+    },
+    {
+     "type": "renderer",
+     "pid": 7288,
+     "rssMB": 401,
+     "peakMB": 452
+    }
+   ]
+  },
+  "peaks": [
+   {
+    "totalRssMB": 1373.890625,
+    "renderers": [
+     {
+      "pid": 7248,
+      "rssMB": 139,
+      "peakMB": 139,
+      "extension": false
+     },
+     {
+      "pid": 7255,
+      "rssMB": 72,
+      "peakMB": 72,
+      "extension": false
+     },
+     {
+      "pid": 7279,
+      "rssMB": 101,
+      "peakMB": 101,
+      "extension": true
+     },
+     {
+      "pid": 7288,
+      "rssMB": 398,
+      "peakMB": 452,
+      "extension": true
+     }
+    ],
+    "gpuMB": 172,
+    "rows": [
+     {
+      "type": "browser",
+      "pid": 7159,
+      "rssMB": 195,
+      "peakMB": 196
+     },
+     {
+      "type": "zygote",
+      "pid": 7169,
+      "rssMB": 70,
+      "peakMB": 70
+     },
+     {
+      "type": "zygote",
+      "pid": 7170,
+      "rssMB": 69,
+      "peakMB": 69
+     },
+     {
+      "type": "gpu-process",
+      "pid": 7196,
+      "rssMB": 172,
+      "peakMB": 208
+     },
+     {
+      "type": "utility",
+      "pid": 7210,
+      "rssMB": 112,
+      "peakMB": 112
+     },
+     {
+      "type": "utility",
+      "pid": 7238,
+      "rssMB": 47,
+      "peakMB": 47
+     },
+     {
+      "type": "renderer",
+      "pid": 7248,
+      "rssMB": 139,
+      "peakMB": 139
+     },
+     {
+      "type": "renderer",
+      "pid": 7255,
+      "rssMB": 72,
+      "peakMB": 72
+     },
+     {
+      "type": "renderer",
+      "pid": 7279,
+      "rssMB": 101,
+      "peakMB": 101
+     },
+     {
+      "type": "renderer",
+      "pid": 7288,
+      "rssMB": 398,
+      "peakMB": 452
+     }
+    ]
+   }
+  ]
+ },
+ "rows": [],
+ "requests": [],
+ "serverRequests": 0,
+ "problems": [
+  "error: \u001b[0;93m2026-11-01 09:34:37.882403 [W:onnxruntime:, graph.cc:5777 CleanUnusedInitializersAndNodeArgs] Removing initializer 'p2o.pd_op.full_int_array.53.0'. It is not used by any node and should be removed from the model.\u001b[m",
+  "error: \u001b[0;93m2026-11-01 09:34:37.888004 [W:onnxruntime:, graph.cc:5777 CleanUnusedInitializersAndNodeArgs] Removing initializer 'p2o.pd_op.full.9.0'. It is not used by any node and should be removed from the model.\u001b[m",
+  "error: \u001b[0;93m2026-11-01 09:34:37.890038 [W:onnxruntime:, graph.cc:5777 CleanUnusedInitializersAndNodeArgs] Removing initializer 'p2o.pd_op.full_int_array.46.0'. It is not used by any node and should be removed from the model.\u001b[m",
+  "error: \u001b[0;93m2026-11-01 09:34:37.890294 [W:onnxruntime:, graph.cc:5777 CleanUnusedInitializersAndNodeArgs] Removing initializer 'p2o.pd_op.full.3.0'. It is not used by any node and should be removed from the model.\u001b[m",
+  "error: \u001b[0;93m2026-11-01 09:34:37.890444 [W:onnxruntime:, graph.cc:5777 CleanUnusedInitializersAndNodeArgs] Removing initializer 'p2o.pd_op.full.1.0'. It is not used by any node and should be removed from the model.\u001b[m",
+  "error: \u001b[0;93m2026-11-01 09:34:37.891869 [W:onnxruntime:, graph.cc:5777 CleanUnusedInitializersAndNodeArgs] Removing initializer 'p2o.pd_op.full_int_array.42.0'. It is not used by any node and should be removed from the model.\u001b[m",
+  "error: \u001b[0;93m2026-11-01 09:34:37.892173 [W:onnxruntime:, graph.cc:5777 CleanUnusedInitializersAndNodeArgs] Removing initializer 'p2o.pd_op.full_int_array.41.0'. It is not used by any node and should be removed from the model.\u001b[m",
+  "error: \u001b[0;93m2026-11-01 09:34:37.892339 [W:onnxruntime:, graph.cc:5777 CleanUnusedInitializersAndNodeArgs] Removing initializer 'p2o.pd_op.full_int_array.40.0'. It is not used by any node and should be removed from the model.\u001b[m",
+  "error: \u001b[0;93m2026-11-01 09:34:37.892639 [W:onnxruntime:, graph.cc:5777 CleanUnusedInitializersAndNodeArgs] Removing initializer 'p2o.pd_op.full_int_array.48.0'. It is not used by any node and should be removed from the model.\u001b[m",
+  "error: \u001b[0;93m2026-11-01 09:34:37.892784 [W:onnxruntime:, graph.cc:5777 CleanUnusedInitializersAndNodeArgs] Removing initializer 'p2o.pd_op.full_int_array.34.0'. It is not used by any node and should be removed from the model.\u001b[m"
+ ],
+ "env": {
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+  "crossOriginIsolated": true,
+  "hardwareConcurrency": 4,
+  "navigatorGpu": true,
+  "base": "chrome-extension://fhaojnogidbacompmalepdaikhegehde/"
+ },
+ "when": "2026-11-01T09:34:39.499Z"
+}

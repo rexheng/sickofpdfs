@@ -1,0 +1,41 @@
+{
+ "what": "WebGPU on this sandbox (no GPU): Chromium's software Vulkan adapter (SwiftShader), flags --enable-unsafe-webgpu --enable-features=Vulkan --use-vulkan=swiftshader --use-webgpu-adapter=swiftshader --use-angle=swiftshader --disable-vulkan-surface --ignore-gpu-blocklist. Correctness and plumbing only; the speeds mean nothing.",
+ "defaultHeadlessAdapter": "navigator.gpu exists in the offscreen document and in its worker, but requestAdapter() returns null without the flags",
+ "adapterWithFlags": {
+  "vendor": "google",
+  "architecture": "swiftshader",
+  "maxBufferSize": 1073741824
+ },
+ "onnxruntimeWeb": "1.31.1; ort.webgpu.min.mjs loads ort-wasm-simd-threaded.asyncify.{mjs,wasm} (28.7 MB), not the jsep build; the first try failed with 'Failed to fetch dynamically imported module ...asyncify.mjs' until that file was shipped",
+ "sessionCreation_ms": {
+  "pp-v5-latin": {
+   "det": 6070,
+   "rec": 1652,
+   "total": 7722
+  },
+  "pp-v6-small": {
+   "det": 5882,
+   "rec": 2377,
+   "total": 8554
+  },
+  "pp-v6-tiny": {
+   "det": 9027,
+   "rec": 843,
+   "total": 9938
+  }
+ },
+ "note": "ORT warned that some shape operators run on the CPU, as it always does; every model pair created a session",
+ "pageCheck": {
+  "model": "pp-v6-tiny",
+  "page": "syn-p0 @200dpi",
+  "wasmWords": 65,
+  "webgpuWords": 65,
+  "textIdentical": true,
+  "webgpuMs": {
+   "det": 113747,
+   "rec": 67541,
+   "total": 182150
+  },
+  "loadAverageDuringRun": "about 20 on 4 cores, software rendering"
+ }
+}

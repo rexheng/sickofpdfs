@@ -1,0 +1,59 @@
+{
+ "result": {
+  "offscreen": {
+   "crossOriginIsolated": true,
+   "navigatorGpu": true,
+   "location": "chrome-extension://kgeebbclmckjdkkljgmjhlegfkdlongn"
+  },
+  "workerProbe": {
+   "crossOriginIsolated": true,
+   "sharedArrayBuffer": true,
+   "navigatorGpu": true,
+   "adapter": {
+    "info": {
+     "vendor": "google",
+     "architecture": "swiftshader",
+     "device": "",
+     "description": ""
+    },
+    "maxBufferSize": 1073741824
+   },
+   "gpuError": null,
+   "hardwareConcurrency": 4,
+   "location": "chrome-extension://kgeebbclmckjdkkljgmjhlegfkdlongn",
+   "perfMemory": null
+  },
+  "init": {
+   "ms": {
+    "importOrt": 17.175000000745058,
+    "fetchModels": 52.605000000447035,
+    "createSessions": 1227.445000000298,
+    "total": 1297.2250000014901
+   },
+   "facts": {
+    "backend": "wasm",
+    "detInput": [
+     "x"
+    ],
+    "recInput": [
+     "x"
+    ],
+    "dictSize": 6904,
+    "detThresh": 0.2,
+    "boxThresh": 0.4,
+    "unclipRatio": 1.4,
+    "detMaxSide": 640,
+    "sessionCreateMs": {
+     "det": 1063,
+     "rec": 152
+    }
+   }
+  },
+  "recognize": {
+   "text": "Offscreen document check: the quick brown fox jumps over the lazy dog 0123456789",
+   "wallMs": 1194.065000001341
+  }
+ },
+ "requests": [],
+ "problems": []
+}

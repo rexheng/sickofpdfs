@@ -3,6 +3,12 @@
 // small skew, noise and a darker gutter strip, as a flatbed scan of a bound book would have.
 //   node scripts/make-scan-fixture.mjs --source <pdf> --pages 600 --dpi 200 --quality 60 --out fixtures/out/scan-600.pdf
 // Deterministic: the same arguments give the same bytes. Prints the page count and byte size.
+// Phase 7.0 additions (they change nothing when not given):
+//   --sidecar <json>   also write what each scan page is: [{ page, scanIndex, sourcePage, skewDeg, dpi, quality }]
+//                      (the text of the source page is the known truth for the page)
+//   --pick a,b,c       draw only these scan indexes (as the page's index i in the 0..pages-1 cycle), in this order
+//   --skew <deg>       use this skew for every page instead of the −0.6°..+0.6° cycle
+//   --sidecar-only     write only the sidecar (no images, no PDF); --out is not needed
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,12 +30,18 @@ const { values: arg } = parseArgs({
     dpi: { type: 'string' },
     quality: { type: 'string' },
     out: { type: 'string' },
+    sidecar: { type: 'string' },
+    pick: { type: 'string' },
+    skew: { type: 'string' },
+    'sidecar-only': { type: 'boolean' },
   },
 });
-for (const name of ['source', 'pages', 'dpi', 'quality', 'out']) {
+for (const name of ['source', 'pages', 'dpi', 'quality', ...(arg['sidecar-only'] ? [] : ['out'])]) {
   if (!arg[name]) throw new Error(`missing --${name} (usage: --source <pdf> --pages <n> --dpi <n> --quality <1-100> --out <pdf>)`);
 }
-const pages = Number(arg.pages);
+const picks = arg.pick ? arg.pick.split(',').map(Number) : null;
+const pages = picks ? picks.length : Number(arg.pages);
+const fixedSkew = arg.skew === undefined ? null : Number(arg.skew);
 const dpi = Number(arg.dpi);
 const quality = Number(arg.quality);
 
@@ -39,21 +51,32 @@ const content = await readFile(resolve(arg.source));
 const src = await native.openDocumentBuffer({ id: 'source', content: content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength) }).toPromise();
 
 const doc = await PDFDocument.create({ updateMetadata: false });
-for (let i = 0; i < pages; i++) {
+const sidecar = [];
+for (let k = 0; k < pages; k++) {
+  const i = picks ? picks[k] : k; // the scan index: it seeds the noise and picks the source page and the default skew
   const page = src.pages[i % src.pageCount];
+  const skewDeg = fixedSkew ?? (((i * 7919) % 13) - 6) / 10; // −0.6°..+0.6°
+  sidecar.push({ page: k, scanIndex: i, sourcePage: i % src.pageCount, skewDeg, dpi, quality });
+  if (arg['sidecar-only']) continue;
   const raw = await native.renderPageRaw(src, page, { scaleFactor: dpi / 72 }).toPromise();
-  const skewDeg = (((i * 7919) % 13) - 6) / 10; // −0.6°..+0.6°
   const rgba = scanPixels(raw, { skewDeg, seed: i, gutterLeft: i % 2 === 0 });
   const image = await doc.embedJpg(jpeg.encode({ data: rgba, width: raw.width, height: raw.height }, quality).data);
   doc.addPage(LETTER).drawImage(image, { x: 0, y: 0, width: LETTER[0], height: LETTER[1] });
 }
 await native.closeDocument(src).toPromise();
 
-const out = resolve(arg.out);
-await mkdir(dirname(out), { recursive: true });
-const bytes = await doc.save();
-await writeFile(out, bytes);
-console.log(`${arg.out}: ${doc.getPageCount()} pages, ${bytes.length} bytes`);
+if (arg.sidecar) {
+  await mkdir(dirname(resolve(arg.sidecar)), { recursive: true });
+  await writeFile(resolve(arg.sidecar), JSON.stringify({ source: arg.source, sourcePageCount: src.pageCount, pages: sidecar }, null, 1) + '\n');
+  console.log(`${arg.sidecar}: ${sidecar.length} pages`);
+}
+if (!arg['sidecar-only']) {
+  const out = resolve(arg.out);
+  await mkdir(dirname(out), { recursive: true });
+  const bytes = await doc.save();
+  await writeFile(out, bytes);
+  console.log(`${arg.out}: ${doc.getPageCount()} pages, ${bytes.length} bytes`);
+}
 
 /**
  * luminance → nearest-neighbour rotation by skewDeg about the centre (white outside) → noise of

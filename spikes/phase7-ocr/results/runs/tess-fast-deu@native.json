@@ -1,0 +1,506 @@
+{
+ "cfg": {
+  "kind": "tesseract",
+  "id": "tess-fast-deu",
+  "langs": [
+   "deu"
+  ],
+  "data": "fast",
+  "workers": 1
+ },
+ "dpi": 0,
+ "curve": [
+  {
+   "pages": 4,
+   "renderers": [
+    {
+     "rssMB": 101,
+     "peakMB": 101
+    },
+    {
+     "rssMB": 2682,
+     "peakMB": 2858
+    }
+   ]
+  }
+ ],
+ "cpu": {
+  "seconds": 29.12,
+  "perPageSeconds": 7.28,
+  "wallSeconds": 26.81,
+  "perPageWallSeconds": 6.7025
+ },
+ "load": {
+  "start": [
+   10.05,
+   11.08,
+   10.79
+  ],
+  "end": [
+   8.21,
+   10.57,
+   10.63
+  ]
+ },
+ "init": {
+  "facts": {
+   "langs": [
+    "deu"
+   ],
+   "data": "fast",
+   "initMs": 238
+  },
+  "ms": {
+   "total": 237.96000000089407
+  },
+  "probe": {
+   "crossOriginIsolated": true,
+   "navigatorGpu": true
+  }
+ },
+ "memory": {
+  "start": {
+   "totalRssMB": 991.00390625,
+   "renderers": [
+    {
+     "pid": 3485,
+     "rssMB": 133,
+     "peakMB": 133,
+     "extension": false
+    },
+    {
+     "pid": 3497,
+     "rssMB": 71,
+     "peakMB": 71,
+     "extension": false
+    },
+    {
+     "pid": 3520,
+     "rssMB": 101,
+     "peakMB": 101,
+     "extension": true
+    },
+    {
+     "pid": 3535,
+     "rssMB": 116,
+     "peakMB": 116,
+     "extension": true
+    }
+   ],
+   "gpuMB": 79,
+   "rows": [
+    {
+     "type": "browser",
+     "pid": 3374,
+     "rssMB": 195,
+     "peakMB": 196
+    },
+    {
+     "type": "zygote",
+     "pid": 3397,
+     "rssMB": 69,
+     "peakMB": 69
+    },
+    {
+     "type": "zygote",
+     "pid": 3398,
+     "rssMB": 69,
+     "peakMB": 69
+    },
+    {
+     "type": "gpu-process",
+     "pid": 3438,
+     "rssMB": 79,
+     "peakMB": 79
+    },
+    {
+     "type": "utility",
+     "pid": 3441,
+     "rssMB": 110,
+     "peakMB": 110
+    },
+    {
+     "type": "utility",
+     "pid": 3464,
+     "rssMB": 46,
+     "peakMB": 46
+    },
+    {
+     "type": "renderer",
+     "pid": 3485,
+     "rssMB": 133,
+     "peakMB": 133
+    },
+    {
+     "type": "renderer",
+     "pid": 3497,
+     "rssMB": 71,
+     "peakMB": 71
+    },
+    {
+     "type": "renderer",
+     "pid": 3520,
+     "rssMB": 101,
+     "peakMB": 101
+    },
+    {
+     "type": "renderer",
+     "pid": 3535,
+     "rssMB": 116,
+     "peakMB": 116
+    }
+   ]
+  },
+  "afterInit": {
+   "totalRssMB": 1046.5,
+   "renderers": [
+    {
+     "pid": 3485,
+     "rssMB": 138,
+     "peakMB": 138,
+     "extension": false
+    },
+    {
+     "pid": 3497,
+     "rssMB": 71,
+     "peakMB": 71,
+     "extension": false
+    },
+    {
+     "pid": 3520,
+     "rssMB": 101,
+     "peakMB": 101,
+     "extension": true
+    },
+    {
+     "pid": 3535,
+     "rssMB": 167,
+     "peakMB": 167,
+     "extension": true
+    }
+   ],
+   "gpuMB": 79,
+   "rows": [
+    {
+     "type": "browser",
+     "pid": 3374,
+     "rssMB": 194,
+     "peakMB": 202
+    },
+    {
+     "type": "zygote",
+     "pid": 3397,
+     "rssMB": 69,
+     "peakMB": 69
+    },
+    {
+     "type": "zygote",
+     "pid": 3398,
+     "rssMB": 69,
+     "peakMB": 69
+    },
+    {
+     "type": "gpu-process",
+     "pid": 3438,
+     "rssMB": 79,
+     "peakMB": 79
+    },
+    {
+     "type": "utility",
+     "pid": 3441,
+     "rssMB": 111,
+     "peakMB": 111
+    },
+    {
+     "type": "utility",
+     "pid": 3464,
+     "rssMB": 46,
+     "peakMB": 46
+    },
+    {
+     "type": "renderer",
+     "pid": 3485,
+     "rssMB": 138,
+     "peakMB": 138
+    },
+    {
+     "type": "renderer",
+     "pid": 3497,
+     "rssMB": 71,
+     "peakMB": 71
+    },
+    {
+     "type": "renderer",
+     "pid": 3520,
+     "rssMB": 101,
+     "peakMB": 101
+    },
+    {
+     "type": "renderer",
+     "pid": 3535,
+     "rssMB": 167,
+     "peakMB": 167
+    }
+   ]
+  },
+  "end": {
+   "totalRssMB": 3563.62890625,
+   "renderers": [
+    {
+     "pid": 3485,
+     "rssMB": 137,
+     "peakMB": 138,
+     "extension": false
+    },
+    {
+     "pid": 3497,
+     "rssMB": 71,
+     "peakMB": 71,
+     "extension": false
+    },
+    {
+     "pid": 3520,
+     "rssMB": 101,
+     "peakMB": 101,
+     "extension": true
+    },
+    {
+     "pid": 3535,
+     "rssMB": 2682,
+     "peakMB": 2858,
+     "extension": true
+    }
+   ],
+   "gpuMB": 78,
+   "rows": [
+    {
+     "type": "browser",
+     "pid": 3374,
+     "rssMB": 195,
+     "peakMB": 201
+    },
+    {
+     "type": "zygote",
+     "pid": 3397,
+     "rssMB": 69,
+     "peakMB": 69
+    },
+    {
+     "type": "zygote",
+     "pid": 3398,
+     "rssMB": 69,
+     "peakMB": 69
+    },
+    {
+     "type": "gpu-process",
+     "pid": 3438,
+     "rssMB": 78,
+     "peakMB": 79
+    },
+    {
+     "type": "utility",
+     "pid": 3441,
+     "rssMB": 114,
+     "peakMB": 115
+    },
+    {
+     "type": "utility",
+     "pid": 3464,
+     "rssMB": 46,
+     "peakMB": 46
+    },
+    {
+     "type": "renderer",
+     "pid": 3485,
+     "rssMB": 137,
+     "peakMB": 138
+    },
+    {
+     "type": "renderer",
+     "pid": 3497,
+     "rssMB": 71,
+     "peakMB": 71
+    },
+    {
+     "type": "renderer",
+     "pid": 3520,
+     "rssMB": 101,
+     "peakMB": 101
+    },
+    {
+     "type": "renderer",
+     "pid": 3535,
+     "rssMB": 2682,
+     "peakMB": 2858
+    }
+   ]
+  },
+  "peaks": [
+   {
+    "totalRssMB": 3563.62890625,
+    "renderers": [
+     {
+      "pid": 3485,
+      "rssMB": 137,
+      "peakMB": 138,
+      "extension": false
+     },
+     {
+      "pid": 3497,
+      "rssMB": 71,
+      "peakMB": 71,
+      "extension": false
+     },
+     {
+      "pid": 3520,
+      "rssMB": 101,
+      "peakMB": 101,
+      "extension": true
+     },
+     {
+      "pid": 3535,
+      "rssMB": 2682,
+      "peakMB": 2858,
+      "extension": true
+     }
+    ],
+    "gpuMB": 78,
+    "rows": [
+     {
+      "type": "browser",
+      "pid": 3374,
+      "rssMB": 195,
+      "peakMB": 201
+     },
+     {
+      "type": "zygote",
+      "pid": 3397,
+      "rssMB": 69,
+      "peakMB": 69
+     },
+     {
+      "type": "zygote",
+      "pid": 3398,
+      "rssMB": 69,
+      "peakMB": 69
+     },
+     {
+      "type": "gpu-process",
+      "pid": 3438,
+      "rssMB": 78,
+      "peakMB": 79
+     },
+     {
+      "type": "utility",
+      "pid": 3441,
+      "rssMB": 114,
+      "peakMB": 115
+     },
+     {
+      "type": "utility",
+      "pid": 3464,
+      "rssMB": 46,
+      "peakMB": 46
+     },
+     {
+      "type": "renderer",
+      "pid": 3485,
+      "rssMB": 137,
+      "peakMB": 138
+     },
+     {
+      "type": "renderer",
+      "pid": 3497,
+      "rssMB": 71,
+      "peakMB": 71
+     },
+     {
+      "type": "renderer",
+      "pid": 3520,
+      "rssMB": 101,
+      "peakMB": 101
+     },
+     {
+      "type": "renderer",
+      "pid": 3535,
+      "rssMB": 2682,
+      "peakMB": 2858
+     }
+    ]
+   }
+  ]
+ },
+ "rows": [
+  {
+   "key": "de-kafka-p12@300",
+   "width": 1920,
+   "height": 3067,
+   "wallMs": 6316.410000000149,
+   "timings": {
+    "encode": 46.019999999552965,
+    "recognize": 6269.934999998659,
+    "post": 0.3049999997019768,
+    "total": 6316.265000000596
+   },
+   "words": 105,
+   "heap": 60626155,
+   "run": 0
+  },
+  {
+   "key": "de-kafka-p14@300",
+   "width": 1920,
+   "height": 3010,
+   "wallMs": 6576.219999998808,
+   "timings": {
+    "encode": 40.86500000208616,
+    "recognize": 6535.27499999851,
+    "post": 0.054999999701976776,
+    "total": 6576.195000000298
+   },
+   "words": 168,
+   "heap": 59660178,
+   "run": 0
+  },
+  {
+   "key": "de-kafka-p16@300",
+   "width": 1920,
+   "height": 2992,
+   "wallMs": 5660.219999998808,
+   "timings": {
+    "encode": 41.94500000029802,
+    "recognize": 5618.195000000298,
+    "post": 0.06499999761581421,
+    "total": 5660.204999998212
+   },
+   "words": 148,
+   "heap": 59275326,
+   "run": 0
+  },
+  {
+   "key": "rcpt-starbucks@300",
+   "width": 2550,
+   "height": 3300,
+   "wallMs": 7507.070000000298,
+   "timings": {
+    "encode": 75.85499999672174,
+    "recognize": 7431.135000001639,
+    "post": 0.06500000134110451,
+    "total": 7507.054999999702
+   },
+   "words": 77,
+   "heap": 85900282,
+   "run": 0
+  }
+ ],
+ "requests": [],
+ "serverRequests": 8,
+ "problems": [],
+ "env": {
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+  "crossOriginIsolated": true,
+  "hardwareConcurrency": 4,
+  "navigatorGpu": true,
+  "base": "chrome-extension://kgeebbclmckjdkkljgmjhlegfkdlongn/"
+ },
+ "when": "2026-11-01T06:57:10.717Z"
+}

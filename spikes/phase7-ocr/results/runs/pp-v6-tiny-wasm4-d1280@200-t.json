@@ -1,0 +1,1081 @@
+{
+ "cfg": {
+  "kind": "ppocr",
+  "id": "pp-v6-tiny-wasm4-d1280",
+  "det": "PP-OCRv6_tiny_det",
+  "rec": "PP-OCRv6_tiny_rec",
+  "backend": "wasm",
+  "threads": 4,
+  "detMaxSide": 1280
+ },
+ "dpi": 200,
+ "vis": null,
+ "curve": [
+  {
+   "pages": 12,
+   "renderers": [
+    {
+     "rssMB": 101,
+     "peakMB": 101
+    },
+    {
+     "rssMB": 516,
+     "peakMB": 609
+    }
+   ]
+  },
+  {
+   "pages": 24,
+   "renderers": [
+    {
+     "rssMB": 101,
+     "peakMB": 101
+    },
+    {
+     "rssMB": 565,
+     "peakMB": 595
+    }
+   ]
+  }
+ ],
+ "cpu": {
+  "seconds": 217.79,
+  "perPageSeconds": 9.074583333333333,
+  "wallSeconds": 378.941,
+  "perPageWallSeconds": 15.789208333333333
+ },
+ "load": {
+  "start": [
+   14.43,
+   11.98,
+   11.9
+  ],
+  "end": [
+   16.69,
+   16.16,
+   13.95
+  ]
+ },
+ "init": {
+  "facts": {
+   "backend": "wasm",
+   "detInput": [
+    "x"
+   ],
+   "recInput": [
+    "x"
+   ],
+   "dictSize": 6904,
+   "detThresh": 0.2,
+   "boxThresh": 0.4,
+   "unclipRatio": 1.4,
+   "detMaxSide": 1280,
+   "sessionCreateMs": {
+    "det": 1972,
+    "rec": 189
+   }
+  },
+  "ms": {
+   "importOrt": 14.644999999552965,
+   "fetchModels": 151.785000000149,
+   "createSessions": 2188.179999999702,
+   "total": 2354.609999999404
+  },
+  "modelBytes": {
+   "det": 1780590,
+   "rec": 4462639
+  },
+  "probe": {
+   "crossOriginIsolated": true,
+   "sharedArrayBuffer": true,
+   "navigatorGpu": true,
+   "adapter": null,
+   "gpuError": null,
+   "hardwareConcurrency": 4,
+   "location": "chrome-extension://fhaojnogidbacompmalepdaikhegehde",
+   "perfMemory": null
+  },
+  "ortVersion": "1.31.1"
+ },
+ "memory": {
+  "start": {
+   "totalRssMB": 998.30859375,
+   "renderers": [
+    {
+     "pid": 5549,
+     "rssMB": 139,
+     "peakMB": 139,
+     "extension": false
+    },
+    {
+     "pid": 5577,
+     "rssMB": 71,
+     "peakMB": 71,
+     "extension": false
+    },
+    {
+     "pid": 5600,
+     "rssMB": 101,
+     "peakMB": 101,
+     "extension": true
+    },
+    {
+     "pid": 5610,
+     "rssMB": 117,
+     "peakMB": 117,
+     "extension": true
+    }
+   ],
+   "gpuMB": 79,
+   "rows": [
+    {
+     "type": "browser",
+     "pid": 5463,
+     "rssMB": 195,
+     "peakMB": 197
+    },
+    {
+     "type": "zygote",
+     "pid": 5469,
+     "rssMB": 69,
+     "peakMB": 69
+    },
+    {
+     "type": "zygote",
+     "pid": 5470,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "gpu-process",
+     "pid": 5502,
+     "rssMB": 79,
+     "peakMB": 79
+    },
+    {
+     "type": "utility",
+     "pid": 5510,
+     "rssMB": 110,
+     "peakMB": 110
+    },
+    {
+     "type": "utility",
+     "pid": 5520,
+     "rssMB": 46,
+     "peakMB": 46
+    },
+    {
+     "type": "renderer",
+     "pid": 5549,
+     "rssMB": 139,
+     "peakMB": 139
+    },
+    {
+     "type": "renderer",
+     "pid": 5577,
+     "rssMB": 71,
+     "peakMB": 71
+    },
+    {
+     "type": "renderer",
+     "pid": 5600,
+     "rssMB": 101,
+     "peakMB": 101
+    },
+    {
+     "type": "renderer",
+     "pid": 5610,
+     "rssMB": 117,
+     "peakMB": 117
+    }
+   ]
+  },
+  "afterInit": {
+   "totalRssMB": 1188.0390625,
+   "renderers": [
+    {
+     "pid": 5549,
+     "rssMB": 139,
+     "peakMB": 139,
+     "extension": false
+    },
+    {
+     "pid": 5577,
+     "rssMB": 71,
+     "peakMB": 71,
+     "extension": false
+    },
+    {
+     "pid": 5600,
+     "rssMB": 101,
+     "peakMB": 101,
+     "extension": true
+    },
+    {
+     "pid": 5610,
+     "rssMB": 300,
+     "peakMB": 300,
+     "extension": true
+    }
+   ],
+   "gpuMB": 84,
+   "rows": [
+    {
+     "type": "browser",
+     "pid": 5463,
+     "rssMB": 195,
+     "peakMB": 217
+    },
+    {
+     "type": "zygote",
+     "pid": 5469,
+     "rssMB": 69,
+     "peakMB": 69
+    },
+    {
+     "type": "zygote",
+     "pid": 5470,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "gpu-process",
+     "pid": 5502,
+     "rssMB": 84,
+     "peakMB": 84
+    },
+    {
+     "type": "utility",
+     "pid": 5510,
+     "rssMB": 111,
+     "peakMB": 111
+    },
+    {
+     "type": "utility",
+     "pid": 5520,
+     "rssMB": 46,
+     "peakMB": 46
+    },
+    {
+     "type": "renderer",
+     "pid": 5549,
+     "rssMB": 139,
+     "peakMB": 139
+    },
+    {
+     "type": "renderer",
+     "pid": 5577,
+     "rssMB": 71,
+     "peakMB": 71
+    },
+    {
+     "type": "renderer",
+     "pid": 5600,
+     "rssMB": 101,
+     "peakMB": 101
+    },
+    {
+     "type": "renderer",
+     "pid": 5610,
+     "rssMB": 300,
+     "peakMB": 300
+    }
+   ]
+  },
+  "end": {
+   "totalRssMB": 1444.5859375,
+   "renderers": [
+    {
+     "pid": 5549,
+     "rssMB": 132,
+     "peakMB": 132,
+     "extension": false
+    },
+    {
+     "pid": 5577,
+     "rssMB": 71,
+     "peakMB": 71,
+     "extension": false
+    },
+    {
+     "pid": 5600,
+     "rssMB": 101,
+     "peakMB": 101,
+     "extension": true
+    },
+    {
+     "pid": 5610,
+     "rssMB": 565,
+     "peakMB": 595,
+     "extension": true
+    }
+   ],
+   "gpuMB": 83,
+   "rows": [
+    {
+     "type": "browser",
+     "pid": 5463,
+     "rssMB": 196,
+     "peakMB": 200
+    },
+    {
+     "type": "zygote",
+     "pid": 5469,
+     "rssMB": 68,
+     "peakMB": 69
+    },
+    {
+     "type": "zygote",
+     "pid": 5470,
+     "rssMB": 69,
+     "peakMB": 70
+    },
+    {
+     "type": "gpu-process",
+     "pid": 5502,
+     "rssMB": 83,
+     "peakMB": 83
+    },
+    {
+     "type": "utility",
+     "pid": 5510,
+     "rssMB": 113,
+     "peakMB": 115
+    },
+    {
+     "type": "utility",
+     "pid": 5520,
+     "rssMB": 46,
+     "peakMB": 46
+    },
+    {
+     "type": "renderer",
+     "pid": 5549,
+     "rssMB": 132,
+     "peakMB": 132
+    },
+    {
+     "type": "renderer",
+     "pid": 5577,
+     "rssMB": 71,
+     "peakMB": 71
+    },
+    {
+     "type": "renderer",
+     "pid": 5600,
+     "rssMB": 101,
+     "peakMB": 101
+    },
+    {
+     "type": "renderer",
+     "pid": 5610,
+     "rssMB": 565,
+     "peakMB": 595
+    }
+   ]
+  },
+  "peaks": [
+   {
+    "totalRssMB": 1393.80078125,
+    "renderers": [
+     {
+      "pid": 5549,
+      "rssMB": 132,
+      "peakMB": 132,
+      "extension": false
+     },
+     {
+      "pid": 5577,
+      "rssMB": 71,
+      "peakMB": 71,
+      "extension": false
+     },
+     {
+      "pid": 5600,
+      "rssMB": 101,
+      "peakMB": 101,
+      "extension": true
+     },
+     {
+      "pid": 5610,
+      "rssMB": 516,
+      "peakMB": 609,
+      "extension": true
+     }
+    ],
+    "gpuMB": 83,
+    "rows": [
+     {
+      "type": "browser",
+      "pid": 5463,
+      "rssMB": 194,
+      "peakMB": 200
+     },
+     {
+      "type": "zygote",
+      "pid": 5469,
+      "rssMB": 68,
+      "peakMB": 69
+     },
+     {
+      "type": "zygote",
+      "pid": 5470,
+      "rssMB": 69,
+      "peakMB": 70
+     },
+     {
+      "type": "gpu-process",
+      "pid": 5502,
+      "rssMB": 83,
+      "peakMB": 83
+     },
+     {
+      "type": "utility",
+      "pid": 5510,
+      "rssMB": 113,
+      "peakMB": 116
+     },
+     {
+      "type": "utility",
+      "pid": 5520,
+      "rssMB": 46,
+      "peakMB": 46
+     },
+     {
+      "type": "renderer",
+      "pid": 5549,
+      "rssMB": 132,
+      "peakMB": 132
+     },
+     {
+      "type": "renderer",
+      "pid": 5577,
+      "rssMB": 71,
+      "peakMB": 71
+     },
+     {
+      "type": "renderer",
+      "pid": 5600,
+      "rssMB": 101,
+      "peakMB": 101
+     },
+     {
+      "type": "renderer",
+      "pid": 5610,
+      "rssMB": 516,
+      "peakMB": 609
+     }
+    ]
+   },
+   {
+    "totalRssMB": 1444.42578125,
+    "renderers": [
+     {
+      "pid": 5549,
+      "rssMB": 132,
+      "peakMB": 132,
+      "extension": false
+     },
+     {
+      "pid": 5577,
+      "rssMB": 71,
+      "peakMB": 71,
+      "extension": false
+     },
+     {
+      "pid": 5600,
+      "rssMB": 101,
+      "peakMB": 101,
+      "extension": true
+     },
+     {
+      "pid": 5610,
+      "rssMB": 565,
+      "peakMB": 595,
+      "extension": true
+     }
+    ],
+    "gpuMB": 83,
+    "rows": [
+     {
+      "type": "browser",
+      "pid": 5463,
+      "rssMB": 196,
+      "peakMB": 200
+     },
+     {
+      "type": "zygote",
+      "pid": 5469,
+      "rssMB": 68,
+      "peakMB": 69
+     },
+     {
+      "type": "zygote",
+      "pid": 5470,
+      "rssMB": 69,
+      "peakMB": 70
+     },
+     {
+      "type": "gpu-process",
+      "pid": 5502,
+      "rssMB": 83,
+      "peakMB": 83
+     },
+     {
+      "type": "utility",
+      "pid": 5510,
+      "rssMB": 113,
+      "peakMB": 115
+     },
+     {
+      "type": "utility",
+      "pid": 5520,
+      "rssMB": 46,
+      "peakMB": 46
+     },
+     {
+      "type": "renderer",
+      "pid": 5549,
+      "rssMB": 132,
+      "peakMB": 132
+     },
+     {
+      "type": "renderer",
+      "pid": 5577,
+      "rssMB": 71,
+      "peakMB": 71
+     },
+     {
+      "type": "renderer",
+      "pid": 5600,
+      "rssMB": 101,
+      "peakMB": 101
+     },
+     {
+      "type": "renderer",
+      "pid": 5610,
+      "rssMB": 565,
+      "peakMB": 595
+     }
+    ]
+   }
+  ]
+ },
+ "rows": [
+  {
+   "key": "syn-p0@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 4538.559999998659,
+   "timings": {
+    "detPrep": 134.07999999821186,
+    "det": 2415.870000001043,
+    "dbPost": 119.88499999791384,
+    "crops": 43.110000003129244,
+    "recPrep": 11.855000000447035,
+    "rec": 1765.3499999977648,
+    "ctc": 46.62999999895692,
+    "words": 1.3850000016391277,
+    "total": 4538.164999999106,
+    "lines": 7
+   },
+   "words": 65,
+   "heap": 16746824,
+   "run": 0
+  },
+  {
+   "key": "syn-p25@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 16516.79999999702,
+   "timings": {
+    "detPrep": 72.78500000014901,
+    "det": 1620.504999998957,
+    "dbPost": 83.87000000104308,
+    "crops": 155.6550000011921,
+    "recPrep": 34.98999999836087,
+    "rec": 14264.625,
+    "ctc": 264.6850000023842,
+    "words": 19.58499999716878,
+    "total": 16516.699999999255,
+    "lines": 39
+   },
+   "words": 410,
+   "heap": 16605237,
+   "run": 0
+  },
+  {
+   "key": "syn-p50@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 14322.154999997467,
+   "timings": {
+    "detPrep": 274.2800000011921,
+    "det": 4070.359999999404,
+    "dbPost": 138,
+    "crops": 115.12999999895692,
+    "recPrep": 62.809999994933605,
+    "rec": 9530.775000009686,
+    "ctc": 122.75999999791384,
+    "words": 7.959999997168779,
+    "total": 14322.074999999255,
+    "lines": 39
+   },
+   "words": 230,
+   "heap": 16605537,
+   "run": 0
+  },
+  {
+   "key": "syn-p75@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 20715.355000000447,
+   "timings": {
+    "detPrep": 219.2199999988079,
+    "det": 4292.025000002235,
+    "dbPost": 172.9699999988079,
+    "crops": 196.1849999986589,
+    "recPrep": 54.099999997764826,
+    "rec": 15441.105000000447,
+    "ctc": 329.51500000432134,
+    "words": 10.149999998509884,
+    "total": 20715.269999999553,
+    "lines": 42
+   },
+   "words": 355,
+   "heap": 16615101,
+   "run": 0
+  },
+  {
+   "key": "syn-p100@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 22599.414999999106,
+   "timings": {
+    "detPrep": 56.75499999895692,
+    "det": 4304.169999998063,
+    "dbPost": 34.49500000104308,
+    "crops": 58.39000000059605,
+    "recPrep": 204.03499999642372,
+    "rec": 17681.455000005662,
+    "ctc": 256.6849999986589,
+    "words": 3.3799999989569187,
+    "total": 22599.36499999836,
+    "lines": 54
+   },
+   "words": 403,
+   "heap": 16653553,
+   "run": 0
+  },
+  {
+   "key": "syn-p125@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 20814.36000000313,
+   "timings": {
+    "detPrep": 195.464999999851,
+    "det": 4285.054999999702,
+    "dbPost": 87.91499999910593,
+    "crops": 136.214999999851,
+    "recPrep": 114.10500000044703,
+    "rec": 15696.199999991804,
+    "ctc": 292.36000000685453,
+    "words": 6.985000003129244,
+    "total": 20814.300000000745,
+    "lines": 59
+   },
+   "words": 421,
+   "heap": 16665869,
+   "run": 0
+  },
+  {
+   "key": "syn-p150@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 17019.379999998957,
+   "timings": {
+    "detPrep": 48.36500000208616,
+    "det": 3717.439999997616,
+    "dbPost": 61.12000000104308,
+    "crops": 158.98999999836087,
+    "recPrep": 93.76499999687076,
+    "rec": 12515.955000005662,
+    "ctc": 420.54499999806285,
+    "words": 3.125,
+    "total": 17019.304999999702,
+    "lines": 56
+   },
+   "words": 334,
+   "heap": 16640097,
+   "run": 0
+  },
+  {
+   "key": "syn-p175@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 18636.359999999404,
+   "timings": {
+    "detPrep": 55.98499999940395,
+    "det": 3665.72500000149,
+    "dbPost": 70.19999999925494,
+    "crops": 48.92000000178814,
+    "recPrep": 43.32000000029802,
+    "rec": 14489.339999999851,
+    "ctc": 253.20499999821186,
+    "words": 9.620000001043081,
+    "total": 18636.31500000134,
+    "lines": 47
+   },
+   "words": 278,
+   "heap": 16617161,
+   "run": 0
+  },
+  {
+   "key": "syn-p200@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 24422.26499999687,
+   "timings": {
+    "detPrep": 295.9349999986589,
+    "det": 4871.365000002086,
+    "dbPost": 46.16999999806285,
+    "crops": 513.3700000010431,
+    "recPrep": 102.53999999538064,
+    "rec": 18162.575000006706,
+    "ctc": 420.35999999940395,
+    "words": 9.894999999552965,
+    "total": 24422.210000000894,
+    "lines": 44
+   },
+   "words": 519,
+   "heap": 16682585,
+   "run": 0
+  },
+  {
+   "key": "syn-p225@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 15604.589999999851,
+   "timings": {
+    "detPrep": 91.55499999970198,
+    "det": 1973.8050000034273,
+    "dbPost": 44.17999999970198,
+    "crops": 116.61499999836087,
+    "recPrep": 101.82999999821186,
+    "rec": 12896.019999999553,
+    "ctc": 376.51500000432134,
+    "words": 4.024999998509884,
+    "total": 15604.545000001788,
+    "lines": 44
+   },
+   "words": 372,
+   "heap": 16671089,
+   "run": 0
+  },
+  {
+   "key": "syn-p250@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 19444.755000002682,
+   "timings": {
+    "detPrep": 93.6849999986589,
+    "det": 3100.460000000894,
+    "dbPost": 145.964999999851,
+    "crops": 236.08500000089407,
+    "recPrep": 109.30499999597669,
+    "rec": 15414.969999998808,
+    "ctc": 340.80000000447035,
+    "words": 3.439999997615814,
+    "total": 19444.70999999717,
+    "lines": 41
+   },
+   "words": 372,
+   "heap": 16648305,
+   "run": 0
+  },
+  {
+   "key": "syn-p275@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 21924.375,
+   "timings": {
+    "detPrep": 113.42999999970198,
+    "det": 5169.324999999255,
+    "dbPost": 30,
+    "crops": 126.64500000327826,
+    "recPrep": 82.49999999627471,
+    "rec": 16120.804999999702,
+    "ctc": 266.7300000041723,
+    "words": 14.889999996870756,
+    "total": 21924.324999999255,
+    "lines": 36
+   },
+   "words": 330,
+   "heap": 16636777,
+   "run": 0
+  },
+  {
+   "key": "syn-p0@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 6576.660000000149,
+   "timings": {
+    "detPrep": 50.400000002235174,
+    "det": 3122.064999997616,
+    "dbPost": 38.99000000208616,
+    "crops": 13.46000000089407,
+    "recPrep": 4.179999999701977,
+    "rec": 3261.779999997467,
+    "ctc": 72.82000000029802,
+    "words": 12.929999999701977,
+    "total": 6576.625,
+    "lines": 7
+   },
+   "words": 65,
+   "heap": 16448426,
+   "run": 1
+  },
+  {
+   "key": "syn-p25@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 17714.765000000596,
+   "timings": {
+    "detPrep": 53.774999998509884,
+    "det": 3515.539999999106,
+    "dbPost": 33.42999999970198,
+    "crops": 175.57000000029802,
+    "recPrep": 41.900000002235174,
+    "rec": 13607.089999996126,
+    "ctc": 285.20000000298023,
+    "words": 2.199999999254942,
+    "total": 17714.704999998212,
+    "lines": 39
+   },
+   "words": 410,
+   "heap": 16556258,
+   "run": 1
+  },
+  {
+   "key": "syn-p50@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 7966.97500000149,
+   "timings": {
+    "detPrep": 37.34499999880791,
+    "det": 2695.785000000149,
+    "dbPost": 36.08500000089407,
+    "crops": 54.92500000074506,
+    "recPrep": 26.99499999731779,
+    "rec": 4986.759999997914,
+    "ctc": 126.77000000327826,
+    "words": 2.25,
+    "total": 7966.914999999106,
+    "lines": 39
+   },
+   "words": 230,
+   "heap": 16552434,
+   "run": 1
+  },
+  {
+   "key": "syn-p75@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 9674.97500000149,
+   "timings": {
+    "detPrep": 43.36999999731779,
+    "det": 2548.190000001341,
+    "dbPost": 50.03000000119209,
+    "crops": 191.02499999850988,
+    "recPrep": 45.07000000402331,
+    "rec": 6638.05000000447,
+    "ctc": 153.26499999314547,
+    "words": 5.910000000149012,
+    "total": 9674.910000000149,
+    "lines": 42
+   },
+   "words": 355,
+   "heap": 16561570,
+   "run": 1
+  },
+  {
+   "key": "syn-p100@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 10851.460000000894,
+   "timings": {
+    "detPrep": 66.77499999850988,
+    "det": 1901.085000000894,
+    "dbPost": 65.125,
+    "crops": 85.62000000104308,
+    "recPrep": 45.79499999806285,
+    "rec": 8509.01000000164,
+    "ctc": 168.35500000044703,
+    "words": 9.634999997913837,
+    "total": 10851.39999999851,
+    "lines": 54
+   },
+   "words": 403,
+   "heap": 16599306,
+   "run": 1
+  },
+  {
+   "key": "syn-p125@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 13998.630000002682,
+   "timings": {
+    "detPrep": 54.599999997764826,
+    "det": 3140.734999999404,
+    "dbPost": 67.14500000327826,
+    "crops": 143.62999999895692,
+    "recPrep": 44.520000003278255,
+    "rec": 10397.029999997467,
+    "ctc": 145.0949999988079,
+    "words": 5.820000000298023,
+    "total": 13998.574999999255,
+    "lines": 59
+   },
+   "words": 421,
+   "heap": 16611494,
+   "run": 1
+  },
+  {
+   "key": "syn-p150@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 16426.44000000134,
+   "timings": {
+    "detPrep": 135.214999999851,
+    "det": 1702.625,
+    "dbPost": 15.979999996721745,
+    "crops": 172.23000000044703,
+    "recPrep": 62.33000000938773,
+    "rec": 14061.934999994934,
+    "ctc": 266.9099999964237,
+    "words": 9.115000002086163,
+    "total": 16426.33999999985,
+    "lines": 56
+   },
+   "words": 334,
+   "heap": 16585722,
+   "run": 1
+  },
+  {
+   "key": "syn-p175@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 14895.390000000596,
+   "timings": {
+    "detPrep": 111.6549999974668,
+    "det": 2332.870000001043,
+    "dbPost": 168.67000000178814,
+    "crops": 83.75499999895692,
+    "recPrep": 56.53500000014901,
+    "rec": 11898.810000002384,
+    "ctc": 236.89499999582767,
+    "words": 6.155000001192093,
+    "total": 14895.344999998808,
+    "lines": 47
+   },
+   "words": 278,
+   "heap": 16557102,
+   "run": 1
+  },
+  {
+   "key": "syn-p200@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 21433.125,
+   "timings": {
+    "detPrep": 59.41999999806285,
+    "det": 3454.8050000034273,
+    "dbPost": 177.53999999910593,
+    "crops": 229.5949999988079,
+    "recPrep": 89.58999999985099,
+    "rec": 17246.169999998063,
+    "ctc": 173.85500000417233,
+    "words": 2.1149999983608723,
+    "total": 21433.08999999985,
+    "lines": 44
+   },
+   "words": 519,
+   "heap": 16621378,
+   "run": 1
+  },
+  {
+   "key": "syn-p225@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 12099.699999999255,
+   "timings": {
+    "detPrep": 148.17500000074506,
+    "det": 2884.39999999851,
+    "dbPost": 59.375,
+    "crops": 116.48999999836087,
+    "recPrep": 60.189999993890524,
+    "rec": 8665.945000000298,
+    "ctc": 157.28000000864267,
+    "words": 7.800000000745058,
+    "total": 12099.655000001192,
+    "lines": 44
+   },
+   "words": 372,
+   "heap": 16613330,
+   "run": 1
+  },
+  {
+   "key": "syn-p250@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 11902.754999998957,
+   "timings": {
+    "detPrep": 38.92500000074506,
+    "det": 2062.324999999255,
+    "dbPost": 51.85999999940395,
+    "crops": 102.07000000029802,
+    "recPrep": 45.54500000178814,
+    "rec": 9305.679999999702,
+    "ctc": 247.660000000149,
+    "words": 48.62999999895692,
+    "total": 11902.695000000298,
+    "lines": 41
+   },
+   "words": 372,
+   "heap": 16590242,
+   "run": 1
+  },
+  {
+   "key": "syn-p275@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 12369.355000000447,
+   "timings": {
+    "detPrep": 43.84499999880791,
+    "det": 3651.949999999255,
+    "dbPost": 29.740000002086163,
+    "crops": 134.04499999806285,
+    "recPrep": 41.57000000029802,
+    "rec": 8217.385000005364,
+    "ctc": 244.9949999935925,
+    "words": 5.735000003129244,
+    "total": 12369.265000000596,
+    "lines": 36
+   },
+   "words": 330,
+   "heap": 16578726,
+   "run": 1
+  }
+ ],
+ "requests": [],
+ "serverRequests": 48,
+ "problems": [],
+ "env": {
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+  "crossOriginIsolated": true,
+  "hardwareConcurrency": 4,
+  "navigatorGpu": true,
+  "base": "chrome-extension://fhaojnogidbacompmalepdaikhegehde/"
+ },
+ "when": "2026-11-01T08:18:32.716Z"
+}

@@ -1,0 +1,465 @@
+{
+ "cfg": {
+  "kind": "ppocr",
+  "id": "pp-v6-tiny-webgpu-d1280",
+  "det": "PP-OCRv6_tiny_det",
+  "rec": "PP-OCRv6_tiny_rec",
+  "backend": "webgpu",
+  "threads": 1,
+  "detMaxSide": 1280
+ },
+ "dpi": 200,
+ "vis": null,
+ "curve": [],
+ "cpu": {
+  "seconds": 0,
+  "perPageSeconds": null,
+  "wallSeconds": 0.008,
+  "perPageWallSeconds": null
+ },
+ "load": {
+  "start": [
+   23.94,
+   20.7,
+   18.22
+  ],
+  "end": [
+   23.47,
+   20.75,
+   18.27
+  ]
+ },
+ "init": {
+  "facts": {
+   "backend": "webgpu",
+   "detInput": [
+    "x"
+   ],
+   "recInput": [
+    "x"
+   ],
+   "dictSize": 6904,
+   "detThresh": 0.2,
+   "boxThresh": 0.4,
+   "unclipRatio": 1.4,
+   "detMaxSide": 1280,
+   "sessionCreateMs": {
+    "det": 9027,
+    "rec": 843
+   }
+  },
+  "ms": {
+   "importOrt": 14.244999997317791,
+   "fetchModels": 78.46499999985099,
+   "createSessions": 9937.640000000596,
+   "total": 10030.349999997765
+  },
+  "modelBytes": {
+   "det": 1780590,
+   "rec": 4462639
+  },
+  "probe": {
+   "crossOriginIsolated": true,
+   "sharedArrayBuffer": true,
+   "navigatorGpu": true,
+   "adapter": {
+    "info": {
+     "vendor": "google",
+     "architecture": "swiftshader",
+     "device": "",
+     "description": ""
+    },
+    "maxBufferSize": 1073741824
+   },
+   "gpuError": null,
+   "hardwareConcurrency": 4,
+   "location": "chrome-extension://fhaojnogidbacompmalepdaikhegehde",
+   "perfMemory": null
+  },
+  "ortVersion": "1.31.1"
+ },
+ "memory": {
+  "start": {
+   "totalRssMB": 978.75,
+   "renderers": [
+    {
+     "pid": 8431,
+     "rssMB": 108,
+     "peakMB": 118,
+     "extension": false
+    },
+    {
+     "pid": 8433,
+     "rssMB": 72,
+     "peakMB": 72,
+     "extension": false
+    },
+    {
+     "pid": 8471,
+     "rssMB": 102,
+     "peakMB": 102,
+     "extension": true
+    },
+    {
+     "pid": 8484,
+     "rssMB": 117,
+     "peakMB": 118,
+     "extension": true
+    }
+   ],
+   "gpuMB": 87,
+   "rows": [
+    {
+     "type": "browser",
+     "pid": 8346,
+     "rssMB": 195,
+     "peakMB": 197
+    },
+    {
+     "type": "zygote",
+     "pid": 8352,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "zygote",
+     "pid": 8353,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "gpu-process",
+     "pid": 8382,
+     "rssMB": 87,
+     "peakMB": 87
+    },
+    {
+     "type": "utility",
+     "pid": 8384,
+     "rssMB": 111,
+     "peakMB": 111
+    },
+    {
+     "type": "utility",
+     "pid": 8408,
+     "rssMB": 47,
+     "peakMB": 47
+    },
+    {
+     "type": "renderer",
+     "pid": 8431,
+     "rssMB": 108,
+     "peakMB": 118
+    },
+    {
+     "type": "renderer",
+     "pid": 8433,
+     "rssMB": 72,
+     "peakMB": 72
+    },
+    {
+     "type": "renderer",
+     "pid": 8471,
+     "rssMB": 102,
+     "peakMB": 102
+    },
+    {
+     "type": "renderer",
+     "pid": 8484,
+     "rssMB": 117,
+     "peakMB": 118
+    }
+   ]
+  },
+  "afterInit": {
+   "totalRssMB": 1406.8125,
+   "renderers": [
+    {
+     "pid": 8431,
+     "rssMB": 139,
+     "peakMB": 140,
+     "extension": false
+    },
+    {
+     "pid": 8433,
+     "rssMB": 72,
+     "peakMB": 72,
+     "extension": false
+    },
+    {
+     "pid": 8471,
+     "rssMB": 102,
+     "peakMB": 102,
+     "extension": true
+    },
+    {
+     "pid": 8484,
+     "rssMB": 440,
+     "peakMB": 440,
+     "extension": true
+    }
+   ],
+   "gpuMB": 161,
+   "rows": [
+    {
+     "type": "browser",
+     "pid": 8346,
+     "rssMB": 195,
+     "peakMB": 199
+    },
+    {
+     "type": "zygote",
+     "pid": 8352,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "zygote",
+     "pid": 8353,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "gpu-process",
+     "pid": 8382,
+     "rssMB": 161,
+     "peakMB": 197
+    },
+    {
+     "type": "utility",
+     "pid": 8384,
+     "rssMB": 112,
+     "peakMB": 112
+    },
+    {
+     "type": "utility",
+     "pid": 8408,
+     "rssMB": 47,
+     "peakMB": 47
+    },
+    {
+     "type": "renderer",
+     "pid": 8431,
+     "rssMB": 139,
+     "peakMB": 140
+    },
+    {
+     "type": "renderer",
+     "pid": 8433,
+     "rssMB": 72,
+     "peakMB": 72
+    },
+    {
+     "type": "renderer",
+     "pid": 8471,
+     "rssMB": 102,
+     "peakMB": 102
+    },
+    {
+     "type": "renderer",
+     "pid": 8484,
+     "rssMB": 440,
+     "peakMB": 440
+    }
+   ]
+  },
+  "end": {
+   "totalRssMB": 1407.4453125,
+   "renderers": [
+    {
+     "pid": 8431,
+     "rssMB": 139,
+     "peakMB": 140,
+     "extension": false
+    },
+    {
+     "pid": 8433,
+     "rssMB": 72,
+     "peakMB": 72,
+     "extension": false
+    },
+    {
+     "pid": 8471,
+     "rssMB": 102,
+     "peakMB": 102,
+     "extension": true
+    },
+    {
+     "pid": 8484,
+     "rssMB": 441,
+     "peakMB": 441,
+     "extension": true
+    }
+   ],
+   "gpuMB": 161,
+   "rows": [
+    {
+     "type": "browser",
+     "pid": 8346,
+     "rssMB": 195,
+     "peakMB": 199
+    },
+    {
+     "type": "zygote",
+     "pid": 8352,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "zygote",
+     "pid": 8353,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "gpu-process",
+     "pid": 8382,
+     "rssMB": 161,
+     "peakMB": 197
+    },
+    {
+     "type": "utility",
+     "pid": 8384,
+     "rssMB": 112,
+     "peakMB": 112
+    },
+    {
+     "type": "utility",
+     "pid": 8408,
+     "rssMB": 47,
+     "peakMB": 47
+    },
+    {
+     "type": "renderer",
+     "pid": 8431,
+     "rssMB": 139,
+     "peakMB": 140
+    },
+    {
+     "type": "renderer",
+     "pid": 8433,
+     "rssMB": 72,
+     "peakMB": 72
+    },
+    {
+     "type": "renderer",
+     "pid": 8471,
+     "rssMB": 102,
+     "peakMB": 102
+    },
+    {
+     "type": "renderer",
+     "pid": 8484,
+     "rssMB": 441,
+     "peakMB": 441
+    }
+   ]
+  },
+  "peaks": [
+   {
+    "totalRssMB": 1406.8125,
+    "renderers": [
+     {
+      "pid": 8431,
+      "rssMB": 139,
+      "peakMB": 140,
+      "extension": false
+     },
+     {
+      "pid": 8433,
+      "rssMB": 72,
+      "peakMB": 72,
+      "extension": false
+     },
+     {
+      "pid": 8471,
+      "rssMB": 102,
+      "peakMB": 102,
+      "extension": true
+     },
+     {
+      "pid": 8484,
+      "rssMB": 440,
+      "peakMB": 440,
+      "extension": true
+     }
+    ],
+    "gpuMB": 161,
+    "rows": [
+     {
+      "type": "browser",
+      "pid": 8346,
+      "rssMB": 195,
+      "peakMB": 199
+     },
+     {
+      "type": "zygote",
+      "pid": 8352,
+      "rssMB": 70,
+      "peakMB": 70
+     },
+     {
+      "type": "zygote",
+      "pid": 8353,
+      "rssMB": 70,
+      "peakMB": 70
+     },
+     {
+      "type": "gpu-process",
+      "pid": 8382,
+      "rssMB": 161,
+      "peakMB": 197
+     },
+     {
+      "type": "utility",
+      "pid": 8384,
+      "rssMB": 112,
+      "peakMB": 112
+     },
+     {
+      "type": "utility",
+      "pid": 8408,
+      "rssMB": 47,
+      "peakMB": 47
+     },
+     {
+      "type": "renderer",
+      "pid": 8431,
+      "rssMB": 139,
+      "peakMB": 140
+     },
+     {
+      "type": "renderer",
+      "pid": 8433,
+      "rssMB": 72,
+      "peakMB": 72
+     },
+     {
+      "type": "renderer",
+      "pid": 8471,
+      "rssMB": 102,
+      "peakMB": 102
+     },
+     {
+      "type": "renderer",
+      "pid": 8484,
+      "rssMB": 440,
+      "peakMB": 440
+     }
+    ]
+   }
+  ]
+ },
+ "rows": [],
+ "requests": [],
+ "serverRequests": 0,
+ "problems": [],
+ "env": {
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+  "crossOriginIsolated": true,
+  "hardwareConcurrency": 4,
+  "navigatorGpu": true,
+  "base": "chrome-extension://fhaojnogidbacompmalepdaikhegehde/"
+ },
+ "when": "2026-11-01T09:35:06.335Z"
+}

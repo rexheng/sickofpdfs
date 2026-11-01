@@ -1,0 +1,682 @@
+{
+ "cfg": {
+  "kind": "ppocr",
+  "id": "pp-v6-medium-wasm1-d1280",
+  "det": "PP-OCRv6_medium_det",
+  "rec": "PP-OCRv6_medium_rec",
+  "backend": "wasm",
+  "threads": 1,
+  "detMaxSide": 1280
+ },
+ "dpi": 0,
+ "vis": null,
+ "curve": [
+  {
+   "pages": 10,
+   "renderers": [
+    {
+     "rssMB": 101,
+     "peakMB": 101
+    },
+    {
+     "rssMB": 941,
+     "peakMB": 1170
+    }
+   ]
+  }
+ ],
+ "cpu": {
+  "seconds": 723.05,
+  "perPageSeconds": 72.30499999999999,
+  "wallSeconds": 894.983,
+  "perPageWallSeconds": 89.4983
+ },
+ "load": {
+  "start": [
+   13.81,
+   14.79,
+   13.68
+  ],
+  "end": [
+   13.76,
+   11.78,
+   11.83
+  ]
+ },
+ "init": {
+  "facts": {
+   "backend": "wasm",
+   "detInput": [
+    "x"
+   ],
+   "recInput": [
+    "x"
+   ],
+   "dictSize": 18708,
+   "detThresh": 0.2,
+   "boxThresh": 0.45,
+   "unclipRatio": 1.4,
+   "detMaxSide": 1280,
+   "sessionCreateMs": {
+    "det": 645,
+    "rec": 469
+   }
+  },
+  "ms": {
+   "importOrt": 12.925000000745058,
+   "fetchModels": 503.9899999983609,
+   "createSessions": 1122.0249999985099,
+   "total": 1638.9399999976158
+  },
+  "modelBytes": {
+   "det": 62032837,
+   "rec": 76554979
+  },
+  "probe": {
+   "crossOriginIsolated": true,
+   "sharedArrayBuffer": true,
+   "navigatorGpu": true,
+   "adapter": null,
+   "gpuError": null,
+   "hardwareConcurrency": 4,
+   "location": "chrome-extension://fhaojnogidbacompmalepdaikhegehde",
+   "perfMemory": null
+  },
+  "ortVersion": "1.31.1"
+ },
+ "memory": {
+  "start": {
+   "totalRssMB": 982.65234375,
+   "renderers": [
+    {
+     "pid": 4304,
+     "rssMB": 126,
+     "peakMB": 126,
+     "extension": false
+    },
+    {
+     "pid": 4316,
+     "rssMB": 72,
+     "peakMB": 72,
+     "extension": false
+    },
+    {
+     "pid": 4350,
+     "rssMB": 100,
+     "peakMB": 100,
+     "extension": true
+    },
+    {
+     "pid": 4358,
+     "rssMB": 117,
+     "peakMB": 117,
+     "extension": true
+    }
+   ],
+   "gpuMB": 79,
+   "rows": [
+    {
+     "type": "browser",
+     "pid": 4234,
+     "rssMB": 193,
+     "peakMB": 194
+    },
+    {
+     "type": "zygote",
+     "pid": 4241,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "zygote",
+     "pid": 4242,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "gpu-process",
+     "pid": 4262,
+     "rssMB": 79,
+     "peakMB": 79
+    },
+    {
+     "type": "utility",
+     "pid": 4265,
+     "rssMB": 109,
+     "peakMB": 109
+    },
+    {
+     "type": "utility",
+     "pid": 4280,
+     "rssMB": 47,
+     "peakMB": 47
+    },
+    {
+     "type": "renderer",
+     "pid": 4304,
+     "rssMB": 126,
+     "peakMB": 126
+    },
+    {
+     "type": "renderer",
+     "pid": 4316,
+     "rssMB": 72,
+     "peakMB": 72
+    },
+    {
+     "type": "renderer",
+     "pid": 4350,
+     "rssMB": 100,
+     "peakMB": 100
+    },
+    {
+     "type": "renderer",
+     "pid": 4358,
+     "rssMB": 117,
+     "peakMB": 117
+    }
+   ]
+  },
+  "afterInit": {
+   "totalRssMB": 1463.7890625,
+   "renderers": [
+    {
+     "pid": 4304,
+     "rssMB": 140,
+     "peakMB": 140,
+     "extension": false
+    },
+    {
+     "pid": 4316,
+     "rssMB": 72,
+     "peakMB": 72,
+     "extension": false
+    },
+    {
+     "pid": 4350,
+     "rssMB": 100,
+     "peakMB": 100,
+     "extension": true
+    },
+    {
+     "pid": 4358,
+     "rssMB": 578,
+     "peakMB": 595,
+     "extension": true
+    }
+   ],
+   "gpuMB": 84,
+   "rows": [
+    {
+     "type": "browser",
+     "pid": 4234,
+     "rssMB": 193,
+     "peakMB": 327
+    },
+    {
+     "type": "zygote",
+     "pid": 4241,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "zygote",
+     "pid": 4242,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "gpu-process",
+     "pid": 4262,
+     "rssMB": 84,
+     "peakMB": 84
+    },
+    {
+     "type": "utility",
+     "pid": 4265,
+     "rssMB": 111,
+     "peakMB": 111
+    },
+    {
+     "type": "utility",
+     "pid": 4280,
+     "rssMB": 47,
+     "peakMB": 47
+    },
+    {
+     "type": "renderer",
+     "pid": 4304,
+     "rssMB": 140,
+     "peakMB": 140
+    },
+    {
+     "type": "renderer",
+     "pid": 4316,
+     "rssMB": 72,
+     "peakMB": 72
+    },
+    {
+     "type": "renderer",
+     "pid": 4350,
+     "rssMB": 100,
+     "peakMB": 100
+    },
+    {
+     "type": "renderer",
+     "pid": 4358,
+     "rssMB": 578,
+     "peakMB": 595
+    }
+   ]
+  },
+  "end": {
+   "totalRssMB": 1827.8046875,
+   "renderers": [
+    {
+     "pid": 4304,
+     "rssMB": 133,
+     "peakMB": 133,
+     "extension": false
+    },
+    {
+     "pid": 4316,
+     "rssMB": 73,
+     "peakMB": 73,
+     "extension": false
+    },
+    {
+     "pid": 4350,
+     "rssMB": 101,
+     "peakMB": 101,
+     "extension": true
+    },
+    {
+     "pid": 4358,
+     "rssMB": 941,
+     "peakMB": 1170,
+     "extension": true
+    }
+   ],
+   "gpuMB": 83,
+   "rows": [
+    {
+     "type": "browser",
+     "pid": 4234,
+     "rssMB": 194,
+     "peakMB": 195
+    },
+    {
+     "type": "zygote",
+     "pid": 4241,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "zygote",
+     "pid": 4242,
+     "rssMB": 70,
+     "peakMB": 70
+    },
+    {
+     "type": "gpu-process",
+     "pid": 4262,
+     "rssMB": 83,
+     "peakMB": 83
+    },
+    {
+     "type": "utility",
+     "pid": 4265,
+     "rssMB": 114,
+     "peakMB": 114
+    },
+    {
+     "type": "utility",
+     "pid": 4280,
+     "rssMB": 49,
+     "peakMB": 49
+    },
+    {
+     "type": "renderer",
+     "pid": 4304,
+     "rssMB": 133,
+     "peakMB": 133
+    },
+    {
+     "type": "renderer",
+     "pid": 4316,
+     "rssMB": 73,
+     "peakMB": 73
+    },
+    {
+     "type": "renderer",
+     "pid": 4350,
+     "rssMB": 101,
+     "peakMB": 101
+    },
+    {
+     "type": "renderer",
+     "pid": 4358,
+     "rssMB": 941,
+     "peakMB": 1170
+    }
+   ]
+  },
+  "peaks": [
+   {
+    "totalRssMB": 1827.8046875,
+    "renderers": [
+     {
+      "pid": 4304,
+      "rssMB": 133,
+      "peakMB": 133,
+      "extension": false
+     },
+     {
+      "pid": 4316,
+      "rssMB": 73,
+      "peakMB": 73,
+      "extension": false
+     },
+     {
+      "pid": 4350,
+      "rssMB": 101,
+      "peakMB": 101,
+      "extension": true
+     },
+     {
+      "pid": 4358,
+      "rssMB": 941,
+      "peakMB": 1170,
+      "extension": true
+     }
+    ],
+    "gpuMB": 83,
+    "rows": [
+     {
+      "type": "browser",
+      "pid": 4234,
+      "rssMB": 194,
+      "peakMB": 195
+     },
+     {
+      "type": "zygote",
+      "pid": 4241,
+      "rssMB": 70,
+      "peakMB": 70
+     },
+     {
+      "type": "zygote",
+      "pid": 4242,
+      "rssMB": 70,
+      "peakMB": 70
+     },
+     {
+      "type": "gpu-process",
+      "pid": 4262,
+      "rssMB": 83,
+      "peakMB": 83
+     },
+     {
+      "type": "utility",
+      "pid": 4265,
+      "rssMB": 114,
+      "peakMB": 114
+     },
+     {
+      "type": "utility",
+      "pid": 4280,
+      "rssMB": 49,
+      "peakMB": 49
+     },
+     {
+      "type": "renderer",
+      "pid": 4304,
+      "rssMB": 133,
+      "peakMB": 133
+     },
+     {
+      "type": "renderer",
+      "pid": 4316,
+      "rssMB": 73,
+      "peakMB": 73
+     },
+     {
+      "type": "renderer",
+      "pid": 4350,
+      "rssMB": 101,
+      "peakMB": 101
+     },
+     {
+      "type": "renderer",
+      "pid": 4358,
+      "rssMB": 941,
+      "peakMB": 1170
+     }
+    ]
+   }
+  ]
+ },
+ "rows": [
+  {
+   "key": "syn-p25@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 124594.25499999896,
+   "timings": {
+    "detPrep": 54.644999999552965,
+    "det": 14406.644999999553,
+    "dbPost": 69.33500000089407,
+    "crops": 98.35499999672174,
+    "recPrep": 33.71499999985099,
+    "rec": 109418.020000007,
+    "ctc": 479.2149999961257,
+    "words": 33.855000000447035,
+    "total": 124593.78500000015,
+    "lines": 39
+   },
+   "words": 417,
+   "heap": 16593294,
+   "run": 0
+  },
+  {
+   "key": "syn-p100@200",
+   "width": 1700,
+   "height": 2200,
+   "wallMs": 84862.41999999806,
+   "timings": {
+    "detPrep": 46.21999999880791,
+    "det": 11408.925000000745,
+    "dbPost": 24.094999998807907,
+    "crops": 57.645000003278255,
+    "recPrep": 28.029999997466803,
+    "rec": 73027.5700000003,
+    "ctc": 246.74000000208616,
+    "words": 23.08999999985099,
+    "total": 84862.31500000134,
+    "lines": 55
+   },
+   "words": 415,
+   "heap": 16658445,
+   "run": 0
+  },
+  {
+   "key": "deg-p0@150",
+   "width": 1275,
+   "height": 1650,
+   "wallMs": 93761.3200000003,
+   "timings": {
+    "detPrep": 78.57999999821186,
+    "det": 12515.525000002235,
+    "dbPost": 39.16000000014901,
+    "crops": 79.61999999731779,
+    "recPrep": 23.685000009834766,
+    "rec": 80708.90499999747,
+    "ctc": 299.8749999962747,
+    "words": 15.91499999910593,
+    "total": 93761.2650000006,
+    "lines": 48
+   },
+   "words": 396,
+   "heap": 10116009,
+   "run": 0
+  },
+  {
+   "key": "deg-p2@150",
+   "width": 1275,
+   "height": 1650,
+   "wallMs": 131466.4050000012,
+   "timings": {
+    "detPrep": 116.71499999985099,
+    "det": 11115.230000000447,
+    "dbPost": 30.679999999701977,
+    "crops": 87.39000000059605,
+    "recPrep": 50.49000000208616,
+    "rec": 119618.81000000238,
+    "ctc": 427.98499999567866,
+    "words": 19.04499999806285,
+    "total": 131466.3449999988,
+    "lines": 44
+   },
+   "words": 581,
+   "heap": 10165333,
+   "run": 0
+  },
+  {
+   "key": "en-modern-philosophy-p60@300",
+   "width": 1920,
+   "height": 2899,
+   "wallMs": 91862.87999999896,
+   "timings": {
+    "detPrep": 40.875,
+    "det": 10183.550000000745,
+    "dbPost": 16.649999998509884,
+    "crops": 55.315000001341105,
+    "recPrep": 28.58999999985099,
+    "rec": 81199.50500000268,
+    "ctc": 263.4649999961257,
+    "words": 74.86499999836087,
+    "total": 91862.81499999762,
+    "lines": 36
+   },
+   "words": 308,
+   "heap": 23898878,
+   "run": 0
+  },
+  {
+   "key": "en-prince-pauper-p72@300",
+   "width": 1920,
+   "height": 2719,
+   "wallMs": 94564.83999999985,
+   "timings": {
+    "detPrep": 38.58500000089407,
+    "det": 14725.425000000745,
+    "dbPost": 17.234999999403954,
+    "crops": 58.23999999836087,
+    "recPrep": 29.890000000596046,
+    "rec": 79410.67500000447,
+    "ctc": 277.94999999552965,
+    "words": 6.769999999552965,
+    "total": 94564.76999999955,
+    "lines": 34
+   },
+   "words": 358,
+   "heap": 22488258,
+   "run": 0
+  },
+  {
+   "key": "fr-bovary-p62@300",
+   "width": 960,
+   "height": 1608,
+   "wallMs": 84973.5,
+   "timings": {
+    "detPrep": 62.69500000029802,
+    "det": 11397.695000000298,
+    "dbPost": 21.739999998360872,
+    "crops": 51.25,
+    "recPrep": 33.87000000104308,
+    "rec": 73152.97999999672,
+    "ctc": 248.38500000163913,
+    "words": 4.83500000089407,
+    "total": 84973.44999999925,
+    "lines": 36
+   },
+   "words": 288,
+   "heap": 7770778,
+   "run": 0
+  },
+  {
+   "key": "de-kafka-p12@300",
+   "width": 1920,
+   "height": 3067,
+   "wallMs": 64748.73500000313,
+   "timings": {
+    "detPrep": 28.489999998360872,
+    "det": 14629.88500000164,
+    "dbPost": 28.91000000014901,
+    "crops": 29.094999998807907,
+    "recPrep": 13.324999999254942,
+    "rec": 49889.900000002235,
+    "ctc": 122.89499999955297,
+    "words": 6.189999997615814,
+    "total": 64748.689999997616,
+    "lines": 26
+   },
+   "words": 155,
+   "heap": 25101714,
+   "run": 0
+  },
+  {
+   "key": "rcpt-starbucks@300",
+   "width": 2550,
+   "height": 3300,
+   "wallMs": 61832.28500000015,
+   "timings": {
+    "detPrep": 72.67500000074506,
+    "det": 24438.675000000745,
+    "dbPost": 13.75,
+    "crops": 16.95499999821186,
+    "recPrep": 7.074999999254942,
+    "rec": 37185.94000000134,
+    "ctc": 94.8099999986589,
+    "words": 0.5700000002980232,
+    "total": 61830.449999999255,
+    "lines": 36
+   },
+   "words": 76,
+   "heap": 35163922,
+   "run": 0
+  },
+  {
+   "key": "rcpt-wholefoods@200",
+   "width": 617,
+   "height": 2906,
+   "wallMs": 59934.585000000894,
+   "timings": {
+    "detPrep": 61.0950000025332,
+    "det": 5544.535000000149,
+    "dbPost": 7.16499999910593,
+    "crops": 27.79499999806285,
+    "recPrep": 21.635000005364418,
+    "rec": 54064.23000000045,
+    "ctc": 196.8049999959767,
+    "words": 11.245000001043081,
+    "total": 59934.50500000268,
+    "lines": 72
+   },
+   "words": 153,
+   "heap": 8684530,
+   "run": 0
+  }
+ ],
+ "requests": [],
+ "serverRequests": 20,
+ "problems": [],
+ "env": {
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+  "crossOriginIsolated": true,
+  "hardwareConcurrency": 4,
+  "navigatorGpu": true,
+  "base": "chrome-extension://fhaojnogidbacompmalepdaikhegehde/"
+ },
+ "when": "2026-11-01T08:11:57.325Z"
+}

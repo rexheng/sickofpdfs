@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "sickofpdfs Phase 7.0 OCR spike",
+  "version": "0.0.1",
+  "description": "Throwaway OCR bake-off harness: Tesseract.js and PP-OCR (onnxruntime-web) inside an MV3 extension page.",
+  "minimum_chrome_version": "128",
+  "permissions": ["offscreen"],
+  "background": { "service_worker": "background.js" },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "cross_origin_embedder_policy": { "value": "require-corp" },
+  "cross_origin_opener_policy": { "value": "same-origin" }
+}
