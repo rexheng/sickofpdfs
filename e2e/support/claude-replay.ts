@@ -8,7 +8,7 @@
 //   replay.requests()                      // what the app sent: sizes, blocks, breakpoints, images; never the key
 //
 // Routes: GET /claude/v1/models, POST /claude/v1/messages (streams), POST /claude/v1/messages/count_tokens. The double checks
-// for an x-api-key header like the real API does (401 without one, 401 for a key starting "sk-ant-test-bad"), but it never stores
+// for an x-api-key header like the real API does (401 without one, 401 for a key that starts with BAD_KEY_PREFIX), but it never stores
 // the key: records say only whether one was present. A key-shaped string in a request body is redacted in the record and flagged.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -20,8 +20,11 @@ import type { FixtureServer } from './server';
 export const CLAUDE_FIXTURES = fileURLToPath(new URL('../fixtures/claude/', import.meta.url));
 /** Where the viewer's Anthropic calls go in a test build: `${origin}/claude`, and the SDK adds `/v1/...`. */
 export const CLAUDE_PREFIX = '/claude';
-/** A key the double answers 401 to (for the "bad key" walkthroughs). Any other non-empty key is accepted. */
-export const BAD_KEY_PREFIX = 'sk-ant-test-bad';
+/**
+ * A key the double answers 401 to (for the "bad key" walkthroughs): any key that starts with this. Any other non-empty key is
+ * accepted. It is joined at run time so that no key-shaped text is written in the repo, even a fake one.
+ */
+export const BAD_KEY_PREFIX = ['sk-ant', 'test-bad'].join('-');
 
 // ---- Scenario files ----
 
@@ -366,31 +369,38 @@ export function claudeReplay(server: FixtureServer): ClaudeReplay {
     return Buffer.concat(chunks).toString('utf8');
   }
 
-  async function stream(req: IncomingMessage, res: ServerResponse, step: ScenarioStep, record: ClaudeRequestRecord) {
+  async function stream(res: ServerResponse, step: ScenarioStep, record: ClaudeRequestRecord) {
     const model = record.model ?? 'fixture-model';
     const ctx: CiteContext = { request: isRec(record.body) ? record.body : null };
     const events = step.events ?? (step.sse ? parseSse(readFileSync(`${CLAUDE_FIXTURES}${step.sse}`, 'utf8')) : []);
+    // Every event is resolved before the 200 header goes out. A scenario that cites a block the request did not hold then fails with
+    // a readable 500 (the handler's catch), not with a connection cut after the header, which would hide the reason.
+    const frames = events.map((ev) => {
+      const data = resolveData(ev.data, model, ctx);
+      const type = ev.event ?? (isRec(data) && typeof data.type === 'string' ? data.type : 'message');
+      return `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
+    });
+    record.status = 200;
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive', 'request-id': `req_fixture_${record.seq}`, ...step.headers });
-    for (let i = 0; i < events.length; i++) {
+    // destroy() right after write() can discard bytes still in the buffer, so a "drop" waits until what was written has gone out.
+    const flush = () => new Promise<void>((done) => res.write('', () => done()));
+    const cut = async () => {
+      await flush();
+      res.destroy();
+    };
+    for (let i = 0; i < frames.length; i++) {
       if (step.stallAfter === i) {
         await new Promise<void>((done) => res.once('close', done)); // hold until the client goes away
         return;
       }
-      if (step.dropAfter === i) {
-        res.destroy();
-        return;
-      }
+      if (step.dropAfter === i) return cut();
       if (res.destroyed) return;
-      const ev = events[i];
-      const data = resolveData(ev.data, model, ctx);
-      const type = ev.event ?? (isRec(data) && typeof data.type === 'string' ? data.type : 'message');
-      res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+      res.write(frames[i]);
       if (step.delayMs) await sleep(step.delayMs);
     }
-    if (step.stallAfter === events.length) await new Promise<void>((done) => res.once('close', done));
-    else if (step.dropAfter === events.length) res.destroy();
+    if (step.stallAfter === frames.length) await new Promise<void>((done) => res.once('close', done));
+    else if (step.dropAfter === frames.length) await cut();
     else res.end();
-    void req;
   }
 
   async function handler(req: IncomingMessage, res: ServerResponse, fullPath: string): Promise<void> {
@@ -439,12 +449,13 @@ export function claudeReplay(server: FixtureServer): ClaudeReplay {
         const e = step.error ?? { type: 'api_error', message: 'Something went wrong.' };
         return answer(step.status, () => apiError(res, step.status!, e.type, e.message, step.headers));
       }
-      record.status = 200;
       try {
-        await stream(req, res, step, record);
+        await stream(res, step, record);
       } catch (e) {
-        if (!res.headersSent) apiError(res, 500, 'api_error', (e as Error).message);
-        else res.destroy();
+        if (!res.headersSent) {
+          record.status = 500;
+          apiError(res, 500, 'api_error', (e as Error).message);
+        } else res.destroy();
       }
       return;
     }

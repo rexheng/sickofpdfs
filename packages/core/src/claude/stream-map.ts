@@ -50,7 +50,7 @@ export function replyErrorFromApi(apiErrorType: string | null, httpStatus: numbe
   return replyError('server');
 }
 
-interface OpenBlock { type: string; name: string; json: string; input: unknown; citations: unknown[]; visible: boolean }
+interface OpenBlock { type: string; name: string; json: string; input: unknown; citations: unknown[] }
 interface MessageUsage extends UsageTokens { searchBlocks: number }
 
 export function createStreamMapper(blocks: readonly CitableBlock[], onEvent: (e: ClaudeStreamEvent) => void, opts: MapperOptions = {}): StreamMapper {
@@ -60,11 +60,11 @@ export function createStreamMapper(blocks: readonly CitableBlock[], onEvent: (e:
   let body = '';
   let pendingWs = '';
   let needSeparator = false;
-  let lastChips = '';
   let sawContent = false;
   let streaming = false;
   let stopReason: string | null = null;
   let ended = false;
+  let failure: ReplyError | null = null;
 
   const emit = (e: ClaudeStreamEvent) => onEvent(e);
 
@@ -75,9 +75,8 @@ export function createStreamMapper(blocks: readonly CitableBlock[], onEvent: (e:
   }
 
   /** Text goes out at once, except trailing white space, which waits so a chip can sit right after the words. */
-  function pushText(delta: string, b?: OpenBlock) {
+  function pushText(delta: string) {
     if (delta === '') return;
-    if (b && /\S/.test(delta)) b.visible = true;
     if (needSeparator) {
       needSeparator = false;
       if (body !== '' && !/\s$/.test(body + pendingWs)) write('\n\n');
@@ -107,13 +106,9 @@ export function createStreamMapper(blocks: readonly CitableBlock[], onEvent: (e:
       }
     }
     const chips = links.join(' ');
-    // Sentence after sentence citing the same passage shows its chip once. Words with no citation in between break the run.
-    if (chips !== '' && chips !== lastChips) {
-      write(`${body !== '' ? ' ' : ''}${chips}`);
-      lastChips = chips;
-    } else if (chips === '' && b.visible) {
-      lastChips = '';
-    }
+    // A chip follows every cited stretch of text, even when the one before it was the same chip: a sentence with no chip reads as
+    // unsourced. (Merging repeats for tidiness is the UI's job at render time, never the data's.)
+    if (chips !== '') write(`${body !== '' ? ' ' : ''}${chips}`);
     // Trailing white space stays pending: it is written only if more text follows, so a reply never ends in a space.
   }
 
@@ -165,6 +160,15 @@ export function createStreamMapper(blocks: readonly CitableBlock[], onEvent: (e:
 
   const result = (status: ClaudeReplyMeta['status'], error: ReplyError | null): ReplyResult => ({ ...metaOf(status, error), body });
 
+  /** Ends the reply with an error, once. A second call (an `error` event, then the runner's own `fail`) changes nothing and emits nothing. */
+  function failNow(error: ReplyError): ReplyResult {
+    if (failure) return result('error', failure);
+    failure = error;
+    ended = true;
+    emit({ type: 'error', error });
+    return result('error', error);
+  }
+
   function markStreaming() {
     if (streaming) return;
     streaming = true;
@@ -174,11 +178,11 @@ export function createStreamMapper(blocks: readonly CitableBlock[], onEvent: (e:
   function onBlockStart(index: number, cb: unknown) {
     if (!isRec(cb) || typeof cb.type !== 'string') return;
     sawContent = true;
-    const b: OpenBlock = { type: cb.type, name: typeof cb.name === 'string' ? cb.name : '', json: '', input: cb.input, citations: [], visible: false };
+    const b: OpenBlock = { type: cb.type, name: typeof cb.name === 'string' ? cb.name : '', json: '', input: cb.input, citations: [] };
     open.set(index, b);
     if (cb.type === 'text') {
       if (Array.isArray(cb.citations)) for (const c of cb.citations as unknown[]) b.citations.push(c);
-      if (typeof cb.text === 'string' && cb.text !== '') pushText(cb.text, b);
+      if (typeof cb.text === 'string' && cb.text !== '') pushText(cb.text);
     } else if (cb.type === 'web_search_tool_result') {
       emit({ type: 'tool', tool: 'web_search', state: 'done', label: Array.isArray(cb.content) ? 'Searched the web.' : "The web search didn't work." });
     }
@@ -213,7 +217,7 @@ export function createStreamMapper(blocks: readonly CitableBlock[], onEvent: (e:
     if (!isRec(delta)) return;
     const b = open.get(index);
     if (delta.type === 'text_delta' && typeof delta.text === 'string') {
-      if (b?.type === 'text' || b === undefined) pushText(delta.text, b);
+      if (b?.type === 'text' || b === undefined) pushText(delta.text);
     } else if (delta.type === 'citations_delta' && b?.type === 'text') {
       b.citations.push(delta.citation);
     } else if (delta.type === 'input_json_delta' && b && typeof delta.partial_json === 'string') {
@@ -247,7 +251,7 @@ export function createStreamMapper(blocks: readonly CitableBlock[], onEvent: (e:
       }
       case 'error': {
         const type = isRec(raw.error) && typeof raw.error.type === 'string' ? raw.error.type : null;
-        emit({ type: 'error', error: replyErrorFromApi(type) });
+        failNow(replyErrorFromApi(type));
         return;
       }
       default:
@@ -276,26 +280,21 @@ export function createStreamMapper(blocks: readonly CitableBlock[], onEvent: (e:
   return {
     push,
     finish(finalMessage) {
+      if (failure) return result('error', failure); // an `error` event or `fail` already ended the reply: it is never `done`
       const final = isRec(finalMessage) ? finalMessage : {};
       if (!sawContent && Array.isArray(final.content) && final.content.length > 0) replay(final);
       else if (messages.length > 0) readUsage(current(), final.usage); // the final message is the authority on the last request's usage
       if (typeof final.stop_reason === 'string') stopReason = final.stop_reason;
+      if (stopReason === 'refusal') return failNow(replyError('refused'));
+      // No stop reason means the stream just stopped: a cut-off reply must keep its text and offer Try again, not look finished.
+      if (stopReason === null) return failNow(replyError('interrupted'));
       ended = true;
-      if (stopReason === 'refusal') {
-        const error = replyError('refused');
-        emit({ type: 'error', error });
-        return result('error', error);
-      }
       const meta = metaOf('done', null);
       emit({ type: 'done', meta });
       return { ...meta, body };
     },
-    fail(error) {
-      ended = true;
-      emit({ type: 'error', error });
-      return result('error', error);
-    },
-    snapshot: () => result('streaming', null),
+    fail: failNow,
+    snapshot: () => (failure ? result('error', failure) : result('streaming', null)),
     stopReason: () => stopReason,
   };
 }

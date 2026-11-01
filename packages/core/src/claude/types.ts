@@ -48,11 +48,7 @@ export interface CitableBlock {
 /** A paragraph cut at sentence ends to at most 300 tokens (contract §6). */
 export interface Passage { documentId: DocumentId; pageIndex: number; start: number; end: number; textSource: string; text: string; rank: number; tokens: number /* ceil(chars / 4) */ }
 export interface DocumentMap { title: string | null; abstract: Passage | null; headings: { text: string; pageIndex: number }[]; figures: { label: string; pageIndex: number; caption: string }[] }
-export interface RegionImage {
-  blob: Blob; mediaType: 'image/png' | 'image/jpeg'; width: number; height: number; scale: number /* px per pt = dpi / 72 */; visualTokens: number;
-  /** Base64 of `blob`, set by `encodeRegionImage` (request.ts). `buildRequest` is synchronous, so it cannot read a Blob itself. */
-  base64?: string;
-}
+export interface RegionImage { blob: Blob; mediaType: 'image/png' | 'image/jpeg'; width: number; height: number; scale: number /* px per pt = dpi / 72 */; visualTokens: number }
 export interface FigurePack { label: string | null; pageIndex: number; image: RegionImage; caption: Passage | null; insideText: string; mentions: Passage[] /* <= 3 */ }
 
 export interface ClaudeTurnRequest { documentId: DocumentId; threadId: ThreadId; questionId: CommentId; replyId: CommentId; role: ModelRole;

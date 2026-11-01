@@ -134,8 +134,11 @@ export interface DecideInput {
   scope: 'passages' | 'whole-document';
   /** Asks the owner has already said yes to in this send, so the next call moves on to the next question. */
   confirmed?: readonly Ask[];
-  /** False when the price is a guess for an unknown model (`Estimate.priceKnown`): always ask. */
-  priceKnown?: boolean;
+  /**
+   * `estimate().priceKnown`. Required, so a caller cannot forget it: when false (a model with no line, priced at the highest known)
+   * the request always asks before it is sent.
+   */
+  priceKnown: boolean;
 }
 
 export type Decision = 'send' | { ask: Ask; usd: number } | { block: 'over-cap' };
@@ -144,8 +147,8 @@ export type Decision = 'send' | { ask: Ask; usd: number } | { block: 'over-cap' 
  * Send, ask, or block.
  * - Block when the cap is reached (spent is at or over it) or this request would take the month over it. Spending exactly up to
  *   the cap is allowed. A cap of 0 blocks everything.
- * - Then ask, one question at a time: an unsaved PDF first (it is about privacy), then "the whole document", then cost (an
- *   estimate strictly over the threshold, or any estimate when the price is a guess).
+ * - Then ask, one question at a time: an unsaved PDF first (it is about privacy), then "the whole document", then cost: an
+ *   estimate strictly over the threshold, an estimate or spend that is not a number, or any estimate for an unpriced model.
  */
 export function decide(i: DecideInput): Decision {
   const { estimateUsd: usd } = i;
@@ -154,7 +157,9 @@ export function decide(i: DecideInput): Decision {
   const done = new Set(i.confirmed ?? []);
   if (!i.saved && !done.has('unsaved')) return { ask: 'unsaved', usd };
   if (i.scope === 'whole-document' && !done.has('whole-document')) return { ask: 'whole-document', usd };
-  const costly = i.confirmOverUsd !== null && usd > i.confirmOverUsd;
-  if ((costly || i.priceKnown === false) && !done.has('over-threshold')) return { ask: 'over-threshold', usd };
+  // A number we cannot read (NaN, Infinity) is never "cheap": `NaN > 0.25` is false, which would let the request through.
+  const unreadable = !Number.isFinite(usd) || !Number.isFinite(i.spentUsd);
+  const costly = unreadable || (i.confirmOverUsd !== null && usd > i.confirmOverUsd);
+  if ((costly || !i.priceKnown) && !done.has('over-threshold')) return { ask: 'over-threshold', usd };
   return 'send';
 }

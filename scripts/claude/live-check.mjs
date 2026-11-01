@@ -66,8 +66,7 @@ try {
 
   const run = async (label, model, role, question, { webSearch = false, figure = false, turns, pack: given } = {}) => {
     const pack = given ?? samplePack(question, { figure });
-    const encoded = await core.encodePackImages(pack);
-    const built = core.buildRequest(encoded, turns ?? [{ role: 'user', content: question }], { role, model, webSearch });
+    const built = await core.buildRequest(pack, turns ?? [{ role: 'user', content: question }], { role, model, webSearch });
     const price = core.priceFor(model);
     const t0 = Date.now();
     const r = await ask(core, key, built, { role, price, figureLabels: core.figureLabelsOf(pack) });
@@ -130,7 +129,7 @@ try {
     check('Think harder costs between 0.5 and 10 cents', think.u.usd >= 0.005 && think.u.usd <= 0.1, cents(think.u.usd));
     const est = core.estimate(think.pack, 'think-harder', opus);
     say(`  estimate was ${cents(est.usd)}; real ${cents(think.u.usd)}`);
-    const d = core.decide({ estimateUsd: 0.3, spentUsd: 0, capUsd: null, confirmOverUsd: 0.25, saved: true, scope: 'passages' });
+    const d = core.decide({ estimateUsd: 0.3, spentUsd: 0, capUsd: null, confirmOverUsd: 0.25, saved: true, scope: 'passages', priceKnown: true });
     check('a request over $0.25 would ask first', typeof d === 'object' && 'ask' in d && d.ask === 'over-threshold');
   }
 
@@ -140,7 +139,7 @@ try {
     for (const q of EFFORT_QUESTIONS) {
       for (const effort of ['low', 'medium']) {
         const pack = samplePack(q);
-        const built = core.buildRequest(pack, [{ role: 'user', content: q }], { role: 'default', model: haiku, webSearch: false });
+        const built = await core.buildRequest(pack, [{ role: 'user', content: q }], { role: 'default', model: haiku, webSearch: false });
         built.params.output_config = { effort };
         const r = await ask(core, key, built, { role: 'default', price: core.priceFor(haiku) });
         total += r.result.usage.usd;

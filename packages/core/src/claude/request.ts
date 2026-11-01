@@ -113,19 +113,12 @@ function figureContext(f: FigurePack, sees: boolean): string {
     : `${what}, page ${f.pageIndex + 1}. You cannot see the picture with this model: answer from the text below and say so.`;
 }
 
-/** The base64 of a rendered figure. `buildRequest` is synchronous, so the pack's images are encoded first. */
-export async function encodeRegionImage(img: RegionImage): Promise<RegionImage & { base64: string }> {
-  if (img.base64 !== undefined) return { ...img, base64: img.base64 };
+/** The base64 of a rendered figure. `buildRequest` calls this itself; callers never encode images first. */
+export async function encodeRegionImage(img: Pick<RegionImage, 'blob'>): Promise<string> {
   const bytes = new Uint8Array(await img.blob.arrayBuffer());
   let binary = '';
   for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return { ...img, base64: btoa(binary) };
-}
-
-/** Encodes every figure image in a pack and returns the pack that `buildRequest` can use. */
-export async function encodePackImages(pack: ContextPack): Promise<ContextPack> {
-  const figures = await Promise.all(pack.figures.map(async (f) => ({ ...f, image: await encodeRegionImage(f.image) })));
-  return { ...pack, figures };
+  return btoa(binary);
 }
 
 // ---- search_result blocks (client tool results) ----
@@ -177,11 +170,15 @@ function searchResultBlocks(turns: readonly ThreadTurn[]): CitableBlock[] {
 
 // ---- The builder ----
 
-export function buildRequest(
+/**
+ * Asynchronous because a figure image is a Blob, which can only be read asynchronously: `buildRequest` encodes the pack's
+ * `RegionImage`s itself, so nobody has to remember a separate step.
+ */
+export async function buildRequest(
   pack: ContextPack,
   turns: readonly ThreadTurn[],
   o: BuildOptions,
-): { params: MessagesParams; blocks: CitableBlock[] } {
+): Promise<{ params: MessagesParams; blocks: CitableBlock[] }> {
   const first = turns[0];
   if (!first) throw new Error('A request needs at least the first question.');
   if (first.role !== 'user' || typeof first.content !== 'string') throw new Error('The first turn must be the owner’s question as plain text.');
@@ -210,8 +207,8 @@ export function buildRequest(
   const sees = o.model.imageInput;
   for (const f of pack.figures) {
     if (sees) {
-      if (f.image.base64 === undefined) throw new Error('A figure image was not encoded. Run encodePackImages on the pack first.');
-      content.push({ type: 'image', source: { type: 'base64', media_type: f.image.mediaType, data: f.image.base64 }, transformations: { oversized_image: 'error' } });
+      const data = await encodeRegionImage(f.image);
+      content.push({ type: 'image', source: { type: 'base64', media_type: f.image.mediaType, data }, transformations: { oversized_image: 'error' } });
     }
     addDocument(figureDocTitle(f.label, f.pageIndex), figureItems(f), { context: figureContext(f, sees) });
   }
@@ -233,11 +230,13 @@ export function buildRequest(
   // 4. The question.
   content.push({ type: 'text', text: first.content });
   const messages: MessageParam[] = [{ role: 'user', content }];
-  for (const turn of turns.slice(1)) messages.push({ role: turn.role, content: turn.content });
+  // Copies, so nothing that touches a built request (the SDK, a retry wrapper) can change the held blocks or a later request.
+  for (const turn of turns.slice(1)) messages.push({ role: turn.role, content: typeof turn.content === 'string' ? turn.content : structuredClone(turn.content) });
 
   blocks.push(...searchResultBlocks(turns.slice(1)));
 
-  const tools: ToolParam[] = [...CLIENT_TOOLS];
+  // Deep copies: the frozen tool list must stay frozen for every later request, whatever happens to this one.
+  const tools: ToolParam[] = CLIENT_TOOLS.map((t) => structuredClone(t));
   if (o.webSearch && o.model.webSearchTool) tools.push({ type: o.model.webSearchTool, name: 'web_search', max_uses: MAX_WEB_SEARCHES });
 
   const params: MessagesParams = {

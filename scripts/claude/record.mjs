@@ -3,7 +3,8 @@
 //
 //   ANTHROPIC_API_KEY_LIVE=... node scripts/claude/record.mjs --kind models|text|figure|web|think --name <fixture-name> [--out <dir>] [--dry-run]
 //
-// The key comes from the environment variable only, never from an argument. Without it the script says so and exits 0.
+// The key comes from the environment variable only, never from an argument. Without it the script says so and exits 1: it is only
+// run on purpose, and a chain like `record.mjs && git add ...` must not go on as if a recording was made.
 // What it writes is scrubbed: message and tool ids become fixture ids, the model becomes "$model", opaque encrypted blobs and
 // signatures become placeholders, response headers are not kept, and citations become `$cite` placeholders that the double
 // resolves against whatever request it is replaying. Model ids in the Models list become fixture ids too.
@@ -24,8 +25,8 @@ const dryRun = args.includes('--dry-run');
 
 const key = readKey();
 if (!key) {
-  console.log(`${KEY_ENV} is not set, so nothing was recorded. Nothing was sent.`);
-  process.exit(0);
+  console.error(`${KEY_ENV} is not set, so nothing was recorded. Nothing was sent.`);
+  process.exit(1);
 }
 if (!['models', 'text', 'figure', 'web', 'think'].includes(kind) || !/^[a-z0-9][a-z0-9-]*$/.test(name)) {
   console.error('Usage: node scripts/claude/record.mjs --kind models|text|figure|web|think --name <fixture-name> [--out <dir>] [--dry-run]');
@@ -99,8 +100,8 @@ try {
     if (!base) throw new Error(`no active ${line} model in the list`);
     const model = { ...base, webSearchTool: await probeWebSearch(key, base.id) };
     const question = { text: 'Why does the parallel trends assumption matter for this result?', figure: core.EXPLAIN_FIGURE_QUESTION, web: 'What is the difference-in-differences method, in general? Search the web for a definition.', think: 'Why does the parallel trends assumption matter for this result?' }[kind];
-    const pack = await core.encodePackImages(samplePack(question, { figure: kind === 'figure' }));
-    const built = core.buildRequest(pack, [{ role: 'user', content: question }], { role: kind === 'think' ? 'think-harder' : 'default', model, webSearch: kind === 'web' });
+    const pack = samplePack(question, { figure: kind === 'figure' });
+    const built = await core.buildRequest(pack, [{ role: 'user', content: question }], { role: kind === 'think' ? 'think-harder' : 'default', model, webSearch: kind === 'web' });
     const r = await ask(core, key, built, { role: 'default', price: core.priceFor(model) });
     say(`Recorded ${r.raw.length} events; ${r.result.citations.length} page citations, ${r.result.webSources.length} sources, ${r.result.usage.webSearches} searches.`);
     writeFixture(join(outDir, `${name}.json`), {

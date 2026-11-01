@@ -13,7 +13,7 @@ export type {
 } from './claude/types';
 export { REPLY_ERROR_MESSAGES, replyError } from './claude/types';
 export { CLIENT_TOOLS, EXPLAIN_FIGURE_QUESTION, MAX_WEB_SEARCHES, SYSTEM_PROMPT, describeToolUse } from './claude/prompts';
-export { EFFORT, MAX_TOKENS, buildRequest, encodePackImages, encodeRegionImage, figureLabelsOf, parseSearchSource, searchResultFor } from './claude/request';
+export { EFFORT, MAX_TOKENS, buildRequest, encodeRegionImage, figureLabelsOf, parseSearchSource, searchResultFor } from './claude/request';
 export type { BuildOptions, MessageParam, MessagesParams, ThreadTurn } from './claude/request';
 export { createStreamMapper, replyErrorFromApi } from './claude/stream-map';
 export type { MapperOptions, ReplyResult, StreamMapper } from './claude/stream-map';
