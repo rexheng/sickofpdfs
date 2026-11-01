@@ -47,7 +47,7 @@ export function academicWordCount(t: string): number {
   return t.match(ACADEMIC_WORDS)?.length ?? 0;
 }
 
-const MATH_SYMBOL = /[=∑∫∂√≤≥≈≠∞±→∈∀∃αβγδεθλμπσφωΣΠΔΩ]/g;
+const MATH_SYMBOL = /[=∑∫∂√≤≥≈≠∞±∈∀∃αβγδεθλμπσφωΣΠΔΩ]/g;
 export function mathSymbolCount(t: string): number {
   return t.match(MATH_SYMBOL)?.length ?? 0;
 }
@@ -207,20 +207,46 @@ export const ADMIN_GROUPS: readonly AdminGroup[] = [
   },
 ];
 
-// CV section headings, matched as whole lines. A CV has at least one of the first kind and three headings in all.
-const CV_STRONG_HEADING = /^[ \t]*(?:work experience|professional experience|relevant experience|employment history|work history|employment|experience|professional summary|career summary|career objective|personal details|personal profile|personal statement|volunteer(?:ing)? experience|key skills|technical skills)[ \t]*:?[ \t]*$/gim;
+// A CV is a private document: contact details, a name, and sections such as Education and Experience. Evidence is added
+// up in points. Section headings are matched as whole lines, so a word inside a sentence never counts.
+const CV_STRONG_HEADING = /^[ \t]*(?:work experience|professional experience|relevant experience|employment history|work history|employment|experience|professional summary|career summary|career objective|personal details|personal profile|personal statement|volunteer(?:ing)? experience|key skills|technical skills|referees?)[ \t]*:?[ \t]*$/gim;
 const CV_SUPPORT_HEADING = /^[ \t]*(?:education|skills|languages|interests|hobbies|certifications|awards|publications|achievements|profile)[ \t]*:?[ \t]*$/gim;
-export function isCvLike(t: string, adminIds: ReadonlySet<string>): boolean {
-  if (adminIds.has('cv-words')) return true;
-  const seen = new Set<string>();
-  let strong = 0;
-  for (const m of t.matchAll(CV_STRONG_HEADING)) {
-    strong++;
-    seen.add(m[0].trim().toLowerCase().replace(/:$/, ''));
-  }
-  if (strong === 0) return false;
-  for (const m of t.matchAll(CV_SUPPORT_HEADING)) seen.add(m[0].trim().toLowerCase().replace(/:$/, ''));
-  return seen.size >= 3;
+const CV_TITLE = /^[ \t]*(?:curriculum vitae|cv|r\u00e9sum\u00e9|resume)[ \t]*$/im;
+const CONTACT_EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/;
+const CONTACT_PHONE = /\b(?:tel|telephone|phone|mobile|mob|cell)\b[.:]?\s*\(?\+?\d[\d ()-]{6,}\d|\+\d{1,3}[ -]?\(?\d{1,4}\)?[ -]?\d[\d -]{5,}\d/i;
+const CONTACT_POSTCODE = /\b[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}\b|\b[A-Z]{2} \d{5}(?:-\d{4})?\b/;
+const CONTACT_PROFILE = /linkedin\.com\/in\//i;
+/** A CV is rarely longer than this; a long document with a few CV-like headings is a book or a report. */
+const CV_MAX_PAGES = 15;
+const CV_POINTS = 4;
+
+export interface CvEvidence {
+  /** Looks like a CV: no score may save it. */
+  cvLike: boolean;
+  /** Some CV signs, not enough to decide. A "References" heading then probably lists referees. */
+  hinted: boolean;
+}
+
+/**
+ * @param frontPage the text of page 1, where a CV carries its name and contact block
+ * @param text the whole sample
+ * @param adminIds ids of the admin groups that matched (`cv-words` is the words "curriculum vitae" or similar)
+ */
+export function cvEvidence(frontPage: string, text: string, pageCount: number, adminIds: ReadonlySet<string>): CvEvidence {
+  if (adminIds.has('cv-words')) return { cvLike: true, hinted: true };
+  const strong = new Set<string>();
+  for (const m of text.matchAll(CV_STRONG_HEADING)) strong.add(m[0].trim().toLowerCase().replace(/:$/, ''));
+  const support = new Set<string>();
+  for (const m of text.matchAll(CV_SUPPORT_HEADING)) support.add(m[0].trim().toLowerCase().replace(/:$/, ''));
+  const sections = 2 * strong.size + support.size + (CV_TITLE.test(frontPage) ? 3 : 0);
+  const contact =
+    Number(CONTACT_EMAIL.test(frontPage)) +
+    Number(CONTACT_PHONE.test(frontPage)) +
+    Number(CONTACT_POSTCODE.test(frontPage)) +
+    Number(CONTACT_PROFILE.test(frontPage));
+  const points = sections + contact;
+  const short = pageCount <= CV_MAX_PAGES;
+  return { cvLike: short && sections >= 1 && points >= CV_POINTS, hinted: short && sections >= 1 && points >= CV_POINTS - 1 };
 }
 
 /** True when the group matches the text. */

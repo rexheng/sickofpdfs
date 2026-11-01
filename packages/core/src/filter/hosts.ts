@@ -122,13 +122,13 @@ export interface NameWords {
   course: boolean;
 }
 
-/** Looks at the link's path and the file name together, so a word that is in both counts once. */
-export function nameWords(link: LinkParts | null, fileName: string): NameWords {
-  const toks = new Set(words(`${link?.path ?? ''} ${fileName}`));
-  const all = [...toks];
+/** Looks at the link's path, the file name and the document title together, so a word that is in two of them counts once. */
+export function nameWords(link: LinkParts | null, fileName: string, title: string | null = null): NameWords {
+  const joined = `${link?.path ?? ''} ${fileName} ${title ?? ''}`;
+  const all = [...new Set(words(joined))];
   const negative = all.some((w) => NEGATIVE_NAME_WORDS.has(w));
   const course =
     all.some((w) => COURSE_NAME_WORDS.has(w) || /^(?:ps|ch|wk|lec|week)\d{1,2}$/.test(w)) ||
-    /(?:^|[^a-z0-9])[a-z]{2}\d[a-z]\d(?:[^a-z0-9]|$)/i.test(`${link?.path ?? ''} ${fileName}`);
+    /(?:^|[^a-z0-9])[a-z]{2}\d[a-z]\d(?:[^a-z0-9]|$)/i.test(joined);
   return { negative, course };
 }

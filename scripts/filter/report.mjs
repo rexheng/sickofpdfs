@@ -1,14 +1,16 @@
 // `node scripts/filter/report.mjs`: runs the learning filter over the 44 research fixtures and prints one row per file,
 // then the phase gate: zero false saves, how many learning files are saved, asked or missed, and the timing.
 //
-//   node scripts/filter/report.mjs [--mode with-link|content-only|both] [--source auto|pdfium|poppler]
+//   node scripts/filter/report.mjs [--mode with-link|content-only|both] [--source auto|pdfium|poppler] [--no-second-look]
 //                                  [--inputs <dir>] [--write-inputs <dir>] [--runs <n>] [--explain <file-name-part>]
 //
 // Inputs (the FilterInput for each fixture). --source auto tries, in this order, for each fixture:
 //   1. <inputs>/<name>.json, default test-assets/classifier-inputs (Phase 3 slice S8 writes these from PDFium's text)
 //   2. PDFium's text, read here in Node through the viewer's own SopPdfiumNative: the text the viewer will sample
 //   3. poppler (pdfinfo and pdftotext), if PDFium cannot be started
-// The sample is the first 5 and the last 5 pages, as in the viewer. The fixtures are untrusted data: they are only read.
+// The sample is the first 5 and the last 5 pages, as in the viewer. If those 10 pages hold under 15 words, up to 10 more
+// pages from the middle are read too (the "second look", core's sample.ts); --no-second-look turns that off. The
+// fixtures are untrusted data: they are only read.
 //
 // Modes. "with-link" gives each file its manifest link and name. "content-only" gives no link and a neutral file name,
 // the research's honest baseline: text, metadata, page count and page shape only.
@@ -40,13 +42,13 @@ const manifest = JSON.parse(readFileSync(join(repoRoot, 'docs/research/classifie
 const cacheRoot = join(repoRoot, 'test-assets/classifier');
 const pdfPath = (item) => join(cacheRoot, item.path);
 const stemOf = (item) => basename(item.path).replace(/\.pdf$/i, '');
-const sampleIndexes = (n) => (n <= 10 ? [...Array(n).keys()] : [0, 1, 2, 3, 4, n - 5, n - 4, n - 3, n - 2, n - 1]);
+const secondLook = !args.includes('--no-second-look');
 
 const server = await createServer({
   root: repoRoot, configFile: false, appType: 'custom', logLevel: 'error',
   server: { middlewareMode: true, hmr: false, watch: null }, optimizeDeps: { noDiscovery: true },
 });
-const { classify, detectHardBlocks } = await server.ssrLoadModule('/packages/core/src/filter/index.ts');
+const { classify, detectHardBlocks, sampleIndexes, secondLookIndexes, needsSecondLook } = await server.ssrLoadModule('/packages/core/src/filter/index.ts');
 
 // ---- input source 2: PDFium ----
 
@@ -66,6 +68,7 @@ function pdfiumInput(item) {
   const open = pdfium.openDocument(id, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
   try {
     const sampleText = sampleIndexes(open.pageCount).map((i) => pdfium.getPageText(id, i));
+    if (secondLook && needsSecondLook(sampleText)) sampleText.push(...secondLookIndexes(open.pageCount).map((i) => pdfium.getPageText(id, i)));
     const { formType } = pdfium.getFormInfo(id);
     return { url: item.url, fileName: basename(item.path), pageCount: open.pageCount, pageSizes: open.pages, metadata: open.metadata, sampleText, viaPage: null, formType };
   } finally {
@@ -87,8 +90,9 @@ function popplerInput(item) {
   for (const m of per.matchAll(/^Page\s+(\d+) size:\s*([\d.]+) x ([\d.]+) pts/gm)) {
     pageSizes[Number(m[1]) - 1] = { width: Number(m[2]), height: Number(m[3]), rotation: 0 };
   }
-  const text = (from, to) => poppler('pdftotext', ['-f', String(from), '-l', String(to), '-enc', 'UTF-8', path, '-']).split('\f').slice(0, to - from + 1);
-  const sampleText = [...text(1, Math.min(5, n)), ...(n > 5 ? text(Math.max(6, n - 4), n) : [])];
+  const page = (i) => poppler('pdftotext', ['-f', String(i + 1), '-l', String(i + 1), '-enc', 'UTF-8', path, '-']).split('\f')[0];
+  const sampleText = sampleIndexes(n).map(page);
+  if (secondLook && needsSecondLook(sampleText)) sampleText.push(...secondLookIndexes(n).map(page));
   const form = field('Form');
   return {
     url: item.url, fileName: basename(item.path), pageCount: n, pageSizes: pageSizes.filter(Boolean),
@@ -176,6 +180,25 @@ for (const label of ['learning', 'not-learning']) {
 }
 const blocked = loaded.filter((l) => classify(l.input, noRules).rule === 'hard-block');
 console.log(`  fixtures blocked (a card, or any two other kinds): ${blocked.length}`);
+
+// ---- hard cases: made-up LaTeX CVs (a fictional person), which must never be saved ----
+
+console.log('\n=== hard case: personal CVs made in LaTeX (made-up text) ===');
+const latex = { creator: 'LaTeX with hyperref', producer: 'pdfTeX-1.40.21', title: null, author: null, subject: null, keywords: null };
+const cvInput = (name, pageCount, pages) => ({ url: null, fileName: name, pageCount, pageSizes: [{ width: 612, height: 792, rotation: 0 }], metadata: latex, sampleText: pages, viaPage: null, formType: 'none' });
+const filler = 'Responsible for analysis and reporting across teams, working with data and tools. ';
+const cvs = {
+  'CV with References heading': cvInput('cv.pdf', 3, [`Jane Doe\njane.doe@example.com | +44 7700 900123\n12 High Street, London SW1A 1AA\nEducation\nBSc Economics, Example University, 2021-2024\nExperience\nResearch Assistant, 2023-2024. ${filler}\nSkills\nPython, R, Stata\nReferences\nProf. A. Referee, Example University`, `Languages\nEnglish, French. ${filler}`]),
+  'CV, minimal (no Experience)': cvInput('resume.pdf', 1, [`Jane Doe\nTel: +44 7700 900123  jane.doe@example.com\nEducation\nBSc Economics, Example University\nSkills\nPython, R, Stata, LaTeX. ${filler}\nReferences\nAvailable on request. ${filler}`]),
+  'CV, long publication list': cvInput('cv-academic.pdf', 6, [`Curriculum Vitae\nProf. Alice Example, Example University\nalice@example.edu\nEducation\nPhD Economics, 2008\nPublications\n${Array.from({ length: 25 }, (_, i) => `[${i + 1}] Example, A. and Coauthor, B. (20${10 + (i % 14)}). Paper ${i}. Journal of Things. doi:10.1016/j.jot.20${10 + (i % 14)}.0${i}. arXiv:2101.0${1000 + i}`).join('\n')}\nReferences\nProf. B. Referee`]),
+};
+for (const [name, input] of Object.entries(cvs)) {
+  const d = classify(input, noRules);
+  const score = d.score === undefined ? '' : (d.score >= 0 ? '+' : '') + d.score.toFixed(1);
+  const positive = (d.signals ?? []).filter((x) => x.weight > 0).reduce((n, x) => n + x.weight, 0);
+  console.log(`${pad(name, 32)} ${pad(d.verdict, 13)} ${pad(d.rule ?? '', 11)} score ${pad(score, 6)} (evidence for a reading: +${positive})  ${d.reasons.join(' | ')}`);
+  if (d.verdict === 'learning') results.push({ falseSaves: 1, missed: 0 });
+}
 
 // ---- timing on the largest sample ----
 

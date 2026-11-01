@@ -13,6 +13,7 @@ import {
   ADMIN_GROUPS,
   academicWordCount,
   countCitations,
+  cvEvidence,
   currencyCount,
   groupMatches,
   hasAbstractHeading,
@@ -23,7 +24,6 @@ import {
   hasIsbn,
   hasReferencesHeading,
   hasThesisWording,
-  isCvLike,
   isGeneratorProducer,
   isLatexProducer,
   mathSymbolCount,
@@ -72,6 +72,10 @@ export interface Evidence {
   /** Kinds of admin wording found, most groups first. */
   adminKinds: AdminKind[];
   nameNegative: boolean;
+  /** Course words in the link, file name or title. */
+  courseName: boolean;
+  /** Slide-deck page shape with 10 or more pages. */
+  deck: boolean;
   receiptRoll: boolean;
   xfa: boolean;
   /** Flags the rules use. References is false for a CV, whose "References" heading means referees. */
@@ -127,7 +131,7 @@ export function gatherEvidence(input: FilterInput): Evidence {
   const link = parseLink(input.url);
   const via = parseLink(input.viaPage);
   const host = mergeHost(classifyHost(link), classifyHost(via));
-  const name = nameWords(link, input.fileName);
+  const name = nameWords(link, input.fileName, input.metadata.title);
   const producer = `${input.metadata.creator ?? ''} ${input.metadata.producer ?? ''}`;
   const first = shown(input.pageSizes[0]);
 
@@ -142,8 +146,8 @@ export function gatherEvidence(input: FilterInput): Evidence {
   else if (host.lms) add('host-lms', 2, 'Course website');
   else if (host.academic) add('host-academic', 1, 'University website');
   if (host.negative) add('host-negative', -4, 'Bank, shop, airline or tax website');
-  if (name.negative) add('name-negative', -2, 'Paperwork words in the link or file name');
-  if (name.course) add('name-course', 1, 'Course words in the link or file name');
+  if (name.negative) add('name-negative', -2, 'Paperwork words in the link, file name or title');
+  if (name.course) add('name-course', 1, 'Course words in the link, file name or title');
   if (arxivName) add('arxiv-name', 3, 'arXiv number in the file name');
 
   // ---- text ----
@@ -155,8 +159,8 @@ export function gatherEvidence(input: FilterInput): Evidence {
   if (abstract) add('abstract', 2, 'Abstract');
 
   const matched = ADMIN_GROUPS.filter((g) => groupMatches(g, text));
-  const cvLike = isCvLike(text, new Set(matched.map((g) => g.id)));
-  const references = hasReferencesHeading(text) && !cvLike;
+  const cv = cvEvidence(pages[0] ?? '', text, pageCount, new Set(matched.map((g) => g.id)));
+  const references = hasReferencesHeading(text) && !cv.hinted;
   if (references) add('references', 2.5, 'References section');
   if (hasThesisWording(head)) add('thesis', 2, 'Thesis wording');
   if (hasChapterHeading(head)) add('chapter', 1.5, 'Chapter, lecture or contents headings');
@@ -185,7 +189,8 @@ export function gatherEvidence(input: FilterInput): Evidence {
 
   const receiptRoll = first !== null && (first.w < 300 || first.h / first.w > 2.2);
   if (receiptRoll) add('receipt-roll', -2, 'Receipt-roll page shape');
-  if (slideShape(first) && pageCount >= 10) add('slides', 1, 'Slide-deck page shape');
+  const deck = slideShape(first) && pageCount >= 10;
+  if (deck) add('slides', 1, 'Slide-deck page shape');
   const xfa = input.formType === 'xfa-full' || input.formType === 'xfa-foreground';
   if (xfa) add('xfa-form', -2, 'Tax-form file type');
 
@@ -218,12 +223,14 @@ export function gatherEvidence(input: FilterInput): Evidence {
     host,
     adminKinds,
     nameNegative: name.negative,
+    courseName: name.course,
+    deck,
     receiptRoll,
     xfa,
     arxiv: arxivText || arxivName,
     doi,
     abstract,
     references,
-    cvLike,
+    cvLike: cv.cvLike,
   };
 }

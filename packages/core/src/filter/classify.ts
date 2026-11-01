@@ -97,14 +97,19 @@ function ownerSave(blocks: readonly HardBlock[]): Pick<FilterDecision, 'hardBloc
 }
 
 function noText(e: Evidence): FilterDecision {
-  // a scan from a scholarly or course page asks; anything else is left alone
-  const scholarlyOrCourse = (e.host.scholarly || e.host.lms) && !e.host.negative && !e.nameNegative;
-  if (scholarlyOrCourse) {
+  // A scan from a scholarly or course page asks. So does an image-only slide deck whose title or file name has course
+  // words. Anything else is left alone. Ask never saves: it only shows the chip.
+  const hostAsks = e.host.scholarly || e.host.lms;
+  const deckAsks = e.deck && e.courseName;
+  if ((hostAsks || deckAsks) && !e.host.negative && !e.nameNegative) {
     return {
       verdict: 'unsure',
-      reasons: ['a page with no text to check', e.host.scholarly ? 'from a scholarly website' : 'from a course website'],
+      reasons: [
+        'a page with no text to check',
+        hostAsks ? (e.host.scholarly ? 'from a scholarly website' : 'from a course website') : 'looks like a lecture slide deck',
+      ],
       rule: 'no-text',
-      signals: e.signals.filter((s) => s.id.startsWith('host-')),
+      signals: e.signals.filter((s) => s.id.startsWith('host-') || s.id === 'slides' || s.id === 'name-course'),
     };
   }
   return { verdict: 'not-learning', reasons: ['looks like a scan with no text'], rule: 'no-text' };
