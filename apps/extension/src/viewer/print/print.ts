@@ -3,8 +3,9 @@
 // in place of the viewer. Each sheet has the size and orientation of its own page (CSS named pages), so a deck with an
 // A4 landscape page and a rotated page prints as it is. Marks are not in the copy yet (Phase 2 adds them to the sheets).
 //
-// Memory: pages are drawn one at a time. Each becomes a PNG blob behind an object URL, so no more than one full bitmap
-// is alive at once, and the URLs are revoked when the copy is disposed (after printing, or on Cancel).
+// Memory: pages are drawn one at a time. Each becomes a blob behind an object URL, so no more than two full bitmaps are
+// alive at once, and the URLs are revoked when the copy is disposed (after printing, or on Cancel). A page is a PNG, so
+// text stays crisp, except a scan (one picture over the page), which is a JPEG: a scan's PNG is 1 to 2 MB.
 import type { DocHandle, PageSize, PdfBackend } from '@sop/viewer';
 import type { ViewerContext } from '../commands';
 
@@ -15,6 +16,12 @@ const POINTS_PER_INCH = 72;
 /** renderTile's limits (a side, and all pixels); a page that would pass them is printed at a lower resolution. */
 const MAX_SIDE_PX = 16_384;
 const MAX_AREA_PX = 2 ** 26;
+/** A page whose single picture covers at least this share of it is a scan. */
+const SCAN_IMAGE_SHARE = 0.8;
+/** The JPEG quality of a scan. */
+const SCAN_JPEG_QUALITY = 0.9;
+/** The look at a page's objects (does it hold one picture?) stops here; a scan has a handful. */
+const SCAN_PROBE = { maxObjects: 200, budgetMs: 10 };
 /** Used for a page with no usable size, so the sheet is never zero-sized. */
 const FALLBACK_SIZE = { width: 612, height: 792 };
 
@@ -80,21 +87,46 @@ export interface PrintOptions {
 
 const abortError = () => new DOMException('Printing was cancelled.', 'AbortError');
 
-/** Page `index` drawn upright (the page's own /Rotate, no view rotation) with its annotations. */
-function renderPage(backend: PdfBackend, doc: DocHandle, index: number, size: { width: number; height: number }, o: PrintOptions): Promise<ImageBitmap> {
-  const drawn = backend.renderTile(doc, { pageIndex: index, scale: printScale(size, o.dpi), viewRotation: 0, withAnnotations: true }, o.signal);
+/**
+ * Is the page one picture and nothing else drawn (a scan)? Its objects are exactly one image covering most of the page,
+ * plus text (a scan's invisible OCR layer) and form wrappers; a path or shading means a page made of drawing, which
+ * stays a PNG. Any trouble with the question means "no": a PNG is always right.
+ */
+async function isScan(backend: PdfBackend, doc: DocHandle, index: number, page: PageSize): Promise<boolean> {
+  try {
+    const { objects, truncated } = await backend.listPageObjects(doc, index, SCAN_PROBE);
+    if (truncated || objects.some((o) => o.type === 'path' || o.type === 'shading' || o.type === 'unknown')) return false;
+    const images = objects.filter((o) => o.type === 'image');
+    return images.length === 1 && images[0].bounds.width * images[0].bounds.height >= SCAN_IMAGE_SHARE * page.width * page.height;
+  } catch {
+    return false;
+  }
+}
+
+interface DrawnPage {
+  bitmap: ImageBitmap;
+  scan: boolean;
+}
+
+/** Page `index` drawn upright (the page's own /Rotate, no view rotation) with its annotations, and whether it is a scan. */
+function drawPage(backend: PdfBackend, doc: DocHandle, index: number, page: PageSize, size: { width: number; height: number }, o: PrintOptions): Promise<DrawnPage> {
+  const drawn = (async () => {
+    const scan = await isScan(backend, doc, index, page);
+    const bitmap = await backend.renderTile(doc, { pageIndex: index, scale: printScale(size, o.dpi), viewRotation: 0, withAnnotations: true }, o.signal);
+    return { bitmap, scan };
+  })();
   drawn.catch(() => {}); // the loop awaits it and handles a failure; this only stops an early one being reported as unhandled
   return drawn;
 }
 
-/** The bitmap as a PNG. The bitmap is closed. */
-async function encodePng(bitmap: ImageBitmap): Promise<Blob> {
+/** The page as a PNG, or as a JPEG for a scan. The bitmap is closed. */
+async function encodePage({ bitmap, scan }: DrawnPage): Promise<Blob> {
   try {
     const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
     const context = canvas.getContext('2d');
     if (context === null) throw new Error('The canvas has no 2d context.');
     context.drawImage(bitmap, 0, 0);
-    return await canvas.convertToBlob({ type: 'image/png' });
+    return await canvas.convertToBlob(scan ? { type: 'image/jpeg', quality: SCAN_JPEG_QUALITY } : { type: 'image/png' });
   } finally {
     bitmap.close();
   }
@@ -114,7 +146,7 @@ function loaded(image: HTMLImageElement): Promise<void> {
 /**
  * Draws every page and puts the copy in the document, ready for window.print(). Nothing is added to the document until
  * every page is ready, so a cancelled or failed run leaves nothing behind. The engine draws the next page while the
- * last one is turned into a PNG, so at most two bitmaps are alive at once.
+ * last one is encoded, so at most two bitmaps are alive at once.
  */
 export async function preparePrintCopy(backend: PdfBackend, doc: DocHandle, pages: PageSize[], o: PrintOptions): Promise<PrintCopy> {
   const urls: string[] = [];
@@ -125,12 +157,12 @@ export async function preparePrintCopy(backend: PdfBackend, doc: DocHandle, page
   const sizes = pages.map(printedSize);
   const root = document.createElement('div');
   root.id = PRINT_ROOT_ID;
-  let drawing: Promise<ImageBitmap> | null = pages.length > 0 ? renderPage(backend, doc, 0, sizes[0], o) : null;
+  let drawing: Promise<DrawnPage> | null = pages.length > 0 ? drawPage(backend, doc, 0, pages[0], sizes[0], o) : null;
   try {
     for (const [index, size] of sizes.entries()) {
-      const bitmap = await drawing!;
-      drawing = index + 1 < pages.length ? renderPage(backend, doc, index + 1, sizes[index + 1], o) : null;
-      const url = URL.createObjectURL(await encodePng(bitmap));
+      const drawn = await drawing!;
+      drawing = index + 1 < pages.length ? drawPage(backend, doc, index + 1, pages[index + 1], sizes[index + 1], o) : null;
+      const url = URL.createObjectURL(await encodePage(drawn));
       urls.push(url);
       const image = new Image();
       image.alt = '';
@@ -152,7 +184,7 @@ export async function preparePrintCopy(backend: PdfBackend, doc: DocHandle, page
   } catch (error) {
     revoke();
     // The page being drawn ahead is not wanted: close its bitmap when it arrives.
-    void drawing?.then((bitmap) => bitmap.close(), () => {});
+    void drawing?.then((next) => next.bitmap.close(), () => {});
     throw error;
   }
   const style = document.createElement('style');
