@@ -17,3 +17,4 @@ spikes/phase0/results/
 test-assets/
 *.pem
 .vitest-attachments/
+.vitest/
