@@ -2,7 +2,7 @@
 // section 4.11; drive-refs live-17 and live-18). It is a controlled component: NotesPanelMount owns the session, which
 // note is active, and what each action does.
 import type { CommentId, ThreadId } from '@sop/core';
-import { Icon, IconButton, ThreadCard } from '@sop/ui';
+import { Icon, IconButton, type NoteKept, ThreadCard } from '@sop/ui';
 import { type KeyboardEvent, type MouseEvent, type Ref, useId, useRef } from 'react';
 import type { NoteEntry, NoteList, NotesFilter } from './model';
 import styles from './NotesPanel.module.css';
@@ -31,6 +31,12 @@ export interface NotesPanelProps {
   panelRef?: Ref<HTMLElement>;
   /** The scrolling list of cards. */
   listRef?: Ref<HTMLDivElement>;
+  /** The panel lies over the pages (they do not fit beside it at their size): it is raised with a shadow. */
+  raised?: boolean;
+  /** Whether a note's sent text is kept (the quiet "Saved" sign on its card). */
+  keptOf?(this: void, note: NoteEntry): NoteKept | null;
+  /** "Try again" on a note the library would not take. */
+  onRetrySave?(this: void): void;
 }
 
 const TABS: { id: NotesFilter; label: string }[] = [
@@ -94,13 +100,22 @@ export function NotesPanel(p: NotesPanelProps) {
         onShowOriginal={note.placement === 'moved' ? () => p.onShowOriginal(note) : undefined}
         label={note.label}
         quote={note.quote}
+        kept={p.keptOf?.(note) ?? null}
+        onRetrySave={p.onRetrySave}
         autoFocus={p.focusNote === note.id}
       />
     </li>
   );
 
   return (
-    <aside ref={p.panelRef} className={styles.panel} aria-labelledby={titleId} onKeyDown={onKeyDown} data-notes-panel="">
+    <aside
+      ref={p.panelRef}
+      className={styles.panel}
+      aria-labelledby={titleId}
+      onKeyDown={onKeyDown}
+      data-notes-panel=""
+      data-raised={p.raised ? 'true' : 'false'}
+    >
       <div className={styles.header}>
         <h2 id={titleId} className={styles.title}>
           Notes

@@ -493,7 +493,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       // Ruling R61: fit width, but no larger than 100%, as Chrome's and Drive's viewers open (a narrow window goes below).
       zoom: START_ZOOM,
       currentPage: Math.min(doc.open.pageCount - 1, Math.max(0, (params.page ?? 1) - 1)),
-      railOpen: railStartsOpen(),
+      railOpen: railStartsOpen() && !viewerFeatures().some((f) => f.foldsRailAtOpen?.(doc)),
       ...resume,
     }),
   );

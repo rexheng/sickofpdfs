@@ -4,7 +4,7 @@
 // margin column scrolls with the pages (it draws into the page list's overlay), so a card placed at a content y stays
 // level with its line however far you scroll.
 import type { Anchor, NormRect } from '@sop/core';
-import { type Box, normToCss, type PageBox, PAGE_GAP } from '@sop/viewer';
+import { type Box, computeLayout, normToCss, type PageBox, PAGE_GAP, type PageSize, resolveScale, START_ZOOM } from '@sop/viewer';
 import type { Resolution } from '../annotations/boundary';
 
 /** Docs' margin card (02 section 4.11; the card tokens). */
@@ -14,10 +14,21 @@ export const CARD_OFFSET = 36;
 /** Space after the cards at the right edge of the window. */
 export const MARGIN_END = 16;
 /**
- * The width the page list keeps free at its right while the margin is shown (PageListApi.setReserveRight). The page
- * area already keeps PAGE_GAP after the pages, so at fit width the cards end MARGIN_END from the window's edge.
+ * The width the page list keeps free at the right of the pages for the margin (PageListApi.setReserveRight), beyond the
+ * PAGE_GAP it always keeps there: the cards then end MARGIN_END from the scroll bar. It never changes the zoom (ruling
+ * R69): when the pages do not fit beside it at their size, the cards fold into the notes button instead.
  */
 export const MARGIN_RESERVE = CARD_OFFSET - PAGE_GAP + CARD_WIDTH + MARGIN_END;
+
+/** The notes panel (S15): 320 px wide, 16 px in from the window's right edge. */
+const PANEL_WIDTH = 320;
+const PANEL_INSET = 16;
+/**
+ * The width the page list keeps free at the right while the notes panel is open: the panel and its inset, so a page
+ * that fits beside it ends PAGE_GAP before it. When the page does not fit, it stays where it is and the panel lies over
+ * its right side; the page can then be scrolled sideways out from under it.
+ */
+export const PANEL_RESERVE = PANEL_WIDTH + PANEL_INSET;
 
 /** A 0–1 rect of a page (unrotated, as stored) → the box it covers on screen, in content px. */
 export function rectInContent(n: NormRect, box: PageBox): Box {
@@ -62,7 +73,7 @@ export function anchorTop(a: Anchor, boxes: readonly PageBox[]): number | null {
     }
     case 'point': {
       const box = boxes[a.page];
-      return box ? pointInContent(a.point, box).y - PIN_SIZE / 2 : null;
+      return box ? pinAt(a.point, box).y : null;
     }
     case 'page':
       return boxes[a.page]?.top ?? null;
@@ -78,8 +89,18 @@ export function columnLeft(boxes: readonly PageBox[]): number {
   return right + CARD_OFFSET;
 }
 
-/** The round marker of a point note on its page. */
-export const PIN_SIZE = 28;
+/** The round marker of a point note: small, so it never hides a word (TB2 critics). */
+export const PIN_SIZE = 20;
+
+/**
+ * Where a point note's pin is drawn (its top-left, content px): level with the point, on the page's right edge, half on
+ * the page's blank margin and half beside it, the way Docs marks a comment beside its line. So it never sits on the
+ * words the note is about, and it points at the card beside it.
+ */
+export function pinAt(point: readonly [number, number], box: PageBox): { x: number; y: number } {
+  const p = pointInContent(point, box);
+  return { x: box.left + box.width - PIN_SIZE / 2, y: p.y - PIN_SIZE / 2 };
+}
 
 /** Whether a 0–1 point of page `page` falls on one of a text anchor's rects there (a few px of slack at 100%). */
 export function anchorHit(a: Anchor, page: number, u: number, v: number, slack = 0.002): boolean {
@@ -102,4 +123,28 @@ export function anchorLabel(a: Anchor): string | null {
     default:
       return null;
   }
+}
+
+/**
+ * At open (R60 with R69): a PDF that had notes last time, in a window where the margin fits beside the pages only with
+ * the thumbnail rail folded away, at the same zoom. Then the rail starts folded, so the pages never move once shown.
+ * `width` is the page area's width with the rail beside it (scroll bar not counted), `rail` the rail's width.
+ */
+export function marginNeedsRailAway(pages: readonly PageSize[], o: { width: number; height: number; rail: number }): boolean {
+  if (pages.length === 0 || o.rail <= 0) return false;
+  const fits = (width: number) => {
+    const scale = resolveScale(START_ZOOM, { width, height: o.height }, [...pages], { viewRotation: 0, spread: 'none' });
+    const l = computeLayout([...pages], { scale, viewRotation: 0, spread: 'none', viewportWidth: width });
+    let left = Infinity;
+    let right = 0;
+    for (const b of l.boxes) {
+      left = Math.min(left, b.left);
+      right = Math.max(right, b.left + b.width);
+    }
+    return { scale, ok: right - left + 2 * PAGE_GAP + MARGIN_RESERVE <= width + 0.5 };
+  };
+  const beside = fits(o.width);
+  if (beside.ok) return false;
+  const without = fits(o.width + o.rail);
+  return without.ok && Math.abs(without.scale - beside.scale) < 1e-6;
 }

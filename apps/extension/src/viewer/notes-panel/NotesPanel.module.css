@@ -26,11 +26,12 @@
   outline: none;
 }
 
-/* A very narrow window has no room beside the pages: the panel lies over them, raised (NotesPanelMount.module.css). */
-@media (width < 720px) {
-  .panel {
-    box-shadow: var(--elev-3);
-  }
+/*
+ * When the pages do not fit beside it at the zoom the reader chose, the panel lies over their right side, raised; the
+ * pages never shrink for it (R69), and they can be scrolled sideways out from under it.
+ */
+.panel[data-raised='true'] {
+  box-shadow: var(--elev-3);
 }
 
 .panel:focus-visible {

@@ -1,5 +1,6 @@
-// The notes panel in the viewer (plan S15): Shift+F4 opens it, Ctrl+Alt+N and Ctrl+Alt+P step through the notes, and
-// in a narrow window it is where the comment cards go. App.tsx mounts it with one line.
+// The notes panel in the viewer (plan S15): Shift+F4 or the toolbar's Notes button opens it, Ctrl+Alt+N and
+// Ctrl+Alt+P step through the notes from where the reader is (R70), and when the cards do not fit beside the pages it is
+// where they go (R69). App.tsx mounts it with one line.
 //
 // What it does with drafts, so no text is lost:
 // - Esc in a note or reply box sends what was typed (the controller's reading of the spec: Esc "saves typed text");
@@ -8,19 +9,19 @@
 //   controller's ruling): a note or reply with text is sent, an empty one is dropped. While it is being typed, the
 //   draft keeper keeps the text safe.
 import type { CommentId, ThreadId } from '@sop/core';
-import { Icon, Tooltip } from '@sop/ui';
 import type { JumpHistory, PageSize, ViewerStore } from '@sop/viewer';
 import type { PageListApi } from '@sop/viewer/react';
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { AnnotationSession } from '../annotations/session';
 import { Snackbar } from '../chrome/Snackbar';
+import { keptOf } from '../notes/kept';
 import { installShortcuts } from '../shortcuts';
 import { createNotesCommands, type NotesCommand } from './commands';
 import { listNotes, type NoteEntry, type NoteSpot, type NotesFilter, spotOf } from './model';
 import { distanceBelowTop, goToSpot, noteStops, stepNote } from './navigate';
 import { NotesPanel } from './NotesPanel';
 import styles from './NotesPanelMount.module.css';
-import { notesPanel, useCardsFolded, useNotesPanelOpen } from './panel-state';
+import { notesPanel, publishNotesButton, useCardsFolded, useNotesPanelOpen, usePanelOverPages } from './panel-state';
 
 export interface NotesPanelMountProps {
   /** The tab's annotation session. Null while there is none: then nothing is shown and the keys do nothing. */
@@ -49,12 +50,17 @@ type MountedProps = NotesPanelMountProps & { session: AnnotationSession };
 
 /** How long the snackbar shows a message (chrome/Snackbar.tsx). */
 const NOTE_SHOWN_MS = 4000;
+/** While the panel lies over the pages: a note's words stay this far left of it (and of the view's left edge). */
+const CLEAR_OF_PANEL = 16;
+/** How much of a spot's surroundings (a point, a page corner) counts as its words. */
+const WORDS_SHOWN = 240;
 
 function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: MountedProps) {
   const subscribe = useCallback((cb: () => void) => session.subscribe(cb), [session]);
   const state = useSyncExternalStore(subscribe, () => session.state());
   const open = useNotesPanelOpen();
   const folded = useCardsFolded();
+  const raised = usePanelOverPages();
   const [filter, setFilter] = useState<NotesFilter>('all');
   const [said, setSaid] = useState('');
   const [note, setNote] = useState<{ text: string } | null>(null);
@@ -117,7 +123,10 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
       say(total > 0 ? 'These notes aren’t on any page. Press Shift+F4 to see them.' : 'This PDF has no notes yet.', true);
       return;
     }
-    const to = stepNote(stops, dir, s.active, (st) => distanceBelowTop(st, pages, api));
+    // R70: from where the reader is. The active note counts only while it is still in view.
+    const viewH = api.viewportHeight();
+    const active = s.active !== null && stops.some((st) => st.id === s.active && inView(distanceBelowTop(st, pages, api), viewH)) ? s.active : null;
+    const to = stepNote(stops, dir, active, (st) => distanceBelowTop(st, pages, api));
     if (to === null) return;
     activate(to.stop.id);
     show(to.stop);
@@ -134,6 +143,13 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
     if (next && o.focus) focusOnOpen.current = true;
   }, []);
   const toggle = useCallback(() => setOpen(!notesPanel.isOpen(), { focus: true }), [setOpen]);
+
+  // The toolbar's Notes button (NotesButton.tsx): how many notes, and the panel's toggle.
+  useEffect(() => {
+    if (!available) return;
+    publishNotesButton({ count: total, toggle });
+  }, [available, total, toggle]);
+  useEffect(() => () => publishNotesButton(null), []);
 
   // The commands: into the viewer's list when it takes them, otherwise keys of our own.
   const latest = useRef({ toggle, step, available });
@@ -184,6 +200,26 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
     const el = cards.current.get(state.active);
     if (el && list.current) reveal(list.current, el);
   }, [open, state.active, filter]);
+
+  // While the panel lies over the pages (R69: they keep their size), the active note's words are slid out from under it
+  // (the pages scroll sideways), so the words a new note is about are never hidden behind its own box.
+  useEffect(() => {
+    if (!open || !raised || state.active === null) return;
+    const e = entry(state.active);
+    const api = pageList.current;
+    const frame = requestAnimationFrame(() => {
+      const box = panel.current?.getBoundingClientRect();
+      const scroller = document.querySelector<HTMLElement>('[role="document"]');
+      const span = e && api ? clientSpan(e, api, pages) : null;
+      if (!span || !box || !scroller) return;
+      // Its end clear of the panel, without pushing its start off the left of the view.
+      const need = span.right - (box.left - CLEAR_OF_PANEL);
+      const room = span.left - (scroller.getBoundingClientRect().left + CLEAR_OF_PANEL);
+      const by = Math.min(need, room);
+      if (by > 1) scroller.scrollBy({ left: by, behavior: 'smooth' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [open, raised, state.active, entry, pageList, pages]);
 
   const activeEntry = entry(state.active);
   const focusNote = activeEntry !== undefined && activeEntry.comments.length === 0 ? activeEntry.id : null;
@@ -247,10 +283,11 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
           onDelete={onDelete}
           onShowOriginal={onShowOriginal}
           cardRef={cardRef}
+          raised={raised}
+          keptOf={(e) => keptOf(state, e.id)}
+          onRetrySave={() => void session.retryParked()}
         />
-      ) : (
-        total > 0 && <ShowNotesButton count={total} onClick={() => setOpen(true, { focus: true })} />
-      )}
+      ) : null}
       <p className={styles.srOnly} role="status">
         {said}
       </p>
@@ -259,22 +296,36 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
   );
 }
 
-/**
- * The way back to the panel with the mouse: a small pill at the bottom right, "the notes of this PDF", with how many
- * there are. It shows only when the PDF has notes and the panel is closed (the panel has its own Close).
- */
-function ShowNotesButton({ count, onClick }: { count: number; onClick: () => void }) {
-  const label = count === 1 ? 'Show notes (1 note)' : `Show notes (${count} notes)`;
-  return (
-    <div className={styles.showRow} data-viewer-chrome="">
-      <Tooltip label="Show notes" shortcut="Shift+F4">
-        <button type="button" className={styles.show} aria-label={label} onClick={onClick}>
-          <Icon name="comment" size={20} />
-          <span className={styles.showCount}>{count}</span>
-        </button>
-      </Tooltip>
-    </div>
-  );
+/** Where a note's words (or its spot) are across the screen, in client px; null when it has no place on a page. */
+function clientSpan(e: NoteEntry, api: PageListApi, pages: readonly PageSize[]): { left: number; right: number } | null {
+  const a = e.placement === 'unplaced' ? null : e.thread.anchor;
+  const at = (page: number, u: number, v: number) => {
+    const size = pages[page];
+    return size ? api.clientPointOf({ pageIndex: page, x: u * size.width, y: v * size.height }) : null;
+  };
+  if (a?.kind === 'text' && e.spot) {
+    let left = Infinity;
+    let right = -Infinity;
+    for (const g of a.rects) {
+      if (g.page !== e.spot.pageIndex) continue;
+      for (const r of g.rects) {
+        const p = at(g.page, r[0], r[1]);
+        const q = at(g.page, r[2], r[3]);
+        if (!p || !q) continue;
+        left = Math.min(left, p.x, q.x);
+        right = Math.max(right, p.x, q.x);
+      }
+    }
+    if (Number.isFinite(left)) return { left, right };
+  }
+  if (!e.spot) return null;
+  const p = at(e.spot.pageIndex, e.spot.x, e.spot.y);
+  return p && Number.isFinite(p.x) ? { left: p.x, right: p.x + WORDS_SHOWN } : null;
+}
+
+/** Whether a note this far below the top of the view (CSS px) is in a view `height` tall. */
+function inView(below: number, height: number): boolean {
+  return below >= 0 && below < height;
 }
 
 /** Scrolls `list` (and only it) so `el` is in sight, with a little room above it. */

@@ -22,15 +22,22 @@ export interface CardColumnProps {
   activeId: string | null;
   /** Off while the pages are laid out again (zoom, rotation, a resize): the cards then move with the pages at once. */
   animate: boolean;
+  /**
+   * The part of the document that was in view when the active note became active (content px). While its line is in
+   * that part, the active card is kept inside it: lifted beside its line, never off the bottom of the window.
+   */
+  band?: { top: number; bottom: number } | null;
 }
 
 /** A card's height before it has been measured: one comment, one line. */
 const ESTIMATE = 96;
+/** The room an active card keeps from the top and bottom edges of the view. */
+const VIEW_EDGE = 16;
 
 /** Each card's element id is this and its note's thread id (the click-away test and the tests find cards by it). */
 export const CARD_ID_PREFIX = 'note-card-';
 
-export function CardColumn({ cards, left, activeId, animate }: CardColumnProps) {
+export function CardColumn({ cards, left, activeId, animate, band = null }: CardColumnProps) {
   const [heights, setHeights] = useState<ReadonlyMap<string, number>>(() => new Map());
   const elements = useRef(new Map<string, HTMLElement>());
   const observer = useRef<ResizeObserver | null>(null);
@@ -100,11 +107,14 @@ export function CardColumn({ cards, left, activeId, animate }: CardColumnProps) 
 
   const tops = useMemo(() => {
     const placed = layoutCards(
-      cards.map((c) => ({ id: c.id, anchorTop: c.anchorTop, height: heights.get(c.id) ?? ESTIMATE })),
+      cards.map((c) => {
+        const height = heights.get(c.id) ?? ESTIMATE;
+        return { id: c.id, anchorTop: c.id === activeId ? keptInView(c.anchorTop, height, band) : c.anchorTop, height };
+      }),
       { activeId, gap: CARD_GAP },
     );
     return new Map(placed.map((p) => [p.id, p.top]));
-  }, [cards, heights, activeId]);
+  }, [cards, heights, activeId, band]);
 
   return (
     <div className={styles.column} data-animate={animate ? 'true' : 'false'}>
@@ -121,4 +131,14 @@ export function CardColumn({ cards, left, activeId, animate }: CardColumnProps) 
       ))}
     </div>
   );
+}
+
+/**
+ * Where the active card goes: level with its line, unless that would put its foot (the note box and its Send button)
+ * below the view; then it is lifted just enough, beside its line, as far as the top of the view. A card whose line is
+ * out of view stays with its line.
+ */
+function keptInView(anchorTop: number, height: number, band: { top: number; bottom: number } | null): number {
+  if (band === null || anchorTop < band.top || anchorTop >= band.bottom) return anchorTop;
+  return Math.min(anchorTop, Math.max(band.top + VIEW_EDGE, band.bottom - VIEW_EDGE - height));
 }

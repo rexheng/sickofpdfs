@@ -28,7 +28,7 @@ export interface NoteEntry {
   placement: CardPlacement;
   /** Where it is in this copy of the PDF. Null for a whole-document note and for one that couldn't be placed. */
   spot: NoteSpot | null;
-  /** What it is on: "p. 4", "Page 4", "Whole document", "Figure 2 · p. 4". */
+  /** What it is on: "Page 4", "Whole document", "Area · Page 4", "Figure 2 · Page 4" (never "p. 4": R74). */
   label: string | null;
   /** The words it is on, for a note on a passage. */
   quote: string | null;
@@ -124,17 +124,17 @@ export function spotOf(a: Anchor, thread?: Pick<ThreadRow, 'sortKey'>): NoteSpot
   }
 }
 
-/** The line above a card's text: what the note is on, in plain words. Page numbers count from 1. */
+/** The line above a card's text: what the note is on, in plain words, the page always as "Page N" (R74). Page numbers count from 1. */
 export function labelOf(a: Anchor): string | null {
   switch (a.kind) {
     case 'text':
-      return `p. ${a.start.page + 1}`;
+      return `Page ${a.start.page + 1}`;
     case 'area':
-      return `Area · p. ${a.page + 1}`;
+      return `Area · Page ${a.page + 1}`;
     case 'figure':
-      return `${a.figure.label ?? 'Figure'} · p. ${a.page + 1}`;
+      return `${a.figure.label ?? 'Figure'} · Page ${a.page + 1}`;
     case 'point':
-      return `p. ${a.page + 1}`;
+      return `Page ${a.page + 1}`;
     case 'page':
       return `Page ${a.page + 1}`;
     case 'document':

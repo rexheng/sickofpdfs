@@ -1,7 +1,8 @@
 // Next and previous note (Ctrl+Alt+N, Ctrl+Alt+P), and going to a note from the panel (plan S15).
 //
-// - "Next" starts from the active note when there is one. Otherwise it starts from the reading position, the top of
-//   the view: the first note at or below it is next, and the last note above it is previous.
+// - "Next" starts from where the reader is (ruling R70): the first note at or below the top of the view is next, and the
+//   last note above it is previous. The active note is the starting point only while it is still in view (the caller
+//   passes it as active only then), so after scrolling away, next and previous follow the page, not the last note.
 // - It wraps: after the last note comes the first again.
 // - Only notes with a place on a page take part. Whole-document notes and notes that could not be placed are in the
 //   panel only.

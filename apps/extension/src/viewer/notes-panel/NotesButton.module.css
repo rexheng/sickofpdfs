@@ -1,0 +1,19 @@
+/*
+ * "Notes" in the pill, after "Comment": the same text button (Drive's pill text style, 32 px tall, the 8% hover layer).
+ * While the panel is open it is pressed: the selected toggle's #333537 disc, as the rail's toggles show it.
+ */
+.button {
+  block-size: var(--icon-btn);
+  margin-inline-start: var(--space-1);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+.button:hover {
+  background-color: var(--icon-btn-hover);
+}
+
+.button[aria-pressed='true'] {
+  background-color: var(--gm3-sys-color-surface-container-highest);
+  color: var(--gm3-sys-color-on-surface);
+}

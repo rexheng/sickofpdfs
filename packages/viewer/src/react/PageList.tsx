@@ -53,13 +53,28 @@ export interface PageListApi {
   /** Where a page point is now, in client px. */
   clientPointOf(p: PagePoint): { x: number; y: number };
   /**
-   * Keeps `px` CSS px free at the right of the pages for the notes margin (Phase 2): the pages centre and fit in the rest
-   * of the width, and the scroll area grows by `px`. The page point under `keep` (client px) stays where it is on screen;
+   * Keeps `px` CSS px free at the right of the pages, beyond the usual PAGE_GAP, for the notes margin or the notes panel
+   * (Phase 2). It never changes the zoom (ruling R69): fit modes still fit the whole width. When the pages fit with that
+   * room beside them, they move left only as far as they must (a page that already has the room stays where it is).
+   * When they do not fit, they stay where they are; with `scroll`, the scroll area grows by the room, so what lies under
+   * the notes panel can be scrolled into view. The page point under `keep` (client px) stays where it is on screen;
    * without one, the line at the top of the view does.
    */
-  setReserveRight(px: number, keep?: { clientX: number; clientY: number }): void;
+  setReserveRight(px: number, keep?: { clientX: number; clientY: number }, o?: { scroll?: boolean }): void;
   /** The width kept free at the right (setReserveRight). */
   reserveRight(): number;
+  /**
+   * Whether `px` CSS px (setReserveRight) fit at the right of the pages at the size they have now, in a view
+   * `extraWidth` CSS px wider than this one (the room the navigation rail would give back). False when that wider view
+   * would change the pages' size (a fit zoom), since the room must never cost a change of zoom.
+   */
+  roomForReserve(px: number, extraWidth?: number): boolean;
+  /**
+   * The next re-layout that keeps the pages' size, if it comes within about 300 ms (a rail folding away, the reserve
+   * changing), slides the pages from where they are on screen now to their new place over about 200 ms, so the eye
+   * can follow them (R69). Nothing slides when the reader asked for reduced motion.
+   */
+  glide(): void;
   /**
    * A layer inside the scroll area, above the pages, that scrolls with them (the notes margin draws its cards here). Its
    * coordinates are the layout's: CSS px from the top-left of the scroll area, as pageBoxes() gives them. It ignores the
@@ -82,7 +97,10 @@ export interface PageListProps {
    * engine crash (PdfEngineCrashedError) from one bad page. Without it, each failure is logged.
    */
   onError?: (err: unknown) => void;
-  /** CSS px kept free at the right from the first layout (setReserveRight later changes it): a document that opens with its notes margin. */
+  /**
+   * CSS px kept free at the right from the first layout (setReserveRight later changes it), for the notes margin: when
+   * the pages fit with it beside them, a first note does not move them (R60, R69).
+   */
   initialReserveRight?: number;
 }
 
@@ -92,6 +110,9 @@ const LINE_PX = 40;
 const WHEEL_SETTLE_MS = 150;
 /** How often devicePixelRatio is checked, besides the media query's change event. */
 const DPR_CHECK_MS = 100;
+/** A glide (PageListApi.glide): how long the pages slide, and how long after the call a re-layout may still start one. */
+const GLIDE_MS = 200;
+const GLIDE_WINDOW_MS = 300;
 
 interface Viewport {
   width: number;
@@ -113,9 +134,35 @@ function scaleFor(zoom: ZoomMode, viewport: Viewport, pages: PageSize[], fitPage
   return resolveScale(zoom, viewport, row.map((i) => pages[i]), { viewRotation, spread });
 }
 
-/** The part of the viewport the pages lay out and fit in: all of it less the width kept for the notes margin. */
-function pageArea(viewport: Viewport, reserve: number): Viewport {
-  return { width: Math.max(1, viewport.width - reserve), height: viewport.height };
+/**
+ * The room kept at the right (setReserveRight), applied to a layout without changing its scale (R69). When the pages
+ * fit with `reserve` CSS px beside them (beyond PAGE_GAP), every row moves left by the same amount, only as far as the
+ * widest row needs. Otherwise nothing moves, and with `scroll` the scroll area grows so the room can be scrolled to.
+ */
+function withReserve(l: PageLayout, viewportWidth: number, reserve: number, scroll: boolean): PageLayout {
+  if (reserve <= 0 || l.boxes.length === 0) return l;
+  let left = Infinity;
+  let right = 0;
+  for (const b of l.boxes) {
+    left = Math.min(left, b.left);
+    right = Math.max(right, b.left + b.width);
+  }
+  const shift = right - (viewportWidth - PAGE_GAP - reserve);
+  if (shift <= 0) return l;
+  if (left - shift >= PAGE_GAP - 0.5) return { ...l, boxes: l.boxes.map((b) => ({ ...b, left: b.left - shift })) };
+  return scroll ? { ...l, width: Math.max(l.width, right + PAGE_GAP + reserve) } : l;
+}
+
+/** Whether the widest row of `l` fits in `width` with `reserve` CSS px beside it (beyond PAGE_GAP on each side). */
+function reserveFits(l: PageLayout, width: number, reserve: number): boolean {
+  if (l.boxes.length === 0) return false;
+  let left = Infinity;
+  let right = 0;
+  for (const b of l.boxes) {
+    left = Math.min(left, b.left);
+    right = Math.max(right, b.left + b.width);
+  }
+  return right - left + 2 * PAGE_GAP + reserve <= width + 0.5;
 }
 
 /** The page whose box holds content point `c`, or the nearest one. */
@@ -148,30 +195,41 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
   const viewRotation = useViewerState(store, (s) => s.viewRotation);
   const spread = useViewerState(store, (s) => s.spread);
   const [viewport, setViewport] = useState<Viewport | null>(null);
-  // CSS px kept free at the right for the notes margin: the pages lay out and fit in the rest (setReserveRight).
-  const [reserve, setReserve] = useState(() => Math.max(0, Math.round(initialReserveRight)));
+  // CSS px kept free at the right for the notes margin or panel; it moves the pages, never resizes them (setReserveRight).
+  const [reserve, setReserve] = useState(() => ({ px: Math.max(0, Math.round(initialReserveRight)), scroll: false }));
+  const sizerRef = useRef<HTMLDivElement>(null);
+  /** A glide asked for (PageListApi.glide): where the page in view was on screen, until when, and at what scale. */
+  const glideFrom = useRef<{ index: number; clientX: number; scale: number; until: number; base: number | null } | null>(null);
+  const glideAnim = useRef<Animation | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const [dpr, setDpr] = useState(() => window.devicePixelRatio || 1);
   const [range, setRange] = useState({ first: 0, last: -1 });
   const [driver] = useState(() => new PageDriver(scheduler, pages, store.get().currentPage));
   const fitPage = useRef(store.get().currentPage);
   const pendingAnchor = useRef<Anchor | null>(null);
+  const reserveMode = useRef(false);
   const opened = useRef(false);
   const reportError = useRef(onError);
   useLayoutEffect(() => {
     reportError.current = onError;
   });
 
-  const area = useMemo(() => (viewport ? pageArea(viewport, reserve) : null), [viewport, reserve]);
-  const scale = area ? scaleFor(zoom, area, pages, fitPage.current, viewRotation, spread) : store.get().scale;
+  const scale = viewport ? scaleFor(zoom, viewport, pages, fitPage.current, viewRotation, spread) : store.get().scale;
   const layout = useMemo(
-    () => (area ? computeLayout(pages, { scale, viewRotation, spread, viewportWidth: area.width }) : null),
-    [pages, scale, viewRotation, spread, area],
+    () => (viewport ? withReserve(computeLayout(pages, { scale, viewRotation, spread, viewportWidth: viewport.width }), viewport.width, reserve.px, reserve.scroll) : null),
+    [pages, scale, viewRotation, spread, viewport, reserve],
   );
-  const latest = useRef({ layout, viewport, scale, viewRotation, spread, dpr, reserve });
+  const latest = useRef({ layout, viewport, scale, viewRotation, spread, dpr, reserve: reserve.px });
   useLayoutEffect(() => {
-    latest.current = { layout, viewport, scale, viewRotation, spread, dpr, reserve };
+    latest.current = { layout, viewport, scale, viewRotation, spread, dpr, reserve: reserve.px };
   });
+
+  /** Where page `index` starts on screen, in client px, with the layout the page list has now (no glide counted). */
+  const pageClientLeft = (index: number): number | null => {
+    const el = scrollerRef.current;
+    const b = latest.current.layout?.boxes[index];
+    return el && b ? el.getBoundingClientRect().left - el.scrollLeft + b.left : null;
+  };
 
   /** The page point at a client point (or at the viewport centre), to keep in place across a re-layout. */
   const anchorAt = (anchor?: { clientX: number; clientY: number }): Anchor | null => {
@@ -216,7 +274,9 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
       setViewport(next);
     };
     measure();
-    const observer = new ResizeObserver(measure);
+    // The new size is laid out before the browser paints: a rail folding away must not show one frame of the pages
+    // where the old layout puts them in the new, wider area.
+    const observer = new ResizeObserver(() => flushSync(measure));
     observer.observe(el);
     return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- anchorAt reads refs only
@@ -266,6 +326,35 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
     if (store.get().scale !== scale) store.set({ scale });
     driver.setView({ layout, scale, dpr, viewRotation });
     driver.onScroll(false);
+    // A glide asked for (R69): the pages slide from where they were on screen to their new place.
+    const g = glideFrom.current;
+    const sizer = sizerRef.current;
+    if (!g || !sizer) return;
+    if (performance.now() > g.until || g.scale !== scale) {
+      glideFrom.current = null;
+      return;
+    }
+    const base = pageClientLeft(g.index);
+    if (base === null) return;
+    // Where the pages show now: the start, or partway through a slide that an earlier re-layout began.
+    const running = glideAnim.current;
+    const shown = running && g.base !== null ? g.base + (parseFloat(getComputedStyle(sizer).translate) || 0) : g.clientX;
+    running?.cancel();
+    g.base = base;
+    const dx = shown - base;
+    if (Math.abs(dx) < 0.5 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    // The slide must not add a sideways scroll bar for its 200 ms: the pages fit the view (nothing to scroll sideways).
+    if (el.scrollWidth > el.clientWidth + 0.5) return;
+    el.style.overflowX = 'hidden';
+    const slide = sizer.animate([{ translate: `${dx}px 0` }, { translate: '0 0' }], { duration: GLIDE_MS, easing: 'cubic-bezier(0.2, 0, 0, 1)' });
+    glideAnim.current = slide;
+    const done = () => {
+      if (glideAnim.current !== slide) return;
+      glideAnim.current = null;
+      el.style.overflowX = '';
+    };
+    slide.onfinish = done;
+    slide.oncancel = done;
   }, [layout, dpr, scale, viewRotation, driver, pages, store]);
 
   const api = useMemo<PageListApi>(() => {
@@ -286,7 +375,7 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
           store.set({ zoom: mode });
           return;
         }
-        const next = scaleFor(mode, pageArea(v.viewport, v.reserve), pages, fitPage.current, v.viewRotation, v.spread);
+        const next = scaleFor(mode, v.viewport, pages, fitPage.current, v.viewRotation, v.spread);
         if (next !== v.scale) pendingAnchor.current = anchorAt(anchor);
         flushSync(() => store.set({ zoom: mode, scale: next }));
       },
@@ -380,18 +469,33 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
         const c = pagePointToContent(drawn(b), pages[p.pageIndex], p);
         return { x: c.x - s.scrollLeft + rect.left, y: c.y - s.scrollTop + rect.top };
       },
-      setReserveRight(px, keep) {
-        const next = Math.max(0, Math.round(px));
-        if (next === latest.current.reserve) return;
+      setReserveRight(px, keep, o) {
+        const next = { px: Math.max(0, Math.round(px)), scroll: o?.scroll ?? false };
+        if (next.px === latest.current.reserve && next.scroll === reserveMode.current) return;
         const s = el();
         if (s && latest.current.layout) {
           const rect = s.getBoundingClientRect();
           pendingAnchor.current = anchorAt(keep ?? { clientX: rect.left + s.clientWidth / 2, clientY: rect.top });
         }
-        latest.current = { ...latest.current, reserve: next };
+        latest.current = { ...latest.current, reserve: next.px };
+        reserveMode.current = next.scroll;
         flushSync(() => setReserve(next));
       },
       reserveRight: () => latest.current.reserve,
+      roomForReserve(px, extraWidth = 0) {
+        const v = latest.current;
+        if (!v.viewport || !v.layout) return false;
+        if (extraWidth === 0) return reserveFits(v.layout, v.viewport.width, px);
+        const wider = { width: v.viewport.width + extraWidth, height: v.viewport.height };
+        const at = scaleFor(store.get().zoom, wider, pages, fitPage.current, v.viewRotation, v.spread);
+        if (Math.abs(at - v.scale) > 1e-6) return false;
+        return reserveFits(computeLayout(pages, { scale: at, viewRotation: v.viewRotation, spread: v.spread, viewportWidth: wider.width }), wider.width, px);
+      },
+      glide() {
+        const i = store.get().currentPage;
+        const x = pageClientLeft(i);
+        glideFrom.current = x === null ? null : { index: i, clientX: x, scale: latest.current.scale, until: performance.now() + GLIDE_WINDOW_MS, base: null };
+      },
       overlayHost: () => overlayRef.current,
     };
     return self;
@@ -432,7 +536,7 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
   return (
     <div ref={scrollerRef} role="document" aria-label={doc.loaded.displayName} tabIndex={0} className={styles.scroller}>
       {layout && (
-        <div className={styles.sizer} style={{ width: layout.width + reserve, height: Math.ceil(layout.height) }}>
+        <div ref={sizerRef} className={styles.sizer} style={{ width: layout.width, height: Math.ceil(layout.height) }}>
           {mounted.map((i) => (
             <PageView key={i} box={layout.boxes[i]} device={deviceSizes[i]} dpr={dpr} driver={driver} renderPage={renderPage} />
           ))}

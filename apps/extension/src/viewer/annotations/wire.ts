@@ -150,6 +150,11 @@ export interface ViewerFeature {
    * already has notes opens with its margin, so the page never narrows late). Read once, before the pages are drawn.
    */
   reserveAtOpen?(doc: OpenedDocument): number;
+  /**
+   * True: the navigation rail starts folded for this document, because its notes margin fits beside the pages only
+   * without it (R60 with R69: the pages never move once shown, and a note never changes the zoom). Read once, at open.
+   */
+  foldsRailAtOpen?(doc: OpenedDocument): boolean;
 }
 
 const features: ViewerFeature[] = [];

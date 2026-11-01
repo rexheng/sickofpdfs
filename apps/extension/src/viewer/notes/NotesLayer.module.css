@@ -1,12 +1,14 @@
 /*
  * Things the notes layer draws on the pages, in the page list's overlay (content px, scrolling with the pages).
  *
- * A point note's pin: a round marker in the default mark colour with Docs' comment icon, like the comment markers of
- * Drive's PDF viewer. The page is white even in the dark viewer, so the light ink and focus colours are used.
+ * A point note's pin: a small marker in the default mark colour with Docs' comment icon, like the comment markers of
+ * Drive's PDF viewer. It sits on the page's right edge, level with the point (margin.ts pinAt), so it never covers the
+ * words; its sharp corner points into the page. The page is white even in the dark viewer, so the light ink and focus
+ * colours are used.
  */
 .pin {
-  /* 28 px: PIN_SIZE in margin.ts */
-  --_pin: calc(var(--space-6) + var(--space-1));
+  /* 20 px: PIN_SIZE in margin.ts */
+  --_pin: var(--space-5);
 
   position: absolute;
   display: grid;
@@ -16,7 +18,7 @@
   block-size: var(--_pin);
   margin: 0;
   padding: 0;
-  border: var(--focus-ring-width) solid var(--sop-card-active-bg);
+  border: 1px solid var(--sop-card-active-bg);
   border-radius: 50% 50% 50% var(--space-1);
   background-color: var(--sop-mark-1);
   box-shadow: var(--shadow-docs-comment-active);
@@ -24,6 +26,11 @@
   cursor: pointer;
   pointer-events: auto;
   transition: background-color 150ms ease-out;
+}
+
+/* The comment glyph inside, 14 px in the 20 px pin. */
+.pin .pinIcon {
+  --_size: calc(var(--space-3) + var(--space-1) / 2);
 }
 
 .pin[data-active="true"] {

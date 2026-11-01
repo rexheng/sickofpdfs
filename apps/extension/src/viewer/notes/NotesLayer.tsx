@@ -1,8 +1,10 @@
 // Comments in the viewer (Phase 2, S14): Ctrl+Alt+M, type, Enter, and the note is a card in the margin with replies,
 // as in Google Docs (spec "The Ctrl+Alt+M flow"; plan section 2, S14).
 //
-// - The margin column appears once the document has a note, or a note box opens. The pages then move left in one move
-//   (at fit width they get narrower), and the line the note is on stays where it was on screen.
+// - The margin's room is kept beside the pages whenever they fit with it at the zoom the reader chose, so a first note
+//   moves nothing (ruling R69: a note never changes the zoom). When they do not fit, the thumbnail rail folds away
+//   first (the pages slide over in about 200 ms, the line the note is on keeping its height); if they still do not fit,
+//   the cards fold into the toolbar's Notes button and a note that becomes active opens the notes panel.
 // - The note box sits in the margin, level with its line, so it never covers the text.
 // - Enter sends. Esc, or a click away, sends a new note that has text and cancels an empty one (its highlight goes too).
 //   A reply with text is sent too when its card is left (the controller's ruling, the same in the notes panel). Nothing
@@ -24,9 +26,11 @@ import type { NotesHost } from '../annotations/wire';
 import { isTypingTarget } from '../shortcuts';
 import { CARD_ID_PREFIX, CardColumn, type ColumnCard } from './CardColumn';
 import { createCommentFlow, type CommentContext, type NoteTarget } from './comment-flow';
-import { anchorHit, anchorLabel, anchorTop, columnLeft, MARGIN_RESERVE, PIN_SIZE, pointInContent, rectInContent, shownAnchor } from './margin';
-import { hadNotes, rememberNotes } from './margin-at-open';
-import { marginFolded, publishNoteCommands, subscribeMarginFolded, type NoteCommands } from './notes-host';
+import { anchorHit, anchorLabel, anchorTop, columnLeft, MARGIN_RESERVE, PANEL_RESERVE, pinAt, rectInContent, shownAnchor } from './margin';
+import { keptOf } from './kept';
+import { rememberNotes } from './margin-at-open';
+import { publishNoteCommands, type NoteCommands } from './notes-host';
+import { notesPanel, setCardsFolded, setPanelOverPages, useNotesPanelOpen } from '../notes-panel/panel-state';
 import styles from './NotesLayer.module.css';
 import type { NotesWiring } from './wiring';
 
@@ -61,6 +65,8 @@ interface Ghost {
 }
 
 const GHOST_MS = 2500;
+/** How long the cards count as fitting while the rail folds away for them (the pages move within a frame or two). */
+const RAIL_FOLD_MS = 1000;
 /** How far "Show where it was" and a restored note scroll their passage down from the top of the view. */
 const REVEAL_FROM_TOP = 0.3;
 
@@ -74,7 +80,9 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
   const host = useOverlayHost(pages);
   const scroller = host?.closest<HTMLElement>('[role="document"]') ?? null;
   const layoutTick = useLayoutTick(store, host);
-  const folded = useSyncExternalStore(subscribeMarginFolded, marginFolded);
+  const panelOpen = useNotesPanelOpen();
+  /** The rail is folding away for the margin: the cards count as fitting until the pages have moved. */
+  const [railFolding, setRailFolding] = useState(false);
 
   const [editing, setEditingState] = useState<Editing | null>(null);
   const editingRef = useRef<Editing | null>(null);
@@ -172,19 +180,36 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
     },
     [session],
   );
-  /** Nothing was made: a margin opened for it closes again if the document has no notes. */
-  const nothingOpened = useCallback(
-    (target: NoteTarget | null) => {
-      if (target === null && session.state().threads.length === 0) pages.current?.setReserveRight(0);
-    },
-    [session, pages],
-  );
-
-  /** Opens the margin before the note appears, keeping `keep` (client px) where it is on screen. */
-  const openMargin = useCallback((keep?: { clientX: number; clientY: number }) => {
+  /**
+   * The margin is needed but the cards do not fit beside the pages: the thumbnail rail folds away first, if that gives
+   * the room without changing the zoom (spec "Viewer specifics"; R69). The pages slide over (PageListApi.glide).
+   */
+  const foldRailForMargin = useCallback((): boolean => {
     const a = pages.current;
-    if (a && !marginFolded() && a.reserveRight() !== MARGIN_RESERVE) a.setReserveRight(MARGIN_RESERVE, keep);
-  }, [pages]);
+    if (!a || notesPanel.isOpen() || a.roomForReserve(MARGIN_RESERVE) || !store.get().railOpen) return false;
+    const rail = scroller ? Math.max(0, scroller.getBoundingClientRect().left) : 0; // 0 when the rail lies over the pages
+    if (rail === 0 || !a.roomForReserve(MARGIN_RESERVE, rail)) return false;
+    setRailFolding(true);
+    setCardsFolded(false); // before the note becomes active, so the notes panel does not open for it
+    a.glide();
+    store.set({ railOpen: false });
+    return true;
+  }, [pages, scroller, store]);
+
+  /** Nothing was made. The margin's room stays (it is there whenever it fits), so there is nothing to undo. */
+  const nothingOpened = useCallback((target: NoteTarget | null) => void target, []);
+
+  /**
+   * Makes room for the margin before the note appears (S14's step, also used by S16). The room is kept whenever the
+   * pages fit with it, so only the rail may have to fold; `keep` is the point the note is about, which keeps its height.
+   */
+  const openMargin = useCallback(
+    (keep?: { clientX: number; clientY: number }) => {
+      void keep;
+      foldRailForMargin();
+    },
+    [foldRailForMargin],
+  );
 
   const commands = useMemo<NoteCommands>(() => {
     const enabled = () => session.state().mode !== 'view-only';
@@ -225,11 +250,46 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
     return () => publishNoteCommands(null);
   }, [commands]);
 
-  // ---------------------------------------------------------------- the margin
+  // ---------------------------------------------------------------- the margin (R60, R69)
 
-  // The column shows while the document has a note, unless the notes panel holds the cards (open, or a narrow window).
-  // A note box that is opening has already opened it (openMargin). R60: a PDF that had notes last time opened with the
-  // margin (reserveAtOpen); it is kept until the stored notes have had their chance to load, so the page never narrows late.
+  // The room at the right of the pages: the margin's, kept whenever the pages fit with it (from the first layout:
+  // reserveAtOpen), so a first note moves nothing; the notes panel's while it is open. Neither ever changes the zoom.
+  // A page that does not fit beside the panel stays where it is, under the panel, and can be scrolled out from under it.
+  useEffect(() => {
+    const a = pages.current;
+    if (!a) return;
+    const want = panelOpen ? PANEL_RESERVE : MARGIN_RESERVE;
+    if (a.reserveRight() === want) return;
+    a.glide();
+    a.setReserveRight(want, undefined, { scroll: panelOpen });
+  }, [panelOpen, pages, host]);
+
+  // Whether the cards fit beside the pages at their size, measured after every layout (layoutTick). While the rail is
+  // folding away for them they count as fitting, so a new note does not open the panel in the meantime.
+  void layoutTick;
+  const marginFits = pages.current?.roomForReserve(MARGIN_RESERVE) ?? false;
+  useEffect(() => {
+    if (!railFolding) return;
+    if (marginFits) {
+      setRailFolding(false);
+      return;
+    }
+    const timer = setTimeout(() => setRailFolding(false), RAIL_FOLD_MS);
+    return () => clearTimeout(timer);
+  }, [railFolding, marginFits]);
+  const cardsFit = marginFits || railFolding;
+  const folded = panelOpen || !cardsFit;
+  useLayoutEffect(() => setCardsFolded(!cardsFit), [cardsFit]);
+  useLayoutEffect(() => setPanelOverPages(panelOpen && !(pages.current?.roomForReserve(PANEL_RESERVE) ?? false)));
+  useLayoutEffect(
+    () => () => {
+      setCardsFolded(false);
+      setPanelOverPages(false);
+    },
+    [],
+  );
+
+  // Notes arrive (loaded with the PDF, or written in another tab): the margin is needed now, so the rail may fold.
   const sha = notes.opened.loaded.sha256;
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
@@ -239,13 +299,10 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
       live = false;
     };
   }, [notes]);
-  const [heldAtOpen] = useState(() => hadNotes(sha));
   const hasNotes = s.threads.length > 0;
-  const marginOn = (hasNotes || (heldAtOpen && !loaded)) && !folded;
   useEffect(() => {
-    const a = pages.current;
-    if (a) a.setReserveRight(marginOn ? MARGIN_RESERVE : 0);
-  }, [marginOn, pages, host]);
+    if (hasNotes) foldRailForMargin();
+  }, [hasNotes, foldRailForMargin]);
   // What the next open of this file reserves: only a PDF whose notes are stored is remembered (never an unsaved one).
   useEffect(() => {
     if (!loaded) return;
@@ -399,7 +456,13 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
 
   // ---------------------------------------------------------------- the cards
 
-  void layoutTick; // the boxes below are read again whenever the pages are laid out again
+  // The part of the document in view when a note became active: its card is kept inside it, so a note low in the
+  // window shows its box and its Send button whole, lifted beside its line instead of moving the page (TB2 critics).
+  const [band, setBand] = useState<{ top: number; bottom: number } | null>(null);
+  useLayoutEffect(() => {
+    setBand(s.active !== null && scroller ? { top: scroller.scrollTop, bottom: scroller.scrollTop + scroller.clientHeight } : null);
+  }, [s.active, scroller]);
+
   const boxes = pages.current?.pageBoxes() ?? [];
   const layoutKey = boxes.length > 0 ? `${boxes[0].left}|${boxes[0].top}|${boxes[0].width}|${boxes[0].rotation}` : '';
   const lastLayout = useRef(layoutKey);
@@ -417,7 +480,7 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
     if (!shown) continue; // "Couldn't place": nothing is drawn; the notes panel lists it
     const top = anchorTop(shown, boxes);
     if (top === null) continue;
-    if (shown.kind === 'point' && boxes[shown.page]) pins.push({ t, ...pointInContent(shown.point, boxes[shown.page]) });
+    if (shown.kind === 'point' && boxes[shown.page]) pins.push({ t, ...pinAt(shown.point, boxes[shown.page]) });
     cards.push({ id: t.id, anchorTop: top, card: cardProps(t, res) });
   }
 
@@ -439,6 +502,8 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
     const edit = editing && editing.threadId === t.id ? { id: editing.id, body: editing.body } : null;
     return {
       comments: list,
+      kept: keptOf(s, t.id),
+      onRetrySave: () => void session.retryParked(),
       draft: draftOf(t)?.body ?? null,
       onActivate: () => activate(t.id),
       onDeactivate: () => {
@@ -526,14 +591,14 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
           data-note-pin=""
           data-theme="light"
           data-active={s.active === t.id ? 'true' : 'false'}
-          style={{ left: x - PIN_SIZE / 2, top: y - PIN_SIZE / 2 }}
+          style={{ left: x, top: y }}
           aria-label={`Note on page ${(t.anchor.kind === 'point' ? t.anchor.page : 0) + 1}`}
           onClick={() => activate(t.id)}
         >
-          <Icon name="comment" size={20} filled />
+          <Icon name="comment" size={20} filled className={styles.pinIcon} />
         </button>
       ))}
-      {cards.length > 0 && !folded && <CardColumn cards={cards} left={left} activeId={s.active} animate={animate} />}
+      {cards.length > 0 && !folded && <CardColumn cards={cards} left={left} activeId={s.active} animate={animate} band={band} />}
     </>
   );
 
