@@ -1,4 +1,4 @@
-// After a crash, the PDF tabs come back by themselves (crash-report.md, gap 2 of the Test build 2 triage).
+// After a crash, the PDF tabs come back by themselves (crash-report.md, gap 2 of the Test build 2 triage; ruling R65).
 //
 // All the extension's pages share one renderer process. When it dies (a crash, "End process" in Chrome's task manager), every
 // viewer tab dies with it, and so does the offscreen store document. Chrome then marks the extension "terminated": its pages
@@ -7,13 +7,16 @@
 //
 // When the owner reloads it (that notification, or Reload on chrome://extensions), the service worker starts again. It then
 // reloads every viewer tab whose page is dead: a crashed tab, or one that showed Chrome's "blocked" page meanwhile. Each tab
-// opens at the page it showed (the viewer keeps `#page=N` in its address) and gets back the note being typed (the draft
-// keeper's journal). So the owner's way back is one click.
+// opens at the page it showed (the viewer keeps `#page=N` in its address), keeps its own id (tab-presence.ts) and gets back
+// the note it was typing (the draft keeper's journal). So the owner's way back is one click.
+//
+// Viewer tabs are known by the ids they note themselves (shared/viewer-tabs.ts): without the `tabs` permission the worker
+// cannot read the address of its own pages. A tab whose address it can read is a web or file page, so no longer a viewer.
 //
 // A tab is reloaded at most once in RELOAD_GUARD_MS: a PDF that crashes the renderer every time must not trap the owner in a
 // loop of crashes. The guard keeps tab ids and times only, nothing about the PDFs.
 
-import { VIEWER_PATH } from '../shared/viewer-url';
+import { VIEWER_TAB_PREFIX, viewerTabKey } from '../shared/viewer-tabs';
 
 const GUARD_KEY = 'crashReloads';
 export const RELOAD_GUARD_MS = 5 * 60_000;
@@ -21,13 +24,24 @@ export const RELOAD_GUARD_MS = 5 * 60_000;
 const RECHECK_MS = 1500;
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/** Viewer tabs that are loaded, not discarded, and have no live page of ours. */
+/** The noted viewer tabs that are loaded, not discarded, and have no live page of ours. Forgets the notes that are stale. */
 async function deadViewerTabs(): Promise<chrome.tabs.Tab[]> {
-  const viewer = chrome.runtime.getURL(VIEWER_PATH);
-  const tabs = (await chrome.tabs.query({})).filter((t) => t.id !== undefined && t.url?.startsWith(viewer) === true && t.status === 'complete' && !t.discarded);
-  if (tabs.length === 0) return [];
+  const noted = Object.keys(await chrome.storage.local.get(null))
+    .filter((k) => k.startsWith(VIEWER_TAB_PREFIX))
+    .map((k) => Number(k.slice(VIEWER_TAB_PREFIX.length)))
+    .filter((id) => Number.isInteger(id));
+  if (noted.length === 0) return [];
   const live = new Set((await chrome.runtime.getContexts({ contextTypes: ['TAB'] })).map((c) => c.tabId));
-  return tabs.filter((t) => !live.has(t.id!));
+  const dead: chrome.tabs.Tab[] = [];
+  const stale: string[] = [];
+  for (const id of noted) {
+    const tab = await chrome.tabs.get(id).catch(() => null);
+    // Gone, or showing a page whose address we can read (a web or file page): not a viewer any more.
+    if (!tab || tab.url !== undefined) stale.push(viewerTabKey(id));
+    else if (!live.has(id) && tab.status === 'complete' && !tab.discarded) dead.push(tab);
+  }
+  if (stale.length > 0) await chrome.storage.local.remove(stale);
+  return dead;
 }
 
 async function reloadDeadViewers(): Promise<void> {
@@ -56,7 +70,8 @@ async function reloadDeadViewers(): Promise<void> {
   for (const id of reloading) await chrome.tabs.reload(id).catch(() => undefined); // the tab may have been closed meanwhile
 }
 
-/** Call once when the service worker starts. */
+/** Call once, synchronously, when the service worker starts. */
 export function installCrashRecovery(): void {
+  chrome.tabs.onRemoved.addListener((tabId) => void chrome.storage.local.remove(viewerTabKey(tabId)).catch(() => undefined));
   reloadDeadViewers().catch((error: unknown) => console.error('sickofpdfs: could not reopen the PDF tabs after a crash', error));
 }

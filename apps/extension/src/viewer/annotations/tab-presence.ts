@@ -8,6 +8,11 @@
 // typed. So every tab also holds a Web Lock named after its id for as long as it lives (the browser frees it the moment the
 // tab dies, crash included), and the roll call counts the holders as live too. The lock is a second witness. The roll call
 // stays the contract.
+//
+// One tab keeps one id across its own reloads (ruling R65). A renderer crash kills every viewer tab at once; when they come
+// back, each must get back the draft it owned, not whichever tab starts first. So the viewer claims its id as its page starts
+// (`claimTabIdentity`, before the PDF loads): the id kept in this tab's sessionStorage, if no live page holds its lock, or a
+// new one. A duplicated tab copies sessionStorage, but the original still holds the lock, so the copy gets a new id.
 
 import type { TabId } from '@sop/core';
 
@@ -55,9 +60,10 @@ const unique = (ids: Iterable<string>): TabId[] => [...new Set(ids)] as TabId[];
 
 /**
  * Starts answering roll calls at once, so a tab that is still loading is already counted by the tabs that ask.
- * `o.tabId` is for tests; a viewer page makes a new random id each time it loads.
+ * `o.tabId` is the viewer's claimed id (`tabIdentity()`), or a test's; without it a new random id is made.
+ * `o.lockHeld`: the page already holds this id's lock (`claimTabIdentity` did it), so the presence does not ask again.
  */
-export function createTabPresence(o?: { tabId?: TabId }): TabPresence {
+export function createTabPresence(o?: { tabId?: TabId; lockHeld?: boolean }): TabPresence {
   const tabId = o?.tabId ?? (newId() as TabId);
   const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(TABS_CHANNEL);
   const waiting = new Map<string, { seen: Set<string>; done: () => void }>();
@@ -65,9 +71,11 @@ export function createTabPresence(o?: { tabId?: TabId }): TabPresence {
 
   // Hold the lock until close(). If the browser refuses, the roll call alone still works.
   let releaseLock: (() => void) | null = null;
-  void lockManager()
-    ?.request(LOCK_PREFIX + tabId, () => (closed ? undefined : new Promise<void>((resolve) => (releaseLock = resolve))))
-    .catch(() => undefined);
+  if (!o?.lockHeld) {
+    void lockManager()
+      ?.request(LOCK_PREFIX + tabId, () => (closed ? undefined : new Promise<void>((resolve) => (releaseLock = resolve))))
+      .catch(() => undefined);
+  }
 
   if (channel) {
     channel.onmessage = (ev: MessageEvent) => {
@@ -108,3 +116,63 @@ export function createTabPresence(o?: { tabId?: TabId }): TabPresence {
     },
   };
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// The tab's own id, kept across its reloads (R65)
+
+const IDENTITY_KEY = 'sop-tab-id';
+
+export interface TabIdentity {
+  tabId: TabId;
+  /** True when this page holds the id's Web Lock for as long as it lives. */
+  lockHeld: boolean;
+}
+
+let claimed: Promise<TabIdentity> | null = null;
+let identity: TabIdentity | null = null;
+
+/** Holds `sop-tab:<id>` for the life of the page if nobody holds it now. Resolves false if it is taken or locks fail. */
+function holdIfFree(locks: LockManager, id: string): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    locks
+      .request(LOCK_PREFIX + id, { ifAvailable: true }, (lock) => {
+        resolve(lock !== null);
+        return lock === null ? undefined : new Promise<void>(() => undefined); // freed by the browser when the page goes
+      })
+      .catch(() => resolve(false));
+  });
+}
+
+function readStoredId(): string | null {
+  try {
+    const v = sessionStorage.getItem(IDENTITY_KEY);
+    return v !== null && v.length > 0 && v.length <= 100 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeId(id: string): void {
+  try {
+    sessionStorage.setItem(IDENTITY_KEY, id);
+  } catch {
+    // without sessionStorage the tab gets a new id on each load, as before
+  }
+}
+
+/** Claims this tab's id once per page. Call it as early as the page starts. */
+export function claimTabIdentity(): Promise<TabIdentity> {
+  claimed ??= (async () => {
+    const locks = lockManager();
+    const stored = readStoredId();
+    if (locks && stored !== null && (await holdIfFree(locks, stored))) return (identity = { tabId: stored as TabId, lockHeld: true });
+    const fresh = newId();
+    storeId(fresh);
+    const lockHeld = locks !== null && (await holdIfFree(locks, fresh));
+    return (identity = { tabId: fresh as TabId, lockHeld });
+  })();
+  return claimed;
+}
+
+/** The id `claimTabIdentity` settled on, or null while it has not yet (the presence then makes a new id, as before). */
+export const tabIdentity = (): TabIdentity | null => identity;

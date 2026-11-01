@@ -23,7 +23,7 @@ import { localDraftJournal } from './draft-journal';
 import { createDraftKeeper } from './drafts';
 import { createMarkInput, type MarkInput } from './mark-input';
 import { type AnnotationSession, type AnnotationState, createAnnotationSession } from './session';
-import { createTabPresence } from './tab-presence';
+import { createTabPresence, tabIdentity } from './tab-presence';
 import { anchorKey } from './undo';
 
 type TextAnchor = Extract<Anchor, { kind: 'text' }>;
@@ -513,7 +513,7 @@ export function createNotes(d: NotesDeps): Notes | null {
   const doc = d.opened.open.doc;
   const pages = d.opened.open.pages;
   const gate = notesSaveGate(d.save);
-  const presence = createTabPresence();
+  const presence = createTabPresence(tabIdentity() ?? undefined); // the id this tab keeps across its reloads (R65)
   const store = storeWhenReady(libraryStore());
   const drafts = createDraftKeeper({
     store,
