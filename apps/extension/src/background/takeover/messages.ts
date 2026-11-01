@@ -22,12 +22,15 @@ import { isOpenableUrl, splitPageFragment } from '../../shared/urls';
 import { buildViewerUrl } from '../../shared/viewer-url';
 import { areEmbedsSuppressed, openEmbeddedInTab, suppressEmbeds } from './embedded';
 import { armEscape, isEscaped, navigateEscaped } from './escape';
-import { findGrant, grant } from './grants';
+import { findGrant, grant, refuse, whenWeighed } from './grants';
 import { clearStickyReferer, setStickyReferer } from './referer';
 import { findRequest, getRequestInfo } from './request-log';
 
 type Sender = chrome.runtime.MessageSender;
 type Reply = RuntimeReplies[keyof RuntimeReplies];
+
+/** How long prepare-fetch waits for webNavigation's report of how the viewer was opened. */
+const OPENING_WAIT_MS = 1000;
 
 /** A message of ours that is well-formed; null for anything else (other features' messages, junk). */
 function parse(raw: unknown): RuntimeMessage | null {
@@ -125,8 +128,11 @@ async function handle(message: RuntimeMessage, sender: Sender, afterReply: (work
     case 'takeover:prepare-fetch': {
       // Only the viewer that fills the tab loads a PDF; one in a frame never does (frame-escape.ts).
       if (!fromExtensionPage(sender) || tabId === undefined || sender.frameId !== 0 || !isOpenableUrl(message.url)) return { known: false, referer: null, back: null };
+      // The owner's own opening of this viewer address is granted when webNavigation reports it, which can come after.
+      await whenWeighed(sender.documentId, OPENING_WAIT_MS);
       const opened = await findGrant(tabId, message.url);
       const known = opened !== null;
+      if (!known) await refuse(message.url); // a reload of this tab, or a copy of it, stays refused
       // "Back to page" goes only to the page this tab was seen embedding this PDF in, never to a `back` in the address.
       const back = opened?.back ?? null;
       if (!/^https?:/.test(message.url)) return { known, referer: null, back };
