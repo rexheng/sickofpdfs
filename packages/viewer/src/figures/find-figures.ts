@@ -88,6 +88,29 @@ export const RULES = {
 export const CAPTION_PATTERN =
   /^(figure|fig\.?|table|tab\.?|chart|plate|scheme|exhibit|algorithm|abbildung|abb\.?|tabelle|figura|tableau|tabla)\s*((?:[A-Z]{1,2}\.?)?\d+(?:[.-]\d+)*(?![.-]?\d)[a-z]?|[IVXLC]+)\s*(?:[:.—–\-|]|\s{2,}|$)/i;
 const TABLE_WORD = /^(table|tab\.?|tabelle|tableau|tabla)$/i;
+/**
+ * The label alone, as CAPTION_PATTERN has it, and the caption written with one space and no punctuation after it
+ * ("Table 1 Evolution of WH, TE and PE"), which §3.3's ending (a mark, two spaces or the end of the line) misses. Word
+ * exports of papers caption this way. Only a capital letter may follow the single space: a sentence goes on in lower
+ * case ("Table 2 presents …", "Table 4 the countries …"), and the pattern is case-insensitive, so the capital is checked
+ * in captionMatch. A roman number must be a real one, in capitals ("Figure Civic Duty" and "TABLE CIVIL RIGHTS" are not
+ * captions).
+ */
+const BARE_CAPTION_PATTERN = new RegExp(`${CAPTION_PATTERN.source.slice(0, CAPTION_PATTERN.source.lastIndexOf('\\s*(?:'))}\\s(?=\\S)`, 'i');
+
+/** The caption label at the start of a line (match[1] the word, match[2] the number): CAPTION_PATTERN, or its bare form. */
+function captionMatch(text: string): RegExpExecArray | null {
+  const m = CAPTION_PATTERN.exec(text);
+  if (m) return m;
+  const bare = BARE_CAPTION_PATTERN.exec(text);
+  if (!bare) return null;
+  const next = text.charAt(bare[0].length);
+  const number = nth(bare, 2);
+  const capital = next !== '' && next !== next.toLowerCase();
+  return capital && (/\d/.test(number) || ROMAN_CAPITALS.test(number)) ? bare : null;
+}
+/** Roman numerals up to CXCIX, in capitals. */
+const ROMAN_CAPITALS = /^(?=[IVXLC])C?(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})$/;
 /** Captions whose content is below them: tables, and algorithms (a ruled algorithm box puts its caption on top). */
 const CONTENT_BELOW_WORD = /^(table|tab\.?|tabelle|tableau|tabla|algorithm)$/i;
 const LABEL_WORDS: Record<string, string> = { fig: 'Figure', 'fig.': 'Figure', tab: 'Table', 'tab.': 'Table', abb: 'Abbildung', 'abb.': 'Abbildung' };
@@ -467,7 +490,7 @@ function classifyBody(lines: Line[], tick: () => void): { bodySize: number; colu
     const l = nth(lines, i);
     const near = (o: Line) => {
       const g = Math.max(o.rect.y - bottom(l.rect), l.rect.y - bottom(o.rect));
-      return o.body && g <= RULES.blockGapEm * l.size && g > -0.5 * l.size && xOverlap(o.rect, l.rect) > 0 && Math.abs(o.size - l.size) <= RULES.bodySizeTolerance && !CAPTION_PATTERN.test(o.text);
+      return o.body && g <= RULES.blockGapEm * l.size && g > -0.5 * l.size && xOverlap(o.rect, l.rect) > 0 && Math.abs(o.size - l.size) <= RULES.bodySizeTolerance && !captionMatch(o.text);
     };
     for (let j = i - 1; j >= 0 && nth(lines, j).rect.y >= l.rect.y - 4 * l.size; j--) {
       tick();
@@ -527,7 +550,7 @@ function findCaptions(lines: Line[], column: number, bodySize: number, tick: () 
   const seen = new Set<string>();
   for (const line of lines) {
     if (line.caption) continue;
-    const m = CAPTION_PATTERN.exec(line.text);
+    const m = captionMatch(line.text);
     if (!m) continue;
     tick();
     const above = lines
@@ -586,7 +609,7 @@ function nextInBlock(lines: Line[], line: Line, block: Rect, column: number, tic
     const g = l.rect.y - bottom(line.rect);
     if (g < -0.3 * line.size || g > RULES.blockGapEm * line.size) continue;
     const aligned = Math.abs(l.rect.x - block.x) <= 1.5 * line.size || Math.abs(centre(l.rect) - centre(block)) <= 1.5 * line.size;
-    if (!aligned || CAPTION_PATTERN.test(l.text)) continue;
+    if (!aligned || captionMatch(l.text)) continue;
     // A table's header cell shares its row with other cells; a caption's line is alone on its row within the block.
     if (lines.some((o) => o !== l && xOverlap(o.rect, block) > 0 && yOverlap(o.rect, l.rect) >= 0.5 * Math.min(o.rect.height, l.rect.height))) continue;
     if (!best || l.rect.y < best.rect.y) best = l;
