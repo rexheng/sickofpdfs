@@ -1,5 +1,6 @@
 import { splitPageFragment, stripFragment } from '../../shared/urls';
 import { buildViewerUrl, VIEWER_PATH } from '../../shared/viewer-url';
+import { grant } from './grants';
 
 // One record per tab: the page whose embedded PDFs are left to Chrome.
 const keyOf = (tabId: number) => `suppressed:${tabId}`;
@@ -26,6 +27,7 @@ export async function areEmbedsSuppressed(tabId: number, pageUrl: string): Promi
  */
 export async function openEmbeddedInTab(tabId: number, url: string, pageUrl: string): Promise<void> {
   const { url: source, page } = splitPageFragment(url);
+  await grant(tabId, source);
   await suppressEmbeds(tabId, pageUrl);
   await chrome.tabs.update(tabId, { url: buildViewerUrl({ source, back: pageUrl, page }) });
 }

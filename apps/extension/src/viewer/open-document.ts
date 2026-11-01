@@ -1,5 +1,6 @@
-// Opening the PDF a viewer address names: Referer set-up, the streaming load (hash and limits), the engine open with
-// the password loop, and the 1 GB bounce to Chrome's viewer.
+// Opening the PDF a viewer address names: asking the service worker whether this tab really opened it (and setting up
+// the Referer), the streaming load (hash and limits), the engine open with the password loop, and the 1 GB bounce to
+// Chrome's viewer.
 import {
   type LoadedPdf,
   loadPdfSource,
@@ -11,7 +12,6 @@ import {
 } from '@sop/viewer';
 import { sendRuntimeMessage } from '../shared/send-message';
 import type { ViewerParams } from '../shared/viewer-url';
-import { mayShowSourceHere } from './frame-escape';
 import { openInChrome } from './open-in-chrome';
 
 export interface OpenedDocument {
@@ -25,8 +25,11 @@ export interface OpenedDocument {
 
 export type OpenOutcome =
   | { kind: 'ready'; doc: OpenedDocument }
-  | { kind: 'error'; error: PdfLoadError | PdfFormatError }
-  | { kind: 'bounced' };
+  /** `signedOut`: the address was fetched without the owner's sign-in (the tab was not seen opening it). */
+  | { kind: 'error'; error: PdfLoadError | PdfFormatError; signedOut?: true }
+  | { kind: 'bounced' }
+  /** A file on this computer that this tab was not seen opening (a web page may have sent it here): not read. */
+  | { kind: 'refused' };
 
 /** Shown while a too-large PDF waits to move to Chrome's viewer. */
 export interface LargeFileBounce {
@@ -47,29 +50,33 @@ export interface OpenDocumentDeps {
 /** How long the large-file note shows before the tab moves to Chrome's viewer. */
 export const BOUNCE_DELAY_MS = 2000;
 
-/** Opens `p.source`. Never rejects: every failure is an `error` outcome. */
+/**
+ * Opens `p.source` in the viewer that fills the tab (a viewer in a frame never loads anything: App.tsx). Never
+ * rejects: every failure is an outcome.
+ *
+ * Any web page can send a tab to the viewer with any address in it, so the service worker says first whether this tab
+ * really opened that address. If it did not, a web address is fetched without the owner's sign-in (no cookies, no
+ * Referer), as any page could fetch it, and a local file is not read at all.
+ */
 export async function openDocument(p: ViewerParams, deps: OpenDocumentDeps): Promise<OpenOutcome> {
   const url = p.source;
   if (url === null) return { kind: 'error', error: new PdfLoadError('network') };
-  // A web page put the viewer in a frame and named a file on this computer: nothing of it is loaded (pdf.js's rule).
-  if (!mayShowSourceHere(p)) return { kind: 'error', error: new PdfLoadError('aborted') };
-  let referrer: string | undefined;
-  if (/^https?:/i.test(url)) {
-    const { referer } = await prepareFetch(url);
-    if (referer !== null) referrer = referer;
-  }
+  const { known, referer } = await prepareFetch(url);
+  if (!known && /^file:/i.test(url)) return { kind: 'refused' };
+  const referrer = referer ?? undefined;
+  const signedOut = known ? {} : ({ signedOut: true } as const);
   let loaded: LoadedPdf;
   try {
-    loaded = await loadPdfSource({ kind: 'url', url }, { signal: deps.signal });
+    loaded = await loadPdfSource({ kind: 'url', url }, { signal: deps.signal, anonymous: !known });
   } catch (err) {
-    if (!(err instanceof PdfLoadError)) return { kind: 'error', error: new PdfLoadError('network') };
+    if (!(err instanceof PdfLoadError)) return { kind: 'error', error: new PdfLoadError('network'), ...signedOut };
     if (err.code === 'too-large') {
       bounce(url, err.detail.size ?? 0, deps);
       return { kind: 'bounced' };
     }
     // A file:// read fails for two reasons: Chrome's file access is off (the person can fix that), or the file is gone.
     if (err.code === 'file-access' && (await fileAccessAllowed())) return { kind: 'error', error: new PdfLoadError('network') };
-    return { kind: 'error', error: err };
+    return { kind: 'error', error: err, ...signedOut };
   }
   return openLoaded(loaded, deps, referrer);
 }
@@ -118,20 +125,20 @@ function bounce(url: string, size: number, deps: OpenDocumentDeps): void {
   deps.onLargeFile?.({ size, openNow: go });
 }
 
-/** How long the viewer waits for the service worker's Referer set-up before it fetches anyway. */
-const PREPARE_TIMEOUT_MS = 2000;
+/** How long the viewer waits for the service worker's answer (it may be starting up) before it treats the address as unknown. */
+const PREPARE_TIMEOUT_MS = 5000;
 
 /**
- * takeover:prepare-fetch: the service worker makes the viewer's own fetch of `url` carry the Referer the tab's
- * navigation had (Task 16's sticky rule) and says what it was. No answer in time, or none at all, means no Referer.
+ * takeover:prepare-fetch: whether this tab really opened `url`, and the Referer the viewer's own fetch will carry
+ * (Task 16's sticky rule). No answer in time, or none at all, counts as an address the tab was not seen opening.
  */
-async function prepareFetch(url: string): Promise<{ referer: string | null }> {
+async function prepareFetch(url: string): Promise<{ known: boolean; referer: string | null }> {
   const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), PREPARE_TIMEOUT_MS));
   try {
     const reply = await Promise.race([sendRuntimeMessage({ type: 'takeover:prepare-fetch', url }), timeout]);
-    return { referer: reply?.referer ?? null };
+    return { known: reply?.known === true, referer: reply?.referer ?? null };
   } catch {
-    return { referer: null };
+    return { known: false, referer: null };
   }
 }
 

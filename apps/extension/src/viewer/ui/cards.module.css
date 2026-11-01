@@ -64,3 +64,26 @@
   font: var(--type-body);
   font-variation-settings: "opsz" 17;
 }
+
+/* A viewer in a frame (FramedCard): frames are often small, such as a 300 × 250 box in a page. */
+.compactStage {
+  padding: var(--space-3);
+}
+
+.compactCard {
+  padding: var(--space-4);
+}
+
+.compactCard .title {
+  margin-block: var(--space-3);
+}
+
+.compactCard .actions {
+  margin-block-start: var(--space-4);
+}
+
+.oneLine {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

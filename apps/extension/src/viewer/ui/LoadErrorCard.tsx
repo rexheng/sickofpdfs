@@ -9,6 +9,8 @@ export interface LoadErrorCardProps {
   sourceUrl: string | null;
   onOpenInChrome: (url: string) => void;
   onImport: (file: File) => void;
+  /** "Try again": shown when the PDF was fetched without the owner's sign-in; it opens the address itself (App.tsx). */
+  onTryAgain?: () => void;
 }
 
 /** "This PDF is 1.2 GB": bytes in decimal GB, one decimal. */
@@ -33,7 +35,7 @@ function copyFor(error: PdfLoadError | PdfFormatError, sourceUrl: string | null)
     case 'file-access':
       return { title: couldNot, lines: ["Chrome isn't letting this viewer read files on your computer."] };
     case 'aborted':
-      return { title: couldNot, lines: ['A web page asked to show a file from your computer here.', 'It is not shown.'] };
+      return { title: couldNot, lines: ['Opening was cancelled.', 'Reload the page to try again.'] };
     case 'network':
       return sourceUrl === null
         ? { title: couldNot, lines: ['There is no PDF address in this link.'] }
@@ -45,12 +47,10 @@ function copyFor(error: PdfLoadError | PdfFormatError, sourceUrl: string | null)
  * Why the PDF did not open, with the two ways forward (spec: "Our error page offers 'Import this PDF' and 'Open in
  * Chrome's viewer'"). "Open in Chrome's viewer" shows when there is an address to open.
  */
-export function LoadErrorCard({ error, sourceUrl, onOpenInChrome, onImport }: LoadErrorCardProps) {
+export function LoadErrorCard({ error, sourceUrl, onOpenInChrome, onImport, onTryAgain }: LoadErrorCardProps) {
   const { title, lines } = copyFor(error, sourceUrl);
   const picker = useFilePicker(onImport);
-  // Not for a local file that a web page tried to show in a frame: that page should get nothing from it.
-  const refused = error instanceof PdfLoadError && error.code === 'aborted';
-  const canOpen = !refused && sourceUrl !== null && /^(https?|file):/i.test(sourceUrl);
+  const canOpen = sourceUrl !== null && /^(https?|file):/i.test(sourceUrl);
   return (
     <div className={styles.stage}>
       <section className={styles.card} aria-labelledby="load-error-title">
@@ -64,6 +64,7 @@ export function LoadErrorCard({ error, sourceUrl, onOpenInChrome, onImport }: Lo
           </p>
         ))}
         <div className={styles.actions}>
+          {onTryAgain !== undefined && <TextButton label="Try again" onClick={onTryAgain} />}
           {canOpen && <TextButton label="Open in Chrome's viewer" icon="open_in_new" onClick={() => onOpenInChrome(sourceUrl)} />}
           <TextButton label="Import this PDF" onClick={picker.open} />
         </div>

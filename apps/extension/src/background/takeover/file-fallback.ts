@@ -20,6 +20,7 @@ limitations under the License.
 import { splitPageFragment } from '../../shared/urls';
 import { buildViewerUrl } from '../../shared/viewer-url';
 import { isEscaped } from './escape';
+import { grant } from './grants';
 
 /**
  * Without "Allow access to file URLs", declarativeNetRequest never sees file:// requests. They still show up in
@@ -41,5 +42,6 @@ async function takeOver(tabId: number, url: string): Promise<void> {
   if (await chrome.extension.isAllowedFileSchemeAccess()) return; // the redirect rule has it
   if (await isEscaped(tabId, url)) return; // the person chose Chrome's viewer for this file
   const { url: source, page } = splitPageFragment(url);
+  await grant(tabId, source);
   await chrome.tabs.update(tabId, { url: buildViewerUrl({ source, back: null, page }) });
 }

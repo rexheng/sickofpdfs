@@ -1,6 +1,7 @@
 import { VIEWER_PATH } from '../../shared/viewer-url';
 import * as embedded from './embedded';
 import * as escape from './escape';
+import { forgetGrants } from './grants';
 import { clearStickyReferer } from './referer';
 import { forgetTab } from './request-log';
 
@@ -9,7 +10,8 @@ import { forgetTab } from './request-log';
  * - the one-time allow rule of the escape hatch (escape.ts);
  * - the embedded-PDF suppression of "Back to page" (embedded.ts);
  * - the sticky Referer rule (referer.ts);
- * - the request log (request-log.ts).
+ * - the request log (request-log.ts);
+ * - the addresses the tab opened (grants.ts), which outlive navigation so that Back and reload work, until it closes.
  */
 export function installTabLifecycle(): void {
   chrome.webNavigation.onCommitted.addListener((details) => {
@@ -25,6 +27,7 @@ export function installTabLifecycle(): void {
     void embedded.onTabRemoved(tabId);
     void clearStickyReferer(tabId);
     forgetTab(tabId);
+    void forgetGrants(tabId);
   });
   void escape.sweepExpiredEscapes();
 }

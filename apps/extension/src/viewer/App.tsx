@@ -1,7 +1,8 @@
 // The viewer page: opens the PDF the address names, then shows its pages. One engine and one render queue per tab.
-// It also owns the takeover's viewer side (Task 17): leaving a frame for the full tab, "Back to page" for an embedded
-// PDF, and the escape hatch to Chrome's own viewer. The chrome around the pages (Task 23) is Drive's: the header with
-// its menus, the toolbar pill, the shortcut sheet and About; all of them run the commands in commands.ts.
+// It also owns the takeover's viewer side (Task 17): leaving a frame for the full tab (a viewer in a frame never loads
+// the PDF there), "Back to page" for an embedded PDF, and the escape hatch to Chrome's own viewer. The chrome around
+// the pages (Task 23) is Drive's: the header with its menus, the toolbar pill, the shortcut sheet and About; all of
+// them run the commands in commands.ts.
 import '@sop/ui/tokens.css';
 import '@sop/ui/base.css';
 import { registerFonts } from '@sop/ui';
@@ -37,7 +38,7 @@ import { Toolbar } from './chrome/Toolbar';
 import { commandShortcuts, createCommands, createIdleCommands, type ViewerCommands, type ViewerContext, type ViewerUi } from './commands';
 import { useReaderFind } from './find';
 import { FormBanner, useFormBounce } from './forms/FormBanner';
-import { maybeLeaveFrame, wantsFullTab } from './frame-escape';
+import { maybeLeaveFrame, mayOfferNewTab, openInNewTab, wantsFullTab } from './frame-escape';
 import { railStartsOpen, useOutline, useRailFitsWindow, useReaderNavigation } from './navigation';
 import { type LargeFileBounce, type OpenDocumentDeps, type OpenedDocument, openDocument, type OpenOutcome, openPickedFile } from './open-document';
 import { publishRuntime, type ViewerHooks, type ViewerState } from './runtime';
@@ -49,14 +50,19 @@ import { useSave } from './save/use-save';
 import { PrintProgressDialog } from './print/PrintProgressDialog';
 import { installShortcuts, type ShortcutDef } from './shortcuts';
 import { FileAccessDialog } from './ui/FileAccessDialog';
+import { FramedCard } from './ui/FramedCard';
 import { LargeFileNotice } from './ui/LargeFileNotice';
 import { LoadErrorCard } from './ui/LoadErrorCard';
+import { LocalFileCard } from './ui/LocalFileCard';
 import { PasswordDialog } from './ui/PasswordDialog';
 import { ScanHint } from './ui/ScanHint';
 import { useStore } from './use-store';
 
-/** The tab's one engine. Its worker starts at once, so PDFium is ready by the time the PDF has downloaded. */
-const backend = createEmbedPdfBackend(engineAssets((p) => chrome.runtime.getURL(p)), { workers: ENGINE_WORKERS, startNow: true });
+/**
+ * The tab's one engine. Its worker starts at once, so PDFium is ready by the time the PDF has downloaded; not in a
+ * frame, where the viewer never opens a PDF.
+ */
+const backend = createEmbedPdfBackend(engineAssets((p) => chrome.runtime.getURL(p)), { workers: ENGINE_WORKERS, startNow: window.top === window });
 
 type View = { kind: 'loading' } | Exclude<OpenOutcome, { kind: 'ready' }> | { kind: 'ready'; doc: OpenedDocument };
 
@@ -64,7 +70,7 @@ let currentView: View = { kind: 'loading' };
 publishRuntime({
   backend,
   doc: () => (currentView.kind === 'ready' ? currentView.doc : null),
-  viewerState: (): ViewerState => currentView.kind,
+  viewerState: (): ViewerState => (currentView.kind === 'refused' ? 'error' : currentView.kind),
 });
 
 interface PasswordPrompt {
@@ -75,16 +81,53 @@ interface PasswordPrompt {
 
 export function App() {
   const params = useMemo(() => parseViewerUrl(location.href), []);
+  return wantsFullTab(params) ? <FramedViewer params={params} /> : <TabViewer params={params} />;
+}
+
+/**
+ * The viewer in a frame of some page (a PDF in an `<iframe>`). It never loads the PDF there: it asks for the whole tab,
+ * and when the service worker says no, it offers a new tab.
+ */
+function FramedViewer({ params }: { params: ViewerParams }) {
+  const [stay, setStay] = useState(false);
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    void registerFonts().catch(() => {});
+    maybeLeaveFrame(params, () => setStay(true));
+  }, [params]);
+  useEffect(() => {
+    document.title = displayNameFor(params.source, null);
+  }, [params]);
+  const source = params.source;
+  return (
+    <div className={styles.app}>
+      <div className={styles.frameContent}>
+        {stay ? (
+          <FramedCard
+            name={displayNameFor(source, null)}
+            onOpenInNewTab={source !== null && mayOfferNewTab(params) ? () => openInNewTab(source) : null}
+          />
+        ) : (
+          <p role="status" className={styles.status}>
+            Opening in the full tab…
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The viewer that fills the tab. */
+function TabViewer({ params }: { params: ViewerParams }) {
   const [view, setView] = useState<View>(currentView);
   const [prompt, setPrompt] = useState<PasswordPrompt | null>(null);
   const [bounce, setBounce] = useState<LargeFileBounce | null>(null);
   const [fileDialogOpen, setFileDialogOpen] = useState(true);
-  // In a frame of some page, the PDF opens in the whole tab instead; until the worker says otherwise, nothing loads here.
-  const [leaving, setLeaving] = useState(() => wantsFullTab(params));
   const [chromeRefused, setChromeRefused] = useState(false);
   const attempts = useRef(0);
   const started = useRef(false);
-  const loading = useRef(false);
   useStore(view.kind === 'ready');
 
   const show = useCallback((next: View) => {
@@ -116,20 +159,12 @@ export function App() {
     if (started.current) return;
     started.current = true;
     void registerFonts().catch(() => {}); // text falls back to the next font until the files load
-    // Embedded in a page: ask for the full tab. If this page's PDFs are suppressed (the person came back), stay here.
-    maybeLeaveFrame(params, () => setLeaving(false));
-  }, [params]);
-
-  useEffect(() => {
-    if (leaving || loading.current) return;
-    loading.current = true;
     void openDocument(params, deps).then(show);
-  }, [leaving, params, deps, show]);
+  }, [params, deps, show]);
 
   useEffect(() => {
-    if (leaving) document.title = 'sickofpdfs';
-    else document.title = view.kind === 'ready' ? view.doc.loaded.displayName : displayNameFor(params.source, null);
-  }, [leaving, view, params]);
+    document.title = view.kind === 'ready' ? view.doc.loaded.displayName : displayNameFor(params.source, null);
+  }, [view, params]);
 
   const importFile = useCallback(
     (file: File) => {
@@ -180,7 +215,8 @@ export function App() {
   const save = useSave({ opened, params, backend, onFailure: onSaveFailure });
   const form = useFormBounce({ opened, save, source, backend });
   const [reader, setReader] = useState<ReaderChrome | null>(null);
-  const canEscape = source !== null && !leaving;
+  // Not for a local file the tab was not seen opening: one click must not show it in Chrome's viewer either.
+  const canEscape = source !== null && view.kind !== 'refused';
   const idleCommands = useMemo(() => createIdleCommands({ source, canOpenInChrome: canEscape, ui }), [source, canEscape, ui]);
   const live = view.kind === 'ready' ? reader : null;
   const commands = live?.commands ?? idleCommands;
@@ -202,21 +238,25 @@ export function App() {
         status={save !== null && <StatusChip save={save} />}
       />
       <div className={styles.content}>
-        {leaving && (
-          <p role="status" className={styles.status}>
-            Opening in the full tab…
-          </p>
-        )}
         {view.kind === 'ready' && (
           <Reader doc={view.doc} params={params} rootRef={root} pageFieldRef={pageField} ui={ui} save={save} onChrome={setReader} />
         )}
         {view.kind === 'ready' && form.notice !== null && <FormBanner kind={form.notice} onDismiss={form.dismiss} />}
-        {!leaving && view.kind === 'loading' && prompt === null && (
+        {view.kind === 'loading' && prompt === null && (
           <div role="progressbar" aria-label="Loading the PDF" className={styles.progress} />
         )}
         {view.kind === 'error' && !(fileAccess && fileDialogOpen) && (
-          <LoadErrorCard error={view.error} sourceUrl={source} onOpenInChrome={escape} onImport={importFile} />
+          <LoadErrorCard
+            error={view.error}
+            sourceUrl={source}
+            onOpenInChrome={escape}
+            onImport={importFile}
+            // Fetched without the owner's sign-in: "Try again" sends the tab to the address itself, as a click on the
+            // link would, and the takeover then opens it with the sign-in (or the site shows its own sign-in page).
+            onTryAgain={view.signedOut && source !== null && /^https?:/i.test(source) ? () => location.replace(source) : undefined}
+          />
         )}
+        {view.kind === 'refused' && <LocalFileCard onChooseFile={importFile} />}
         {view.kind === 'bounced' && bounce !== null && <LargeFileNotice size={bounce.size} onOpenNow={bounce.openNow} />}
       </div>
       {fileAccess && (

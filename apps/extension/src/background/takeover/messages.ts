@@ -22,6 +22,7 @@ import { isOpenableUrl, splitPageFragment } from '../../shared/urls';
 import { buildViewerUrl } from '../../shared/viewer-url';
 import { areEmbedsSuppressed, openEmbeddedInTab, suppressEmbeds } from './embedded';
 import { armEscape, isEscaped, navigateEscaped } from './escape';
+import { findGrant, grant } from './grants';
 import { clearStickyReferer, rememberedReferer, setStickyReferer } from './referer';
 import { getRequestInfo } from './request-log';
 
@@ -34,6 +35,7 @@ function parse(raw: unknown): RuntimeMessage | null {
   const m = raw as Record<string, unknown>;
   switch (m.type) {
     case 'takeover:prepare-fetch':
+    case 'takeover:open-in-new-tab':
     case 'takeover:sniffed':
     case 'takeover:can-take-over':
     case 'takeover:open-in-chrome':
@@ -84,11 +86,14 @@ async function handle(message: RuntimeMessage, sender: Sender, afterReply: (work
   const tabId = tab?.id;
   switch (message.type) {
     case 'takeover:prepare-fetch': {
-      if (!fromExtensionPage(sender) || tabId === undefined || !/^https?:/.test(message.url)) return { referer: null };
-      const referer = getRequestInfo(tabId, sender.frameId ?? 0)?.referer ?? (await rememberedReferer(tabId, message.url));
+      // Only the viewer that fills the tab loads a PDF; one in a frame never does (frame-escape.ts).
+      if (!fromExtensionPage(sender) || tabId === undefined || sender.frameId !== 0 || !isOpenableUrl(message.url)) return { known: false, referer: null };
+      const known = (await findGrant(tabId, message.url)) !== null;
+      if (!/^https?:/.test(message.url)) return { known, referer: null };
+      const referer = known ? (getRequestInfo(tabId, sender.frameId)?.referer ?? (await rememberedReferer(tabId, message.url))) : null;
       if (referer) await setStickyReferer(tabId, message.url, referer);
       else await clearStickyReferer(tabId);
-      return { referer };
+      return { known, referer };
     }
 
     case 'takeover:can-take-over': {
@@ -101,6 +106,7 @@ async function handle(message: RuntimeMessage, sender: Sender, afterReply: (work
       if (!fromContentScript(sender) || tabId === undefined || sender.frameId !== 0 || sender.url !== message.url) return undefined;
       if (!isOpenableUrl(message.url) || !(await canTakeOver(tabId, 0, message.url))) return undefined;
       const { url: source, page } = splitPageFragment(message.url);
+      await grant(tabId, source);
       await chrome.tabs.update(tabId, { url: buildViewerUrl({ source, back: null, page }) });
       return undefined;
     }
@@ -108,7 +114,12 @@ async function handle(message: RuntimeMessage, sender: Sender, afterReply: (work
     case 'takeover:embedded': {
       const pageUrl = tab?.url;
       if (tabId === undefined || pageUrl === undefined || pageUrl.startsWith(chrome.runtime.getURL(''))) return { opened: false };
-      if (!(fromContentScript(sender) || fromExtensionPage(sender)) || !mayEmbed(message.url, pageUrl)) return { opened: false };
+      if (!mayEmbed(message.url, pageUrl)) return { opened: false };
+      if (fromExtensionPage(sender)) {
+        // A viewer in a frame: only for a PDF the takeover put there. A page can write any address into a frame of
+        // its own, and that must not become a fetch with the owner's sign-in in the whole tab.
+        if ((await findGrant(tabId, message.url)) === null) return { opened: false };
+      } else if (!fromContentScript(sender)) return { opened: false };
       if (await areEmbedsSuppressed(tabId, pageUrl)) return { opened: false };
       afterReply(() => openEmbeddedInTab(tabId, message.url, pageUrl));
       return { opened: true };
@@ -124,9 +135,20 @@ async function handle(message: RuntimeMessage, sender: Sender, afterReply: (work
       if (!fromExtensionPage(sender) || tabId === undefined || !isOpenableUrl(message.url)) return { ok: false };
       // Chrome does not let an extension without file access open a file: address, so say so instead of failing quietly.
       if (message.url.startsWith('file:') && !(await chrome.extension.isAllowedFileSchemeAccess())) return { ok: false };
+      // Nor a local file that this tab was not seen opening: a web page may have named it (grants.ts).
+      if (message.url.startsWith('file:') && (await findGrant(tabId, message.url)) === null) return { ok: false };
       await armEscape(tabId, message.url); // the rule is in place before the answer: the tab goes there right after it
       afterReply(() => navigateEscaped(tabId, message.url));
       return { ok: true };
+    }
+
+    case 'takeover:open-in-new-tab': {
+      // A viewer in a frame, after the owner's click: the PDF's own address in a new tab beside this one. The tab then
+      // goes through the takeover like any link the owner opens, under Chrome's own rules for that request.
+      if (!fromExtensionPage(sender) || !tab || tab.id === undefined || sender.frameId === 0) return undefined;
+      if (tab.url === undefined || !mayEmbed(message.url, tab.url)) return undefined;
+      await chrome.tabs.create({ url: message.url, windowId: tab.windowId, index: tab.index + 1, openerTabId: tab.id });
+      return undefined;
     }
 
     case 'takeover:open-file-settings': {
@@ -149,7 +171,7 @@ function failureReply(message: RuntimeMessage): Reply {
     case 'takeover:can-take-over':
       return false;
     case 'takeover:prepare-fetch':
-      return { referer: null };
+      return { known: false, referer: null };
     case 'takeover:open-in-chrome':
       return { ok: false };
     case 'takeover:embedded':

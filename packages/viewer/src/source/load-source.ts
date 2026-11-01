@@ -34,8 +34,11 @@ const HASH_SLICE = 8 * 1024 * 1024;
  * - `file:` address: `file-access` when it cannot be read, `too-large` from the size the first progress event gives;
  * - every source: `not-pdf` when the first 1024 bytes hold no `%PDF-` (checked as soon as they arrive), `aborted`
  *   when `signal` fires.
+ *
+ * `anonymous`: a web address is fetched without cookies, HTTP authentication or the HTTP cache (whose entries may hold
+ * an earlier signed-in answer), and with no Referer. The viewer uses it for an address it cannot tell the owner opened.
  */
-export async function loadPdfSource(ref: PdfSourceRef, opts: { signal?: AbortSignal; maxBytes?: number } = {}): Promise<LoadedPdf> {
+export async function loadPdfSource(ref: PdfSourceRef, opts: { signal?: AbortSignal; maxBytes?: number; anonymous?: boolean } = {}): Promise<LoadedPdf> {
   const maxBytes = opts.maxBytes ?? MAX_OPEN_BYTES;
   const signal = opts.signal;
   if (signal?.aborted) throw new PdfLoadError('aborted');
@@ -46,10 +49,10 @@ export async function loadPdfSource(ref: PdfSourceRef, opts: { signal?: AbortSig
     return { ...collected, displayName: displayNameFor(null, null, ref.file.name || undefined), sourceUrl: null };
   }
   if (/^file:/i.test(ref.url)) return fromFileUrl(ref.url, hasher, maxBytes, signal);
-  return fromFetch(ref.url, hasher, maxBytes, signal);
+  return fromFetch(ref.url, hasher, maxBytes, signal, opts.anonymous === true);
 }
 
-async function fromFetch(url: string, hasher: Promise<Sha256Hasher>, maxBytes: number, signal: AbortSignal | undefined): Promise<LoadedPdf> {
+async function fromFetch(url: string, hasher: Promise<Sha256Hasher>, maxBytes: number, signal: AbortSignal | undefined, anonymous: boolean): Promise<LoadedPdf> {
   // Our own controller, so the body can be dropped (too large, not a PDF) whatever the caller's signal does.
   const request = new AbortController();
   const onAbort = () => request.abort();
@@ -57,7 +60,10 @@ async function fromFetch(url: string, hasher: Promise<Sha256Hasher>, maxBytes: n
   try {
     let res: Response;
     try {
-      res = await fetch(url, { credentials: 'include', cache: 'default', signal: request.signal });
+      const how: RequestInit = anonymous
+        ? { credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer' }
+        : { credentials: 'include', cache: 'default' };
+      res = await fetch(url, { ...how, signal: request.signal });
     } catch {
       throw new PdfLoadError(signal?.aborted ? 'aborted' : 'network');
     }

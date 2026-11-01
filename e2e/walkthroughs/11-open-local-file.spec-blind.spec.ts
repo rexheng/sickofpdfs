@@ -3,19 +3,33 @@
 // Spec: "double-clicking a local PDF opens it in our viewer in the same tab"; Requirements: "Set Chrome as the Windows .pdf app once.
 // The extension then takes over local files (file://)". Interface file (copy): the dialog says "Allow access to file URLs", with the
 // buttons "Open extension settings" (opens chrome://extensions/?id=<the extension's id>) and "Choose file".
+//
+// Opened the way Chrome opens a double-clicked file: at its own file:// address, which the takeover sends to the viewer.
+// (sec1: a viewer address typed with a file:// source is no longer read, since any web page can send a tab to one;
+// the takeover walkthroughs and the sec1 report cover that refusal.)
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
+import type { BrowserContext, Page } from '@playwright/test';
 import { REAL } from './support/fixtures.spec-blind';
-import { EXTENSION_ID } from '../support/test';
+import { EXTENSION_ID, VIEWER_ROOT } from '../support/test';
 import { expect, rt, snap, test, waitForFirstPage } from './support/viewer.spec-blind';
+
+/** A new tab opened at the file's own address; returns once the takeover has it in our viewer. */
+async function openLocalFile(context: BrowserContext, url: string): Promise<Page> {
+  const page = await context.newPage();
+  await page.goto(url).catch(() => {}); // the takeover replaces the navigation Playwright started
+  await page.waitForURL(/^chrome-extension:\/\//, { timeout: 15_000 });
+  await page.waitForSelector(VIEWER_ROOT, { state: 'attached' });
+  return page;
+}
 
 test.describe('file access allowed', () => {
   test.use({ profile: 'seeded' });
 
-  test('a file:// PDF opens and is the right file', async ({ openViewer }, testInfo) => {
+  test('a file:// PDF opens and is the right file', async ({ context }, testInfo) => {
     const url = pathToFileURL(REAL.paper50.file).href;
-    const page = await openViewer(url);
+    const page = await openLocalFile(context, url);
     await waitForFirstPage(page);
     const doc = await rt(page).doc();
     const bytes = await readFile(REAL.paper50.file);
@@ -30,8 +44,8 @@ test.describe('file access allowed', () => {
 test.describe('file access not allowed (a fresh Chrome profile)', () => {
   test.use({ profile: 'bare' });
 
-  test('the viewer explains it, and "Choose file" opens the PDF anyway', async ({ openViewer }, testInfo) => {
-    const page = await openViewer(pathToFileURL(REAL.paper50.file).href);
+  test('the viewer explains it, and "Choose file" opens the PDF anyway', async ({ context }, testInfo) => {
+    const page = await openLocalFile(context, pathToFileURL(REAL.paper50.file).href);
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible({ timeout: 15_000 });
     await expect(dialog.getByRole('heading', { name: 'Allow access to file URLs' })).toBeVisible();
@@ -48,8 +62,8 @@ test.describe('file access not allowed (a fresh Chrome profile)', () => {
     await snap(page, testInfo, '11-chosen-file-opened');
   });
 
-  test('"Open extension settings" opens this extension\'s page in chrome://extensions', async ({ context, openViewer }) => {
-    const page = await openViewer(pathToFileURL(REAL.paper50.file).href);
+  test('"Open extension settings" opens this extension\'s page in chrome://extensions', async ({ context }) => {
+    const page = await openLocalFile(context, pathToFileURL(REAL.paper50.file).href);
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible({ timeout: 15_000 });
     const opened = context.waitForEvent('page', { timeout: 10_000 });
