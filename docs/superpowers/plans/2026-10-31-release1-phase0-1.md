@@ -3831,7 +3831,25 @@ Each item below is binding for the task named.
   - Form info is computed once per fingerprint (R38).
 - **Task 12.** A positive control for each extension API the network gate relies on (R22).
 - **Task 28.** On `createDocument` failure, re-check `getContexts` (the offscreen-broker race). OPFS writes go in 4–16 MiB chunks (R34).
-- **Task 32 (R56, 1 Nov).** The store keeps `synchronous=FULL`. The no-lost-text gate is a tab kill 100 ms after the last key, which a slow box passes because the offscreen store survives the tab. A whole-browser kill 100 ms after the last key is measured on the reference laptop (worker save p99 must be under about 80 ms there); never trade durability for it.
+- **Task 32 (R56, 1 Nov).** The store keeps `synchronous=FULL`. The no-lost-text gate is a tab kill 100 ms after the last key. (The first reason given, "a slow box passes because the offscreen store survives the tab", is wrong: see the correction below.) A whole-browser kill 100 ms after the last key is measured on the reference laptop (worker save p99 must be under about 80 ms there); never trade durability for it.
+- **R56 corrected (1 Nov, measured; `.superpowers/sdd/2026-10-31-release1-phase0-1/crash-report.md`).** The offscreen store does **not** survive a tab crash. What Chrome 153 does, measured on the test build:
+  - Chrome puts every page of one extension in one renderer process. The viewer tabs, the offscreen store document, its store worker and the service worker all share it. A sandboxed page gets a process of its own, but it has no extension APIs and no storage, so a viewer cannot use one.
+  - So one viewer crash kills every viewer tab, the store and the service worker together. Every crash method does this: CDP `Page.crash`, `chrome://crash`, `chrome://kill` and `kill -9` of the process.
+  - The offscreen document dying is what makes Chrome mark the extension "terminated". This happens at once. With no offscreen document open, a crash leaves the extension running.
+  - Chrome never reloads a terminated extension by itself. It does that only for force-installed (policy) extensions, after 3 s.
+  - Until the extension is reloaded, its pages show "blocked" (`ERR_BLOCKED_BY_CLIENT`) and PDF links open in Chrome's own viewer.
+  - Chrome tells the owner "sickofpdfs has crashed. Click this balloon to reload the extension". chrome://extensions shows a Reload button. One click brings the extension back in about 0.2 s.
+  - A store write that was on its way is lost. A `localStorage` write that has returned is kept: 8 times out of 8 under `kill -9`.
+  - **Binding for the viewer (done in wt/crash):**
+    - The draft keeper also writes every draft and edit draft, in the same call, to a journal in the extension's localStorage (`draft-journal.ts`), with the same save rules as the store.
+    - `restore` takes the journal's text when the store has not confirmed it.
+    - When the service worker starts, it reloads every viewer tab whose page is dead. It reloads each tab at most once in 5 minutes. Each tab opens at its own `#page=N` and gets its draft back.
+    - The owner's way back is one click on Chrome's notification.
+  - **Binding for later tasks:**
+    - Anything that forgets a document (the library's Forget, Phase 3) also calls `forgetDraftJournal(id)`.
+    - A crash test must reload the extension the way the owner would (`e2e/support/crash.ts`).
+    - No test may expect a second viewer tab to outlive another tab's crash.
+    - Moving the store out of the offscreen document (for example into a dedicated worker owned by a viewer tab) is the only change that would stop a tab crash from terminating the extension. It is the controller's call.
 - **Task 32.** Add these to the Windows checklist:
   - alignment at DPR 1.5;
   - Blink ascent and descent;
