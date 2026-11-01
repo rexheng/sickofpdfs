@@ -7,10 +7,21 @@
 //     Nothing that is here is ever deleted by a restore (a soft-deleted row is a row: the newer one wins like any other).
 //   - Where both sides have a row, the NEWER `hlc` wins the whole row. Equal stamps are broken by the rows' content, so the
 //     result never depends on which side was which. `compareHlc` is passed in (the real one is `hlc.ts`).
+//   - No lost notes (CLAUDE.md, the first non-negotiable). A restore cannot see which version a computer had seen, as sync
+//     does with `baseRev`, so it reads that from the stamp's device: a computer's later stamp follows its own earlier one (its
+//     clock only goes up), and two versions written on different computers are rivals. For rivals the sync rules apply:
+//       - an edit beats a delete, whatever the stamps say (spec sync rules; R58: the deleting side's last words go with it);
+//       - two live comments with different, non-empty bodies keep both: the loser's body becomes a new comment in the same
+//         thread, made exactly as sync makes it (`makeConflictCopy`: same id, `ConflictCopyMeta`, "edited on another device").
+//         It is written only if no comment has its id yet, so a restore run again, or a copy the owner deleted, adds nothing.
 //   - Reading history merges field by field (earliest first opened, latest last opened, the larger counters, the union of
 //     pages visited; the last position comes from the newer stamp). Locations keep the earliest `firstSeen` and the latest
 //     `lastSeen` whichever row wins. Two aliases for one fingerprint that name different documents keep the smaller
 //     document id; aliases from either side are all kept.
+//   - Identity (spec "Identity rules" 2 and 5; the store refuses both with `alias-conflict`): a fingerprint is a document or
+//     an alias, never both. A backup alias whose fingerprint is a document here is not written (the two copies keep their own
+//     notes: split, never lost). A backup document that this library knows as an alias of one of its documents is not
+//     written as a document: its notes, marks, locations, history and aliases are written onto that document instead.
 //   - Drafts never come back. A row whose document (or, for a comment, whose thread) is not known is left out. A setting
 //     that looks like a secret is left out. `author` never changes: a backup row that disagrees about it is ignored.
 //   - It is idempotent: apply the plan, plan again, and the second plan is empty.
@@ -18,14 +29,11 @@
 // `rev` is the store's own counter and is never compared; `applyRestorePlan` gives written rows their own. A restored
 // document is marked `blobStored: false` until its PDF is copied in (the local value is kept for a document that is here).
 //
-// Not done here, on purpose: where two devices wrote different words into one comment, sync keeps the loser's words as a
-// conflict copy. A restore keeps the newer row only; a backup is one computer's own history, so this cannot lose a note
-// that is not already older than the one it lost to.
 import type { HlcStamp } from '../hlc';
 import type { DocumentId } from '../ids';
 import { clampHlc, parseHlc } from '../sync/clamp';
 import { isSyncableSetting } from '../sync/columns';
-import { mergeHistoryRows } from '../sync/merge';
+import { makeConflictCopy, mergeHistoryRows, needsCopy } from '../sync/merge';
 import { MAX_HLC_SKEW_MS } from '../sync/protocol';
 import { DUMP_TABLES, isDraftRow, type DumpTable, type LibraryDump, type LibraryTables } from './format';
 
@@ -134,6 +142,16 @@ function rowsOf(dump: LibraryDump | undefined, now: number | undefined, clamp: b
   return out;
 }
 
+const isDeleted = (r: Row): boolean => r.deletedAt !== null && r.deletedAt !== undefined;
+const deviceOf = (r: Row): string | null => parseHlc(hlcOf(r))?.device ?? null;
+
+/** Two versions from different computers (or with a stamp that cannot be read): neither is known to follow the other. */
+function rivals(a: Row, b: Row): boolean {
+  const da = deviceOf(a);
+  const db = deviceOf(b);
+  return da === null || db === null || da !== db;
+}
+
 interface Hooks {
   /** A backup row that must not be restored at all. */
   skip?(b: Row): boolean;
@@ -145,6 +163,10 @@ interface Hooks {
   adopt?(b: Row, l: Row): Row;
   /** The row to write once the winner is known (locations widen their dates). `winner` is `l` or `b`. */
   combine?(winner: Row, l: Row, b: Row): Row;
+  /** The table soft-deletes (`deletedAt`): between rivals, a live row beats a tombstone. */
+  softDelete?: boolean;
+  /** Comments: between rivals, the losing body is kept. Called with the winner and the loser. */
+  keepLoser?(winner: Row, loser: Row): void;
 }
 
 /** Whole-row last writer wins, for one table. Returns the rows to write and how many are new. */
@@ -164,7 +186,12 @@ function mergeLww(table: DumpTable, lRows: readonly Row[], bRows: readonly Row[]
     }
     if (hooks.keepLocal?.(l, b)) continue;
     const c = cmp(hlcOf(b), hlcOf(l));
-    const bWins = c > 0 || (c === 0 && canonical(b, REV) > canonical(l, REV));
+    const rival = rivals(l, b);
+    const bWins =
+      hooks.softDelete === true && rival && isDeleted(l) !== isDeleted(b)
+        ? !isDeleted(b) // an edit beats a delete
+        : c > 0 || (c === 0 && canonical(b, REV) > canonical(l, REV));
+    if (rival && hooks.keepLoser) hooks.keepLoser(bWins ? b : l, bWins ? l : b);
     let merged: Row = bWins ? (hooks.adopt ? hooks.adopt(b, l) : b) : l;
     if (hooks.combine) merged = hooks.combine(merged, l, b);
     if (canonical(merged, REV) !== canonical(l, REV)) {
@@ -175,6 +202,45 @@ function mergeLww(table: DumpTable, lRows: readonly Row[], bRows: readonly Row[]
   return { rows, added, updated };
 }
 
+const CHILD_TABLES = ['aliases', 'locations', 'marks', 'threads', 'comments', 'history'] as const;
+
+/**
+ * A backup document whose fingerprint this library holds as an alias of one of its documents (a stamped re-download seen
+ * first here as a copy, and first there as the document) is the same paper. It is taken out of the backup's documents and
+ * everything that belonged to it is moved onto the document here, so its notes come back where the paper opens. Two reading
+ * histories that land on one document are merged as sync merges them. Edits `B` in place.
+ */
+function foldAliasedDocuments(L: Record<DumpTable, Row[]>, B: Record<DumpTable, Row[]>, cmp: CompareHlc): void {
+  const localDocs = new Set(L.documents.map((d) => str(d.id)));
+  const aliasOf = new Map(L.aliases.map((a) => [str(a.sha256), str(a.documentId)]));
+  const fold = new Map<string, string>();
+  for (const d of B.documents) {
+    const id = str(d.id);
+    const to = aliasOf.get(id);
+    if (id !== '' && !localDocs.has(id) && to !== undefined && localDocs.has(to)) fold.set(id, to);
+  }
+  if (fold.size === 0) return;
+  B.documents = B.documents.filter((d) => !fold.has(str(d.id)));
+  for (const t of CHILD_TABLES) {
+    B[t] = B[t].map((r) => {
+      const to = fold.get(str(r.documentId));
+      return to === undefined ? r : { ...r, documentId: to };
+    });
+  }
+  const history = new Map<string, Row>();
+  for (const h of B.history) {
+    const id = str(h.documentId);
+    const other = history.get(id);
+    if (!other) {
+      history.set(id, h);
+      continue;
+    }
+    const newer = cmp(hlcOf(h), hlcOf(other)) > 0 ? h : other;
+    history.set(id, { ...newer, ...mergeHistoryRows(other, h), lastPosition: newer.lastPosition ?? null, hlc: hlcOf(newer) });
+  }
+  B.history = [...history.values()];
+}
+
 /**
  * What to write so that the library here holds everything in `backup`. See the file's header for the rules.
  * `local` is the library as it is now (`exportLibrary()`); `compareHlc` orders two stamps (negative, zero, positive).
@@ -183,6 +249,7 @@ export function planRestore(local: LibraryDump, backup: LibraryDump, compareHlc:
   const cmp: CompareHlc = (a, b) => compareHlc(a, b);
   const L = rowsOf(local, undefined, false);
   const B = rowsOf(backup, options.now, true);
+  foldAliasedDocuments(L, B, cmp);
   const rows = {} as Record<DumpTable, Row[]>;
   const added = zeros();
   const updated = zeros();
@@ -198,6 +265,7 @@ export function planRestore(local: LibraryDump, backup: LibraryDump, compareHlc:
   done(
     'documents',
     mergeLww('documents', L.documents, B.documents, cmp, {
+      softDelete: true,
       fresh: (b) => ({ ...b, blobStored: false }),
       adopt: (b, l) => {
         const merged: Row = { ...b };
@@ -215,7 +283,8 @@ export function planRestore(local: LibraryDump, backup: LibraryDump, compareHlc:
     let a = 0;
     let u = 0;
     for (const b of [...B.aliases].sort(byKey('sha256'))) {
-      if (!docIds.has(str(b.documentId))) continue;
+      // an alias names a document, and is never one itself
+      if (!docIds.has(str(b.documentId)) || docIds.has(str(b.sha256))) continue;
       const l = lm.get(str(b.sha256));
       if (!l) {
         out.push(b);
@@ -250,11 +319,26 @@ export function planRestore(local: LibraryDump, backup: LibraryDump, compareHlc:
 
   // notes
   const authorChanged = (l: Row, b: Row): boolean => l.author !== b.author;
-  done('marks', mergeLww('marks', L.marks, B.marks, cmp, { skip: (b) => !known(b), keepLocal: authorChanged }));
-  const threadsResult = mergeLww('threads', L.threads, B.threads, cmp, { skip: (b) => !known(b) });
+  done('marks', mergeLww('marks', L.marks, B.marks, cmp, { skip: (b) => !known(b), keepLocal: authorChanged, softDelete: true }));
+  const threadsResult = mergeLww('threads', L.threads, B.threads, cmp, { skip: (b) => !known(b), softDelete: true });
   done('threads', threadsResult);
   const threadIds = new Set<string>([...L.threads.map((t) => str(t.id)), ...B.threads.filter(known).map((t) => str(t.id))]);
-  done('comments', mergeLww('comments', L.comments, B.comments, cmp, { skip: (b) => !known(b) || !threadIds.has(str(b.threadId)), keepLocal: authorChanged }));
+  // the losing words of two rival comments, as new comments (only where no comment has that id yet)
+  const commentIds = new Set<string>([...L.comments, ...B.comments].map((c) => str(c.id)));
+  const copies = new Map<string, Row>();
+  const keepLoser = (winner: Row, loser: Row): void => {
+    if (!needsCopy(winner, loser)) return;
+    const copy = makeConflictCopy(winner, loser, deviceOf(loser) ?? 'unknown', hlcOf(winner));
+    const id = str(copy.row.id);
+    if (!commentIds.has(id)) copies.set(id, { ...copy.row, rev: 0, hlc: copy.hlc });
+  };
+  const commentsResult = mergeLww('comments', L.comments, B.comments, cmp, {
+    skip: (b) => !known(b) || !threadIds.has(str(b.threadId)),
+    keepLocal: authorChanged,
+    softDelete: true,
+    keepLoser,
+  });
+  done('comments', { ...commentsResult, rows: [...commentsResult.rows, ...copies.values()], added: commentsResult.added + copies.size });
 
   // reading history: field by field
   {

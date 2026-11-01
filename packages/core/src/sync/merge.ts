@@ -219,7 +219,8 @@ export function derivedId(...parts: string[]): string {
 
 // ─── Conflict copy ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-function makeConflictCopy(winner: WireRow, loser: WireRow, loserDevice: string, hlc: HlcStamp): ConflictCopy {
+/** The loser's words as a new comment in the same thread. Restore (`backup/merge.ts`) makes the same copy, with the same id. */
+export function makeConflictCopy(winner: WireRow, loser: WireRow, loserDevice: string, hlc: HlcStamp): ConflictCopy {
   const of = str(loser.id);
   const at = (r: WireRow) => Math.max(num(r.createdAt), num(r.editedAt));
   return {
@@ -247,7 +248,7 @@ function makeConflictCopy(winner: WireRow, loser: WireRow, loserDevice: string, 
 }
 
 /** Both live, both bodies non-empty, and different: the losing body must be kept. */
-function needsCopy(a: WireRow, b: WireRow): boolean {
+export function needsCopy(a: WireRow, b: WireRow): boolean {
   return !isDeleted(a) && !isDeleted(b) && str(a.body).trim() !== '' && str(b.body).trim() !== '' && a.body !== b.body;
 }
 
