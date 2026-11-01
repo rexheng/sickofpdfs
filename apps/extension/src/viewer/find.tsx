@@ -127,17 +127,21 @@ export function useReaderFind({ backend, doc, store, api, pageText, textLayers, 
     return () => clearTimeout(timer);
   }, [linger]);
 
-  // Is this document a scan? Asked when the bar opens: the page in view (the scan hint has usually asked already), the
-  // first and the last page are all pictures with no text. A few quick engine calls, so the bar can say it at once.
+  // Is this document a scan? Asked when the bar opens: the page in view (the scan hint has usually asked already, so
+  // for a PDF with text this costs no engine call), then, only if that page is a scan, the first and the last page.
+  // All three pictures with no text: the bar says so at once.
   const [scanned, setScanned] = useState(false);
   useEffect(() => {
     if (!open) return;
     let live = true;
-    const sample = [...new Set([store.get().currentPage, 0, doc.open.pageCount - 1])];
-    Promise.all(sample.map((i) => scans.isScannedPage(i))).then(
-      (answers) => live && setScanned(answers.every(Boolean)),
-      () => {},
-    );
+    const others = [...new Set([0, doc.open.pageCount - 1])];
+    scans
+      .isScannedPage(store.get().currentPage)
+      .then(async (scan) => scan && (await Promise.all(others.map((i) => scans.isScannedPage(i)))).every(Boolean))
+      .then(
+        (scan) => live && setScanned(scan),
+        () => {},
+      );
     return () => {
       live = false;
     };
