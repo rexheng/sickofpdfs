@@ -42,6 +42,7 @@ export interface EngineApi {
   getGlyphs(docId: string, pageIndex: number): PageGlyphs;
   getPageText(docId: string, pageIndex: number): string;
   getPageChars(docId: string, pageIndex: number): string;
+  getPageCopyText(docId: string, pageIndex: number): { text: string; charCount: number };
   getTextRange(docId: string, pageIndex: number, start: number, count: number): string;
   getTextRangeRects(docId: string, pageIndex: number, start: number, count: number): PdfRect[];
   searchPage(docId: string, pageIndex: number, query: string, opts: { matchCase: boolean; wholeWord: boolean }): SearchHit[];
@@ -65,6 +66,7 @@ export const ENGINE_METHODS: readonly EngineMethod[] = [
   'getGlyphs',
   'getPageText',
   'getPageChars',
+  'getPageCopyText',
   'getTextRange',
   'getTextRangeRects',
   'searchPage',

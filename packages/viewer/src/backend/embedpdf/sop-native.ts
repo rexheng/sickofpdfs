@@ -15,6 +15,7 @@ import { sha256Hex, type Sha256 } from '@sop/core';
 import { stripPdfUnwantedMarkers, type PdfDocumentObject, type PdfTask } from '@embedpdf/models';
 import type { WrappedPdfiumModule } from '@embedpdf/pdfium';
 import { PdfFormatError, PdfPasswordError } from '../errors';
+import { pageCopyText } from '../../text-layer/items';
 import type {
   FormInfo,
   FormType,
@@ -413,28 +414,62 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
     try {
       const textPage = pageCtx.getTextPage();
       const count = m.FPDFText_CountChars(textPage);
-      const f32 = (offset: number) => this.h.float(mem + offset);
-      const f64 = (offset: number) => this.h.double(mem + offset);
-      const crop = this.cropBox(pageCtx.pagePtr, mem);
-      const rect = (l: number, t: number, r: number, b: number): PdfRect => ({ x: l - crop.left, y: crop.top - t, width: r - l, height: t - b });
       const text = this.rawText(textPage, 0, count);
-
+      const read = this.glyphReader(textPage, pageCtx.pagePtr, mem, text);
       const glyphs: Glyph[] = [];
-      for (let i = 0; i < count; i++) {
-        m.FPDFText_GetLooseCharBox(textPage, i, mem); // FS_RECTF: left, top, right, bottom
-        const box = rect(f32(0), f32(4), f32(8), f32(12));
-        m.FPDFText_GetCharBox(textPage, i, mem, mem + 8, mem + 16, mem + 24); // doubles: left, right, bottom, top
-        const tight = rect(f64(0), f64(24), f64(8), f64(16));
-        m.FPDFText_GetMatrix(textPage, i, mem); // FS_MATRIX: a b c d e f (floats)
-        const fontSize = m.FPDFText_GetFontSize(textPage, i) * Math.hypot(f32(8), f32(12));
-        const angle = Math.round(((m.FPDFText_GetCharAngle(textPage, i) * 180) / Math.PI) * 1000) / 1000;
-        glyphs.push({ index: i, text: text[i] ?? '', box, tight, fontSize, angle: angle % 360, generated: m.FPDFText_IsGenerated(textPage, i) === 1 });
-      }
+      for (let i = 0; i < count; i++) glyphs.push(read(i));
       return { pageIndex, glyphs, runs };
     } finally {
       this.x.free(mem);
       pageCtx.release();
     }
+  }
+
+  /**
+   * Reads char `i` of a text page as a Glyph: FPDFText_GetLooseCharBox, GetCharBox, GetMatrix, GetFontSize, GetCharAngle
+   * and IsGenerated. `mem` is 64 bytes of scratch; `text` is rawText of the page.
+   */
+  private glyphReader(textPage: number, pagePtr: number, mem: number, text: string): (i: number) => Glyph {
+    const m = this.m;
+    const f32 = (offset: number) => this.h.float(mem + offset);
+    const f64 = (offset: number) => this.h.double(mem + offset);
+    const crop = this.cropBox(pagePtr, mem);
+    const rect = (l: number, t: number, r: number, b: number): PdfRect => ({ x: l - crop.left, y: crop.top - t, width: r - l, height: t - b });
+    return (i) => {
+      m.FPDFText_GetLooseCharBox(textPage, i, mem); // FS_RECTF: left, top, right, bottom
+      const box = rect(f32(0), f32(4), f32(8), f32(12));
+      m.FPDFText_GetCharBox(textPage, i, mem, mem + 8, mem + 16, mem + 24); // doubles: left, right, bottom, top
+      const tight = rect(f64(0), f64(24), f64(8), f64(16));
+      m.FPDFText_GetMatrix(textPage, i, mem); // FS_MATRIX: a b c d e f (floats)
+      const fontSize = m.FPDFText_GetFontSize(textPage, i) * Math.hypot(f32(8), f32(12));
+      const angle = Math.round(((m.FPDFText_GetCharAngle(textPage, i) * 180) / Math.PI) * 1000) / 1000;
+      return { index: i, text: text[i] ?? '', box, tight, fontSize, angle: angle % 360, generated: m.FPDFText_IsGenerated(textPage, i) === 1 };
+    };
+  }
+
+  /**
+   * The whole page's text as Copy writes it (PdfBackend.getPageCopyText): the text layer's text model (items.ts
+   * pageCopyText) built from rawText, reading glyphs only at PDFium's generated line breaks and the chars either side,
+   * so a page costs about as much as getPageChars instead of getGlyphs.
+   */
+  getPageCopyText(docId: string, pageIndex: number): { text: string; charCount: number } {
+    return this.withTextPage(docId, pageIndex, (textPage, pagePtr) => {
+      const count = this.x.FPDFText_CountChars(textPage);
+      const text = this.rawText(textPage, 0, count);
+      const mem = this.x.malloc(64);
+      try {
+        const read = this.glyphReader(textPage, pagePtr, mem, text);
+        const read1 = new Map<number, Glyph>();
+        const glyph = (i: number): Glyph => {
+          let g = read1.get(i);
+          if (!g) read1.set(i, (g = read(i)));
+          return g;
+        };
+        return { text: pageCopyText(count, (i) => text[i] ?? '', glyph), charCount: count };
+      } finally {
+        this.x.free(mem);
+      }
+    });
   }
 
   getPageText(docId: string, pageIndex: number): string {

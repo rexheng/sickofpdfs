@@ -137,6 +137,7 @@ export function createEmbedPdfBackend(assets: EngineAssets, opts: EmbedPdfBacken
     getPageGlyphs: (doc, pageIndex) => call(doc, pageIndex, 'getGlyphs', [pageIndex]),
     getPageText: (doc, pageIndex) => call(doc, pageIndex, 'getPageText', [pageIndex]),
     getPageChars: (doc, pageIndex) => call(doc, pageIndex, 'getPageChars', [pageIndex]),
+    getPageCopyText: (doc, pageIndex) => call(doc, pageIndex, 'getPageCopyText', [pageIndex]),
     getTextRange: (doc, pageIndex, start, count) => call(doc, pageIndex, 'getTextRange', [pageIndex, start, count]),
     getTextRangeRects: (doc, pageIndex, start, count) => call(doc, pageIndex, 'getTextRangeRects', [pageIndex, start, count]),
     searchPage: (doc, pageIndex, query, o) => call(doc, pageIndex, 'searchPage', [pageIndex, query, { matchCase: o.matchCase, wholeWord: o.wholeWord }]),

@@ -36,6 +36,8 @@ export interface PageTextProvider {
 export interface PageTextProviderImpl extends PageTextProvider {
   rawText(pageIndex: number): Promise<string>;
   rangeText(pageIndex: number, start: number, count: number): Promise<string>;
+  /** getPageCopyText: the whole page as Copy writes it, and its char count. Not cached (the text layer keeps it). */
+  copyText(pageIndex: number): Promise<{ text: string; charCount: number }>;
   /** Forgets everything cached (after the document is closed or replaced). */
   clear(): void;
 }
@@ -103,6 +105,7 @@ export function createPageTextProvider(be: PdfBackend, doc: DocHandle): PageText
       return p;
     },
     rangeText: (pageIndex, start, count) => be.getTextRange(doc, pageIndex, start, count),
+    copyText: (pageIndex) => be.getPageCopyText(doc, pageIndex),
     search: (pageIndex, query, o) => be.searchPage(doc, pageIndex, query, o),
     clear() {
       texts.clear();

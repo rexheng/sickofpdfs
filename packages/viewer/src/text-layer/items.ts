@@ -85,7 +85,6 @@ export interface GlyphUnit {
 const isHigh = (s: string) => s.length === 1 && s.charCodeAt(0) >= 0xd800 && s.charCodeAt(0) <= 0xdbff;
 const isLow = (s: string) => s.length === 1 && s.charCodeAt(0) >= 0xdc00 && s.charCodeAt(0) <= 0xdfff;
 const isBreak = (g: Glyph) => g.text === '\r' || g.text === '\n';
-const isSpace = (g: Glyph | undefined) => g !== undefined && /^\s$/.test(g.text);
 const sameBox = (a: PdfRect, b: PdfRect) => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 const hasBox = (g: Glyph) => !g.generated && !isBreak(g) && g.box.width > 0 && g.box.height > 0;
 const RTL_SCRIPT = /[\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufefc]|\ud802[\udc00-\udfff]|\ud83a[\udc00-\udfff]/;
@@ -101,8 +100,8 @@ export function direction(angle: number): [number, number] {
   return [Math.cos(t), Math.sin(t)];
 }
 
-/** A box's interval along û and across it (v̂), in its own units. */
-function frame(box: PdfRect, angle: number): { u0: number; u1: number; v0: number; v1: number } {
+/** A box's interval along û and across it (v̂), in its own units (û, v̂: the text direction `angle`, see above). */
+export function frame(box: PdfRect, angle: number): { u0: number; u1: number; v0: number; v1: number } {
   const [c, s] = direction(angle);
   const us: number[] = [];
   const vs: number[] = [];
@@ -122,6 +121,9 @@ const angleDelta = (a: number, b: number) => {
 
 const joinCache = new WeakMap<PageGlyphs, Map<number, string>>();
 
+/** What the text model reads of a char to join line breaks (a Glyph, or as much of one as the engine read). */
+export type JoinGlyph = Pick<Glyph, 'box' | 'angle' | 'generated'>;
+
 /**
  * PDFium's generated line breaks that the text model joins, keyed by the index of the break's first char ('\r'), with
  * what it is shown and copied as: '' or ' '. The other chars of a joined break show nothing. A break is joined when the
@@ -137,41 +139,63 @@ const joinCache = new WeakMap<PageGlyphs, Map<number, string>>();
 export function lineBreakJoins(g: PageGlyphs): Map<number, string> {
   const hit = joinCache.get(g);
   if (hit) return hit;
-  const joins = new Map<number, string>();
   const glyphs = g.glyphs;
-  for (let i = 0; i < glyphs.length; i++) {
-    const first = glyphs[i];
-    if (!isBreak(first) || !first.generated) continue;
-    let after = i;
-    while (after < glyphs.length && isBreak(glyphs[after]) && glyphs[after].generated) after++;
-    const join = breakJoin(glyphs, i, after);
-    if (join !== null) joins.set(i, join);
-    i = after - 1;
-  }
+  const joins = joinsOf(
+    glyphs.length,
+    (i) => glyphs[i].text,
+    (i) => glyphs[i],
+  );
   joinCache.set(g, joins);
   return joins;
 }
 
-function breakJoin(glyphs: Glyph[], at: number, after: number): string | null {
-  let pi = at - 1;
-  while (pi >= 0 && !hasBox(glyphs[pi]) && !isBreak(glyphs[pi])) pi--;
-  const p = glyphs[pi];
-  const n = glyphs[after];
-  if (!p || !n || !hasBox(p) || !hasBox(n) || angleDelta(p.angle, n.angle) > 0.5) return null;
-  const a = frame(p.box, p.angle);
-  const b = frame(n.box, p.angle);
-  const size = Math.min(a.v1 - a.v0, b.v1 - b.v0);
-  if (!(size > 0)) return null;
-  const across = Math.min(a.v1, b.v1) - Math.max(a.v0, b.v0);
-  const gap = Math.max(b.u0 - a.u1, a.u0 - b.u1);
-  const forward = b.u0 + b.u1 > a.u0 + a.u1;
-  const aligned = across >= 0.7 * size && Math.abs((a.v0 + a.v1) / 2 - (b.v0 + b.v1) / 2) <= 0.25 * size;
-  const touching = forward && across >= 0.3 * size;
-  const space = isSpace(glyphs[at - 1]) || isSpace(n) ? '' : ' ';
-  if (touching && gap <= 0.12 * size) return '';
-  if (aligned && gap <= 10 * size) return gap <= 0.12 * size ? '' : space;
-  if (touching && gap <= 1.5 * size) return space;
-  return null;
+/**
+ * lineBreakJoins over a page of `count` chars read through accessors: `text(i)` is char i's text (cheap), `glyph(i)` its
+ * PDFium geometry, asked only for the breaks and the chars either side of them. The engine worker uses this to build a
+ * page's copy text without reading every glyph (pageCopyText); the text layer uses it over PageGlyphs. Same result.
+ */
+export function joinsOf(count: number, text: (i: number) => string, glyph: (i: number) => JoinGlyph): Map<number, string> {
+  const isBreakAt = (i: number) => text(i) === '\r' || text(i) === '\n';
+  const generatedBreak = (i: number) => isBreakAt(i) && glyph(i).generated;
+  const hasBoxAt = (i: number) => {
+    if (isBreakAt(i)) return false;
+    const c = glyph(i);
+    return !c.generated && c.box.width > 0 && c.box.height > 0;
+  };
+  const isSpaceAt = (i: number) => i >= 0 && i < count && /^\s$/.test(text(i));
+  const joins = new Map<number, string>();
+  for (let i = 0; i < count; i++) {
+    if (!generatedBreak(i)) continue;
+    let after = i;
+    while (after < count && generatedBreak(after)) after++;
+    const join = breakJoin(i, after);
+    if (join !== null) joins.set(i, join);
+    i = after - 1;
+  }
+  return joins;
+
+  function breakJoin(at: number, after: number): string | null {
+    let pi = at - 1;
+    while (pi >= 0 && !hasBoxAt(pi) && !isBreakAt(pi)) pi--;
+    if (pi < 0 || after >= count || !hasBoxAt(pi) || !hasBoxAt(after)) return null;
+    const p = glyph(pi);
+    const n = glyph(after);
+    if (angleDelta(p.angle, n.angle) > 0.5) return null;
+    const a = frame(p.box, p.angle);
+    const b = frame(n.box, p.angle);
+    const size = Math.min(a.v1 - a.v0, b.v1 - b.v0);
+    if (!(size > 0)) return null;
+    const across = Math.min(a.v1, b.v1) - Math.max(a.v0, b.v0);
+    const gap = Math.max(b.u0 - a.u1, a.u0 - b.u1);
+    const forward = b.u0 + b.u1 > a.u0 + a.u1;
+    const aligned = across >= 0.7 * size && Math.abs((a.v0 + a.v1) / 2 - (b.v0 + b.v1) / 2) <= 0.25 * size;
+    const touching = forward && across >= 0.3 * size;
+    const space = isSpaceAt(at - 1) || isSpaceAt(after) ? '' : ' ';
+    if (touching && gap <= 0.12 * size) return '';
+    if (aligned && gap <= 10 * size) return gap <= 0.12 * size ? '' : space;
+    if (touching && gap <= 1.5 * size) return space;
+    return null;
+  }
 }
 
 /**
@@ -180,18 +204,36 @@ function breakJoin(glyphs: Glyph[], at: number, after: number): string | null {
  */
 const modelCache = new WeakMap<PageGlyphs, string[]>();
 
-function modelChars(g: PageGlyphs): string[] {
+/** The text model of a page read through accessors (see joinsOf): one entry per char. */
+function modelCharsOf(count: number, text: (i: number) => string, glyph: (i: number) => JoinGlyph): string[] {
+  const joins = joinsOf(count, text, glyph);
+  const out: string[] = [];
+  for (let i = 0; i < count; i++) out.push(text(i));
+  const generatedBreak = (i: number) => (text(i) === '\r' || text(i) === '\n') && glyph(i).generated;
+  for (const [at, join] of joins) {
+    out[at] = join;
+    for (let k = at + 1; k < count && generatedBreak(k); k++) out[k] = '';
+  }
+  return out;
+}
+
+/** The page's text model, one entry per char: what the layer shows and Copy writes for each (see textModelSlice). */
+export function textModel(g: PageGlyphs): string[] {
   const hit = modelCache.get(g);
   if (hit) return hit;
   const glyphs = g.glyphs;
-  const joins = lineBreakJoins(g);
-  const out = glyphs.map((c) => c.text);
-  for (const [at, join] of joins) {
-    out[at] = join;
-    for (let k = at + 1; k < glyphs.length && isBreak(glyphs[k]) && glyphs[k].generated; k++) out[k] = '';
-  }
+  const out = modelCharsOf(
+    glyphs.length,
+    (i) => glyphs[i].text,
+    (i) => glyphs[i],
+  );
   modelCache.set(g, out);
   return out;
+}
+
+/** Copy's text of chars [start, end) of a page's text model (textModel). */
+export function textModelSlice(chars: readonly string[], start: number, end: number): string {
+  return normalizeCopiedText(chars.slice(Math.max(0, start), Math.max(0, end)).join('').replace(NOT_TEXT, ''));
 }
 
 /**
@@ -199,8 +241,18 @@ function modelChars(g: PageGlyphs): string[] {
  * line breaks of lineBreakJoins, and normalizeCopiedText.
  */
 export function textModelRange(g: PageGlyphs, start: number, end: number): string {
-  const chars = modelChars(g);
-  return normalizeCopiedText(chars.slice(Math.max(0, start), Math.max(0, end)).join('').replace(NOT_TEXT, ''));
+  return textModelSlice(textModel(g), start, end);
+}
+
+/** A whole page in a copy: its text model without the white space (generated line breaks, spaces) at either end. */
+export const trimPageText = (s: string): string => s.replace(/^\s+|\s+$/g, '');
+
+/**
+ * What Copy writes for a whole page of `count` chars, read through accessors as joinsOf reads them: textModelSlice of
+ * every char, trimmed. Equal to trimPageText(textModelRange(g, 0, count)) over the page's glyphs.
+ */
+export function pageCopyText(count: number, text: (i: number) => string, glyph: (i: number) => JoinGlyph): string {
+  return trimPageText(textModelSlice(modelCharsOf(count, text, glyph), 0, count));
 }
 
 /** The page's chars as units: surrogate pairs joined, ligature boxes split equally, joined line breaks applied. */
@@ -435,7 +487,7 @@ export function itemsScale(items: TextItem[]): number | undefined {
  * across two lines is one word. A double-click on a space selects the run of spaces, as in a web page.
  */
 export function wordAt(g: PageGlyphs, charIndex: number): { start: number; end: number } | null {
-  const chars = modelChars(g);
+  const chars = textModel(g);
   if (charIndex < 0 || charIndex >= chars.length) return null;
   const at: number[] = []; // at[i]: char i's offset in `text`
   let text = '';
@@ -466,7 +518,7 @@ export function wordAt(g: PageGlyphs, charIndex: number): { start: number; end: 
  * that ends in PDFium's joined hyphen ends there (PDFium joins the word across the break with no line break of its own).
  */
 export function lineAt(g: PageGlyphs, charIndex: number): { start: number; end: number } | null {
-  const chars = modelChars(g);
+  const chars = textModel(g);
   if (charIndex < 0 || charIndex >= chars.length) return null;
   const isBreakChar = (i: number) => chars[i] === '\r' || chars[i] === '\n';
   let start = charIndex;

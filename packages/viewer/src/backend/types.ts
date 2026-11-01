@@ -262,6 +262,12 @@ export interface PdfBackend {
    * removed char).
    */
   getPageChars(doc: DocHandle, pageIndex: number): Promise<string>;
+  /**
+   * The whole page's text as Copy writes it (R26): the text layer's text model (PDFium's text with its joined line
+   * breaks, text-layer/items.ts), trimmed of white space at both ends, and the page's char count. One engine call of
+   * about getPageChars' cost; Copy reads it for the pages a selection covers whole (Ctrl+A on a long book).
+   */
+  getPageCopyText(doc: DocHandle, pageIndex: number): Promise<{ text: string; charCount: number }>;
   /** The text of chars [start, start + count), cleaned as getPageText. */
   getTextRange(doc: DocHandle, pageIndex: number, start: number, count: number): Promise<string>;
   /**
