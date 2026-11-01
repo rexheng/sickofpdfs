@@ -5,3 +5,6 @@ export { hasFillableFields } from './backend/forms';
 export { ENGINE_WORKERS, type EngineAssets } from './backend/engine-config';
 export { engineAssets } from './backend/embedpdf/assets';
 export { createEmbedPdfBackend, type EmbedPdfBackendOptions } from './backend/embedpdf/backend';
+export { createPageTextProvider, type PageTextProvider, type PageTextProviderImpl } from './text/page-text';
+export * from './marks/geometry';
+export * from './marks/card-layout';
