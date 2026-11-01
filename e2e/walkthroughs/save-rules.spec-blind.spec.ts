@@ -92,6 +92,13 @@ test.describe('on a PDF the filter is not sure about', () => {
     await expect(undoChip(page), 'a save started by a note has no Undo (R67 f)').toHaveCount(0);
     expect((await annotations(page, id)).comments.map((c) => c.body)).toEqual(['My first note on a not-sure PDF']);
     await reloadAndWait(page, UNSURE);
+    // Triage (tb2notes, ruling R69): the handout's pages are landscape (720 pt, 960 px at 100%), so in this window the page and
+    // the note margin do not fit side by side at 100%. A note never changes the zoom any more: the cards fold into the
+    // toolbar's Notes button, and the note is read in the notes panel (Shift+F4) instead of the margin.
+    await expect
+      .poll(() => page.evaluate(() => (globalThis as unknown as { __sopTest: { annotations: { state(): { threads: unknown[] } } | null } }).__sopTest.annotations?.state().threads.length ?? 0), { message: 'the note is loaded again', timeout: 10_000 })
+      .toBe(1);
+    if ((await cardWith(page, 'My first note on a not-sure PDF').count()) === 0) await page.keyboard.press('Shift+F4');
     await expect(cardWith(page, 'My first note on a not-sure PDF'), 'and it is there after a reload').toBeVisible({ timeout: 10_000 });
     await shot(page, testInfo, 'note-saved');
   });
