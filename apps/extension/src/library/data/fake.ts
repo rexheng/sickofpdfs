@@ -167,6 +167,16 @@ export function createFakeLibraryData(o: FakeLibraryOptions): LibraryData {
     trashDocument: (id) => Promise.resolve(edit(id, { deletedAt: Date.now() })),
     restoreDocument: (id) => Promise.resolve(edit(id, { deletedAt: null })),
     setTitle: (id, title) => Promise.resolve(edit(id, { title })),
+    savePickedPdf(file) {
+      // A sample reading named after the file; nothing is read from it and nothing is written anywhere.
+      if (!/\.pdf$/i.test(file.name)) return Promise.resolve('not-pdf');
+      const at = Date.now();
+      const item = build({ file: file.name, title: file.name.replace(/\.pdf$/i, ''), authors: [], year: null, kind: 'other', pages: 1, link: '', openedHoursAgo: 0, minutesRead: 0, notes: 0, noCopy: true }, at);
+      if (items.has(item.doc.id)) return Promise.resolve('already-saved');
+      items.set(item.doc.id, { ...item, location: null });
+      changed();
+      return Promise.resolve('saved');
+    },
     async savedPdf(id) {
       const file = files.get(id);
       if (o.pdfBase === null || file === undefined || items.get(id)?.doc.blobStored !== true) return null;

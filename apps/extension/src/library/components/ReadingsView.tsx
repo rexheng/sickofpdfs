@@ -107,7 +107,7 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
         notify({ text: 'Restore this reading to open it.', action: { label: 'Restore', onClick: () => void data.restoreDocument(item.doc.id).catch(failed) } });
         return;
       }
-      void openReading(item).then((ok) => !ok && notify({ text: 'This PDF has no saved link to open it from.' }), failed);
+      void openReading(item, data.savedPdf).then((ok) => !ok && notify({ text: 'This PDF has no saved link or copy to open it from.' }), failed);
     },
     [data, notify, failed],
   );
@@ -142,7 +142,7 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
     readingMenu(item, {
       open: () => open(item),
       star: (on) => star(item, on),
-      rename: setTitle === null ? null : () => setRenaming(item),
+      rename: () => setRenaming(item),
       copyLink: () => copyLink(item),
       trash: () => moveToTrash(item),
       restore: () => restore(item),
@@ -350,7 +350,7 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
         onSave={(t) => {
           const item = renaming;
           setRenaming(null);
-          if (item !== null && setTitle !== null) void setTitle(item.doc.id, t).catch(failed);
+          if (item !== null) void setTitle(item.doc.id, t).catch(failed);
         }}
       />
     </div>

@@ -118,6 +118,11 @@ export interface LibraryApi {
   trashDocument(documentId: DocumentId): Promise<void>;
   restoreDocument(documentId: DocumentId): Promise<void>;
   /**
+   * Gives a reading a new title (the library's Rename, ruling R76). Spaces at the ends are trimmed and runs of white space
+   * become one; an empty title, or one over `MAX_TITLE_CHARS`, is refused. A trashed reading can be renamed too.
+   */
+  setTitle(documentId: DocumentId, title: string): Promise<void>;
+  /**
    * Forgets completely every reading that has been in Trash since before `olderThan` (Unix ms), and blanks the text of notes
    * that have been in Trash that long (trash-purge.ts).
    */
@@ -134,8 +139,12 @@ export const LIBRARY_API_METHODS = [
   'setStarred',
   'trashDocument',
   'restoreDocument',
+  'setTitle',
   'purgeTrash',
 ] as const satisfies readonly (keyof LibraryApi)[];
+
+/** The longest title a reading can be given. */
+export const MAX_TITLE_CHARS = 300;
 
 /** The methods that only read: their answers are not kept for replays. */
 export const LIBRARY_READ_METHODS = ['listDocuments', 'search', 'listNotes', 'getReading'] as const satisfies readonly (keyof LibraryApi)[];
@@ -779,7 +788,7 @@ export function createLibraryApi(db: SqlDb, deps: LibraryDeps, readers: RowReade
       checkId(documentId);
       let changed = false;
       db.savepoint(() => {
-        const row = one('SELECT starred, deleted_at FROM documents WHERE id = ?', [documentId]);
+        const row = one('SELECT starred, deleted_at, title FROM documents WHERE id = ?', [documentId]);
         if (!row) fail('document-missing', 'only saved documents can be changed');
         const step = change(row);
         if (step === null) return;
@@ -798,11 +807,20 @@ export function createLibraryApi(db: SqlDb, deps: LibraryDeps, readers: RowReade
   const restoreDocument: LibraryApi['restoreDocument'] = (documentId) =>
     updateDocument(documentId, (row) => (row.deleted_at == null ? null : { sql: 'deleted_at = NULL', bind: [] }));
 
+  const setTitle: LibraryApi['setTitle'] = (documentId, title) => {
+    if (typeof title !== 'string') return Promise.reject(new LibraryError('bad-input', 'a title is text'));
+    // eslint-disable-next-line no-control-regex -- control characters never belong in a title
+    const clean = title.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (clean === '') return Promise.reject(new LibraryError('bad-input', 'a title needs some words'));
+    if (Array.from(clean).length > MAX_TITLE_CHARS) return Promise.reject(new LibraryError('bad-input', `a title is at most ${MAX_TITLE_CHARS} characters`));
+    return updateDocument(documentId, (row) => (row.title === clean ? null : { sql: 'title = ?', bind: [clean] }));
+  };
+
   const purgeTrash: LibraryApi['purgeTrash'] = async (olderThan) => {
     assertWritable();
     if (!isTime(olderThan)) throw new LibraryError('bad-input', 'olderThan is not a time');
     await purgeTrashRows(db, deps, olderThan);
   };
 
-  return { listDocuments, search, listNotes, recordReading, getReading, setStarred, trashDocument, restoreDocument, purgeTrash };
+  return { listDocuments, search, listNotes, recordReading, getReading, setStarred, trashDocument, restoreDocument, setTitle, purgeTrash };
 }

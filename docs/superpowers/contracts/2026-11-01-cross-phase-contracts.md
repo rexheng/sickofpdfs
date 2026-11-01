@@ -298,6 +298,7 @@ export type SearchHit =
 // listNotes(o: { author?: Author; limit: number; cursor?: string }): Promise<{ items: { thread: ThreadRow; comments: CommentRow[]; title: string }[]; nextCursor: string | null }>
 // recordReading(documentId, o: { at: number; msDelta: number; position: { page: number; offset: number; zoom: number }; pagesVisited: number[] }): Promise<void>
 // setStarred(documentId, on), trashDocument(documentId), restoreDocument(documentId), purgeTrash(olderThan: number)
+// setTitle(documentId, title): Promise<void>   // R76: Rename; trimmed, 1–300 characters, a trashed reading too; publishes a documents upsert
 ```
 
 - **Search.** Snippets keep v1's `<b>…</b>` markers (Task 28 test). "Enter jumps to the passage" finds the first term on that page with `PageTextProvider.search`.

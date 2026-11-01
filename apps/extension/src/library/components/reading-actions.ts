@@ -1,6 +1,8 @@
 // What the library does with a reading: open it, copy its link, and the row menu.
 import type { MenuItemDef } from '@sop/ui';
+import { buildViewerUrl } from '../../shared/viewer-url';
 import type { LibraryItem } from '../data/types';
+import { readingTitle } from './format';
 
 /** The link a reading was opened from (a web link or a file on this computer); null when none is known. */
 export function readingLink(item: LibraryItem): string | null {
@@ -8,13 +10,20 @@ export function readingLink(item: LibraryItem): string | null {
 }
 
 /**
- * Opens a reading in a new tab from its link; the takeover shows it in the viewer, which finds its notes by its
- * fingerprint. False when the reading has no link to open.
+ * Opens a reading in a new tab: from its link, where the takeover shows it in the viewer, which finds its notes by its
+ * fingerprint; or, for one that has no link (an Upload), from its saved copy, through a blob: link that lives as long as
+ * this library tab (until S15's `?doc=` opens saved copies itself). False when there is neither.
  */
-export async function openReading(item: LibraryItem): Promise<boolean> {
+export async function openReading(item: LibraryItem, savedPdf: (id: LibraryItem['doc']['id']) => Promise<Blob | null>): Promise<boolean> {
   const link = readingLink(item);
-  if (link === null) return false;
-  await chrome.tabs.create({ url: link });
+  if (link !== null) {
+    await chrome.tabs.create({ url: link });
+    return true;
+  }
+  const copy = item.doc.blobStored ? await savedPdf(item.doc.id) : null;
+  if (copy === null) return false;
+  const name = /\.pdf$/i.test(readingTitle(item)) ? readingTitle(item) : `${readingTitle(item)}.pdf`;
+  await chrome.tabs.create({ url: buildViewerUrl({ source: URL.createObjectURL(copy), back: null, page: null, name }) });
   return true;
 }
 
@@ -30,8 +39,7 @@ export async function copyText(text: string): Promise<boolean> {
 export interface ReadingMenuActions {
   open(this: void): void;
   star(this: void, on: boolean): void;
-  /** null: the store cannot rename yet, so Rename is left out. */
-  rename: (() => void) | null;
+  rename(this: void): void;
   copyLink(this: void): void;
   trash(this: void): void;
   restore(this: void): void;
@@ -43,6 +51,7 @@ export function readingMenu(item: LibraryItem, a: ReadingMenuActions): MenuItemD
     return [{ kind: 'item', id: 'restore', label: 'Restore', icon: 'restore_from_trash', onSelect: a.restore }];
   }
   const link = readingLink(item);
+  const openable = link !== null || item.doc.blobStored;
   const starred = item.doc.starred;
   return [
     {
@@ -50,13 +59,13 @@ export function readingMenu(item: LibraryItem, a: ReadingMenuActions): MenuItemD
       id: 'open',
       label: 'Open',
       icon: 'open_in_new',
-      disabled: link === null,
-      disabledReason: 'this PDF has no saved link',
+      disabled: !openable,
+      disabledReason: 'this PDF has no saved link or copy',
       onSelect: a.open,
     },
     { kind: 'separator' },
     { kind: 'item', id: 'star', label: starred ? 'Remove from Starred' : 'Add to Starred', icon: 'star', onSelect: () => a.star(!starred) },
-    ...(a.rename === null ? [] : [{ kind: 'item' as const, id: 'rename', label: 'Rename', icon: 'edit' as const, onSelect: a.rename }]),
+    { kind: 'item', id: 'rename', label: 'Rename', icon: 'edit', onSelect: a.rename },
     {
       kind: 'item',
       id: 'copy-link',

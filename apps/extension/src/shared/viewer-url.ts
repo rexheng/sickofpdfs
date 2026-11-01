@@ -6,6 +6,11 @@ export interface ViewerParams {
   back: string | null;
   /** 1-based page to scroll to. */
   page: number | null;
+  /**
+   * The file's own name, for a PDF the library opened from the owner's disk (ruling R76): its `blob:` link has no name.
+   * Only shown, and only for a `blob:` link of this extension (`pickedFileName` in the viewer); absent otherwise.
+   */
+  name?: string | null;
 }
 
 /** The viewer page, relative to the extension root. */
@@ -26,7 +31,7 @@ function decode(value: string | undefined): string | null {
 /**
  * Reads a viewer address in either form:
  * - `viewer.html?DNR:<raw url>`, which is what the takeover rules redirect to;
- * - `viewer.html?file=<enc>[&back=<enc>]`, which is what `buildViewerUrl` writes.
+ * - `viewer.html?file=<enc>[&back=<enc>][&name=<enc>]`, which is what `buildViewerUrl` writes.
  * `#page=N` (a PDF "open parameter") sets the page in both. Anything missing or malformed reads as null.
  */
 export function parseViewerUrl(href: string): ViewerParams {
@@ -46,7 +51,8 @@ export function parseViewerUrl(href: string): ViewerParams {
     const eq = part.indexOf('=');
     if (eq > 0 && !fields.has(part.slice(0, eq))) fields.set(part.slice(0, eq), part.slice(eq + 1));
   }
-  return { source: decode(fields.get('file')), back: decode(fields.get('back')), page };
+  const name = decode(fields.get('name'));
+  return { source: decode(fields.get('file')), back: decode(fields.get('back')), page, ...(name !== null ? { name } : {}) };
 }
 
 /**
@@ -54,7 +60,11 @@ export function parseViewerUrl(href: string): ViewerParams {
  * viewer page; Node callers (tests) pass their own.
  */
 export function buildViewerUrl(p: ViewerParams, base: string = chrome.runtime.getURL(VIEWER_PATH)): string {
-  const query = [p.source !== null && `file=${encodeURIComponent(p.source)}`, p.back !== null && `back=${encodeURIComponent(p.back)}`].filter(Boolean);
+  const query = [
+    p.source !== null && `file=${encodeURIComponent(p.source)}`,
+    p.back !== null && `back=${encodeURIComponent(p.back)}`,
+    typeof p.name === 'string' && p.name !== '' && `name=${encodeURIComponent(p.name)}`,
+  ].filter(Boolean);
   return `${base}${query.length > 0 ? `?${query.join('&')}` : ''}${p.page !== null ? `#page=${p.page}` : ''}`;
 }
 
@@ -87,7 +97,7 @@ export function withRefusal(href: string, refused: boolean): string {
   const queryAt = href.search(/[?#]/);
   const base = queryAt < 0 ? href : href.slice(0, queryAt);
   const p = parseViewerUrl(href);
-  const plain = buildViewerUrl({ source: p.source, back: p.back, page: null }, base);
+  const plain = buildViewerUrl({ source: p.source, back: p.back, page: null, name: p.name ?? null }, base);
   const marker = refused ? `${plain.includes('?') ? '&' : '?'}${REFUSED_FIELD}` : '';
   return `${plain}${marker}${fragment}`;
 }

@@ -1,37 +1,33 @@
-// LibraryData over the real store: the contract §5 methods that S9 adds to the store, and the blob store's saved copies.
+// LibraryData over the real store: the contract §5 library methods (S9), the blob store's saved copies, and Upload PDF.
+// This is the only data the production library reads; the in-memory fake (fake.ts) exists in test builds only.
 import type { DocumentId } from '@sop/core';
+import { createEmbedPdfBackend, ENGINE_WORKERS, engineAssets, type PdfBackend } from '@sop/viewer';
 import type { BlobStore } from '../../store/blob-store';
 import type { StoreChange } from '../../store/change-bus';
 import type { StoreClient } from '../../store/client';
-import type { LibraryData, LibraryPage, LibraryQuery } from './types';
-
-/** The store methods the library pages need (contract §5; S9 adds them to StoreApi). */
-interface LibraryStoreMethods {
-  listDocuments(q: LibraryQuery): Promise<LibraryPage>;
-  setStarred(documentId: DocumentId, on: boolean): Promise<void>;
-  trashDocument(documentId: DocumentId): Promise<void>;
-  restoreDocument(documentId: DocumentId): Promise<void>;
-  /** Not in contract §5 (see LibraryData.setTitle). */
-  setTitle(documentId: DocumentId, title: string): Promise<void>;
-}
+import type { LibraryData } from './types';
+import { savePickedPdf } from './upload';
 
 /** Store changes that can change a library page: a reading, its place, its history, or its note count. */
 const SHOWN_TABLES: ReadonlySet<StoreChange['table']> = new Set(['documents', 'aliases', 'locations', 'history', 'threads', 'comments']);
 
-/**
- * The library pages' data from the store, or null when this store cannot list the library yet (S9's methods are
- * missing), so the page can say so instead of showing an empty library.
- */
-export function createStoreLibraryData(client: StoreClient, blobs: BlobStore | null): LibraryData | null {
-  const store = client as StoreClient & Partial<LibraryStoreMethods>;
-  const { listDocuments, setStarred, trashDocument, restoreDocument, setTitle } = store;
-  if (listDocuments === undefined || setStarred === undefined || trashDocument === undefined || restoreDocument === undefined) return null;
+/** The library pages' data from the store. */
+export function createStoreLibraryData(client: StoreClient, blobs: BlobStore | null): LibraryData {
+  let engine: PdfBackend | null = null;
+  // Uploads go one at a time, through one engine worker of this page's own, made on the first upload.
+  let uploads: Promise<unknown> = Promise.resolve();
+  const backend = (): PdfBackend => (engine ??= createEmbedPdfBackend(engineAssets((p) => chrome.runtime.getURL(p)), { workers: ENGINE_WORKERS }));
   return {
-    listDocuments: (q) => listDocuments.call(store, q),
-    setStarred: (id, on) => setStarred.call(store, id, on),
-    trashDocument: (id) => trashDocument.call(store, id),
-    restoreDocument: (id) => restoreDocument.call(store, id),
-    setTitle: setTitle === undefined ? null : (id, title) => setTitle.call(store, id, title),
+    listDocuments: (q) => client.listDocuments(q),
+    setStarred: (id, on) => client.setStarred(id, on),
+    trashDocument: (id) => client.trashDocument(id),
+    restoreDocument: (id) => client.restoreDocument(id),
+    setTitle: (id, title) => client.setTitle(id, title),
+    savePickedPdf(file) {
+      const next = uploads.then(() => savePickedPdf(file, { store: client, blobs, backend, now: () => Date.now() }));
+      uploads = next.catch(() => undefined);
+      return next;
+    },
     async savedPdf(id) {
       if (blobs === null) return null;
       const doc = await client.getDocument(id);

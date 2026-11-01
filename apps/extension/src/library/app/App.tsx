@@ -3,6 +3,7 @@ import '@sop/ui/base.css';
 import { type IconName, registerFonts, TextButton } from '@sop/ui';
 import { ContentCard, EmptyState, PageTitle, Snackbar, type SnackbarMessage } from '@sop/ui/library';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { forgetDraftJournal } from '../../viewer/annotations/draft-journal';
 import { createThumbnailCache } from '../data/thumbnails';
 import type { LibraryData } from '../data/types';
 import { PAGES } from '../routes/pages';
@@ -56,7 +57,10 @@ function Frame({ start, retry }: { start: Start; retry(this: void): void }) {
     if (data === null || thumbnails === null) return;
     void thumbnails.sweep().catch(() => {});
     return data.onChange((c) => {
-      if (c.forgotten.length > 0) void thumbnails.forget(c.forgotten).catch(() => {});
+      if (c.forgotten.length === 0) return;
+      void thumbnails.forget(c.forgotten).catch(() => {});
+      // R76: the store worker cannot reach this page's storage, so the drafts' crash-safe copies go from here
+      for (const id of c.forgotten) forgetDraftJournal(id);
     });
   }, [data, thumbnails]);
 
@@ -93,7 +97,7 @@ function Frame({ start, retry }: { start: Start; retry(this: void): void }) {
   }
 
   const shell = (
-    <Shell route={route} search={search} onSearch={setSearch} onNotify={(text) => notify({ text })} newMenu={newMenu}>
+    <Shell route={route} search={search} onSearch={setSearch} onNotify={(text) => notify({ text })} newMenu={newMenu} onUpload={data?.savePickedPdf ?? null}>
       {page}
     </Shell>
   );
