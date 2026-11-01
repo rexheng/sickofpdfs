@@ -26,7 +26,7 @@ export interface PageViewProps {
 export const snapToDevice = (v: number, dpr: number) => Math.round(v * dpr) / dpr;
 
 /**
- * One page: a box in the placeholder colour with the page shadow, holding (bottom to top) the preview canvas, the full
+ * One page: a white box with the page shadow, holding (bottom to top) the preview canvas, the full
  * canvas, the tiles, and the layer slot. The full canvas comes first in the DOM, so `[data-page-index] canvas` is the
  * full render. Painting is done by the PageDriver, which gets this DOM before the browser paints (a layout effect),
  * so a page whose preview is cached is never shown blank.

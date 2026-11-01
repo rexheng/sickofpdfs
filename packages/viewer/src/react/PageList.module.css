@@ -1,7 +1,7 @@
 /*
- * The page area: the viewer's dark canvas with white pages, 16 px apart, with Drive's page shadow and placeholder
- * colour (02 section 4.10). The scrollbar gutter is kept even when nothing overflows, so fit width never flips
- * between two widths as the scrollbar comes and goes.
+ * The page area: the viewer's dark canvas with white pages, 16 px apart, with Drive's page shadow (02 section 4.10).
+ * The scrollbar gutter is kept even when nothing overflows, so fit width never flips between two widths as the
+ * scrollbar comes and goes.
  */
 .scroller {
   position: absolute;
@@ -24,10 +24,15 @@
   position: relative;
 }
 
+/*
+ * A page is white from the moment it is laid out, as in Chrome's viewer: its preview, then its full render, fill it in.
+ * (Drive's grey placeholder, --viewer-page-placeholder, read as a dark screen on open and after a long jump; the rail's
+ * thumbnails keep it.)
+ */
 .page {
   position: absolute;
   box-sizing: border-box;
-  background-color: var(--viewer-page-placeholder);
+  background-color: var(--viewer-page);
   box-shadow: var(--shadow-pdf-page);
 }
 

@@ -201,6 +201,7 @@
 
   /* Viewer colours */
   --viewer-page-placeholder: rgba(68,71,70,.2);
+  --viewer-page: #ffffff; /* a PDF page, white from the moment it is laid out, as in Chrome's viewer; the render fills it in */
   --viewer-icon-hover: #3e4041; /* 8% #c4c7c5 over #333537 (the rail's selected toggle uses it as a solid colour) */
   --viewer-focus: #a8c7fa;
   /* The text selection on a PDF page: Drive's blue (#0b57d0) at 30%, painted as one band a line (Task 22, R44) */
