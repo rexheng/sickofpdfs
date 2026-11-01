@@ -110,6 +110,9 @@ importers:
       '@wxt-dev/module-react':
         specifier: 1.2.2
         version: 1.2.2(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0))(wxt@0.21.5(esbuild@0.28.2)(eslint@10.14.0(jiti@2.7.0))(rolldown@1.2.16)(typescript@6.0.3)(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)))
+      client-zip:
+        specifier: 2.5.1
+        version: 2.5.1
       onnxruntime-web:
         specifier: 1.31.1
         version: 1.31.1
@@ -1960,6 +1963,9 @@ packages:
 
   cjs-module-lexer@1.2.3:
     resolution: {integrity: sha512-0TNiGstbQmCFwt4akjjBg5pLRTSyj/PkWQ1ZoO2zntmg9yLqSRxwEa4iCfQLGjqhiqBfOJa7W/E8wfGrTDmlZQ==}
+
+  client-zip@2.5.1:
+    resolution: {integrity: sha512-yOvNSBsQX1B7wtdvIVXJEIIShrlPiX+adhli7sWvQhsx3nX1DjvpSt+AwOxaX+3DCsT/Yx0nRy5hIjRLIYfebw==}
 
   cliui@8.0.1:
     resolution: {integrity: sha512-BSeNnyus75C4//NQ9gQt1/csTXyo/8Sb+afLAkzAptFuMsod9HFokGNudZpi/oQV73hnVK+sR+5PVRMd+Dr7YQ==}
@@ -4789,6 +4795,8 @@ snapshots:
   citty@0.2.2: {}
 
   cjs-module-lexer@1.2.3: {}
+
+  client-zip@2.5.1: {}
 
   cliui@8.0.1:
     dependencies:
