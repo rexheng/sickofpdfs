@@ -10,7 +10,7 @@
   },
   "scripts": {
     "typecheck": "node scripts/dev/typecheck.mjs",
-    "lint": "eslint .",
+    "lint": "node --max-old-space-size=6144 node_modules/eslint/bin/eslint.js .",
     "test": "vitest run --project unit --project cloud",
     "test:browser": "vitest run --project browser",
     "fixtures": "node scripts/fixtures/build.mjs",
