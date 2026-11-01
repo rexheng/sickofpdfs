@@ -112,6 +112,20 @@ export function findRequest(tabId: number, url: string, types: readonly LoggedTy
   return found;
 }
 
+/**
+ * `findRequest`, waiting up to `timeoutMs` for the request to be seen. The content script asks for the whole tab as
+ * soon as an `<embed>` or `<object>` appears, and that message can reach the worker before Chrome's own request for
+ * the PDF does.
+ */
+export async function waitForRequest(tabId: number, url: string, types: readonly LoggedType[], timeoutMs: number): Promise<LoggedRequest | null> {
+  const until = Date.now() + timeoutMs;
+  for (;;) {
+    const found = findRequest(tabId, url, types);
+    if (found !== null || Date.now() >= until) return found;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
 /** Forgets a tab (it was closed). */
 export function forgetTab(tabId: number): void {
   byFrame.delete(tabId);

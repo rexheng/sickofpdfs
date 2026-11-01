@@ -2,7 +2,10 @@ import { splitPageFragment, stripFragment } from '../../shared/urls';
 import { buildViewerUrl, VIEWER_PATH } from '../../shared/viewer-url';
 import { grant } from './grants';
 import { defaultReferer } from './referer';
-import { findRequest } from './request-log';
+import { waitForRequest } from './request-log';
+
+/** How long the move to the full tab waits for Chrome's own request for an embedded PDF (it is usually there at once). */
+const EMBED_REQUEST_WAIT_MS = 1000;
 
 // One record per tab: the page whose embedded PDFs are left to Chrome.
 const keyOf = (tabId: number) => `suppressed:${tabId}`;
@@ -28,11 +31,17 @@ export async function areEmbedsSuppressed(tabId: number, pageUrl: string): Promi
  * page would otherwise send the tab to the viewer again each time.
  *
  * The viewer's own request repeats the Referer of Chrome's request for the embed or the frame, which follows the
- * page's referrer policy; if that request was not seen, what Chrome sends by default from the page.
+ * page's referrer policy (a page may send none). That request is waited for, briefly; only if it never comes, what
+ * Chrome sends by default from the page.
  */
 export async function openEmbeddedInTab(tabId: number, url: string, pageUrl: string): Promise<void> {
   const { url: source, page } = splitPageFragment(url);
-  const seen = findRequest(tabId, source, ['sub_frame', 'object']);
+  const topDocument = () => chrome.webNavigation.getFrame({ tabId, frameId: 0 }).then((f) => f?.documentId, () => undefined);
+  const before = await topDocument();
+  const seen = await waitForRequest(tabId, source, ['sub_frame', 'object'], EMBED_REQUEST_WAIT_MS);
+  // The owner may have left the page while the worker waited: then the tab is theirs, not the page's. (The document,
+  // not the address: a page may rewrite its own address with history.replaceState.)
+  if (before !== undefined && (await topDocument()) !== before) return;
   await grant(tabId, source, { referer: seen ? seen.referer : defaultReferer(pageUrl, source), back: pageUrl });
   await suppressEmbeds(tabId, pageUrl);
   await chrome.tabs.update(tabId, { url: buildViewerUrl({ source, back: pageUrl, page }) });
