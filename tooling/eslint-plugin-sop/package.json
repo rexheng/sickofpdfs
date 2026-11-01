@@ -1,0 +1,14 @@
+{
+  "name": "eslint-plugin-sop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local ESLint plugin: sop/no-raw-design-values keeps colours, lengths, fonts and shadows in the shared token file.",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "dependencies": {
+    "@eslint/css-tree": "4.1.2"
+  }
+}

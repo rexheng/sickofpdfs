@@ -1,0 +1,5 @@
+# spikes/** is deliberately not listed: the Phase 0 spike keeps its own package.json and lockfile.
+packages:
+  - apps/*
+  - packages/*
+  - tooling/*
