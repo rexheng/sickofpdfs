@@ -305,7 +305,21 @@ export interface FigurePack { label: string | null; pageIndex: number; image: Re
 // packages/core/src/claude/types.ts
 export interface ClaudeTurnRequest { documentId: DocumentId; threadId: ThreadId; questionId: CommentId; replyId: CommentId; role: ModelRole;
   scope: 'passages' | 'whole-document'; webSearch: boolean; focus: Anchor | null /* the thread's anchor */ }
-export interface CitableBlock { title: string; pageIndex: number; start: number; end: number; textSource: string }   // blocks[i] = the i-th citable text block sent
+export interface ModelChoice { id: string /* data from the Models API */; displayName: string; line: string | null; imageInput: boolean;
+  webSearchTool: string | null /* the tool type probed at setup */; maxInputTokens: number | null; checkedAt: number;
+  serverFallback?: boolean /* set at setup when the model's info lists fallback models; only Think harder uses it */ }
+export interface CitableBlock { title: string; pageIndex: number; start: number; end: number; textSource: string;   // blocks[i] = the i-th citable text block sent
+  via?: { kind: 'document' | 'search_result'; index: number; block: number } /* where in the request it sits */ }
+// packages/core/src/claude/request.ts
+export interface ThreadTurn { role: 'user' | 'assistant'; content: string | { type: string; [key: string]: unknown }[] }
+export function buildRequest(pack: ContextPack, turns: readonly ThreadTurn[], o: { role: ModelRole; model: ModelChoice; webSearch: boolean }): Promise<{ params: MessagesParams; blocks: CitableBlock[] }>;
+// packages/core/src/claude/stream-map.ts
+export function createStreamMapper(blocks: readonly CitableBlock[], onEvent: (e: ClaudeStreamEvent) => void,
+  opts?: { role?: ModelRole | null; questionId?: CommentId | null; scope?: 'passages' | 'whole-document'; figureLabels?: string[]; price?: ModelPrice | null }): StreamMapper;
+// StreamMapper: push(rawEvent), finish(finalMessage), fail(error), snapshot(), stopReason(); finish and fail return ClaudeReplyMeta & { body: string }
+// packages/core/src/claude/cost.ts
+export function decide(i: { estimateUsd: number; spentUsd: number; capUsd: number | null; confirmOverUsd: number | null; saved: boolean;
+  scope: 'passages' | 'whole-document'; priceKnown: boolean /* required */; confirmed?: readonly Ask[] }): 'send' | { ask: Ask; usd: number } | { block: 'over-cap' };   // Ask = 'unsaved' | 'over-threshold' | 'whole-document'
 export interface ContextPack { map: DocumentMap; focus: Passage | null; passages: Passage[]; figures: FigurePack[]; blocks: CitableBlock[]; estimate: { inputTokens: number; usd: number } }
 export type ClientTool = 'search_document' | 'get_pages' | 'get_figure';   // run in the viewer; every result counts against the turn's budget
 export type ClaudeStreamEvent =
@@ -322,11 +336,17 @@ export interface ClaudeTurnRunner { run(req: ClaudeTurnRequest, onEvent: (e: Cla
   - `getPassages` never returns the whole document. "Ask about the whole document" is a separate path with a cost estimate first.
   - The output is deterministic for the same inputs, so the prompt cache holds.
   - It needs Phase 3's `search` with `documentId` for saved documents.
-- **Citations.** Each passage and figure text is its own citable text block. `content_block_location` maps back through `blocks[i]` to a page and char range. Claude cannot cite an image, so a figure answer always carries a "Fig. N · p. M" chip.
+- **Citations.** Each passage and figure text is its own citable text block. `content_block_location` and `search_result_location` map back through `blocks[i]` (using `via`) to a page and char range. An index that matches no block is dropped, never guessed. Claude cannot cite an image, so a figure answer always carries a "Fig. N · p. M" chip.
+  - **A chip follows every cited sentence**, including a chip identical to the one before it, because a sentence with no chip reads as unsourced. The same passage keeps the same `n`. Merging repeated chips for tidiness, if wanted, is done by the UI when it draws them, never in the stored body.
+  - **An `error` event ends the reply.** The mapper emits `error` once and never `done` after it; `finish` then returns that error with the partial text kept. A stream that ends with no stop reason finishes as `interrupted`. A refusal finishes as `refused`.
 - **The request.**
   - The order is: a frozen system prompt; the document map with `cache_control`; the images before their text packs; the passages; the question.
-  - Web search is Anthropic's server tool, at most 1 use per question (`max_uses: 1`, owner 1 Nov 2026), and only when `claude.webSearch` is on.
+  - Web search is Anthropic's server tool, at most 1 use per question (`max_uses: 1`, owner 1 Nov 2026). It is sent only when `claude.webSearch` is on **and** the model's stored `webSearchTool` is not null. Otherwise the request carries no web search tool at all.
   - Follow-ups append to the exact blocks held in the tab's memory. After a reload, the thread is rebuilt from stored comments as plain text turns, and a cache miss is accepted. Nothing large is stored in `meta`.
+  - **`buildRequest` is asynchronous.** A figure image is a `Blob`, which can only be read asynchronously, so `buildRequest` encodes each `RegionImage` itself. There is no separate encoding step and no `base64` field on `RegionImage`. A model whose `imageInput` is false gets the text pack only.
+  - **`ThreadTurn`.** The thread in order, oldest first. `turns[0]` is `role: 'user'` with `content` a plain string: the owner's first question, and `buildRequest` puts the whole pack in front of it. Later turns are appended as they are: in memory, the exact blocks of a reply and the `tool_result` blocks that answered a tool call (these may hold `search_result` blocks, which stay citable); after a reload, plain strings. The last turn is a user turn. Replies go back only as assistant turns, never as user text with citations.
+  - The request builder copies the frozen tool list and the held blocks, so changing a built request never changes the next one.
+  - Think harder with `serverFallback` set adds `betas: ['server-side-fallback-2026-07-01']` and `fallbacks: 'default'`. The caller then uses the beta endpoint.
 - **Settings keys** (synced settings rows):
   - `claude.model.default` and `claude.model.thinkHarder`: the owner's choices, stored as data (D1);
   - `claude.webSearch` (default `true`);
@@ -334,10 +354,14 @@ export interface ClaudeTurnRunner { run(req: ClaudeTurnRequest, onEvent: (e: Cla
   - `claude.confirmOverUsd` (`0.25`).
 
   The month's spend is kept in `sop-local` as `claudeSpendMonth`.
-- **Before sending:**
+- **Before sending** (`decide`):
   - On a PDF that is not in the library, nothing is sent until the owner confirms.
-  - An estimate over $0.25 asks first.
-  - Over the monthly cap, the reply fails with `over-cap`.
+  - An estimate over $0.25 asks first. An estimate or spend that is not a number (NaN or infinite) also asks, and so does any request on a model with no known price (`priceKnown` is a required input; the estimate carries it).
+  - Over the monthly cap, the reply fails with `over-cap`: the month's spend is at or over the cap, or this request's estimate would take it over. Spending exactly up to the cap is allowed.
+  - Asks come one at a time, in this order: unsaved PDF, whole document, cost. After each yes the caller asks again with that ask in `confirmed`.
+- **Tests and scripts.**
+  - Tests use the recorded-response double (`e2e/support/claude-replay.ts`) and never a live key. No key-shaped text, even a fake one, is committed: tests and scripts build such values at run time.
+  - `scripts/claude/live-check.mjs` skips with exit 0 when `ANTHROPIC_API_KEY_LIVE` is absent. `scripts/claude/record.mjs` is only run on purpose, so it exits 1 when the key is absent.
 - **The API key.**
   - Only viewer and Settings code read it, with `getSecret('anthropic_api_key')` (Task 29).
   - The Anthropic client is created in the viewer tab, which also makes the calls, because the service worker would cut long streams.
