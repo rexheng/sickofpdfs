@@ -139,7 +139,7 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 
 **Text layer.** We port pdf.js's text-layer code (Apache-2.0) and feed it PDFium's glyph boxes and reading order. It must handle two-column papers, rotated tables, ligatures, inline maths and right-to-left text. Phase 0 checks this with a selection test suite, including copy-paste matching Chrome's viewer. Selections map back to PDFium character ranges.
 
-**Marks.** Select text, then right-click: a small menu opens at the pointer with highlight (with colour), underline, bold, strikethrough, comment, Ask Claude, Search and copy. Search opens Google or Google Scholar for the selected words in a new tab; on a reference in a bibliography it finds that paper (Google Scholar, DOI or arXiv). Nothing pops up on its own while you read. Each mark applies instantly from the menu or its shortcut, with no tool to pick first. The keyboard's menu key and Shift+F10 open the menu too, and Shift+right-click shows Chrome's usual menu.&#32;
+**Marks.** Select text, then right-click: a small menu opens at the pointer with highlight (with colour), underline, bold, strikethrough, comment, Ask Claude, Search and copy. Search opens Google or Google Scholar for the selected words in a new tab; on a reference in a bibliography it finds that paper (Google Scholar, DOI or arXiv). Nothing pops up on its own while you read. Each mark applies instantly from the menu or its shortcut, with no tool to pick first. The keyboard's menu key and Shift+F10 open the menu too, and Shift+right-click shows Chrome's usual menu. A mark action (a colour, highlight, underline, bold or strikethrough) lets go of the selection, so the mark shows in its true colour at once (ruling R71). Right-click on a mark opens its own dark menu: the five colours (keys 1 to 5), comment, and remove (Delete), with the keys shown in the rows; the menu key opens it on a clicked mark (ruling R72).&#32;
 
 - One passage can carry several styles at once, such as highlight plus underline.
 - Applying a style that already covers the whole selection removes it from that selection, splitting the mark if needed. Comments are separate from styles, so removing or splitting a style never removes a comment.
@@ -150,18 +150,18 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 
 **What a note is made of**
 
-- **Comment thread:** has its own anchor in the same format, or sits on a point, a page or the whole document. Making a comment also adds a highlight, but the two are independent: if a commented passage loses every style, the thread shows a dotted underline. A thread holds comments, each with author (you or Claude), Markdown body, and created and edited times.
+- **Comment thread:** has its own anchor in the same format, or sits on a point, a page or the whole document. Making a comment adds no style and never changes a mark's colour (ruling R68): a commented passage with no style shows a dotted underline, and on marked words the marks stay as they are. A thread holds comments, each with author (you or Claude), Markdown body, and created and edited times.
 - **Re-anchoring on open:** the stored position is used only if the quote still matches there; next comes the quote on the same page; then a fuzzy match across the document scoring at least 0.8 on a quote of at least 12 characters. A figure comment stays put while its fingerprint matches; otherwise it follows its caption, then its image. Anything else goes to "Couldn't place", never onto doubtful text.
 - **One schema:** the implementation plan defines the single normative data schema. It replaces the research draft, which lacks bold, area marks and separate comment anchors.
 - **Figure and area anchor:** the page and a rectangle in page units from 0 to 1. A figure anchor also keeps a fingerprint: its caption label and quote, a hash of the embedded image and a hash of how the region looks. Pins and sub-areas are stored relative to the figure.
 
 **The Ctrl+Alt+M flow:**
 
-1. With text selected, Ctrl+Alt+M creates a comment on the selection, shown with a highlight in under 50 ms, and opens a note box in the right margin, level with the selection, never covering it.
+1. With text selected, Ctrl+Alt+M creates a comment on the selection, shown on its words in under 50 ms, and opens a note box in the right margin, level with the selection, never covering it.
 2. Type plain text or light Markdown (Ctrl+B and Ctrl+I format the note). On a saved PDF the draft saves locally, so a crash loses nothing; on a PDF judged not learning it stays in memory until you choose Save.
-3. Shift+Enter adds a new line. Esc or clicking away also saves typed text. An empty new note cancels its highlight; emptying an existing note keeps the highlight.
+3. Shift+Enter adds a new line. Esc or clicking away also saves typed text. An empty new note leaves nothing behind; emptying an existing note never removes a mark.
 4. A selection over an existing comment opens that thread (the most recent, if several overlap) instead of stacking a duplicate.
-5. Cards line up with their marks down the margin, like Google Docs. The active card moves left and its mark darkens.
+5. Cards line up with their marks down the margin, like Google Docs. The active card moves left and its passage darkens: its highlight takes a darker fill, and words with no highlight get a neutral grey wash, never one of the five colours.
 6. The same document open in two tabs stays in step; a draft belongs to the tab where it was started.
 
 **Reading basics, at least as good as Chrome's viewer (Release 1):**
