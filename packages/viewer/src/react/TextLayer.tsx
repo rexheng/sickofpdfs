@@ -13,7 +13,7 @@
 //   PDFium's text with the joined line breaks (items.ts), so it matches Chrome's viewer (R26).
 import { memo, useLayoutEffect, useRef } from 'react';
 import type { PageGlyphs, PageSize, PdfRect } from '../backend/types';
-import { cssPerPoint, pageToDisplayed } from '../layout/page-space';
+import { cssPerPoint, displayedToPage, pageToDisplayed } from '../layout/page-space';
 import type { PageBox } from '../layout/page-layout';
 import { PT_TO_CSS } from '../layout/zoom';
 import { highlightPath, markLineRects, normToCss, pdfRectToNorm, type RectSource } from '../marks/geometry';
@@ -53,6 +53,12 @@ const RECT_REQUESTS_IN_FLIGHT = 2;
 const DRAG_MIN_PX = 3;
 /** Glyph arrays kept for pages no longer mounted (about 300 bytes a char). */
 const GLYPH_PAGES_KEPT = 8;
+/**
+ * A drag whose pointer is on no char ends on the nearest char within this many points, as Chrome's viewer does (it asks
+ * PDFium for the char at the point with a tolerance, FPDFText_GetCharIndexAtPos). The pointer drifting into a column
+ * gutter then ends the selection on the line it is level with, and never in the other column unless it is nearer.
+ */
+const DRAG_END_TOLERANCE_PT = 20;
 
 interface PageState {
   index: number;
@@ -109,6 +115,8 @@ export class TextLayerController {
   private glyphQueue: Promise<unknown> = Promise.resolve();
   private drag: Drag | null = null;
   private paintFrame = 0;
+  /** The pointer's last position, with the fraction of a pixel that pointer events keep and mouse events drop. */
+  private pointer: { x: number; y: number } | null = null;
 
   constructor(private readonly o: TextLayerControllerOptions) {
     this.rectSource = {
@@ -191,6 +199,45 @@ export class TextLayerController {
     r.setEnd(pos.node, Math.min(pos.node.length, pos.offset + 1));
     const b = r.getBoundingClientRect();
     return { x: (b.left + b.right) / 2, y: (b.top + b.bottom) / 2 };
+  }
+
+  /**
+   * The char under a client point, by PDFium's own char boxes (Chrome's viewer also hit-tests PDFium's boxes, R27), not
+   * by the layer's DOM boxes, which may be up to half a pixel off: a press just inside a glyph's edge is on that glyph. With
+   * `tolerancePt`, a point on no char takes the nearest char within that distance. A char the layer does not show as
+   * selectable (PDFium's joined hyphen, a char with no text) counts only with `withHyphen`. Falls back to the DOM.
+   */
+  private hitChar(x: number, y: number, o: { withHyphen?: boolean; tolerancePt?: number } = {}): GlyphHit | null {
+    const root = this.root;
+    if (!root) return null;
+    let near: { hit: GlyphHit; d: number } | null = null;
+    for (const s of this.pages.values()) {
+      const g = this.glyphCache.get(s.index);
+      const pageEl = s.host.closest<HTMLElement>('[data-page-index]');
+      if (!s.box || !s.handle || !g || !pageEl) continue;
+      const r = pageEl.getBoundingClientRect();
+      const k = this.scaleOf(s);
+      const reach = (o.tolerancePt ?? 0) * k;
+      if (!(k > 0) || x < r.left - reach || x > r.right + reach || y < r.top - reach || y > r.bottom + reach) continue;
+      const p = displayedToPage((x - r.left) / k, (y - r.top) / k, s.box.rotation, s.size.width, s.size.height);
+      let inside: { start: number; d: number } | null = null;
+      for (const u of this.unitsOf(g)) {
+        const b = u.box;
+        if (!b || u.hidden || u.lineBreak || (u.hyphen && !o.withHyphen)) continue;
+        const dx = Math.max(b.x - p.x, 0, p.x - (b.x + b.width));
+        const dy = Math.max(b.y - p.y, 0, p.y - (b.y + b.height));
+        if (dx === 0 && dy === 0) {
+          // Overlapping boxes (kerning, italics): the one whose centre is nearest.
+          const c = Math.hypot(p.x - (b.x + b.width / 2), p.y - (b.y + b.height / 2));
+          if (!inside || c < inside.d) inside = { start: u.start, d: c };
+        } else if (o.tolerancePt) {
+          const d = Math.hypot(dx, dy);
+          if (d <= o.tolerancePt && (!near || d < near.d)) near = { hit: { pageIndex: s.index, charIndex: u.start }, d };
+        }
+      }
+      if (inside) return { pageIndex: s.index, charIndex: inside.start };
+    }
+    return charAtPoint(root, x, y, o.withHyphen) ?? near?.hit ?? null;
   }
 
   /** Resolves once page `pageIndex` has a text layer built for the current zoom. */
@@ -340,7 +387,7 @@ export class TextLayerController {
     if (d?.moved) {
       const sel = document.getSelection();
       const focus = sel?.focusNode ? { node: sel.focusNode, offset: sel.focusOffset } : null;
-      const ends = glyphSelection(root, d.from, charAtPoint(root, d.x, d.y), focus);
+      const ends = glyphSelection(root, d.from, this.hitChar(d.x, d.y, { tolerancePt: DRAG_END_TOLERANCE_PT }), focus);
       if (ends) return charRangeFromDomRange(root, rangeBetween(ends.anchor, ends.focus));
     }
     return getSelectionRanges(root);
@@ -421,6 +468,10 @@ export class TextLayerController {
     for (const s of this.pages.values()) this.observer.observe(s.host);
     document.addEventListener('selectionchange', () => this.schedulePaint(), { signal });
     document.addEventListener('scroll', () => (this.lastScrollAt = performance.now()), { signal, capture: true, passive: true });
+    const notePointer = (e: PointerEvent) => (this.pointer = { x: e.clientX, y: e.clientY });
+    document.addEventListener('pointerdown', notePointer, { signal, capture: true, passive: true });
+    document.addEventListener('pointermove', notePointer, { signal, capture: true, passive: true });
+    document.addEventListener('pointerup', notePointer, { signal, capture: true, passive: true });
     document.addEventListener('mousedown', (e) => this.onMouseDown(e), { signal, capture: true });
     document.addEventListener('mousemove', (e) => this.onMouseMove(e), { signal, passive: true });
     document.addEventListener('mouseup', (e) => this.onMouseUp(e), { signal });
@@ -438,11 +489,22 @@ export class TextLayerController {
     this.drag = null;
   }
 
+  /**
+   * Where a mouse event happened. Chrome gives MouseEvent.clientX and clientY in whole CSS pixels, which can put a press
+   * on the left edge of a narrow letter onto the letter before it (a CSS pixel is two device pixels on a 2× screen). The
+   * pointer event that comes just before it has the same point with its fraction; use that when it matches.
+   */
+  private at(e: MouseEvent): { x: number; y: number } {
+    const p = this.pointer;
+    return p && Math.abs(p.x - e.clientX) < 1 && Math.abs(p.y - e.clientY) < 1 ? p : { x: e.clientX, y: e.clientY };
+  }
+
   private onMouseDown(e: MouseEvent): void {
     this.drag = null;
     const root = this.root;
     if (!root || e.button !== 0 || !(e.target instanceof Node) || !root.contains(e.target)) return;
-    const hit = charAtPoint(root, e.clientX, e.clientY, e.detail >= 2);
+    const at = this.at(e);
+    const hit = this.hitChar(at.x, at.y, { withHyphen: e.detail >= 2 });
     if (!hit) return;
     if (e.detail >= 2) {
       // The browser's own word and line selection stop at span edges; select PDFium's word or line instead.
@@ -454,7 +516,7 @@ export class TextLayerController {
       this.schedulePaint();
       return;
     }
-    if (!e.shiftKey) this.drag = { from: hit, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, moved: false };
+    if (!e.shiftKey) this.drag = { from: hit, x0: at.x, y0: at.y, x: at.x, y: at.y, moved: false };
   }
 
   private onMouseMove(e: MouseEvent): void {
@@ -464,8 +526,9 @@ export class TextLayerController {
       this.drag = null;
       return;
     }
-    d.x = e.clientX;
-    d.y = e.clientY;
+    const at = this.at(e);
+    d.x = at.x;
+    d.y = at.y;
     if (!d.moved && Math.hypot(d.x - d.x0, d.y - d.y0) >= DRAG_MIN_PX) d.moved = true;
     if (d.moved) this.schedulePaint();
   }
@@ -475,11 +538,12 @@ export class TextLayerController {
     const d = this.drag;
     this.drag = null;
     const root = this.root;
-    if (!d || !root || e.button !== 0 || Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < DRAG_MIN_PX) return;
+    const at = this.at(e);
+    if (!d || !root || e.button !== 0 || Math.hypot(at.x - d.x0, at.y - d.y0) < DRAG_MIN_PX) return;
     const sel = document.getSelection();
     if (!sel || sel.rangeCount === 0) return;
     const focus = sel.isCollapsed || !sel.focusNode ? null : { node: sel.focusNode, offset: sel.focusOffset };
-    const ends = glyphSelection(root, d.from, charAtPoint(root, e.clientX, e.clientY), focus);
+    const ends = glyphSelection(root, d.from, this.hitChar(at.x, at.y, { tolerancePt: DRAG_END_TOLERANCE_PT }), focus);
     if (ends) sel.setBaseAndExtent(ends.anchor.node, ends.anchor.offset, ends.focus.node, ends.focus.offset);
     this.schedulePaint();
   }
