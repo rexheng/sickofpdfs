@@ -41,7 +41,8 @@ test('a page visited later in the same tab cannot re-open a PDF the owner opened
   // The owner goes on to another site in the same tab, and that site sends the tab to the viewer.
   await visit(page, site.url('/elsewhere'));
   await expect.poll(() => page.url(), { message: 'the other site sent the tab to our viewer', timeout: 10_000 }).toMatch(/^chrome-extension:\/\//);
-  await expect(page.getByText(/Couldn't load this PDF/), 'the viewer refuses it: the file host says no without the sign-in').toBeVisible({ timeout: 15_000 });
+  // TB1 wording ruling (chrome polish): the error card writes ’.
+  await expect(page.getByText(/Couldn[’']t load this PDF/), 'the viewer refuses it: the file host says no without the sign-in').toBeVisible({ timeout: 15_000 });
   const replays = files.requestsTo('/files/private.pdf').slice(before);
   expect(replays.length, 'the viewer asked for the PDF (without the sign-in)').toBeGreaterThan(0);
   for (const request of replays) {

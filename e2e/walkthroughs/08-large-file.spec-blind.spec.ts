@@ -10,14 +10,15 @@ import { mockUrl } from './support/mock.spec-blind';
 import { expect, rt, snap, test } from './support/viewer.spec-blind';
 
 const GIB = 1_073_741_824;
-const NOTICE = /This PDF is [\d.]+ GB, larger than the 1 GB this viewer opens/;
+// TB1 wording ruling (chrome polish): one number, "This PDF is too big for this viewer (1.5 GB)", not two to compare.
+const NOTICE = /This PDF is too big for this viewer \([\d.]+ GB\)/;
 
 test('a 1.5 GB PDF: a plain notice, time to read it, then Chrome\'s viewer', async ({ openViewer, server }, testInfo) => {
   const url = mockUrl(server, { status: 200, contentType: 'application/pdf', contentLength: Math.round(1.5 * GIB) });
   const page = await openViewer(url);
   const notice = page.getByText(NOTICE);
   await expect(notice, 'a notice says the file is too large for this viewer').toBeVisible({ timeout: 10_000 });
-  await expect(page.getByText(/This PDF is 1\.[56] GB/), 'it says how big the file is, in GB').toBeVisible();
+  await expect(page.getByText(/\(1\.[56] GB\)/), 'it says how big the file is, in GB').toBeVisible();
   await expect(page.getByText(/Chrome.s viewer/).first()).toBeVisible();
   await expect(page.getByRole('button', { name: /Open now/ }), 'with a way to go now').toBeVisible();
   await snap(page, testInfo, '08-large-file-notice');

@@ -22,7 +22,8 @@ for (const [name, slug, file] of [
     await waitForFirstPage(page);
     expect(await rt(page).state()).toBe('ready');
     expect((await rt(page).doc())!.pageCount).toBe(file.pages);
-    await expect(page.getByText(/Couldn't load|didn't return a PDF/)).toBeHidden();
+    // TB1 wording ruling (chrome polish): the error card writes ’.
+    await expect(page.getByText(/Couldn[’']t load|didn[’']t return a PDF/)).toBeHidden();
     await page.waitForTimeout(800); // a sharp redraw after the quick preview
 
     const look = async (what: string) => {

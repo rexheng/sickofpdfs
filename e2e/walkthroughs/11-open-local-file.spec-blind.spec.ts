@@ -49,7 +49,8 @@ test.describe('file access not allowed (a fresh Chrome profile)', () => {
     const page = await openLocalFile(context, pathToFileURL(REAL.paper50.file).href);
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible({ timeout: 15_000 });
-    await expect(dialog.getByRole('heading', { name: 'Allow access to file URLs' })).toBeVisible();
+    // TB1 wording ruling (chrome polish): the title says it plainly; the body still names Chrome's switch, "Allow access to file URLs".
+    await expect(dialog.getByRole('heading', { name: 'Let this viewer open files from your computer' })).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Open extension settings' })).toBeVisible();
     await snap(page, testInfo, '11-file-access-dialog');
 

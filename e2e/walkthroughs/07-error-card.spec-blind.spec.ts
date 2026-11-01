@@ -8,8 +8,10 @@ import { expect, rt, snap, test, waitForFirstPage } from './support/viewer.spec-
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
-const COULDNT = /Couldn't load this PDF/;
-const NOT_A_PDF = /This link didn't return a PDF/;
+// TB1 wording ruling (chrome polish): the card writes ’ and says "Choose a file from your computer" for "Import this PDF".
+const COULDNT = /Couldn[’']t load this PDF/;
+const NOT_A_PDF = /This link didn[’']t return a PDF/;
+const CHOOSE_FILE = /Choose a file from your computer/;
 
 test.beforeAll(async () => {
   await ensureCorrupt();
@@ -20,7 +22,7 @@ const CASES: { name: string; title: RegExp; source: (server: { url(p: string): s
   { name: 'a damaged PDF (a PDF header, then junk)', title: COULDNT, source: (s) => s.url(served(FIXTURES.corrupt)) },
   { name: 'a link that returns a web page instead of a PDF', title: NOT_A_PDF, source: (s) => mockUrl(s, { status: 200, contentType: 'text/html', body: '<html><body><h1>Please sign in</h1></body></html>' }) },
   { name: 'a link that returns 404', title: COULDNT, source: (s) => s.url('/f/walkthroughs/this-file-does-not-exist.pdf') },
-  { name: 'an empty file', title: /Couldn't load this PDF|This link didn't return a PDF/, source: (s) => s.url(served(FIXTURES.empty)) },
+  { name: 'an empty file', title: /Couldn[’']t load this PDF|This link didn[’']t return a PDF/, source: (s) => s.url(served(FIXTURES.empty)) },
 ];
 
 for (const c of CASES) {
@@ -30,7 +32,7 @@ for (const c of CASES) {
     await expect(card, 'the error card title').toBeVisible({ timeout: 15_000 });
     expect(await rt(page).state()).toBe('error');
     await expect(page.getByRole('button', { name: /Open in Chrome.s viewer/ }).or(page.getByRole('link', { name: /Open in Chrome.s viewer/ }))).toBeVisible();
-    await expect(page.getByRole('button', { name: /Import this PDF/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: CHOOSE_FILE })).toBeVisible();
     // Plain words: no codes, class names or stack traces on a card an ordinary person reads.
     const text = await page.locator('body').innerText();
     expect(text, 'no raw error text on the card').not.toMatch(/PdfFormatError|PdfLoadError|PdfPasswordError|TypeError|undefined|\bnull\b|\bat \w+ \(|\.tsx?:\d+|stack/i);
@@ -53,7 +55,7 @@ test('"Open in Chrome\'s viewer" takes the tab out of our viewer to the PDF itse
 
 test('"Import this PDF" lets the owner pick another file, which opens in place of the card', async ({ openViewer, server }, testInfo) => {
   const page = await openViewer(server.url(served(FIXTURES.corrupt)));
-  const importButton = page.getByRole('button', { name: /Import this PDF/ });
+  const importButton = page.getByRole('button', { name: CHOOSE_FILE });
   await expect(importButton).toBeVisible({ timeout: 15_000 });
   const [chooser] = await Promise.all([page.waitForEvent('filechooser', { timeout: 10_000 }), importButton.click()]);
   expect(chooser.isMultiple(), 'one file at a time').toBe(false);
