@@ -546,13 +546,15 @@ export async function altGr(page: Page, key: string, code: string): Promise<void
 // blocks its pages until it is reloaded; it never reloads it by itself. Chrome then tells the owner "sickofpdfs has crashed.
 // Click this balloon to reload the extension", and chrome://extensions shows a Reload button. Headless Chromium shows no
 // notification, so the owner's click is the Reload button (ownerReloadsAfterCrash). The assertions are unchanged.
-export async function crashRenderer(page: Page): Promise<void> {
+// `closeTab: false` (R65) leaves the crashed tab open, so the extension reloads it by itself once it is back; read it with
+// lookInside (support/crash.ts), because Playwright never lets a crashed page be used again.
+export async function crashRenderer(page: Page, o: { closeTab?: boolean } = {}): Promise<void> {
   const context = page.context();
   const crashed = new Promise<void>((resolve) => page.once('crash', () => resolve()));
   const cdp = await context.newCDPSession(page);
   void cdp.send('Page.crash').catch(() => undefined); // the session dies with the page
   await Promise.race([crashed, new Promise<void>((resolve) => setTimeout(resolve, 10_000))]);
-  await page.close().catch(() => undefined);
+  if (o.closeTab !== false) await page.close().catch(() => undefined);
   await ownerReloadsAfterCrash(context);
 }
 

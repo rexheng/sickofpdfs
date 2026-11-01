@@ -22,6 +22,7 @@ import {
   typeLines,
   saveFirst,
 } from './support/marks.spec-blind';
+import { boxTextsIn, draftsIn, lookInside } from '../support/crash';
 import { shot } from './support/takeover';
 
 // Gate 1, "No lost text" (Phase 2 plan, done-when 5 and Gate 1 item 5; walkthrough 4, "You mark up and comment").
@@ -60,15 +61,14 @@ const KILLS = [
 const addressOf = (server: { url(p: string): string }): string => server.url(`/f/${ATTENTION.file}`);
 
 // Triage (TB2): saveFirst presses the chip's "Save?", as the owner would while the stand-in filter calls the paper "Not sure".
-/** Ruling on gap 2 (tb2-triage.md): a renderer crash takes the whole extension down until it is reloaded. */
-const CRASH_FIXME = 'waits for the crash-resilience fix (drafts journal); see tb2-triage gap 2';
+// Ruling on gap 2 (tb2-triage.md, crash-report.md): a renderer crash takes the whole extension down until the owner reloads it;
+// crashRenderer does that one click. The drafts journal brings the text back.
 
 test.describe('No lost text', () => {
   test.setTimeout(150_000);
 
   for (const { name, kill } of KILLS) {
     test(`${name} 100 ms after the last key: the draft is back in its card, with the caret at the end`, async ({ openViewer, server }, testInfo) => {
-      test.fixme(kill === crashRenderer, CRASH_FIXME);
       test.skip(!SAVING_AVAILABLE, NO_SAVING);
       const first = await openPaper(openViewer, server, ATTENTION);
       await saveFirst(first);
@@ -90,7 +90,6 @@ test.describe('No lost text', () => {
   }
 
   test('a draft left alone for a while is just as safe (300 ms, the saving rule)', async ({ openViewer, server }) => {
-    test.fixme(true, CRASH_FIXME);
     test.skip(!SAVING_AVAILABLE, NO_SAVING);
     const first = await openPaper(openViewer, server, ATTENTION);
     await saveFirst(first);
@@ -147,7 +146,6 @@ test.describe('No lost text', () => {
   }
 
   test('an unsent reply survives a crash, and the note it belongs to is still there', async ({ openViewer, server }, testInfo) => {
-    test.fixme(true, CRASH_FIXME);
     test.skip(!SAVING_AVAILABLE, NO_SAVING);
     const first = await openPaper(openViewer, server, ATTENTION);
     await saveFirst(first);
@@ -167,7 +165,6 @@ test.describe('No lost text', () => {
   });
 
   test('an unsent edit of a sent note survives a crash, and the sent text stays until the edit is sent', async ({ openViewer, server }, testInfo) => {
-    test.fixme(true, CRASH_FIXME);
     test.skip(!SAVING_AVAILABLE, NO_SAVING);
     const first = await openPaper(openViewer, server, ATTENTION);
     const id = await saveFirst(first);
@@ -191,18 +188,14 @@ test.describe('No lost text', () => {
     expect(live.comments.filter((c) => c.deletedAt === null).map((c) => c.body), 'the sent text has not been replaced').toEqual(['Original wording']);
   });
 
-  test("two tabs on one PDF: the draft stays with tab A while A is open; B sees the notes A posted, never A's draft; when A is gone, B has the draft", async ({ openViewer, server }, testInfo) => {
-    test.fixme(true, CRASH_FIXME);
+  // Ruling R65 (restated by the controller). Every page of the extension shares one renderer process, so A's crash kills B too
+  // (crash-report.md); after the owner's one click Chrome's tabs come back by themselves. The draft must come back in the tab
+  // that owned it; if that tab does not come back, the first reopened tab for the PDF adopts it. Never lost, never twice.
+  // The tabs that died are read through a fresh CDP session (lookInside): Playwright never lets a crashed Page be used again.
+  test("two tabs on one PDF: the draft stays with tab A while A is open; B sees the notes A posted, never A's draft; after a crash and the owner's one click, the draft comes back in tab A and nowhere else", async ({ context, openViewer, server }, testInfo) => {
     test.skip(!SAVING_AVAILABLE, NO_SAVING);
-    // Triage (crash): Chrome makes the last step impossible as written, so this waits for the spec-blind author; the
-    // assertions are unchanged. Measured (crash-report.md): every page of the extension shares one renderer process, so
-    // crashing A's renderer kills B's in the same moment ("Target crashed" on B, +3 ms). B cannot be the tab that survives
-    // A. In the product B comes back by itself once the owner reloads the extension, and then holds A's draft (measured by
-    // spikes/crash-model), but Playwright never lets a crashed Page be used again, so `b.bringToFront()` and `b.reload()`
-    // throw. "When A is gone" needs restating: A's tab closed, or B opened again after the crash.
-    test.fixme(true, "B shares A's renderer process, so A's crash kills B too (crash-report.md)");
     const a = await openPaper(openViewer, server, ATTENTION);
-    await saveFirst(a);
+    const id = await saveFirst(a);
 
     // A posts a note (Enter) and starts a second one, which it does not finish
     await selectPassage(a, ATTENTION, LINES.l1);
@@ -229,16 +222,61 @@ test.describe('No lost text', () => {
     await expect(b.getByText('Still writing in tab A'), 'tabs stay in step').toBeVisible({ timeout: 8000 });
     await expect(allCards(b)).toHaveCount(2);
 
-    // A writes a third note and then goes away; B (reloaded, so it asks who is alive) now owns the draft
+    // A writes a third note, and the renderer dies 100 ms after the last key: A and B both die. The owner clicks once.
     await a.bringToFront();
     await selectPassage(a, ATTENTION, LINES.l9);
     await startNote(a);
-    await a.keyboard.type('Third note, left behind', { delay: 10 });
+    const text = 'Third note, left behind';
+    await a.keyboard.type(text, { delay: 10 });
     await a.waitForTimeout(100);
-    await crashRenderer(a);
-    await b.bringToFront();
-    await b.reload();
-    await expect.poll(async () => (await readBox(noteBox(b))).text, { timeout: 15_000, message: 'tab B adopted the draft of the tab that is gone' }).toBe('Third note, left behind');
-    await shot(b, testInfo, 'tab-b-adopted-the-draft');
+    await crashRenderer(a, { closeTab: false });
+    const tabA = await lookInside(context, a);
+    const tabB = await lookInside(context, b);
+    await expect.poll(() => draftsIn(tabA), { timeout: 30_000, message: 'tab A comes back by itself and holds its draft' }).toEqual([text]);
+    await expect.poll(() => boxTextsIn(tabA), { timeout: 10_000, message: "the draft is on A's screen, in a note box" }).toContain(text);
+    await testInfo.attach('tab-a-has-its-draft-back', { body: await tabA.screenshot(), contentType: 'image/png' });
+    await expect.poll(() => draftsIn(tabB), { timeout: 30_000, message: 'tab B comes back too, with no draft' }).toEqual([]);
+    expect(await boxTextsIn(tabB), "B never shows A's draft").not.toContain(text);
+
+    // Never twice: a tab opened now does not get it either, and nothing was sent in its place.
+    const c = await openViewer(addressOf(server));
+    await expect(c.getByText('Posted from tab A'), 'a new tab shows the sent notes').toBeVisible({ timeout: 15_000 });
+    await c.waitForTimeout(1500);
+    expect(await owns(c, text), 'a new tab never shows the draft that tab A owns').toBe(false);
+    const stored = await annotations(c, id);
+    expect(stored.comments.filter((x) => x.body === text), 'the draft was not sent in its place').toHaveLength(0);
+    expect(await c.evaluate((t) => Object.keys(localStorage).filter((k) => k.startsWith('sop-draft:') && localStorage.getItem(k)?.includes(t)).length, text), 'one copy in the journal').toBe(1);
+    await tabA.detach();
+    await tabB.detach();
+  });
+
+  test('if the tab that owned the draft does not come back, the first reopened tab adopts it, and only that one', async ({ context, openViewer, server }, testInfo) => {
+    test.skip(!SAVING_AVAILABLE, NO_SAVING);
+    const a = await openPaper(openViewer, server, ATTENTION);
+    const id = await saveFirst(a);
+    const b = await openViewer(addressOf(server));
+    await expect(b.getByRole('button', { name: /^saved/i }).first(), 'B opens the saved PDF').toBeVisible({ timeout: 25_000 });
+
+    await a.bringToFront();
+    await selectPassage(a, ATTENTION, LINES.l3);
+    await startNote(a);
+    const text = 'Written in a tab that never came back';
+    await a.keyboard.type(text, { delay: 10 });
+    await a.waitForTimeout(100);
+    await crashRenderer(a); // A and B die; the owner closes A's crashed tab, then clicks once
+
+    const tabB = await lookInside(context, b);
+    await expect.poll(() => draftsIn(tabB), { timeout: 30_000, message: 'B comes back by itself and adopts the draft of the tab that is gone' }).toEqual([text]);
+    await expect.poll(() => boxTextsIn(tabB), { timeout: 10_000, message: "the draft is on B's screen, in a note box" }).toContain(text);
+    await testInfo.attach('tab-b-adopted-the-draft', { body: await tabB.screenshot(), contentType: 'image/png' });
+
+    const c = await openViewer(addressOf(server));
+    await expect(c.getByRole('button', { name: /^saved/i }).first()).toBeVisible({ timeout: 25_000 });
+    await c.waitForTimeout(1500);
+    expect(await owns(c, text), 'a tab opened later never shows a second copy').toBe(false);
+    expect(await draftsIn(tabB), 'B still has it').toEqual([text]);
+    const stored = await annotations(c, id);
+    expect(stored.comments.filter((x) => x.body === text), 'the draft was not sent in its place').toHaveLength(0);
+    await tabB.detach();
   });
 });
