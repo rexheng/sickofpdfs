@@ -14,10 +14,12 @@ import {
   ENGINE_WORKERS,
   engineAssets,
   type PageBox,
+  PdfEngineCrashedError,
   PdfLoadError,
   RenderScheduler,
   ScanDetector,
   useViewerState,
+  type ViewerSnapshot,
   type ViewerStore,
   type ZoomMode,
 } from '@sop/viewer';
@@ -40,7 +42,15 @@ import { useReaderFind } from './find';
 import { FormBanner, useFormBounce } from './forms/FormBanner';
 import { maybeLeaveFrame, mayOfferNewTab, openInNewTab, wantsFullTab } from './frame-escape';
 import { railStartsOpen, useOutline, useRailFitsWindow, useReaderNavigation } from './navigation';
-import { type LargeFileBounce, type OpenDocumentDeps, type OpenedDocument, openDocument, type OpenOutcome, openPickedFile } from './open-document';
+import {
+  type LargeFileBounce,
+  type OpenDocumentDeps,
+  type OpenedDocument,
+  openDocument,
+  type OpenOutcome,
+  openPickedFile,
+  reopenDocument,
+} from './open-document';
 import { publishRuntime, type ViewerHooks, type ViewerState } from './runtime';
 import { openInChrome } from './open-in-chrome';
 import type { SaveControllerImpl } from './save/save-controller';
@@ -49,6 +59,7 @@ import { StatusChip, useSaveView } from './save/StatusChip';
 import { useSave } from './save/use-save';
 import { PrintProgressDialog } from './print/PrintProgressDialog';
 import { installShortcuts, type ShortcutDef } from './shortcuts';
+import { EngineStoppedCard } from './ui/EngineStoppedCard';
 import { FileAccessDialog } from './ui/FileAccessDialog';
 import { FramedCard } from './ui/FramedCard';
 import { LargeFileNotice } from './ui/LargeFileNotice';
@@ -64,13 +75,21 @@ import { useStore } from './use-store';
  */
 const backend = createEmbedPdfBackend(engineAssets((p) => chrome.runtime.getURL(p)), { workers: ENGINE_WORKERS, startNow: window.top === window });
 
-type View = { kind: 'loading' } | Exclude<OpenOutcome, { kind: 'ready' }> | { kind: 'ready'; doc: OpenedDocument };
+/** Where the reader was when the engine stopped, so the document opens again at the same place. */
+type Resume = Pick<ViewerSnapshot, 'zoom' | 'currentPage' | 'viewRotation' | 'spread' | 'railOpen'>;
+
+type View =
+  | { kind: 'loading' }
+  | Exclude<OpenOutcome, { kind: 'ready' }>
+  | { kind: 'ready'; doc: OpenedDocument; resume?: Resume }
+  /** The engine stopped, and opening the document again did not help. */
+  | { kind: 'stopped' };
 
 let currentView: View = { kind: 'loading' };
 publishRuntime({
   backend,
   doc: () => (currentView.kind === 'ready' ? currentView.doc : null),
-  viewerState: (): ViewerState => (currentView.kind === 'refused' ? 'error' : currentView.kind),
+  viewerState: (): ViewerState => (currentView.kind === 'refused' || currentView.kind === 'stopped' ? 'error' : currentView.kind),
 });
 
 interface PasswordPrompt {
@@ -128,6 +147,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
   const [chromeRefused, setChromeRefused] = useState(false);
   const attempts = useRef(0);
   const started = useRef(false);
+  const restarted = useRef(false);
   useStore(view.kind === 'ready');
 
   const show = useCallback((next: View) => {
@@ -165,6 +185,30 @@ function TabViewer({ params }: { params: ViewerParams }) {
   useEffect(() => {
     document.title = view.kind === 'ready' ? view.doc.loaded.displayName : displayNameFor(params.source, null);
   }, [view, params]);
+
+  /**
+   * The engine stopped under the open document (a crash, a hang past the watchdog, or no memory): its pages could no
+   * longer be drawn. It is opened again once, from the bytes the viewer holds, at the same place; if that fails, or
+   * the engine stops again, the owner gets a plain card. One log line each time, never one per page or redraw.
+   */
+  const onEngineStopped = useCallback(
+    (err: PdfEngineCrashedError, resume: Resume) => {
+      const was = currentView;
+      if (was.kind !== 'ready') return;
+      if (restarted.current) {
+        console.error(`sickofpdfs: the PDF engine stopped again (${err.reason})`);
+        show({ kind: 'stopped' });
+        return;
+      }
+      restarted.current = true;
+      console.error(`sickofpdfs: the PDF engine stopped (${err.reason}); opening the document again`);
+      reopenDocument(was.doc, backend).then(
+        (doc) => show({ kind: 'ready', doc, resume }),
+        () => show({ kind: 'stopped' }),
+      );
+    },
+    [show],
+  );
 
   const importFile = useCallback(
     (file: File) => {
@@ -232,14 +276,25 @@ function TabViewer({ params }: { params: ViewerParams }) {
         name={name}
         onBack={back === null ? null : () => void goBackToPage(params)}
         menus={menus}
-        // The error card carries its own "Open in Chrome's viewer"; one is enough on screen.
-        onOpenInChrome={!canEscape || view.kind === 'error' ? null : () => escape(source)}
+        // The error and stopped cards carry their own "Open in Chrome's viewer"; one is enough on screen.
+        onOpenInChrome={!canEscape || view.kind === 'error' || view.kind === 'stopped' ? null : () => escape(source)}
         chromeRefused={chromeRefused}
         status={save !== null && <StatusChip save={save} />}
       />
       <div className={styles.content}>
         {view.kind === 'ready' && (
-          <Reader doc={view.doc} params={params} rootRef={root} pageFieldRef={pageField} ui={ui} save={save} onChrome={setReader} />
+          <Reader
+            key={view.doc.open.doc}
+            doc={view.doc}
+            resume={view.resume}
+            params={params}
+            rootRef={root}
+            pageFieldRef={pageField}
+            ui={ui}
+            save={save}
+            onChrome={setReader}
+            onEngineStopped={onEngineStopped}
+          />
         )}
         {view.kind === 'ready' && form.notice !== null && <FormBanner kind={form.notice} onDismiss={form.dismiss} />}
         {view.kind === 'loading' && prompt === null && (
@@ -257,6 +312,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
           />
         )}
         {view.kind === 'refused' && <LocalFileCard onChooseFile={importFile} />}
+        {view.kind === 'stopped' && <EngineStoppedCard onReload={() => location.reload()} onOpenInChrome={source === null ? null : () => escape(source)} />}
         {view.kind === 'bounced' && bounce !== null && <LargeFileNotice size={bounce.size} onOpenNow={bounce.openNow} />}
       </div>
       {fileAccess && (
@@ -298,6 +354,8 @@ function openFileSettings(): void {
 
 interface ReaderProps {
   doc: OpenedDocument;
+  /** Where to open after the engine was started again; otherwise the address's page, fit width. */
+  resume?: Resume | undefined;
   params: ViewerParams;
   rootRef: RefObject<HTMLDivElement | null>;
   pageFieldRef: RefObject<HTMLInputElement | null>;
@@ -306,6 +364,8 @@ interface ReaderProps {
   save: SaveControllerImpl | null;
   /** The commands for this document and its view state, for the header's menus and the keys; null when it goes. */
   onChrome: (chrome: ReaderChrome | null) => void;
+  /** The engine stopped under this document: called once, with where the reader was. */
+  onEngineStopped: (err: PdfEngineCrashedError, resume: Resume) => void;
 }
 
 /**
@@ -313,9 +373,9 @@ interface ReaderProps {
  * its test hooks. Memoised: the header re-renders App when the view changes (its menus), and that must not re-render
  * the page list.
  */
-const Reader = memo(function Reader({ doc, params, rootRef, pageFieldRef, ui, save, onChrome }: ReaderProps) {
+const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef, ui, save, onChrome, onEngineStopped }: ReaderProps) {
   const [store] = useState(() =>
-    createViewerStore({ currentPage: Math.min(doc.open.pageCount - 1, Math.max(0, (params.page ?? 1) - 1)), railOpen: railStartsOpen() }),
+    createViewerStore({ currentPage: Math.min(doc.open.pageCount - 1, Math.max(0, (params.page ?? 1) - 1)), railOpen: railStartsOpen(), ...resume }),
   );
   const [scheduler] = useState(
     () => new RenderScheduler(backend, doc.open.doc, { concurrency: ENGINE_WORKERS, previewWidthPx: 160, previewCache: 300 }),
@@ -375,6 +435,21 @@ const Reader = memo(function Reader({ doc, params, rootRef, pageFieldRef, ui, sa
     ),
     [textLayers, findLayer, linksFor],
   );
+  // Every render still waiting fails at once when the engine stops: the first one tells the viewer, the rest are quiet.
+  const stopped = useRef(false);
+  const onDrawError = useCallback(
+    (err: unknown) => {
+      if (!(err instanceof PdfEngineCrashedError)) {
+        console.error('sickofpdfs: a page could not be drawn', err);
+        return;
+      }
+      if (stopped.current) return;
+      stopped.current = true;
+      const { zoom, currentPage, viewRotation, spread, railOpen } = store.get();
+      onEngineStopped(err, { zoom, currentPage, viewRotation, spread, railOpen });
+    },
+    [store, onEngineStopped],
+  );
   const goToPage = useCallback((index: number) => void api.current?.goToPage(index), []);
   const zoom = useCallback((mode: ZoomMode) => api.current?.zoomTo(mode), []);
   return (
@@ -397,7 +472,7 @@ const Reader = memo(function Reader({ doc, params, rootRef, pageFieldRef, ui, sa
         onOutline={nav.onOutline}
         onToggle={() => commands.get('view.toggleRail')?.run()}
       >
-        <PageList backend={backend} doc={doc} store={store} scheduler={scheduler} apiRef={api} renderPage={renderPage} />
+        <PageList backend={backend} doc={doc} store={store} scheduler={scheduler} apiRef={api} renderPage={renderPage} onError={onDrawError} />
       </NavRail>
       {find.view}
     </>

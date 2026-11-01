@@ -63,6 +63,11 @@ export interface PageListProps {
   renderPage?: (box: PageBox, ctx: PageLayerContext) => ReactNode;
   /** Receives the page list's API while it is mounted. */
   apiRef?: RefObject<PageListApi | null>;
+  /**
+   * A page could not be drawn (not a cancelled render): called for each failed render, so the viewer can tell an
+   * engine crash (PdfEngineCrashedError) from one bad page. Without it, each failure is logged.
+   */
+  onError?: (err: unknown) => void;
 }
 
 /** Arrow keys scroll this far (Chromium's viewer). */
@@ -115,7 +120,7 @@ function nearestPage(layout: PageLayout, c: { x: number; y: number }): number {
  * The document's pages, at the store's zoom and rotation. The zoom starts as the store's (fit width by default), and
  * the list opens at the store's currentPage.
  */
-export function PageList({ doc, store, scheduler, renderPage, apiRef }: PageListProps): JSX.Element {
+export function PageList({ doc, store, scheduler, renderPage, apiRef, onError }: PageListProps): JSX.Element {
   const pages = doc.open.pages;
   const scrollerRef = useRef<HTMLDivElement>(null);
   const zoom = useViewerState(store, (s) => s.zoom);
@@ -128,6 +133,10 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef }: PageList
   const fitPage = useRef(store.get().currentPage);
   const pendingAnchor = useRef<Anchor | null>(null);
   const opened = useRef(false);
+  const reportError = useRef(onError);
+  useLayoutEffect(() => {
+    reportError.current = onError;
+  });
 
   const scale = viewport ? scaleFor(zoom, viewport, pages, fitPage.current, viewRotation, spread) : store.get().scale;
   const layout = useMemo(
@@ -157,7 +166,7 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef }: PageList
     driver.setHooks({
       onRange: (r, fromEvent) => (fromEvent ? flushSync(() => setRange(r)) : setRange(r)),
       onCurrentPage: (i) => store.set({ currentPage: i }),
-      onError: (err) => console.error('sickofpdfs: a page could not be drawn', err),
+      onError: (err) => (reportError.current ? reportError.current(err) : console.error('sickofpdfs: a page could not be drawn', err)),
     });
     driver.setScroller(scrollerRef.current);
     return () => driver.setScroller(null);

@@ -12,6 +12,7 @@
 //   release (R27). A double-click selects the word, a triple-click the line (R28). Copy writes the text model's text:
 //   PDFium's text with the joined line breaks (items.ts), so it matches Chrome's viewer (R26).
 import { memo, useLayoutEffect, useRef } from 'react';
+import { PdfEngineCrashedError } from '../backend/errors';
 import type { PageGlyphs, PageSize, PdfRect } from '../backend/types';
 import { cssPerPoint, displayedToPage, pageToDisplayed } from '../layout/page-space';
 import type { PageBox } from '../layout/page-layout';
@@ -300,7 +301,8 @@ export class TextLayerController {
       s.builtScale = scale;
       if (this.root && kept.some((r) => r.pageIndex === s.index)) selectCharRanges(this.root, kept);
     } catch (err) {
-      if (!s.disposed) console.error(`sickofpdfs: the text layer of page ${s.index + 1} could not be built`, err);
+      // An engine crash is the page list's to report (once), not every page's.
+      if (!s.disposed && !(err instanceof PdfEngineCrashedError)) console.error(`sickofpdfs: the text layer of page ${s.index + 1} could not be built`, err);
       return;
     } finally {
       s.building = false;
@@ -434,7 +436,7 @@ export class TextLayerController {
       },
       (err: unknown) => {
         s.selInflight--;
-        if (!s.disposed) console.error('sickofpdfs: the selection could not be drawn', err);
+        if (!s.disposed && !(err instanceof PdfEngineCrashedError)) console.error('sickofpdfs: the selection could not be drawn', err);
       },
     );
   }

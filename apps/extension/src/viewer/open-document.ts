@@ -116,6 +116,16 @@ async function openLoaded(loaded: LoadedPdf, deps: OpenDocumentDeps, referrer?: 
   }
 }
 
+/**
+ * Opens `doc` again from the bytes the viewer still holds, after the engine stopped (the backend starts a fresh worker
+ * for this `open`). The new handle replaces the lost one. Rejects when the engine cannot open it again.
+ */
+export async function reopenDocument(doc: OpenedDocument, backend: PdfBackend): Promise<OpenedDocument> {
+  const open = await backend.open(await doc.loaded.blob.arrayBuffer(), doc.password === null ? {} : { password: doc.password });
+  void backend.close(doc.open.doc).catch(() => {}); // the lost handle: only forgotten, the worker that held it is gone
+  return { ...doc, open };
+}
+
 function bounce(url: string, size: number, deps: OpenDocumentDeps): void {
   let gone = false;
   const go = () => {
