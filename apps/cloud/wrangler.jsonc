@@ -1,0 +1,122 @@
+// The sickofpdfs Worker. The top level is LOCAL: it is what `wrangler dev`, the tests and `dev:test` use, on temporary storage.
+// It can never be deployed: every id below is a `local-only-*` placeholder, and Wrangler refuses to deploy a binding with an id that
+// is not real. (Locally each database needs its own id, or Wrangler gives all three bindings the same storage.)
+// `staging` and `production` are separate Workers with their own databases, bucket and KV (spec, "Hosting"). Their ids are
+// placeholders until the owner says OK and the bootstrap workflow fills them in (docs/setup/cloud.md, CL8). Nothing in this file
+// creates anything on a Cloudflare account.
+//
+// Bindings are repeated in each environment on purpose: Wrangler does not inherit them. Every binding keeps an id, so Wrangler's
+// auto-provisioning (which creates resources for bindings that have no id) can never switch on.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "sickofpdfs-local",
+  "main": "src/index.ts",
+  // Wrangler 4.156.0 ships a runtime that supports dates up to 2026-10-23.
+  "compatibility_date": "2026-10-23",
+  // local only: the fake GitHub and the fake client-metadata host live on localhost, which `global_fetch_strictly_public` blocks
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // navigations to these must reach the Worker, not the SPA shell
+    "run_worker_first": ["/mcp", "/api/*", "/authorize", "/oauth/*", "/login", "/logout", "/.well-known/*"]
+  },
+  "vars": {
+    "ENVIRONMENT": "local",
+    "PUBLIC_URL": "http://localhost:8787",
+    "EXTENSION_ID": "donjaoofgenmbfgfcefnmlgmhiffbglk",
+    "WRITE_BUDGET": "75000",
+    "NOTES_RESERVE": "5000"
+  },
+  "d1_databases": [
+    { "binding": "META", "database_name": "sop_meta_local", "database_id": "local-only-meta", "migrations_dir": "migrations/meta" },
+    { "binding": "TEXT_0", "database_name": "sop_text_0_local", "database_id": "local-only-text-0", "migrations_dir": "migrations/text" },
+    { "binding": "TEXT_1", "database_name": "sop_text_1_local", "database_id": "local-only-text-1", "migrations_dir": "migrations/text" }
+  ],
+  "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "sop-blobs-local" }],
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "local-only-kv" }],
+  // period must be 10 or 60 seconds
+  "ratelimits": [
+    { "name": "RL_AUTH", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } },
+    { "name": "RL_MCP", "namespace_id": "1002", "simple": { "limit": 120, "period": 60 } },
+    { "name": "RL_API", "namespace_id": "1003", "simple": { "limit": 600, "period": 60 } }
+  ],
+  "triggers": { "crons": ["17 3 * * *"] },
+
+  "env": {
+    // A separate Worker for build agents and the cloud walkthroughs: its own small databases (one meta, one text shard), a hard
+    // budget of 10,000 database writes a day and no notes reserve, so it cannot eat the production budget (spec, "Hosting").
+    "staging": {
+      "name": "sickofpdfs-staging",
+      "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+      "workers_dev": true,
+      "preview_urls": false,
+      "observability": { "enabled": true },
+      "assets": {
+        "directory": "./public",
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": ["/mcp", "/api/*", "/authorize", "/oauth/*", "/login", "/logout", "/.well-known/*"]
+      },
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "PUBLIC_URL": "https://sickofpdfs-staging.REPLACE_AT_BOOTSTRAP.workers.dev",
+        "EXTENSION_ID": "donjaoofgenmbfgfcefnmlgmhiffbglk",
+        "WRITE_BUDGET": "10000",
+        "NOTES_RESERVE": "0"
+      },
+      "d1_databases": [
+        { "binding": "META", "database_name": "sop_meta_staging", "database_id": "REPLACE_AT_BOOTSTRAP", "migrations_dir": "migrations/meta" },
+        { "binding": "TEXT_0", "database_name": "sop_text_0_staging", "database_id": "REPLACE_AT_BOOTSTRAP", "migrations_dir": "migrations/text" }
+      ],
+      "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "sop-blobs-staging" }],
+      "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "REPLACE_AT_BOOTSTRAP" }],
+      "ratelimits": [
+        { "name": "RL_AUTH", "namespace_id": "2001", "simple": { "limit": 20, "period": 60 } },
+        { "name": "RL_MCP", "namespace_id": "2002", "simple": { "limit": 120, "period": 60 } },
+        { "name": "RL_API", "namespace_id": "2003", "simple": { "limit": 600, "period": 60 } }
+      ],
+      "triggers": { "crons": ["17 3 * * *"] }
+    },
+
+    // The owner's Worker. It changes only from a tagged release, after a D1 restore point is recorded. It starts with two text
+    // shards (each free database holds 500 MB); a third shard needs the owner's OK.
+    "production": {
+      "name": "sickofpdfs",
+      "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+      "workers_dev": true,
+      "preview_urls": false,
+      "observability": { "enabled": true },
+      "assets": {
+        "directory": "./public",
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": ["/mcp", "/api/*", "/authorize", "/oauth/*", "/login", "/logout", "/.well-known/*"]
+      },
+      "vars": {
+        "ENVIRONMENT": "production",
+        "PUBLIC_URL": "https://sickofpdfs.REPLACE_AT_BOOTSTRAP.workers.dev",
+        "EXTENSION_ID": "donjaoofgenmbfgfcefnmlgmhiffbglk",
+        "WRITE_BUDGET": "75000",
+        "NOTES_RESERVE": "5000"
+      },
+      "d1_databases": [
+        { "binding": "META", "database_name": "sop_meta", "database_id": "REPLACE_AT_BOOTSTRAP", "migrations_dir": "migrations/meta" },
+        { "binding": "TEXT_0", "database_name": "sop_text_0", "database_id": "REPLACE_AT_BOOTSTRAP", "migrations_dir": "migrations/text" },
+        { "binding": "TEXT_1", "database_name": "sop_text_1", "database_id": "REPLACE_AT_BOOTSTRAP", "migrations_dir": "migrations/text" }
+      ],
+      "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "sop-blobs" }],
+      "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "REPLACE_AT_BOOTSTRAP" }],
+      "ratelimits": [
+        { "name": "RL_AUTH", "namespace_id": "3001", "simple": { "limit": 20, "period": 60 } },
+        { "name": "RL_MCP", "namespace_id": "3002", "simple": { "limit": 120, "period": 60 } },
+        { "name": "RL_API", "namespace_id": "3003", "simple": { "limit": 600, "period": 60 } }
+      ],
+      "triggers": { "crons": ["17 3 * * *"] }
+    }
+  }
+}

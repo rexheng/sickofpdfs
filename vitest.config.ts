@@ -14,12 +14,14 @@ const exclude = [...waitForS9Edit, ...configDefaults.exclude, '**/.output/**', '
 export default defineConfig({
   test: {
     projects: [
+      // The Worker's tests run on workerd under Miniflare (apps/cloud/vitest.config.ts), not in Node
+      './apps/cloud/vitest.config.ts',
       {
         test: {
           name: 'unit',
           environment: 'node',
           include: ['**/*.test.{ts,js}'],
-          exclude: [...exclude, '**/*.browser.test.*'],
+          exclude: [...exclude, '**/*.browser.test.*', 'apps/cloud/**'],
         },
       },
       {

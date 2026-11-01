@@ -1,5 +1,21 @@
 {
   "name": "@sop/cloud",
+  "version": "0.0.0",
   "private": true,
-  "description": "Release 2 Cloudflare Worker; not started"
+  "type": "module",
+  "description": "Release 2 Cloudflare Worker: sync API, sign-in, library queries, the claude.ai connector and the web library. Local only until the owner approves staging.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "dev:test": "node scripts/dev-test.mjs",
+    "db:apply": "node scripts/apply-local.mjs"
+  },
+  "dependencies": {
+    "@sop/core": "workspace:*",
+    "hono": "4.13.16"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.4.11",
+    "@cloudflare/workers-types": "5.20261101.1",
+    "wrangler": "4.156.0"
+  }
 }

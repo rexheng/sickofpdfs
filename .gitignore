@@ -21,3 +21,6 @@ test-assets/
 apps/extension/.output/
 apps/extension/public/pdf/
 .venv-fixtures/
+# the web library is built into the Worker's static assets (CL13); only the placeholder is committed
+apps/cloud/public/*
+!apps/cloud/public/.gitkeep
