@@ -283,6 +283,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
    * Tabs in step (plan section 4 item 8): when another tab saves this PDF (a `documents` upsert), or records this copy
    * as an alias of a saved one, a tab that has not saved it yet looks again and follows: it becomes `saved` too. Not
    * while it is still checking (start() decides then), saving itself, or kept in memory because the owner said No here.
+   * Following writes nothing: this tab's own open and address are recorded the next time the PDF is opened.
    */
   let following: Promise<void> | null = null;
   let lookAgain = false;
@@ -301,7 +302,6 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
         const identity = await resolveIdentity({ sha256: loaded.sha256, pageCount: open.pageCount, pageTexts: allPageTexts }, lib).catch((): IdentityResult => ({ kind: 'unknown' }));
         // The state may have moved while the library was read (this tab saved, or the owner answered).
         if (identity.kind !== 'known' || disposed || (state as SaveState).kind === 'saved') continue;
-        await recordKnownOpen(lib, identity.documentId);
         await dispatch({ type: 'identified', documentId: identity.documentId });
       } while (lookAgain);
     })().finally(() => {
