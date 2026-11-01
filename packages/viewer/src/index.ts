@@ -77,3 +77,6 @@ export { charAtPoint, charRangeFromDomRange, domPositionOfChar, getSelectionRang
 // Find (Task 25): the search behind Ctrl+F, over page text folded as anchoring folds it.
 export { createFindController, type FindControllerOptions } from './find/find-controller';
 export { contentPointToPage, pagePointToContent } from './layout/page-space';
+// Task 26: the view rotation, two-page view and presentation mode; the one turn every layer over a page uses.
+export * from './view/page-transform';
+export * from './view/view-state';

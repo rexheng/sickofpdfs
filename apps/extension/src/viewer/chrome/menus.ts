@@ -14,7 +14,7 @@ const LAYOUT: { id: string; label: string; items: (ViewerCommandId | typeof SEPA
     items: [
       'view.fitWidth', 'view.fitPage', 'view.zoomIn', 'view.zoomOut', SEPARATOR,
       'view.rotateCw', 'view.rotateCcw', SEPARATOR,
-      'view.twoPage', 'view.presentation', 'view.darkPages', SEPARATOR,
+      'view.twoPage', 'view.presentation', SEPARATOR,
       'view.toggleRail',
     ],
   },
@@ -24,8 +24,8 @@ const LAYOUT: { id: string; label: string; items: (ViewerCommandId | typeof SEPA
 
 /**
  * The menus as they are now: each item's greyed-out state, its reason and its check are read when this is called, so
- * build them again when the view changes. A command that is not registered, or not built yet (`built` false: rotate,
- * two-page view and presentation mode until Task 26), is left out, and so is a separator it leaves dangling.
+ * build them again when the view changes. A command that is not registered, or not built yet (`built` false), is left
+ * out, and so is a separator it leaves dangling.
  */
 export function buildMenus(cmds: ViewerCommands): MenuDef[] {
   return LAYOUT.map((menu) => {

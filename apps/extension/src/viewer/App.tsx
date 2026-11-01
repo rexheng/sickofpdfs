@@ -771,7 +771,7 @@ function viewerHooks(api: RefObject<PageListApi | null>, store: ViewerStore, sca
         (a()?.goToPage(i) ?? Promise.resolve()).then(() => textLayers.whenReady(i)),
         new Promise<void>((resolve) => setTimeout(resolve, SCROLL_TO_TIMEOUT_MS)),
       ]),
-    snapshot: () => ({ ...store.get() }),
+    snapshot: () => ({ ...store.get(), twoPage: store.get().spread === 'two-page' }),
     scrollTop: () => a()?.scrollTop() ?? 0,
     maxScrollTop: () => a()?.maxScrollTop() ?? 0,
     viewportHeight: () => a()?.viewportHeight() ?? 0,

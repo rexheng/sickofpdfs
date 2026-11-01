@@ -501,7 +501,7 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
     const res = s.placement.get(t.id);
     const shown = shownAnchor(t.anchor, res);
     if (!shown) continue; // "Couldn't place": nothing is drawn; the notes panel lists it
-    const top = anchorTop(shown, boxes);
+    const top = anchorTop(shown, boxes, store.get().viewRotation);
     if (top === null) continue;
     if (shown.kind === 'point' && boxes[shown.page]) pins.push({ t, ...pinAt(shown.point, boxes[shown.page]) });
     cards.push({ id: t.id, anchorTop: top, card: cardProps(t, res) });

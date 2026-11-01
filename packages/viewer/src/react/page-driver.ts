@@ -20,6 +20,7 @@ import type { PageBox, PageLayout } from '../layout/page-layout';
 import { visibleRange } from '../layout/page-layout';
 import { displayedRectToPage } from '../layout/page-space';
 import { displayedSize, pageDeviceSize } from '../layout/zoom';
+import { isSideways, turnMatrix } from '../view/page-transform';
 import type { RenderScheduler } from '../render/scheduler';
 
 /** The DOM of one mounted page (PageView). */
@@ -148,7 +149,10 @@ export class PageDriver {
     if (el) this.lastTop = el.scrollTop;
   }
 
-  /** A new layout, scale, DPR or rotation. Renders of an older generation are cancelled or, once drawn, replaced. */
+  /**
+   * A new layout, scale, DPR or rotation. Renders of an older generation are cancelled or, once drawn, replaced. A turn
+   * clears what is on screen and paints each page's cached preview turned at once, then redraws only the pages in view.
+   */
   setView(view: DriverView): void {
     const rotationChanged = this.view !== null && this.view.viewRotation !== view.viewRotation;
     this.view = view;
@@ -426,10 +430,9 @@ export class PageDriver {
     );
   }
 
+  /** Previews are upright (the scheduler turns only full renders): scaled to previewWidthPx across the upright page. */
   private previewScale(i: number): number {
-    const view = this.view;
-    const d = displayedSize(this.pages[i], view?.viewRotation ?? 0);
-    return this.scheduler.previewWidthPx / d.width;
+    return this.scheduler.previewWidthPx / displayedSize(this.pages[i], 0).width;
   }
 
   /** The full render's size and scale for page i at the current view. */
@@ -474,13 +477,18 @@ export class PageDriver {
 
   // ---- painting ----
 
+  /** Paints an (upright) preview turned by the view's rotation: the page's one turn (view/page-transform.ts). */
   private paintPreview(i: number, bitmap: ImageBitmap): void {
     const s = this.slots.get(i);
     if (!s || s.painted !== 'none') return;
     const canvas = s.slot.preview;
-    canvas.width = bitmap.width;
-    canvas.height = bitmap.height;
-    canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
+    const r = this.view?.viewRotation ?? 0;
+    canvas.width = isSideways(r) ? bitmap.height : bitmap.width;
+    canvas.height = isSideways(r) ? bitmap.width : bitmap.height;
+    const ctx = canvas.getContext('2d');
+    const m = turnMatrix(r, bitmap.width, bitmap.height);
+    if (ctx && m) ctx.setTransform(...m);
+    ctx?.drawImage(bitmap, 0, 0);
     canvas.style.visibility = '';
     s.painted = 'preview';
     this.onPainted(i, false);
@@ -614,18 +622,27 @@ export class PageDriver {
     performance.clearMarks(start);
   }
 
+  /**
+   * The row with the most area in view, by its first page: in two-page view the page box shows the left page of the
+   * pair in view (Task 26). A row is the pages sharing a top; with one page a row this is the page with the most area.
+   */
   private mostVisible(r: { first: number; last: number }, top: number, height: number): number {
     const boxes = this.view?.layout.boxes;
     if (!boxes || r.last < r.first) return -1;
     let best = r.first;
     let bestArea = -1;
-    for (let i = r.first; i <= r.last; i++) {
-      const b = boxes[i];
-      const area = Math.max(0, Math.min(b.top + b.height, top + height) - Math.max(b.top, top)) * b.width;
+    for (let i = r.first; i <= r.last; ) {
+      let area = 0;
+      let j = i;
+      for (; j <= r.last && boxes[j].top === boxes[i].top; j++) {
+        const b = boxes[j];
+        area += Math.max(0, Math.min(b.top + b.height, top + height) - Math.max(b.top, top)) * b.width;
+      }
       if (area > bestArea) {
         best = i;
         bestArea = area;
       }
+      i = j;
     }
     return best;
   }

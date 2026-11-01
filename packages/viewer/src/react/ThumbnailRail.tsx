@@ -5,10 +5,11 @@
 // cache, so a preview either of them asks for serves both, and there is no second engine. They are idle work
 // (requestIdlePreview): they wait until the page list has nothing to draw. Only thumbnails within a screen of the
 // rail's view are drawn; the others are let go, so a 600-page book holds a few dozen small canvases.
-import { type JSX, type KeyboardEvent, memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type CSSProperties, type JSX, type KeyboardEvent, memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { PageSize, Rotation } from '../backend/types';
 import { displayedSize } from '../layout/zoom';
 import type { RenderScheduler } from '../render/scheduler';
+import { isSideways, turnMatrix } from '../view/page-transform';
 import styles from './ThumbnailRail.module.css';
 import { useViewerState, type ViewerStore } from './viewer-state';
 
@@ -43,6 +44,7 @@ class ThumbnailDrawer {
   private readonly thumbs = new Map<number, Thumb>();
   private observer: IntersectionObserver | null = null;
   private rotation: Rotation = 0;
+  private redraw = 0;
 
   constructor(
     private readonly scheduler: RenderScheduler,
@@ -79,16 +81,25 @@ class ThumbnailDrawer {
     this.thumbs.delete(index);
   }
 
-  /** The view rotation changed: every thumbnail is drawn again. */
+  /**
+   * The view rotation changed: every thumbnail is drawn again, turned (from the cache: previews are upright). After the
+   * next frame, so the pages show the turn first.
+   */
   setRotation(rotation: Rotation): void {
     if (rotation === this.rotation) return;
     this.rotation = rotation;
-    for (const [i, t] of this.thumbs) {
+    for (const t of this.thumbs.values()) {
       t.pending?.abort();
       t.pending = null;
       t.tries = 0;
-      if (t.near) this.draw(i);
     }
+    cancelAnimationFrame(this.redraw);
+    this.redraw = requestAnimationFrame(() => {
+      this.redraw = 0;
+      setTimeout(() => {
+        for (const [i, t] of this.thumbs) if (t.near) this.draw(i);
+      }, 0);
+    });
   }
 
   private onIntersect(entries: IntersectionObserverEntry[]): void {
@@ -116,15 +127,16 @@ class ThumbnailDrawer {
   private draw(i: number): void {
     const t = this.thumbs.get(i);
     if (!t || !t.near || t.drawn === this.rotation || t.pending) return;
-    const shown = displayedSize(this.pages[i], this.rotation);
-    const fits = (b: ImageBitmap) => Math.abs(b.width / b.height - shown.width / shown.height) < 0.05;
+    // Previews are upright (RenderScheduler): checked and asked for as the upright page, turned when painted.
+    const upright = displayedSize(this.pages[i], 0);
+    const fits = (b: ImageBitmap) => Math.abs(b.width / b.height - upright.width / upright.height) < 0.05;
     const cached = this.scheduler.cachedPreview(i);
     if (cached && fits(cached)) {
       this.paint(t, cached);
       return;
     }
     // The page list's own preview scale (PageDriver.previewScale), so both ask for, and cache, the same bitmap.
-    const scale = this.scheduler.previewWidthPx / shown.width;
+    const scale = this.scheduler.previewWidthPx / upright.width;
     const ac = new AbortController();
     t.pending = ac;
     this.scheduler.requestIdlePreview(i, scale, i, ac.signal).then(
@@ -143,7 +155,10 @@ class ThumbnailDrawer {
     );
   }
 
-  /** Draws a preview into the thumbnail at its size on screen. Preview bitmaps belong to the cache: never closed here. */
+  /**
+   * Draws a preview into the thumbnail at its size on screen, turned by the view's rotation (the page's one turn,
+   * view/page-transform.ts). Preview bitmaps belong to the cache: never closed here.
+   */
   private paint(t: Thumb, bitmap: ImageBitmap): void {
     const dpr = window.devicePixelRatio || 1;
     const w = Math.max(1, Math.round(t.canvas.clientWidth * dpr));
@@ -153,7 +168,10 @@ class ThumbnailDrawer {
     const ctx = t.canvas.getContext('2d');
     if (!ctx) return;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(bitmap, 0, 0, w, h);
+    const [uw, uh] = isSideways(this.rotation) ? [h, w] : [w, h];
+    const m = turnMatrix(this.rotation, uw, uh);
+    if (m) ctx.setTransform(...m);
+    ctx.drawImage(bitmap, 0, 0, uw, uh);
     t.drawn = this.rotation;
     t.tries = 0;
   }
@@ -195,7 +213,7 @@ export function ThumbnailRail({ scheduler, pages, store, onSelect }: ThumbnailRa
     drawer.connect(nav.current!);
     return () => drawer.disconnect();
   }, [drawer]);
-  // After the page list's layout effects, so the scheduler has the new rotation (and an emptied cache) by then.
+  // After the page list's layout effects, so the page list's turn is under way first (previews come from the cache).
   useEffect(() => drawer.setRotation(rotation), [drawer, rotation]);
   useEffect(() => {
     const idle = requestIdleCallback(() => setReady(true), { timeout: LIST_IDLE_TIMEOUT_MS });
@@ -244,14 +262,13 @@ export function ThumbnailRail({ scheduler, pages, store, onSelect }: ThumbnailRa
 
   return (
     <nav ref={nav} aria-label="Thumbnails" className={styles.rail}>
-      <ol className={styles.list} onKeyDown={onKeyDown}>
+      <ol className={styles.list} onKeyDown={onKeyDown} data-sideways={isSideways(rotation) ? '' : undefined}>
         {ready &&
           pages.map((page, i) => (
             <ThumbnailItem
               key={i}
               index={i}
               page={page}
-              rotation={rotation}
               store={store}
               keyTab={keyIndex === null ? null : keyIndex === i}
               drawer={drawer}
@@ -266,7 +283,6 @@ export function ThumbnailRail({ scheduler, pages, store, onSelect }: ThumbnailRa
 interface ThumbnailItemProps {
   index: number;
   page: PageSize;
-  rotation: Rotation;
   store: ViewerStore;
   /** Whether the arrow keys put the tab stop here; null: it is on the page in view. */
   keyTab: boolean | null;
@@ -275,7 +291,7 @@ interface ThumbnailItemProps {
 }
 
 /** One thumbnail. It reads "is this the page in view" itself, so a page change re-renders two thumbnails, not the list. */
-const ThumbnailItem = memo(function ThumbnailItem({ index, page, rotation, store, keyTab, drawer, onSelect }: ThumbnailItemProps) {
+const ThumbnailItem = memo(function ThumbnailItem({ index, page, store, keyTab, drawer, onSelect }: ThumbnailItemProps) {
   const current = useViewerState(store, (s) => s.currentPage === index);
   const button = useRef<HTMLButtonElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -284,7 +300,7 @@ const ThumbnailItem = memo(function ThumbnailItem({ index, page, rotation, store
     drawer.attach(index, el, canvas.current!);
     return () => drawer.detach(index, el);
   }, [drawer, index]);
-  const shown = displayedSize(page, rotation);
+  const upright = displayedSize(page, 0);
   return (
     <li className={styles.item}>
       <span className={styles.number} aria-hidden="true">
@@ -298,7 +314,8 @@ const ThumbnailItem = memo(function ThumbnailItem({ index, page, rotation, store
         aria-label={`Page ${index + 1}`}
         aria-current={current ? 'page' : undefined}
         tabIndex={(keyTab ?? current) ? 0 : -1}
-        style={{ aspectRatio: `${shown.width} / ${shown.height}` }}
+        // Its shape, turned with the view by the list's data-sideways (ThumbnailRail.module.css).
+        style={{ '--upright-w': upright.width, '--upright-h': upright.height } as CSSProperties}
         // A click shows the page without taking the focus, so the reading keys keep moving the pages.
         onMouseDown={(e) => e.preventDefault()}
         onClick={(e) => {

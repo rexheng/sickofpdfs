@@ -1,8 +1,10 @@
-// The viewer's view state for one tab: zoom, current page, rotation, spread, rail. A tiny external store, so the page
-// list, the toolbar (Task 23) and the thumbnail rail (Task 24) read and write one copy, and tests read it as a snapshot.
+// The viewer's view state for one tab: zoom, current page, rotation, spread, rail and presentation mode. A tiny external
+// store, so the page list, the toolbar (Task 23) and the thumbnail rail (Task 24) read and write one copy, and tests read
+// it as a snapshot.
 import { useCallback, useSyncExternalStore } from 'react';
 import type { Rotation } from '../backend/types';
 import type { Spread, ZoomMode } from '../layout/zoom';
+import type { Presenting } from '../view/view-state';
 
 export interface ViewerSnapshot {
   zoom: ZoomMode;
@@ -12,10 +14,14 @@ export interface ViewerSnapshot {
   currentPage: number;
   /** The reader's rotation, clockwise, added to every page's /Rotate. */
   viewRotation: Rotation;
+  /** Two-page view (Task 26): pages in pairs, 1–2, 3–4, … */
   spread: Spread;
-  /** Kept for the interface; dark pages were dropped (ruling R41), so this stays false. */
-  darkPages: boolean;
   railOpen: boolean;
+  /**
+   * Presentation mode (Task 26): the page on screen, one page a screen on black; null while not presenting. The page
+   * list follows it (presentation.ts and the reading keys step it).
+   */
+  presenting: Presenting | null;
 }
 
 export interface ViewerStore {
@@ -30,8 +36,8 @@ export const INITIAL_VIEWER_SNAPSHOT: ViewerSnapshot = {
   currentPage: 0,
   viewRotation: 0,
   spread: 'none',
-  darkPages: false,
   railOpen: false,
+  presenting: null,
 };
 
 /** A store holding `initial` (default: fit width, page 1). `set` notifies only when a field actually changes. */

@@ -15,6 +15,7 @@ const GROUPS: { title: string; prefix: string; also?: string[] }[] = [
   { title: 'Reading', prefix: 'reading.' },
   { title: 'File', prefix: 'file.' },
   { title: 'View', prefix: 'view.' },
+  { title: 'In presentation mode', prefix: 'presenting.' },
   { title: 'Tools', prefix: 'tools.' },
   { title: 'Marks and notes', prefix: 'marks.', also: ['notes.', 'figures.'] },
   { title: 'Edit', prefix: 'edit.' },
@@ -39,6 +40,14 @@ const READING: Row[] = [
   { id: 'reading.zoom', label: 'Zoom with the mouse wheel', keys: ['Ctrl+wheel'] },
 ];
 
+/** The keys of presentation mode (presentation.ts): the reading keys step one page there. */
+const PRESENTING: Row[] = [
+  { id: 'presenting.next', label: 'Next page, or click the right half', keys: ['→', '↓', 'Space', 'Page Down'] },
+  { id: 'presenting.previous', label: 'Previous page, or click the left half', keys: ['←', '↑', 'Shift+Space', 'Page Up'] },
+  { id: 'presenting.ends', label: 'First page, last page', keys: ['Home', 'End'] },
+  { id: 'presenting.leave', label: 'Leave presentation mode', keys: ['Esc'] },
+];
+
 /** The keys of a mark that was clicked (mark-input.ts): not commands of their own, so they are listed here. */
 const FOCUSED_MARK: Row[] = [
   { id: 'marks.focused.colour', label: 'Change a clicked mark’s colour', keys: ['1–5'] },
@@ -57,6 +66,7 @@ export function ShortcutsDialog({ open, onOpenChange, commands }: ShortcutsDialo
     ...[...commands.values()]
       .filter((c) => c.built && c.keys.length > 0)
       .map((c) => ({ id: c.id, label: c.label, keys: [...new Set(c.keys.map(formatCombo))] })),
+    ...(commands.get('view.presentation')?.built === true ? PRESENTING : []),
     // Marks exist only where they can be made (not in Incognito).
     ...(commands.get('marks.highlight')?.built === true ? FOCUSED_MARK : []),
   ];

@@ -4,6 +4,9 @@
 // Rendering is pulled, not pushed (Phase 0, P0-3): at most `concurrency` calls are with the engine at once, and
 // everything else waits here, where it can still be re-prioritised or dropped. So work for a page the reader has
 // scrolled past is never started, and a jump waits for at most the one call in flight.
+//
+// Previews are drawn upright (the page's own /Rotate only) and turned by whoever paints them (Task 26): the view's
+// rotation then never empties the preview cache, and turning a 600-page book redraws only the pages in view.
 import type { DocHandle, PdfBackend, PdfRect, Rotation } from '../backend/types';
 
 export type RenderKind = 'preview' | 'full';
@@ -31,9 +34,9 @@ interface Job {
   reject(e: unknown): void;
   /** Callers' signals; the job is dropped when every one of them has fired. */
   signals: AbortSignal[];
-  /** At least one caller passed no signal: only retain() or a rotation change drops it. */
+  /** At least one caller passed no signal: only retain() (or, for a full render, a rotation change) drops it. */
   unsignalled: boolean;
-  /** The caller no longer wants the result (rotation changed or every signal fired while it was in flight). */
+  /** The caller no longer wants the result (a full render whose rotation changed, or every signal fired in flight). */
   dropped: boolean;
   /** Only idle callers want it (requestIdlePreview): it waits for the page list to be idle, and retain() keeps it. */
   idle: boolean;
@@ -94,9 +97,10 @@ export class RenderScheduler {
   }
 
   /**
-   * A bitmap of page `pageIndex` (or of `rect`, unrotated page space) at `scale` device px per point, drawn turned by
-   * the page's /Rotate plus the view rotation (setViewRotation). Rejects with an AbortError DOMException when the job
-   * is cancelled (retain, setViewRotation, `signal`).
+   * A bitmap of page `pageIndex` (or of `rect`, unrotated page space) at `scale` device px per point. A full render is
+   * drawn turned by the page's /Rotate plus the view rotation (setViewRotation); a preview by the page's /Rotate only,
+   * upright, for the caller to turn as it paints it, so `scale` for a preview is per point of the upright page. Rejects
+   * with an AbortError DOMException when the job is cancelled (retain, setViewRotation for a full render, `signal`).
    */
   request(pageIndex: number, kind: RenderKind, scale: number, priority: number, rect?: PdfRect, signal?: AbortSignal): Promise<ImageBitmap> {
     if (this.disposed) return Promise.reject(abortError());
@@ -126,7 +130,8 @@ export class RenderScheduler {
         return Promise.resolve(cached);
       }
     }
-    const key = jobKey(pageIndex, kind, scale, rect);
+    const rotation = kind === 'preview' ? 0 : this.viewRotation;
+    const key = jobKey(pageIndex, kind, scale, rect, rotation);
     const existing = this.running.get(key) ?? this.queue.find((j) => j.key === key);
     if (existing) {
       // A page-list caller makes an idle job its own; an idle caller only re-prioritises a job that is still idle.
@@ -150,7 +155,7 @@ export class RenderScheduler {
       rect,
       priority,
       seq: this.seq++,
-      rotation: this.viewRotation,
+      rotation,
       promise,
       resolve,
       reject,
@@ -178,13 +183,15 @@ export class RenderScheduler {
     return this.previews.get(pageIndex) ?? null;
   }
 
-  /** The view rotation every later render is drawn with. Changing it empties the preview cache and cancels the queue. */
+  /**
+   * The view rotation every later full render is drawn with. Changing it cancels the full renders queued and drops the
+   * one drawing; previews are upright, so the cache and the previews queued stay.
+   */
   setViewRotation(rotation: Rotation): void {
     if (rotation === this.viewRotation) return;
     this.viewRotation = rotation;
-    this.clearPreviews();
-    this.cancelQueued(() => true);
-    for (const job of this.running.values()) job.dropped = true;
+    this.cancelQueued((j) => j.kind === 'full');
+    for (const job of this.running.values()) if (job.kind === 'full') job.dropped = true;
   }
 
   /** Cancels everything and frees the cached previews. */
@@ -275,7 +282,7 @@ export class RenderScheduler {
             const ms = performance.now() - startedAt;
             this.fullCost = this.fullCost === 0 ? ms : 0.7 * this.fullCost + 0.3 * ms;
           }
-          if (job.kind === 'preview' && job.rect === undefined && job.rotation === this.viewRotation && !this.disposed) {
+          if (job.kind === 'preview' && job.rect === undefined && !this.disposed) {
             this.cachePreview(job.pageIndex, bitmap);
             if (job.dropped) job.reject(abortError());
             else job.resolve(bitmap);
@@ -314,9 +321,9 @@ export class RenderScheduler {
   }
 }
 
-function jobKey(pageIndex: number, kind: RenderKind, scale: number, rect: PdfRect | undefined): string {
+function jobKey(pageIndex: number, kind: RenderKind, scale: number, rect: PdfRect | undefined, rotation: Rotation): string {
   const r = rect ? `${rect.x},${rect.y},${rect.width},${rect.height}` : '';
-  return `${pageIndex}|${kind}|${scale}|${r}`;
+  return `${pageIndex}|${kind}|${scale}|${rotation}|${r}`;
 }
 
 /** Whether `a` goes before `b`: idle previews last; then previews first, then priority, then arrival. */

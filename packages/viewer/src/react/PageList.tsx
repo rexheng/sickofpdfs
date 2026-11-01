@@ -2,6 +2,9 @@
 // It owns the zoom maths (anchored under the pointer, or at the viewport centre for keys), Ctrl+wheel and pinch, and
 // the scroll moves the viewer's keys call. Rendering and painting go through a PageDriver (page-driver.ts) and the
 // tab's one RenderScheduler.
+// Task 26: it follows the store's view rotation and two-page view, keeping the passage at the centre of the view in
+// view across a turn or a change of spread (R81), and its presentation mode (`presenting`): one page a screen on black,
+// fit edge to edge, which the reading keys step through a page at a time.
 import { type JSX, type ReactNode, type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import type { OpenResult, PageSize, PdfBackend, Rotation } from '../backend/types';
@@ -9,6 +12,7 @@ import { computeLayout, type PageBox, type PageLayout, visibleRange } from '../l
 import { contentPointToPage, pagePointToContent, type PagePoint } from '../layout/page-space';
 import { PAGE_GAP, pageDeviceSize, resolveScale, rowsOf, type Spread, stepZoom, wheelZoom, type ZoomMode } from '../layout/zoom';
 import type { RenderScheduler } from '../render/scheduler';
+import { presentationLayout, presentationScale, presentationTop } from '../view/view-state';
 import { PageDriver } from './page-driver';
 import styles from './PageList.module.css';
 import { type PageLayerContext, PageView, snapToDevice } from './PageView';
@@ -26,7 +30,7 @@ export interface PageListApi {
   zoomTo(mode: ZoomMode, anchor?: { clientX: number; clientY: number }): void;
   /** The next zoom preset in (1) or out (−1), around the viewport centre. */
   zoomStep(dir: 1 | -1): void;
-  /** ArrowUp / ArrowDown: 40 px a line. */
+  /** ArrowUp / ArrowDown: 40 px a line. In presentation mode each of these moves (and goToPage) is one page. */
   scrollLines(lines: number): void;
   /** PageUp / PageDown / Space: the viewport height less 40 px; one page in fit-page mode. */
   scrollScreens(dir: 1 | -1): void;
@@ -153,6 +157,21 @@ function withReserve(l: PageLayout, viewportWidth: number, reserve: number, scro
   return scroll ? { ...l, width: Math.max(l.width, right + PAGE_GAP + reserve) } : l;
 }
 
+/**
+ * Two-page view: the second page of a pair starts exactly PAGE_GAP CSS px after the first as it is drawn (PageView
+ * sizes a page to whole device pixels and puts it on one), so the pair is 16 px apart on screen, not 16 ± 1.
+ */
+function withSpreadGaps(l: PageLayout, pages: PageSize[], o: { viewRotation: Rotation; scale: number; dpr: number }): PageLayout {
+  const boxes = l.boxes.map((b) => ({ ...b }));
+  for (let i = 1; i < boxes.length; i++) {
+    const before = boxes[i - 1];
+    if (boxes[i].top !== before.top) continue;
+    const drawnWidth = pageDeviceSize(pages[before.index], o.viewRotation, o.scale, o.dpr).width / o.dpr;
+    boxes[i].left = snapToDevice(before.left, o.dpr) + drawnWidth + PAGE_GAP;
+  }
+  return { ...l, boxes };
+}
+
 /** Whether the widest row of `l` fits in `width` with `reserve` CSS px beside it (beyond PAGE_GAP on each side). */
 function reserveFits(l: PageLayout, width: number, reserve: number): boolean {
   if (l.boxes.length === 0) return false;
@@ -194,6 +213,8 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
   const zoom = useViewerState(store, (s) => s.zoom);
   const viewRotation = useViewerState(store, (s) => s.viewRotation);
   const spread = useViewerState(store, (s) => s.spread);
+  const presenting = useViewerState(store, (s) => s.presenting);
+  const presentingOn = presenting !== null;
   const [viewport, setViewport] = useState<Viewport | null>(null);
   // CSS px kept free at the right for the notes margin or panel; it moves the pages, never resizes them (setReserveRight).
   const [reserve, setReserve] = useState(() => ({ px: Math.max(0, Math.round(initialReserveRight)), scroll: false }));
@@ -214,14 +235,25 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
     reportError.current = onError;
   });
 
-  const scale = viewport ? scaleFor(zoom, viewport, pages, fitPage.current, viewRotation, spread) : store.get().scale;
+  const scale = !viewport
+    ? store.get().scale
+    : presenting
+      ? presentationScale(pages, presenting.page, viewport, viewRotation)
+      : scaleFor(zoom, viewport, pages, fitPage.current, viewRotation, spread);
+  const spreadLayout = (l: PageLayout) => (spread === 'two-page' ? withSpreadGaps(l, pages, { viewRotation, scale, dpr }) : l);
   const layout = useMemo(
-    () => (viewport ? withReserve(computeLayout(pages, { scale, viewRotation, spread, viewportWidth: viewport.width }), viewport.width, reserve.px, reserve.scroll) : null),
-    [pages, scale, viewRotation, spread, viewport, reserve],
+    () =>
+      !viewport
+        ? null
+        : presentingOn
+          ? presentationLayout(pages, { scale, viewRotation, viewport })
+          : withReserve(spreadLayout(computeLayout(pages, { scale, viewRotation, spread, viewportWidth: viewport.width })), viewport.width, reserve.px, reserve.scroll),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- spreadLayout reads spread, scale, viewRotation and dpr, listed here
+    [pages, scale, viewRotation, spread, viewport, reserve, presentingOn, dpr],
   );
-  const latest = useRef({ layout, viewport, scale, viewRotation, spread, dpr, reserve: reserve.px });
+  const latest = useRef({ layout, viewport, scale, viewRotation, spread, dpr, reserve: reserve.px, presenting: presentingOn });
   useLayoutEffect(() => {
-    latest.current = { layout, viewport, scale, viewRotation, spread, dpr, reserve: reserve.px };
+    latest.current = { layout, viewport, scale, viewRotation, spread, dpr, reserve: reserve.px, presenting: presentingOn };
   });
 
   /** Where page `index` starts on screen, in client px, with the layout the page list has now (no glide counted). */
@@ -244,6 +276,20 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
     return { pageIndex: i, point: contentPointToPage(l.boxes[i], pages[i], c), dx, dy };
   };
 
+  // R81: a turn or a change of spread keeps the passage at the centre of the view where it is. The store tells its
+  // listeners before React draws the new layout, so the anchor is read from the layout on screen now.
+  useLayoutEffect(
+    () =>
+      store.subscribe(() => {
+        const s = store.get();
+        const v = latest.current;
+        if (s.presenting !== null || v.presenting || pendingAnchor.current) return; // presentation places its own page
+        if (s.viewRotation !== v.viewRotation || s.spread !== v.spread) pendingAnchor.current = anchorAt();
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- anchorAt reads refs only
+    [store],
+  );
+
   // The driver's callbacks and scroll container.
   useLayoutEffect(() => {
     driver.setHooks({
@@ -260,6 +306,7 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
   }, [driver]);
 
   // Viewport size (fit modes follow it); on a resize the line at the top of the view stays put.
+  const measureNow = useRef<() => void>(() => {});
   useLayoutEffect(() => {
     const el = scrollerRef.current!;
     const measure = () => {
@@ -274,6 +321,7 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
       setViewport(next);
     };
     measure();
+    measureNow.current = measure;
     // The new size is laid out before the browser paints: a rail folding away must not show one frame of the pages
     // where the old layout puts them in the new, wider area.
     const observer = new ResizeObserver(() => flushSync(measure));
@@ -281,6 +329,10 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
     return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- anchorAt reads refs only
   }, []);
+
+  // Presentation mode starting or ending changes the page area's size at once (it covers the screen): measured in the same
+  // frame, so leaving it lays the pages out at their old size straight away and the old place can be restored.
+  useLayoutEffect(() => measureNow.current(), [presentingOn]);
 
   // Device pixel ratio: a change (another screen, browser zoom) re-renders the pages at the new resolution. Chrome
   // reports it through the resolution media query; a DPR emulated over DevTools changes devicePixelRatio without that
@@ -314,7 +366,13 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
     if (!el || !layout) return;
     const a = pendingAnchor.current;
     pendingAnchor.current = null;
-    if (a && layout.boxes[a.pageIndex]) {
+    if (presenting && viewport) {
+      // Presentation mode: the page on screen fills the view; no other page is in it. A step past either end stays there.
+      const page = Math.min(pages.length - 1, Math.max(0, presenting.page));
+      if (page !== presenting.page) store.set({ presenting: { page } });
+      el.scrollLeft = 0;
+      el.scrollTop = presentationTop(page, viewport.height);
+    } else if (a && layout.boxes[a.pageIndex]) {
       const c = pagePointToContent(layout.boxes[a.pageIndex], pages[a.pageIndex], a.point);
       el.scrollLeft = c.x - a.dx;
       el.scrollTop = c.y - a.dy;
@@ -329,7 +387,8 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
     // A glide asked for (R69): the pages slide from where they were on screen to their new place.
     const g = glideFrom.current;
     const sizer = sizerRef.current;
-    if (!g || !sizer) return;
+    if (presenting) glideFrom.current = null;
+    if (!g || !sizer || presenting) return;
     if (performance.now() > g.until || g.scale !== scale) {
       glideFrom.current = null;
       return;
@@ -355,7 +414,7 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
     };
     slide.onfinish = done;
     slide.oncancel = done;
-  }, [layout, dpr, scale, viewRotation, driver, pages, store]);
+  }, [layout, dpr, scale, viewRotation, driver, pages, store, presenting, viewport]);
 
   const api = useMemo<PageListApi>(() => {
     const el = () => scrollerRef.current;
@@ -367,9 +426,19 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
       const at = rows.findIndex((r) => r.includes(store.get().currentPage));
       return rows[Math.min(rows.length - 1, Math.max(0, at + dir))]?.[0] ?? 0;
     };
+    /** Presentation mode: shows page `index` (clamped); resolves once its full render is on screen. */
+    const present = (index: number): Promise<void> | null => {
+      const now = store.get().presenting;
+      if (now === null || pages.length === 0) return null;
+      const page = Math.min(pages.length - 1, Math.max(0, Math.round(index)));
+      if (page !== now.page) flushSync(() => store.set({ presenting: { page } }));
+      return driver.whenPainted(page);
+    };
+    const step = (dir: number) => present((store.get().presenting?.page ?? 0) + Math.sign(dir));
     const self: PageListApi = {
       zoomTo(mode, anchor) {
         const v = latest.current;
+        if (store.get().presenting !== null) return; // presentation mode keeps its page fit to the screen
         if (mode.kind === 'fit-page') fitPage.current = store.get().currentPage;
         if (!v.viewport || !v.layout) {
           store.set({ zoom: mode });
@@ -383,12 +452,14 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
         self.zoomTo({ kind: 'scale', scale: stepZoom(store.get().scale, dir) });
       },
       scrollLines(lines) {
+        if (step(lines)) return;
         const s = el();
         if (!s) return;
         s.scrollTop += lines * LINE_PX;
         moved();
       },
       scrollScreens(dir) {
+        if (step(dir)) return;
         const s = el();
         if (!s) return;
         if (store.get().zoom.kind === 'fit-page') {
@@ -399,6 +470,7 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
         moved();
       },
       scrollSideways(dir) {
+        if (step(dir)) return;
         const s = el();
         const l = latest.current.layout;
         if (!s || !l) return;
@@ -410,18 +482,22 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
         }
       },
       goToStart() {
+        if (present(0)) return;
         const s = el();
         if (!s) return;
         s.scrollTop = 0;
         moved();
       },
       goToEnd() {
+        if (present(pages.length - 1)) return;
         const s = el();
         if (!s) return;
         s.scrollTop = s.scrollHeight;
         moved();
       },
       goToPage(index) {
+        const shown = present(index);
+        if (shown) return shown;
         const s = el();
         const l = latest.current.layout;
         if (!s || !l || l.boxes.length === 0) return Promise.resolve();
@@ -432,6 +508,8 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
         return driver.whenPainted(i);
       },
       scrollToOffset(index, offset, left) {
+        const shown = present(index);
+        if (shown) return shown;
         const s = el();
         const l = latest.current.layout;
         if (!s || !l || l.boxes.length === 0) return Promise.resolve();
@@ -534,7 +612,14 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
   const mounted: number[] = [];
   if (layout) for (let i = range.first; i <= Math.min(range.last, layout.boxes.length - 1); i++) mounted.push(i);
   return (
-    <div ref={scrollerRef} role="document" aria-label={doc.loaded.displayName} tabIndex={0} className={styles.scroller}>
+    <div
+      ref={scrollerRef}
+      role="document"
+      aria-label={doc.loaded.displayName}
+      tabIndex={0}
+      className={presentingOn ? `${styles.scroller} ${styles.presenting}` : styles.scroller}
+      data-presenting={presentingOn ? '' : undefined}
+    >
       {layout && (
         <div ref={sizerRef} className={styles.sizer} style={{ width: layout.width, height: Math.ceil(layout.height) }}>
           {mounted.map((i) => (

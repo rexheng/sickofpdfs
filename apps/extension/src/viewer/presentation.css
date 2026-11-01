@@ -1,0 +1,25 @@
+/*
+ * Presentation mode (Task 26, presentation.ts). The page list draws the black screen, one page fit to it, with no notes
+ * margin (PageList.module.css). Here: marks show, notes do not. The comment underline and wash, area notes, the focus
+ * ring, figure outlines, find highlights and the selection are hidden, and the pages take no pointer (links included),
+ * so a click anywhere is a step. The cursor hides after 2 s still (data-cursor-hidden).
+ */
+[data-presenting] .sop-marks path:is([data-mark^="dotted:"], [data-mark^="passage:"], [data-mark^="area:"], [data-mark="focus"]),
+[data-presenting] :is(.sop-figures, .sop-find, .sop-selection) {
+  display: none;
+}
+
+/* The attribute twice: above the layers' own pointer and cursor rules (a link's), without !important. */
+[data-presenting][data-presenting] [data-page-index],
+[data-presenting][data-presenting] [data-page-index] * {
+  pointer-events: none;
+  cursor: inherit;
+}
+
+[data-presenting] {
+  cursor: default;
+}
+
+[data-presenting][data-cursor-hidden] {
+  cursor: none;
+}

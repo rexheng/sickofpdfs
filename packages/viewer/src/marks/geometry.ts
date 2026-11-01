@@ -14,6 +14,7 @@
 import type { Anchor, NormRect } from '../../../core/src/model/anchor';
 import type { MarkColor } from '../../../core/src/model/rows';
 import type { Glyph, PdfRect, Rotation } from '../backend/types';
+import { isSideways, turnCorners, unturnPoint } from '../view/page-transform';
 
 /** A rectangle by its top-left corner and size. In CSS px for everything drawn, in points for PdfRect. */
 export interface Box {
@@ -56,46 +57,22 @@ export function normToPdfRect(n: NormRect, page: PageDims): PdfRect {
 
 /** The size of the displayed page in CSS px. */
 export function displaySize(page: PageDims, scale: number, rotation: Rotation): { width: number; height: number } {
-  const sideways = rotation === 90 || rotation === 270;
+  const sideways = isSideways(rotation);
   return { width: (sideways ? page.height : page.width) * scale, height: (sideways ? page.width : page.height) * scale };
 }
 
-/** 0–1 of the crop box → the box it covers on the displayed page, in CSS px. */
+/** 0–1 of the crop box → the box it covers on the displayed page, in CSS px (the page's one turn, view/page-transform.ts). */
 export function normToCss(n: NormRect, page: PageDims, scale: number, rotation: Rotation): Box {
   const { width: w, height: h } = displaySize(page, scale, rotation);
-  const [u0, v0, u1, v1] = n;
-  let x0: number, y0: number, x1: number, y1: number;
-  switch (rotation) {
-    case 90:
-      [x0, y0, x1, y1] = [1 - v1, u0, 1 - v0, u1];
-      break;
-    case 180:
-      [x0, y0, x1, y1] = [1 - u1, 1 - v1, 1 - u0, 1 - v0];
-      break;
-    case 270:
-      [x0, y0, x1, y1] = [v0, 1 - u1, v1, 1 - u0];
-      break;
-    default:
-      [x0, y0, x1, y1] = [u0, v0, u1, v1];
-  }
+  const [x0, y0, x1, y1] = turnCorners(n, rotation, 1, 1);
   return { x: x0 * w, y: y0 * h, width: (x1 - x0) * w, height: (y1 - y0) * h };
 }
 
 /** A point on the displayed page (CSS px) → where it is in 0–1 of the unrotated crop box. The inverse of normToCss. */
 export function cssToNorm(p: { x: number; y: number }, page: PageDims, scale: number, rotation: Rotation): [u: number, v: number] {
   const { width: w, height: h } = displaySize(page, scale, rotation);
-  const x = p.x / w;
-  const y = p.y / h;
-  switch (rotation) {
-    case 90:
-      return [y, 1 - x];
-    case 180:
-      return [1 - x, 1 - y];
-    case 270:
-      return [1 - y, x];
-    default:
-      return [x, y];
-  }
+  const u = unturnPoint(p.x / w, p.y / h, rotation, 1, 1);
+  return [u.x, u.y];
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

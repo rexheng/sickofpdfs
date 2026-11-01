@@ -79,3 +79,25 @@
   z-index: 4;
   pointer-events: none;
 }
+
+/*
+ * Presentation mode (Task 26): the page area covers the screen, black, one page a screen fit edge to edge, with no
+ * scroll bars, page shadow or notes margin. The page area itself goes full screen (apps/extension presentation.ts).
+ */
+.presenting {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  overflow: hidden;
+  /* eslint-disable-next-line css/use-baseline -- a Chrome-only extension (minimum Chrome 128; Chrome has it since 94) */
+  scrollbar-gutter: auto;
+  background-color: var(--gm3-sys-color-scrim);
+}
+
+.presenting .page {
+  box-shadow: none;
+}
+
+.presenting .overlay {
+  display: none;
+}

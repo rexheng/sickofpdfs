@@ -30,14 +30,15 @@
 // - Each span has data-start (its first PDFium char index); a PDFium joined line-end hyphen is shown as an
 //   unselectable "-", and a char with no text (U+FFFF) is unselectable too, so selected text drops them as getTextRange
 //   does.
-// - The page's rotation (its /Rotate plus the viewer's) turns the whole layer ([data-main-rotation], from pdf.js
-//   web/pdf_viewer.css).
+// - The page's rotation (its /Rotate plus the viewer's) turns the whole layer (pdf.js's [data-main-rotation] rules, set inline
+//   from view/page-transform.ts, the one turn every layer over a page uses).
 // - The browser's own selection highlight is transparent: the viewer paints the selection itself from PDFium's line
 //   rectangles (R44). The DOM selection stays, for copy, find and screen readers.
 // - Selection: pdf.js's Chromium-before-148 branch (moving .endOfContent) is kept with its version check. The copy
 //   handler is the viewer's (TextLayer.tsx), not pdf.js's.
 import type { Rotation } from '../backend/types';
 import type { PageBox } from '../layout/page-layout';
+import { turnCss } from '../view/page-transform';
 import { cssFont, itemsScale, NO_TEXT, PDFIUM_HYPHEN, TEXT_LAYER_FONT_FAMILY, type TextItem } from './items';
 
 /** The class of a text layer's root element. */
@@ -307,6 +308,7 @@ export function renderTextLayer(container: HTMLElement, items: TextItem[], box: 
     update(s, rotation) {
       root.style.setProperty('--total-scale-factor', String(s));
       root.setAttribute('data-main-rotation', String(rotation));
+      root.style.transform = turnCss(rotation); // the page's one turn (view/page-transform.ts), as every layer has it
       layer.layout(s);
     },
     destroy() {

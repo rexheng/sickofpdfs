@@ -9,6 +9,7 @@ import {
   MIN_SCALE,
   type PdfBackend,
   type RenderScheduler,
+  rotate,
   type SaveController,
   type ViewerStore,
 } from '@sop/viewer';
@@ -17,6 +18,7 @@ import type { RefObject } from 'react';
 import type { ViewerParams } from '../shared/viewer-url';
 import { downloadOriginal } from './actions/download';
 import type { OpenedDocument } from './open-document';
+import { enterPresentation } from './presentation';
 import { printDocument } from './print/print';
 import type { PrintMarks } from './print/print-marks';
 import { isTypingTarget, type KeyCombo, type ShortcutDef } from './shortcuts';
@@ -28,7 +30,7 @@ export { linkForCopy } from './actions/copy-link';
 export type ViewerCommandId =
   | 'file.openInChrome' | 'file.download' | 'file.copyLink' | 'file.print' | 'file.saveToLibrary'
   | 'view.fitWidth' | 'view.fitPage' | 'view.zoomIn' | 'view.zoomOut' | 'view.rotateCw' | 'view.rotateCcw'
-  | 'view.twoPage' | 'view.presentation' | 'view.darkPages' | 'view.toggleRail'
+  | 'view.twoPage' | 'view.presentation' | 'view.toggleRail'
   | 'tools.find' | 'tools.goToPage' | 'help.shortcuts' | 'help.about'
   // Phase 2 (plan section 7). S13 runs the marks, the menu and undo; S14 the comment commands; S15 the notes ones;
   // S16 the figure and area ones. P4 adds 'claude.ask' and 'claude.explainFigure'.
@@ -51,9 +53,9 @@ export interface ViewerCommand {
    */
   disabledReason?(): string | undefined;
   /**
-   * False for a command whose task has not landed yet (rotate, two-page view, presentation mode: Task 26), or that
-   * this tab does not have (the marks in Incognito). It is left out of the menus, the toolbar and the shortcut sheet,
-   * rather than greyed out with no reason; its keys do nothing.
+   * False for a command whose task has not landed yet, or that this tab does not have (the marks in Incognito). It is
+   * left out of the menus, the toolbar and the shortcut sheet, rather than greyed out with no reason; its keys do
+   * nothing.
    */
   built: boolean;
 }
@@ -113,10 +115,7 @@ interface CommandSpec {
   keys: KeyCombo[];
 }
 
-/**
- * Every command, in the order of the shortcut sheet. Dark pages were dropped (ruling R41), so `view.darkPages` is not
- * registered and no menu shows it.
- */
+/** Every command, in the order of the shortcut sheet. (Dark pages were dropped: ruling R41.) */
 const SPECS: [ViewerCommandId, CommandSpec][] = [
   ['file.openInChrome', { label: 'Open in Chrome’s viewer', icon: 'open_in_new', keys: [] }],
   ['file.download', { label: 'Download', icon: 'download', keys: ['Ctrl+S'] }],
@@ -127,9 +126,9 @@ const SPECS: [ViewerCommandId, CommandSpec][] = [
   ['view.fitPage', { label: 'Fit page', icon: 'fit_page', keys: [] }],
   ['view.zoomIn', { label: 'Zoom in', icon: 'zoom_in', keys: ['Ctrl+=', 'Ctrl++'] }],
   ['view.zoomOut', { label: 'Zoom out', icon: 'zoom_out', keys: ['Ctrl+-'] }],
-  // Plain, short names for when Task 26 builds them (TB1 wording table).
-  ['view.rotateCw', { label: 'Rotate right', icon: 'rotate_right', keys: ['Ctrl+]'] }],
-  ['view.rotateCcw', { label: 'Rotate left', icon: 'rotate_left', keys: ['Ctrl+['] }],
+  // Task 26 (R81): the view turns, never the file; Chrome's keys.
+  ['view.rotateCw', { label: 'Rotate clockwise', icon: 'rotate_right', keys: ['Ctrl+]'] }],
+  ['view.rotateCcw', { label: 'Rotate counter-clockwise', icon: 'rotate_left', keys: ['Ctrl+['] }],
   ['view.twoPage', { label: 'Two-page view', icon: 'auto_stories', keys: [] }],
   ['view.presentation', { label: 'Presentation mode', icon: 'slideshow', keys: [] }],
   ['view.toggleRail', { label: 'Thumbnails and outline', icon: 'photo_library', keys: ['F4'] }],
@@ -227,15 +226,34 @@ function isFitWidth(store: ViewerStore): boolean {
 }
 
 /**
- * The commands for an open document. Rotate, two-page, presentation and find come later.
- * `extra` is what the marks and the registered features (annotations/wire.ts) do for the commands they own.
+ * Presentation mode shows one page on black and nothing else (Task 26): every other command is off until it ends, so
+ * no key opens a panel, a bar or a dialog behind it, or zooms its page away from the screen's size.
+ */
+function offWhilePresenting(store: ViewerStore, behaviours: Partial<Record<ViewerCommandId, Behaviour>>): Partial<Record<ViewerCommandId, Behaviour>> {
+  const presenting = () => store.get().presenting !== null;
+  return Object.fromEntries(
+    Object.entries(behaviours).map(([id, b]) =>
+      id === 'view.presentation' || b === undefined ? [id, b] : [id, { ...b, enabled: () => !presenting() && b.enabled() }],
+    ),
+  );
+}
+
+/** Two-page view (Task 26): pages in pairs, 1–2, 3–4, … A per-tab view setting, like rotation: never saved. */
+function toggleTwoPage(store: ViewerStore): void {
+  store.set({ spread: store.get().spread === 'two-page' ? 'none' : 'two-page' });
+}
+
+/**
+ * The commands for an open document. `extra` is what the marks and the registered features (annotations/wire.ts) do
+ * for the commands they own.
  */
 export function createCommands(ctx: ViewerContext, extra: Partial<Record<ViewerCommandId, Behaviour>> = {}): ViewerCommands {
   const pages = () => ctx.pageList.current;
   const source = ctx.params.source;
   const link = linkOf(ctx);
   const scale = () => ctx.store.get().scale;
-  return assemble({
+  const turn = (dir: 1 | -1) => ctx.store.set({ viewRotation: rotate(ctx.store.get().viewRotation, dir) });
+  return assemble(offWhilePresenting(ctx.store, {
     ...extra,
     // The page in view goes with it (#page=N), so Chrome's viewer opens where the reader was.
     'file.openInChrome': { run: () => source !== null && ctx.ui.openInChrome(source, ctx.store.get().currentPage + 1), enabled: () => source !== null, disabledReason: () => NO_ADDRESS },
@@ -247,18 +265,23 @@ export function createCommands(ctx: ViewerContext, extra: Partial<Record<ViewerC
     'view.fitPage': { run: () => fitPage(pages(), ctx.store), enabled: always, checked: () => ctx.store.get().zoom.kind === 'fit-page' },
     'view.zoomIn': { run: () => pages()?.zoomStep(1), enabled: () => scale() < MAX_SCALE - LIMIT_EPSILON, disabledReason: () => '400% is the largest size' },
     'view.zoomOut': { run: () => pages()?.zoomStep(-1), enabled: () => scale() > MIN_SCALE + LIMIT_EPSILON, disabledReason: () => '25% is the smallest size' },
+    // R81: a view setting for this tab only (the file never changes, and the PDF reopens upright); all pages turn.
+    'view.rotateCw': { run: () => turn(1), enabled: always },
+    'view.rotateCcw': { run: () => turn(-1), enabled: always },
+    'view.twoPage': { run: () => toggleTwoPage(ctx.store), enabled: always, checked: () => ctx.store.get().spread === 'two-page' },
+    'view.presentation': { run: () => void enterPresentation(ctx).catch(() => {}), enabled: () => ctx.store.get().presenting === null },
     'view.toggleRail': { run: () => ctx.store.set({ railOpen: !ctx.store.get().railOpen }), enabled: always, checked: () => ctx.store.get().railOpen },
     'tools.find': { run: () => ctx.openFind?.(), enabled: () => ctx.openFind !== undefined },
     'tools.goToPage': { run: () => ctx.ui.focusPageField(), enabled: always },
     'help.shortcuts': { run: () => ctx.ui.showShortcuts(), enabled: always },
     'help.about': { run: () => ctx.ui.showAbout(), enabled: always },
-  });
+  }));
 }
 
 /** The commands that need an open document: while there is none, they are greyed out and say why. */
 const DOCUMENT_COMMANDS: ViewerCommandId[] = [
-  'file.download', 'file.print', 'file.saveToLibrary', 'view.fitWidth', 'view.fitPage', 'view.zoomIn', 'view.zoomOut', 'view.toggleRail',
-  'tools.find', 'tools.goToPage',
+  'file.download', 'file.print', 'file.saveToLibrary', 'view.fitWidth', 'view.fitPage', 'view.zoomIn', 'view.zoomOut',
+  'view.rotateCw', 'view.rotateCcw', 'view.twoPage', 'view.presentation', 'view.toggleRail', 'tools.find', 'tools.goToPage',
 ];
 
 /**

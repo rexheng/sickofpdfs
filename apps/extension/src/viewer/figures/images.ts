@@ -6,7 +6,7 @@
 //   A pin or a part of a figure is drawn on its figure's thumbnail, so the card shows which spot the note is about.
 //   They are object URLs, cached per document and let go of when it closes.
 import type { NormRect } from '@sop/core';
-import { type DocHandle, normToPdfRect, type PageSize, type PdfBackend, PT_TO_CSS, type Rotation } from '@sop/viewer';
+import { type DocHandle, normToPdfRect, type PageSize, type PdfBackend, PT_TO_CSS, type Rotation, turnCorners, turnPoint } from '@sop/viewer';
 
 /** Copy image renders at this many times the region's size at 100% zoom. */
 export const COPY_SCALE = 2;
@@ -17,26 +17,14 @@ export const THUMB_PX = 128;
 
 type RegionBackend = Pick<PdfBackend, 'renderTile'>;
 
-/** A 0–1 point of an unrotated box, where it is once the box is turned clockwise by `r`. */
+/** A 0–1 point of an unrotated box, where it is once the box is turned clockwise by `r` (the page's one turn). */
 function turned(u: number, v: number, r: Rotation): [number, number] {
-  switch (r) {
-    case 90:
-      return [1 - v, u];
-    case 180:
-      return [1 - u, 1 - v];
-    case 270:
-      return [v, 1 - u];
-    default:
-      return [u, v];
-  }
+  const p = turnPoint(u, v, r, 1, 1);
+  return [p.x, p.y];
 }
 
 /** A 0–1 rect of an unrotated box, once the box is turned by `r`. */
-function turnedRect(n: NormRect, r: Rotation): NormRect {
-  const [a, b] = turned(n[0], n[1], r);
-  const [c, d] = turned(n[2], n[3], r);
-  return [Math.min(a, c), Math.min(b, d), Math.max(a, c), Math.max(b, d)];
-}
+const turnedRect = (n: NormRect, r: Rotation): NormRect => turnCorners(n, r, 1, 1);
 
 /** What is drawn over a thumbnail: a pin or a part of the figure, 0–1 of the region. */
 export type ThumbMark = { point: [number, number] } | { rect: NormRect } | null;

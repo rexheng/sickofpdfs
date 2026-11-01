@@ -19,7 +19,8 @@ export interface ViewerHooks {
   currentPage(): number;
   /** Scrolls page `pageIndex` to the top; resolves once its full render and its text layer are on screen. */
   scrollTo(pageIndex: number): Promise<void>;
-  snapshot(): ViewerSnapshot;
+  /** The view state, with `twoPage` (Task 26): whether two-page view is on (spread 'two-page'). */
+  snapshot(): ViewerSnapshot & { twoPage: boolean };
   scrollTop(): number;
   maxScrollTop(): number;
   viewportHeight(): number;

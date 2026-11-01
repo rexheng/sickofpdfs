@@ -11,6 +11,7 @@
 // outlines with drawBoldRange and paints them on the page's bitmap.
 import { useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react';
 import type { DocHandle, Glyph, GlyphOutline, PageGlyphs, PageSize, PdfBackend, PdfColor, PdfRect, Rotation } from '../backend/types';
+import { pageTransform, totalRotation } from '../view/page-transform';
 
 /** The bold stroke, in ems of the glyph's effective font size, as a unitless number of points (P0-5). */
 export const BOLD_STROKE_EM = 0.03;
@@ -62,20 +63,12 @@ const css = ([r, g, b, a]: PdfColor) => (a >= 255 ? `rgb(${r},${g},${b})` : `rgb
 
 /**
  * The turn from unrotated page space (points, top-left origin) to the page as displayed, as the six numbers of an SVG
- * or canvas matrix (a b c d e f), or null for no turn. `width` and `height` are the displayed page, in points.
+ * or canvas matrix (a b c d e f), or null for no turn. `width` and `height` are the displayed page, in points. The
+ * page's one turn (view/page-transform.ts), as every other layer has it.
  */
 export function displayMatrix(page: PageSize, viewRotation: Rotation): { matrix: [number, number, number, number, number, number] | null; width: number; height: number } {
-  const { width: w, height: h } = page;
-  switch (((page.rotation + viewRotation) % 360) as Rotation) {
-    case 90:
-      return { matrix: [0, 1, -1, 0, h, 0], width: h, height: w };
-    case 180:
-      return { matrix: [-1, 0, 0, -1, w, h], width: w, height: h };
-    case 270:
-      return { matrix: [0, -1, 1, 0, 0, w], width: h, height: w };
-    default:
-      return { matrix: null, width: w, height: h };
-  }
+  const t = pageTransform(page, totalRotation(page.rotation, viewRotation));
+  return { matrix: t.matrix, width: t.width, height: t.height };
 }
 
 /** The <g> transform from unrotated page space to the page as displayed (displayMatrix, as SVG text). */

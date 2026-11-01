@@ -15,7 +15,7 @@
 import { type JSX, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { LinkTarget, PageSize, PdfLink, PdfRect, Rotation } from '../backend/types';
 import type { PageBox } from '../layout/page-layout';
-import { pageToDisplayed } from '../layout/page-space';
+import { turnRect } from '../view/page-transform';
 import { safeLinkHref, type PageLinkSource } from '../navigation/links';
 import styles from './LinkLayer.module.css';
 
@@ -181,12 +181,8 @@ const putHrefBack = (a: HTMLAnchorElement, href: string) => a.setAttribute('href
 
 // ---- the layer ---------------------------------------------------------------------------------------------------
 
-/** A rect in unrotated page space as a rect on the page as shown (turned by `r`), in points. */
-function shownRect(rect: PdfRect, r: Rotation, w: number, h: number): PdfRect {
-  const a = pageToDisplayed(rect.x, rect.y, r, w, h);
-  const b = pageToDisplayed(rect.x + rect.width, rect.y + rect.height, r, w, h);
-  return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(a.x - b.x), height: Math.abs(a.y - b.y) };
-}
+/** A rect in unrotated page space as a rect on the page as shown (turned by `r`), in points: the page's one turn. */
+const shownRect: (rect: PdfRect, r: Rotation, w: number, h: number) => PdfRect = turnRect;
 
 /** The page's unrotated size: `page`, or the box read at 100%. */
 function sizeOf(box: PageBox, page: PageSize | undefined): { width: number; height: number } {

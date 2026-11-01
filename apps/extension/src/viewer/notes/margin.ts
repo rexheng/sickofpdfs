@@ -4,7 +4,7 @@
 // margin column scrolls with the pages (it draws into the page list's overlay), so a card placed at a content y stays
 // level with its line however far you scroll.
 import type { Anchor, NormRect } from '@sop/core';
-import { type Box, computeLayout, normToCss, type PageBox, PAGE_GAP, type PageSize, resolveScale, START_ZOOM } from '@sop/viewer';
+import { type Box, computeLayout, normToCss, type PageBox, PAGE_GAP, type PageSize, resolveScale, type Rotation, START_ZOOM } from '@sop/viewer';
 import type { Resolution } from '../annotations/boundary';
 import { regionNoteHit } from '../figures/anchors';
 
@@ -54,9 +54,11 @@ export function shownAnchor(stored: Anchor, r: Resolution | undefined): Anchor |
 
 /**
  * Where a note's card lines up: the top of its first line, area or point; the top of its page for a page note; the
- * top of the first page for a document note. Null when its page has no box (a page index past the end).
+ * top of the first page for a document note. Null when its page has no box (a page index past the end). While the view
+ * is turned (`viewRotation`, R81) a passage's lines no longer run down the page, so its card lines up with the
+ * passage's top on screen: the highest of its lines on that page.
  */
-export function anchorTop(a: Anchor, boxes: readonly PageBox[]): number | null {
+export function anchorTop(a: Anchor, boxes: readonly PageBox[], viewRotation: Rotation = 0): number | null {
   switch (a.kind) {
     case 'text': {
       const box = boxes[a.start.page];
@@ -65,7 +67,9 @@ export function anchorTop(a: Anchor, boxes: readonly PageBox[]): number | null {
       const first = on?.rects[0];
       const at = on && first ? boxes[on.page] : undefined;
       // An anchor stored with no rects (made in claude.ai) lines up with its page until the mark layer has its rects.
-      return at && first ? rectInContent(first, at).y : box.top;
+      if (!at || !first) return box.top;
+      if (viewRotation === 0) return rectInContent(first, at).y;
+      return Math.min(...on.rects.map((r) => rectInContent(r, at).y));
     }
     case 'area':
     case 'figure': {

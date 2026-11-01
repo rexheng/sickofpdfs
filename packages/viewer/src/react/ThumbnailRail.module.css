@@ -54,6 +54,18 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/*
+ * Its shape: the upright page's (--upright-w / --upright-h, set per thumbnail), turned sideways with the view
+ * (Task 26). The list carries the turn, so a turn re-lays the thumbnails out without drawing each one again in React.
+ */
+.thumb {
+  aspect-ratio: var(--upright-w) / var(--upright-h);
+}
+
+.list[data-sideways] .thumb {
+  aspect-ratio: var(--upright-h) / var(--upright-w);
+}
+
 .canvas {
   display: block;
   inline-size: 100%;

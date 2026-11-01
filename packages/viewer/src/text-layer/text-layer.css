@@ -29,17 +29,7 @@
   --min-font-size-inv: calc(1 / var(--min-font-size));
 }
 
-.sop-text-layer[data-main-rotation="90"] {
-  transform: rotate(90deg) translateY(-100%);
-}
-
-.sop-text-layer[data-main-rotation="180"] {
-  transform: rotate(180deg) translate(-100%, -100%);
-}
-
-.sop-text-layer[data-main-rotation="270"] {
-  transform: rotate(270deg) translateX(-100%);
-}
+/* The page's turn (pdf_viewer.css's [data-main-rotation] rules) is set inline from view/page-transform.ts, the one turn every layer over a page uses. */
 
 .sop-text-layer :is(span, br) {
   position: absolute;
