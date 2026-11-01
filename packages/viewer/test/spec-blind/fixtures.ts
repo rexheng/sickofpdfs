@@ -91,7 +91,9 @@ export interface TextPdf {
  *
  * The font dictionary carries explicit /Widths (Helvetica's, in 1/1000 em), so every glyph advance in the file is known
  * and does not depend on which substitute font the engine draws with: the engine has no system fonts and uses bundled
- * ones, and a Helvetica without /Widths takes its advances from whatever font replaces it.
+ * ones, and a Helvetica without /Widths takes its advances from whatever font replaces it. That holds for advances only:
+ * a glyph's ink can overhang its advance (Noto Sans "t", "k", "r" by up to 0.9 pt at 14 pt), and PDFium's loose box then
+ * extends to the ink, so box widths still depend on the substitute font.
  */
 export async function buildTextPdf(): Promise<TextPdf> {
   const doc = await PDFDocument.create({ updateMetadata: false });

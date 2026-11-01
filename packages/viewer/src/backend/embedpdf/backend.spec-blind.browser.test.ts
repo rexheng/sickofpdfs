@@ -340,7 +340,7 @@ describe('text: glyph boxes and ranges', () => {
   /** Index in the page text of char `at` of generated line `line` (PDFium puts a generated CR LF between lines). */
   const pageIndex = (line: number, at: number) => TEXT_LINES.slice(0, line).reduce((n, l) => n + l.text.length + 2, 0) + at;
 
-  it('every glyph box matches the font metrics of the generated line', async () => {
+  it('every glyph box matches the font metrics of the generated line (advance or ink, whichever is wider)', async () => {
     await withDoc(textPdf.bytes, async (doc) => {
       const { glyphs, runs, pageIndex: pi } = await backend.getPageGlyphs(doc, 0);
       expect(pi).toBe(0);
@@ -357,7 +357,11 @@ describe('text: glyph boxes and ranges', () => {
         if (g.text !== c.ch) problems.push(`${tag}: text ${JSON.stringify(g.text)}`);
         if (g.generated) problems.push(`${tag}: marked generated`);
         if (!near(g.box.x, c.x, 0.3)) problems.push(`${tag}: box.x ${g.box.x.toFixed(2)}, expected ${c.x.toFixed(2)}`);
-        if (!near(g.box.width, c.advance, 0.3)) problems.push(`${tag}: box.width ${g.box.width.toFixed(2)}, expected ${c.advance.toFixed(2)}`);
+        // Glyph.box is PDFium's loose box: from the origin to the end of the advance or the glyph's right ink edge, whichever is
+        // further right, so a substitute font whose ink overhangs the declared /Widths widens it (by under 0.1 em here).
+        if (g.box.width < c.advance - 0.3 || g.box.width > c.advance + 0.1 * TEXT_PAGE.fontSize) problems.push(`${tag}: box.width ${g.box.width.toFixed(2)}, expected ${c.advance.toFixed(2)} to ${(c.advance + 0.1 * TEXT_PAGE.fontSize).toFixed(2)}`);
+        const right = Math.max(c.x + c.advance, g.tight.x + g.tight.width);
+        if (!near(g.box.x + g.box.width, right, 0.05)) problems.push(`${tag}: box right edge ${(g.box.x + g.box.width).toFixed(2)}, expected max(advance end, ink end) ${right.toFixed(2)}`);
         if (!(g.box.y < c.baseline && g.box.y + g.box.height > c.baseline)) problems.push(`${tag}: box ${g.box.y.toFixed(1)}+${g.box.height.toFixed(1)} does not span the baseline ${c.baseline}`);
         if (g.box.height < TEXT_PAGE.fontSize * 0.9 || g.box.height > TEXT_PAGE.fontSize * 2) problems.push(`${tag}: box.height ${g.box.height.toFixed(1)}`);
         if (!near(g.fontSize, TEXT_PAGE.fontSize, 0.1)) problems.push(`${tag}: fontSize ${g.fontSize}`);
