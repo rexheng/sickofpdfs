@@ -35,6 +35,17 @@ export type { ExtractedMetadata, MetadataInput } from './metadata/extract';
 export { guessKind } from './metadata/kind';
 export type { DocumentKind, KindInput } from './metadata/kind';
 export { cleanTitle, isJunkTitle, titleFromFileName } from './metadata/titles';
+export {
+  BACKUP_DIR, BACKUP_FORMAT, BACKUP_VERSION, BackupFormatError, DUMP_TABLES, LIBRARY_PATH, MANIFEST_PATH, NOTES_DIR, PDF_DIR, SNAPSHOT_DIR, SNAPSHOT_KEEP, TOO_NEW_MESSAGE,
+  buildManifest, countDump, describeBackup, emptyDump, emptyTables, isDraftRow, isSha, notesPath, parseLibraryDump, parseManifest, pathSegments, pdfPath, snapshotPath,
+} from './backup/format';
+export type {
+  AliasRow, BackupCounts, BackupErrorCode, BackupManifest, DumpLocation, DumpTable, HistoryRow, LibraryDump, LibraryTables, ManifestInput, SettingRow,
+} from './backup/format';
+export { dayOf, parseSnapshotName, planSnapshots, snapshotName } from './backup/rotate';
+export type { SnapshotPlan } from './backup/rotate';
+export { isEmptyPlan, planRestore, planSize } from './backup/merge';
+export type { CompareHlc, RestoreOptions, RestorePlan, RestoreSummary, TableCounts } from './backup/merge';
 export { buildTextAnchor, QUOTE_CONTEXT } from './anchoring/quote';
 export { DHASH_MATCH_MAX, dHash64, hammingHex } from './anchoring/dhash';
 export { FUZZY_MIN_QUOTE, FUZZY_MIN_SCORE, resolveAnchor } from './anchoring/reanchor';

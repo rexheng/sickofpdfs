@@ -1,0 +1,308 @@
+// How a restore merges a backup into the library that is already here (contracts §5). It is a plan: pure, no database, no clock.
+// `applyRestorePlan` (S13) writes it; nothing is written here.
+//
+// The rules are the sync merge's (Phase 5, `sync/merge.ts`), so restoring a backup and pulling the same rows from the cloud
+// end in the same library:
+//   - Rows are matched by fingerprint and id. A row only the backup has is added. A row only this library has stays.
+//     Nothing that is here is ever deleted by a restore (a soft-deleted row is a row: the newer one wins like any other).
+//   - Where both sides have a row, the NEWER `hlc` wins the whole row. Equal stamps are broken by the rows' content, so the
+//     result never depends on which side was which. `compareHlc` is passed in (the real one is `hlc.ts`).
+//   - Reading history merges field by field (earliest first opened, latest last opened, the larger counters, the union of
+//     pages visited; the last position comes from the newer stamp). Locations keep the earliest `firstSeen` and the latest
+//     `lastSeen` whichever row wins. Two aliases for one fingerprint that name different documents keep the smaller
+//     document id; aliases from either side are all kept.
+//   - Drafts never come back. A row whose document (or, for a comment, whose thread) is not known is left out. A setting
+//     that looks like a secret is left out. `author` never changes: a backup row that disagrees about it is ignored.
+//   - It is idempotent: apply the plan, plan again, and the second plan is empty.
+//
+// `rev` is the store's own counter and is never compared; `applyRestorePlan` gives written rows their own. A restored
+// document is marked `blobStored: false` until its PDF is copied in (the local value is kept for a document that is here).
+//
+// Not done here, on purpose: where two devices wrote different words into one comment, sync keeps the loser's words as a
+// conflict copy. A restore keeps the newer row only; a backup is one computer's own history, so this cannot lose a note
+// that is not already older than the one it lost to.
+import type { HlcStamp } from '../hlc';
+import type { DocumentId } from '../ids';
+import { clampHlc, parseHlc } from '../sync/clamp';
+import { isSyncableSetting } from '../sync/columns';
+import { mergeHistoryRows } from '../sync/merge';
+import { MAX_HLC_SKEW_MS } from '../sync/protocol';
+import { DUMP_TABLES, isDraftRow, type DumpTable, type LibraryDump, type LibraryTables } from './format';
+
+export type CompareHlc = (a: HlcStamp, b: HlcStamp) => number;
+
+export interface RestoreOptions {
+  /**
+   * Unix ms. A backup stamp more than 5 minutes ahead of it is pulled back to it before the comparison, as the sync server
+   * does, so a damaged or hostile backup cannot win every conflict for ever. A stamp that cannot be read is left as it is
+   * (it sorts below every stamp that can be).
+   */
+  now?: number;
+}
+
+export type TableCounts = Record<DumpTable, number>;
+
+export interface RestoreSummary {
+  /** Rows the backup has that this library does not. */
+  added: TableCounts;
+  /** Rows both have, where the result differs from what is here. */
+  updated: TableCounts;
+}
+
+export interface RestorePlan {
+  /** The rows to write, each table sorted by its key and parents first (`DUMP_TABLES`). Only rows that are new or change. */
+  tables: LibraryTables;
+  /** Documents in the backup whose PDF this library does not hold yet (restore copies them from `pdf/`, if the backup has them). */
+  needsPdf: DocumentId[];
+  summary: RestoreSummary;
+}
+
+type Row = Record<string, unknown>;
+
+const KEY: Readonly<Record<DumpTable, string>> = {
+  documents: 'id',
+  aliases: 'sha256',
+  locations: 'id',
+  marks: 'id',
+  threads: 'id',
+  comments: 'id',
+  history: 'documentId',
+  settings: 'key',
+};
+
+const zeros = (): TableCounts => ({ documents: 0, aliases: 0, locations: 0, marks: 0, threads: 0, comments: 0, history: 0, settings: 0 });
+const hlcOf = (r: Row): string => (typeof r.hlc === 'string' ? r.hlc : '');
+const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+const cmpText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/** JSON with the keys in order, so equal rows give equal text whatever order their keys were written in. */
+function canonical(v: unknown, omit: readonly string[] = []): string {
+  const walk = (x: unknown, top: boolean): unknown => {
+    if (Array.isArray(x)) return x.map((e) => walk(e, false));
+    if (typeof x === 'object' && x !== null) {
+      const o: Record<string, unknown> = {};
+      for (const k of Object.keys(x).sort()) {
+        if (top && omit.includes(k)) continue;
+        o[k] = walk((x as Row)[k], false);
+      }
+      return o;
+    }
+    return x;
+  };
+  return JSON.stringify(walk(v, true)) ?? 'null';
+}
+
+const REV = ['rev'] as const;
+
+/** Rows by key. Rows without a usable key are ignored. */
+function indexBy(rows: readonly unknown[] | undefined, key: string): Map<string, Row> {
+  const m = new Map<string, Row>();
+  for (const r of rows ?? []) {
+    if (typeof r !== 'object' || r === null) continue;
+    const k = (r as Row)[key];
+    if (typeof k === 'string' && k !== '') m.set(k, r as Row);
+  }
+  return m;
+}
+
+const byKey = (key: string) => (a: Row, b: Row): number => cmpText(str(a[key]), str(b[key]));
+
+/** A setting that may come back: not one the sync rules keep out, and not one named like an API key in camel case (`x.apiKey`). */
+const restorableSetting = (key: string): boolean => isSyncableSetting(key) && !/api[._-]?key/i.test(key);
+
+function clampStamp(stamp: string, now: number | undefined): string {
+  if (now === undefined) return stamp;
+  const p = parseHlc(stamp);
+  return p !== null && p.ms > now + MAX_HLC_SKEW_MS ? clampHlc(stamp, now) : stamp;
+}
+
+/** The tables of a dump, as rows with no drafts (and no comments of a draft thread), and the backup's stamps pulled back. */
+function rowsOf(dump: LibraryDump | undefined, now: number | undefined, clamp: boolean): Record<DumpTable, Row[]> {
+  const out = {} as Record<DumpTable, Row[]>;
+  const tables = (dump?.tables ?? {}) as unknown as Partial<Record<DumpTable, unknown>>;
+  for (const t of DUMP_TABLES) {
+    const raw = tables[t];
+    out[t] = (Array.isArray(raw) ? raw : [])
+      .filter((r): r is Row => typeof r === 'object' && r !== null && !isDraftRow(r as { draftOfTab?: unknown }))
+      .map((r) => (clamp && typeof r.hlc === 'string' ? { ...r, hlc: clampStamp(r.hlc, now) } : r));
+  }
+  const rawThreads = tables.threads;
+  const draftThreads = new Set<string>();
+  if (Array.isArray(rawThreads)) for (const t of rawThreads as unknown[]) if (typeof t === 'object' && t !== null && isDraftRow(t)) draftThreads.add(str((t as Row).id));
+  if (draftThreads.size > 0) out.comments = out.comments.filter((c) => !draftThreads.has(str(c.threadId)));
+  return out;
+}
+
+interface Hooks {
+  /** A backup row that must not be restored at all. */
+  skip?(b: Row): boolean;
+  /** A backup row that loses to the one here whatever the stamps say. */
+  keepLocal?(l: Row, b: Row): boolean;
+  /** How a backup row is written when the library has no row for it. */
+  fresh?(b: Row): Row;
+  /** How a backup row that wins is written over a local one (fields only this library knows are kept). */
+  adopt?(b: Row, l: Row): Row;
+  /** The row to write once the winner is known (locations widen their dates). `winner` is `l` or `b`. */
+  combine?(winner: Row, l: Row, b: Row): Row;
+}
+
+/** Whole-row last writer wins, for one table. Returns the rows to write and how many are new. */
+function mergeLww(table: DumpTable, lRows: readonly Row[], bRows: readonly Row[], cmp: CompareHlc, hooks: Hooks = {}): { rows: Row[]; added: number; updated: number } {
+  const key = KEY[table];
+  const lm = indexBy(lRows, key);
+  const rows: Row[] = [];
+  let added = 0;
+  let updated = 0;
+  for (const b of [...bRows].sort(byKey(key))) {
+    if (hooks.skip?.(b)) continue;
+    const l = lm.get(str(b[key]));
+    if (!l) {
+      rows.push(hooks.fresh ? hooks.fresh(b) : b);
+      added += 1;
+      continue;
+    }
+    if (hooks.keepLocal?.(l, b)) continue;
+    const c = cmp(hlcOf(b), hlcOf(l));
+    const bWins = c > 0 || (c === 0 && canonical(b, REV) > canonical(l, REV));
+    let merged: Row = bWins ? (hooks.adopt ? hooks.adopt(b, l) : b) : l;
+    if (hooks.combine) merged = hooks.combine(merged, l, b);
+    if (canonical(merged, REV) !== canonical(l, REV)) {
+      rows.push(merged);
+      updated += 1;
+    }
+  }
+  return { rows, added, updated };
+}
+
+/**
+ * What to write so that the library here holds everything in `backup`. See the file's header for the rules.
+ * `local` is the library as it is now (`exportLibrary()`); `compareHlc` orders two stamps (negative, zero, positive).
+ */
+export function planRestore(local: LibraryDump, backup: LibraryDump, compareHlc: CompareHlc, options: RestoreOptions = {}): RestorePlan {
+  const cmp: CompareHlc = (a, b) => compareHlc(a, b);
+  const L = rowsOf(local, undefined, false);
+  const B = rowsOf(backup, options.now, true);
+  const rows = {} as Record<DumpTable, Row[]>;
+  const added = zeros();
+  const updated = zeros();
+  const done = (t: DumpTable, r: { rows: Row[]; added: number; updated: number }): void => {
+    rows[t] = r.rows;
+    added[t] = r.added;
+    updated[t] = r.updated;
+  };
+
+  // documents: a row that is here keeps its own `blobStored`; a new one has no PDF yet
+  const lDocs = indexBy(L.documents, 'id');
+  const docIds = new Set<string>([...lDocs.keys(), ...B.documents.map((d) => str(d.id)).filter((id) => id !== '')]);
+  done(
+    'documents',
+    mergeLww('documents', L.documents, B.documents, cmp, {
+      fresh: (b) => ({ ...b, blobStored: false }),
+      adopt: (b, l) => {
+        const merged: Row = { ...b };
+        delete merged.blobStored;
+        if (l.blobStored !== undefined) merged.blobStored = l.blobStored;
+        return merged;
+      },
+    }),
+  );
+
+  // aliases: every alias is kept; for one fingerprint naming two documents, the smaller document id wins
+  {
+    const lm = indexBy(L.aliases, 'sha256');
+    const out: Row[] = [];
+    let a = 0;
+    let u = 0;
+    for (const b of [...B.aliases].sort(byKey('sha256'))) {
+      if (!docIds.has(str(b.documentId))) continue;
+      const l = lm.get(str(b.sha256));
+      if (!l) {
+        out.push(b);
+        a += 1;
+        continue;
+      }
+      if (str(l.documentId) === str(b.documentId)) {
+        const newer = cmp(hlcOf(b), hlcOf(l)) > 0 ? hlcOf(b) : hlcOf(l);
+        const merged: Row = { ...l, createdAt: Math.min(num(l.createdAt), num(b.createdAt)), similarity: Math.max(num(l.similarity), num(b.similarity)), hlc: newer };
+        if (canonical(merged, REV) !== canonical(l, REV)) {
+          out.push(merged);
+          u += 1;
+        }
+      } else if (str(b.documentId) < str(l.documentId)) {
+        out.push(b);
+        u += 1;
+      }
+    }
+    done('aliases', { rows: out, added: a, updated: u });
+  }
+
+  const known = (b: Row): boolean => docIds.has(str(b.documentId));
+
+  // locations: the winner's row, with the earliest first sighting and the latest last sighting
+  done(
+    'locations',
+    mergeLww('locations', L.locations, B.locations, cmp, {
+      skip: (b) => !known(b),
+      combine: (winner, l, b) => ({ ...winner, firstSeen: Math.min(num(l.firstSeen), num(b.firstSeen)), lastSeen: Math.max(num(l.lastSeen), num(b.lastSeen)) }),
+    }),
+  );
+
+  // notes
+  const authorChanged = (l: Row, b: Row): boolean => l.author !== b.author;
+  done('marks', mergeLww('marks', L.marks, B.marks, cmp, { skip: (b) => !known(b), keepLocal: authorChanged }));
+  const threadsResult = mergeLww('threads', L.threads, B.threads, cmp, { skip: (b) => !known(b) });
+  done('threads', threadsResult);
+  const threadIds = new Set<string>([...L.threads.map((t) => str(t.id)), ...B.threads.filter(known).map((t) => str(t.id))]);
+  done('comments', mergeLww('comments', L.comments, B.comments, cmp, { skip: (b) => !known(b) || !threadIds.has(str(b.threadId)), keepLocal: authorChanged }));
+
+  // reading history: field by field
+  {
+    const lm = indexBy(L.history, 'documentId');
+    const out: Row[] = [];
+    let a = 0;
+    let u = 0;
+    for (const b of [...B.history].sort(byKey('documentId'))) {
+      if (!known(b)) continue;
+      const l = lm.get(str(b.documentId));
+      if (!l) {
+        out.push(b);
+        a += 1;
+        continue;
+      }
+      const bNewer = cmp(hlcOf(b), hlcOf(l)) > 0;
+      const fields = mergeHistoryRows(l, b);
+      const merged: Row = { ...l, ...fields, lastPosition: (bNewer ? b : l).lastPosition ?? null, hlc: bNewer ? hlcOf(b) : hlcOf(l) };
+      if (canonical(merged, REV) !== canonical(l, REV)) {
+        out.push(merged);
+        u += 1;
+      }
+    }
+    done('history', { rows: out, added: a, updated: u });
+  }
+
+  // settings: newest wins; a key that looks like a secret never comes back
+  done('settings', mergeLww('settings', L.settings, B.settings, cmp, { skip: (b) => !restorableSetting(str(b.key)) }));
+
+  // documents of the backup whose PDF is not held here
+  const finalDocs = new Map(lDocs);
+  for (const r of rows.documents) finalDocs.set(str(r.id), r);
+  const needsPdf = B.documents
+    .map((d) => str(d.id))
+    .filter((id) => id !== '' && finalDocs.get(id)?.blobStored !== true)
+    .sort() as DocumentId[];
+
+  const tables = {} as Record<DumpTable, Row[]>;
+  for (const t of DUMP_TABLES) tables[t] = [...rows[t]].sort(byKey(KEY[t]));
+  return { tables: tables as unknown as LibraryTables, needsPdf, summary: { added, updated } };
+}
+
+/** True when a plan changes nothing: every table empty. */
+export function isEmptyPlan(plan: Pick<RestorePlan, 'tables'>): boolean {
+  return DUMP_TABLES.every((t) => plan.tables[t].length === 0);
+}
+
+/** The number of rows a plan writes in all. */
+export function planSize(plan: Pick<RestorePlan, 'tables'>): number {
+  return DUMP_TABLES.reduce((n, t) => n + plan.tables[t].length, 0);
+}
