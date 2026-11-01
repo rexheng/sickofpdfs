@@ -7,8 +7,8 @@ import { hooks } from './test';
 /**
  * Clears the selection, then presses the mouse at the centre of glyph `a`'s PDFium box on page `pageIndex`, moves in 8
  * steps and releases at glyph `b`'s centre. Returns the selection as char ranges and as the DOM's text. Both glyphs must
- * be on screen (the helper scrolls the pair into view when it fits); a char with no box of its own (a line break) has
- * no centre to press on, and throws.
+ * be on screen and not under the viewer's toolbar (the helper scrolls the pair into the middle of the page list when
+ * they are not); a char with no box of its own (a line break) has no centre to press on, and throws.
  */
 export async function dragSelect(page: Page, pageIndex: number, a: number, b: number): Promise<{ ranges: CharRange[]; domText: string }> {
   const h = hooks(page);
@@ -17,9 +17,17 @@ export async function dragSelect(page: Page, pageIndex: number, a: number, b: nu
   for (const [i, p] of [[a, pa], [b, pb]] as const) {
     if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) throw new Error(`dragSelect: char ${i} on page ${pageIndex} has no glyph centre (no box, or no text layer yet)`);
   }
-  const view = page.viewportSize() ?? { width: 0, height: 0 };
-  const inView = (p: { x: number; y: number }) => p.x >= 0 && p.y >= 0 && p.x < view.width && p.y < view.height;
-  if (!inView(pa) || !inView(pb)) {
+  // A point is reachable when the page is what the mouse would hit there (not the toolbar over the page list).
+  const reachable = () =>
+    page.evaluate(
+      (q) =>
+        q.every((p) => {
+          const hit = document.elementFromPoint(p.x, p.y);
+          return hit !== null && hit.closest('[data-page-index]') !== null;
+        }),
+      [pa, pb],
+    );
+  if (!(await reachable())) {
     // Centre the pair in the page list's scroll area.
     await page.evaluate(
       (d) => {
@@ -33,7 +41,7 @@ export async function dragSelect(page: Page, pageIndex: number, a: number, b: nu
     );
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     [pa, pb] = await centres();
-    if (!inView(pa) || !inView(pb)) throw new Error(`dragSelect: chars ${a} and ${b} do not fit in the viewport together; use a larger viewport`);
+    if (!(await reachable())) throw new Error(`dragSelect: chars ${a} and ${b} are not both on screen together; use a larger viewport`);
   }
   await page.evaluate(() => document.getSelection()?.removeAllRanges());
   await page.mouse.move(pa.x, pa.y);
