@@ -46,7 +46,7 @@ export interface RequestResult {
   /** queryPermission({ mode: 'readwrite' }) before the request. */
   before: PermissionState | 'no-handle';
   activeAtCall: boolean;
-  /** The state requestPermission resolved to, "Name: message" if it threw, or 'pending' if it did not settle in 3 s. */
+  /** The state requestPermission resolved to, "Name: message" if it threw, or 'pending' if it did not settle within the cap (the tests' path). */
   result: string;
   after?: PermissionState;
   ms: number;
@@ -164,20 +164,24 @@ async function query(): Promise<string> {
   return r.present ? r.readwrite! : 'no-handle';
 }
 
-/** requestPermission({ mode: 'readwrite' }) on the stored handle, as the page is now (with or without activation). */
-async function request(source: Source = 'picked'): Promise<RequestResult> {
+/**
+ * requestPermission({ mode: 'readwrite' }) on the stored handle, as the page is now (with or without activation).
+ * `capMs` (default 3 s) is for the headless tests, where the permission prompt is never answered: the call then
+ * reports 'pending'. The "Request permission" button passes null and waits for the person's answer to the prompt.
+ */
+async function request(source: Source = 'picked', capMs: number | null = REQUEST_TIMEOUT_MS): Promise<RequestResult> {
   const started = performance.now();
   const activeAtCall = navigator.userActivation.isActive;
   const handle = await getHandle(source);
   if (!handle) return { before: 'no-handle', activeAtCall, result: 'no-handle', ms: 0 };
   const before = await handle.queryPermission({ mode: 'readwrite' });
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<string>((resolve) => {
-    timer = setTimeout(() => resolve('pending'), REQUEST_TIMEOUT_MS);
+  const pending = new Promise<string>((resolve) => {
+    if (capMs !== null) timer = setTimeout(() => resolve('pending'), capMs);
   });
   let result: string;
   try {
-    result = await Promise.race([handle.requestPermission({ mode: 'readwrite' }), timeout]);
+    result = await Promise.race([handle.requestPermission({ mode: 'readwrite' }), pending]);
   } catch (e) {
     result = describe(e);
   } finally {
@@ -249,7 +253,7 @@ function mountUi(): void {
   app.append(
     button('Pick backup folder', pick),
     button('Check permission', () => inspect('picked')),
-    button('Request permission', () => request('picked')),
+    button('Request permission', () => request('picked', null)), // no cap: shows the answer given in the prompt
     note,
     out,
   );

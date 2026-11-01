@@ -15,6 +15,9 @@ import { record, RESULTS_DIR } from './record';
 const PROFILE = 'p08';
 const PROBE_TEXT = 'sickofpdfs backup probe';
 
+/** Set by 8a when the picker was asserted to be blocked in this run; 8b records BLOCKED only then. */
+let pickerBlocked = false;
+
 const tempDirs: string[] = [];
 /** A fresh empty folder to pick or drop; removed after the last test. */
 async function tempFolder(): Promise<string> {
@@ -70,11 +73,15 @@ test('P0-8a: showDirectoryPicker in an extension tab yields a writable handle (p
         "Playwright's crPage ignores Page.fileChooserOpened without a backendNodeId, which a File System Access picker never has, and CDP has no command that answers one. " +
         'Picking is left to the Windows run: W-B1..W-B3',
     });
-    // The block is the harness's, not a mistake in the page function: the browser was asked and aborted the picker.
-    expect(r.error).toMatch(/^AbortError: .*showDirectoryPicker/);
+    // The block is the harness's, not a mistake in the page function: the browser was asked and aborted the picker,
+    // and the abort is the one CDP interception causes (the listener above and waitForEvent turn it on).
+    expect(r.error).toMatch(/^AbortError: .*showDirectoryPicker.*Intercepted by Page\.setInterceptFileChooserDialog/);
     expect(cdpChoosers.length).toBeGreaterThan(0);
+    pickerBlocked = true;
     return;
   }
+  expect(r.ok, r.error).toBe(true);
+  expect(r.stored).toBe(true);
   expect(await readFile(join(dir, 'backup-probe.txt'), 'utf8')).toBe(PROBE_TEXT);
   expect(r.permission).toBe('granted');
   await record('P0-8', { pass: true, measured: `8a: picker intercepted with filechooser; backup-probe.txt written (${PROBE_TEXT.length} bytes), permission ${r.permission}, handle stored` });
@@ -83,8 +90,8 @@ test('P0-8a: showDirectoryPicker in an extension tab yields a writable handle (p
 test('P0-8b: after a browser restart the stored handle reports granted or prompt', async ({ launchSpike }) => {
   const first = await launchSpike({ profile: PROFILE, check: 'backup-folder' }); // same user-data dir, new browser process
   const state = await first.page.evaluate(() => (window as any).spikeBackupQuery());
-  if (state === 'no-handle') {
-    // 8a stored no handle, so there is nothing of the picker's to restart with. What a folder dropped with CDP
+  if (state === 'no-handle' && pickerBlocked) {
+    // 8a was blocked in this run, so there is no picker handle to restart with. What a folder dropped with CDP
     // does across a restart is measured in its place and reported as such; it is not an 8b result.
     let dropped: string;
     try {
@@ -105,7 +112,10 @@ test('P0-8b: after a browser restart the stored handle reports granted or prompt
     });
     return;
   }
+  // Anything else is a real result: 8a stored a handle, or 8a did not store one although it was not blocked
+  // (8a failed, or 8b ran alone) and 'no-handle' must not pass for a blocked picker.
   await record('P0-8', { pass: ['granted', 'prompt'].includes(state), measured: `8b: after restart: ${state}` });
+  expect(state, "no handle stored by 8a, which was not blocked in this run (did 8a fail, or did 8b run alone?)").not.toBe('no-handle');
   expect(['granted', 'prompt']).toContain(state);
 });
 
@@ -136,5 +146,9 @@ test('P0-8c: requestPermission without a user gesture is refused', async ({ laun
   expect(result).toMatch(/SecurityError|NotAllowedError|prompt/);
   expect(call.activeAtCall).toBe(false);
   expect(call.before).toBe('prompt');
-  expect(control.result).not.toMatch(/SecurityError/); // so the refusal above is about the missing gesture
+  // The control shows the refusal above is about the missing gesture: with a gesture, on the same prompt-state
+  // handle, the call is not refused. It is 'pending' (the headless prompt is never answered) or a permission state.
+  expect(control.activeAtCall).toBe(true);
+  expect(control.before).toBe('prompt');
+  expect(['pending', 'granted', 'denied', 'prompt']).toContain(control.result);
 });
