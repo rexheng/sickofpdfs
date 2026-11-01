@@ -60,6 +60,43 @@ function fromContentScript(sender: Sender): boolean {
   return sender.id === chrome.runtime.id && sender.tab !== undefined && !fromExtensionPage(sender);
 }
 
+/** The site of the page, without a public-suffix list: the same scheme, and the same host or a host under it. */
+function sameSite(origin: string | undefined, pageUrl: string): boolean {
+  let frame: URL;
+  let page: URL;
+  try {
+    frame = new URL(origin ?? ''); // a sandboxed frame's origin is "null", which is no address
+    page = new URL(pageUrl);
+  } catch {
+    return false;
+  }
+  if (frame.protocol === 'file:' && page.protocol === 'file:') return true;
+  return frame.protocol === page.protocol && (frame.hostname === page.hostname || frame.hostname.endsWith(`.${page.hostname}`));
+}
+
+/**
+ * May this sender move the whole tab to the viewer for `url`? Chrome lets a frame navigate the page only after a
+ * click, and a sandboxed frame not at all; the takeover asks for no click, so it listens only to the page and to the
+ * frames the page holds directly:
+ * - the content script: in the page itself, or in a direct child frame of the page's site (an ad from another site
+ *   is not; a sandboxed frame's origin is "null", which is no site);
+ * - a viewer in a frame: only where the takeover itself put this PDF (a page can write any address into a frame of
+ *   its own), in a frame the page holds directly. webNavigation does not list frames that hold an extension page,
+ *   so the redirect's own record (grants.ts) says where that frame is.
+ */
+async function mayMoveTheTab(sender: Sender, tabId: number, pageUrl: string, url: string): Promise<boolean> {
+  if (sender.frameId === undefined) return false;
+  if (fromExtensionPage(sender)) {
+    const opened = await findGrant(tabId, url);
+    return opened !== null && opened.frameId === sender.frameId && opened.parentFrameId === 0;
+  }
+  if (!fromContentScript(sender)) return false;
+  if (sender.frameId === 0) return true;
+  if (!sameSite(sender.origin, pageUrl)) return false;
+  const frame = await chrome.webNavigation.getFrame({ tabId, frameId: sender.frameId }).catch(() => null);
+  return frame?.parentFrameId === 0;
+}
+
 /** May the viewer take over the document that the tab shows in this frame? False after a POST and while escaped. */
 async function canTakeOver(tabId: number, frameId: number, url: string): Promise<boolean> {
   const info = getRequestInfo(tabId, frameId);
@@ -114,25 +151,21 @@ async function handle(message: RuntimeMessage, sender: Sender, afterReply: (work
     case 'takeover:embedded': {
       const pageUrl = tab?.url;
       if (tabId === undefined || pageUrl === undefined || pageUrl.startsWith(chrome.runtime.getURL(''))) return { opened: false };
-      if (!mayEmbed(message.url, pageUrl)) return { opened: false };
-      if (fromExtensionPage(sender)) {
-        // A viewer in a frame: only for a PDF the takeover put there. A page can write any address into a frame of
-        // its own, and that must not become a fetch with the owner's sign-in in the whole tab.
-        if ((await findGrant(tabId, message.url)) === null) return { opened: false };
-      } else if (!fromContentScript(sender)) return { opened: false };
+      if (!mayEmbed(message.url, pageUrl) || !(await mayMoveTheTab(sender, tabId, pageUrl, message.url))) return { opened: false };
       if (await areEmbedsSuppressed(tabId, pageUrl)) return { opened: false };
       afterReply(() => openEmbeddedInTab(tabId, message.url, pageUrl));
       return { opened: true };
     }
 
     case 'takeover:suppress-embeds': {
-      if (!fromExtensionPage(sender) || tabId === undefined || !isOpenableUrl(message.pageUrl)) return undefined;
+      if (!fromExtensionPage(sender) || tabId === undefined || sender.frameId !== 0 || !isOpenableUrl(message.pageUrl)) return undefined;
       await suppressEmbeds(tabId, message.pageUrl);
       return undefined;
     }
 
     case 'takeover:open-in-chrome': {
-      if (!fromExtensionPage(sender) || tabId === undefined || !isOpenableUrl(message.url)) return { ok: false };
+      // Only the viewer that fills the tab: a viewer in a frame must not move the whole tab either.
+      if (!fromExtensionPage(sender) || tabId === undefined || sender.frameId !== 0 || !isOpenableUrl(message.url)) return { ok: false };
       // Chrome does not let an extension without file access open a file: address, so say so instead of failing quietly.
       if (message.url.startsWith('file:') && !(await chrome.extension.isAllowedFileSchemeAccess())) return { ok: false };
       // Nor a local file that this tab was not seen opening: a web page may have named it (grants.ts).

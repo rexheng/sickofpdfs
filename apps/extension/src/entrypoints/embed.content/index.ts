@@ -35,10 +35,25 @@ export default defineContentScript({
   allFrames: true,
   main() {
     // The animation in style.css fires this for each <embed> and <object>, including those added later.
-    document.addEventListener('animationstart', onAnimationStart, true);
+    if (mayAskForTheTab()) document.addEventListener('animationstart', onAnimationStart, true);
     if (document.contentType === 'application/pdf') void offerSniffedPdf();
   },
 });
+
+/**
+ * Only the page itself, or a frame the page holds directly and allows to navigate it, asks for the whole tab. Chrome
+ * lets an ad or a sandboxed frame move the page only after a click, and the takeover asks for none. (The service
+ * worker checks the same from what Chrome tells it about the sender; this saves the ask.) `frameElement` is null when
+ * the parent page is another origin; it is the parent's element, so it is read by attribute, not by `instanceof`.
+ */
+function mayAskForTheTab(): boolean {
+  if (window === window.top) return true;
+  if (window.parent !== window.top) return false;
+  const frame = window.frameElement;
+  if (frame === null) return false;
+  const sandbox = frame.getAttribute('sandbox');
+  return sandbox === null || sandbox.split(/\s+/).includes('allow-top-navigation');
+}
 
 function onAnimationStart(event: AnimationEvent): void {
   if (event.animationName === 'sop-detect-embed' && (event.target instanceof HTMLEmbedElement || event.target instanceof HTMLObjectElement)) {

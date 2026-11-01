@@ -18,7 +18,17 @@ import { VIEWER_PATH } from '../../shared/viewer-url';
 export interface Grant {
   /** The address as the network stack sees it: normalised, without a fragment. */
   url: string;
+  /** The frame it opened in, and that frame's parent (0: the page itself holds it; -1: it is the page). */
+  frameId: number;
+  parentFrameId: number;
 }
+
+/** Where in the tab the address was opened. The service worker's own navigations are of the whole tab. */
+export interface GrantFrame {
+  frameId: number;
+  parentFrameId: number;
+}
+const WHOLE_TAB: GrantFrame = { frameId: 0, parentFrameId: -1 };
 
 /** Enough for Back and Forward through the PDFs of one tab; the oldest goes first. */
 const MAX_PER_TAB = 10;
@@ -46,13 +56,14 @@ async function read(tabId: number): Promise<Grant[]> {
   return Array.isArray(value) ? (value as Grant[]) : [];
 }
 
-/** This tab really opened `url`: its viewer may load it. */
-export function grant(tabId: number, url: string): Promise<void> {
+/** This tab really opened `url` (in `frame`): its viewer may load it. */
+export function grant(tabId: number, url: string, frame: GrantFrame = WHOLE_TAB): Promise<void> {
   return inOrder(async () => {
     const target = keyUrl(url);
     if (target === null || tabId < 0) return;
+    const record: Grant = { url: target, frameId: frame.frameId, parentFrameId: frame.parentFrameId };
     const others = (await read(tabId)).filter((g) => g.url !== target);
-    await chrome.storage.session.set({ [keyOf(tabId)]: [{ url: target } satisfies Grant, ...others].slice(0, MAX_PER_TAB) });
+    await chrome.storage.session.set({ [keyOf(tabId)]: [record, ...others].slice(0, MAX_PER_TAB) });
   });
 }
 
@@ -79,11 +90,11 @@ export function installGrants(): void {
   const redirected = `${chrome.runtime.getURL(VIEWER_PATH)}?DNR:`;
   chrome.webRequest.onBeforeRedirect.addListener(
     (details) => {
-      if (details.tabId >= 0 && details.redirectUrl === redirected + details.url) grant(details.tabId, details.url).catch(recordFailed);
+      if (details.tabId >= 0 && details.redirectUrl === redirected + details.url) grant(details.tabId, details.url, details).catch(recordFailed);
     },
     { urls: ['http://*/*', 'https://*/*'], types: ['main_frame', 'sub_frame'] },
   );
-  chrome.webNavigation.onBeforeNavigate.addListener((details) => void grant(details.tabId, details.url).catch(recordFailed), {
+  chrome.webNavigation.onBeforeNavigate.addListener((details) => void grant(details.tabId, details.url, details).catch(recordFailed), {
     url: [{ urlPrefix: 'file://' }],
   });
 }
