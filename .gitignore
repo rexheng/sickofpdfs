@@ -19,3 +19,5 @@ test-assets/
 .vitest-attachments/
 .vitest/
 apps/extension/.output/
+apps/extension/public/pdf/
+.venv-fixtures/

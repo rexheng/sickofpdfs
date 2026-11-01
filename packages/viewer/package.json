@@ -8,5 +8,12 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@embedpdf/engines": "2.15.1",
+    "@embedpdf/fonts-latin": "1.0.0",
+    "@embedpdf/fonts-sc": "1.0.0",
+    "@embedpdf/models": "2.15.1",
+    "@embedpdf/pdfium": "2.15.1"
   }
 }

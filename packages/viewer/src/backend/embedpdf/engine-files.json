@@ -1,0 +1,11 @@
+{
+  "comment": "The engine files the extension ships in its pdf/ folder. Read by fonts.ts (the worker's font fallback) and by apps/extension/scripts/copy-engine-assets.mjs, which copies each `from` (a path inside the installed `package`) to apps/extension/public/pdf/<file>.",
+  "wasm": { "file": "pdfium.wasm", "package": "@embedpdf/pdfium", "from": "dist/pdfium.wasm" },
+  "fonts": [
+    { "file": "NotoSans-Regular.ttf", "package": "@embedpdf/fonts-latin", "from": "fonts/NotoSans-Regular.ttf", "role": "latin", "weight": 400, "italic": false },
+    { "file": "NotoSans-Italic.ttf", "package": "@embedpdf/fonts-latin", "from": "fonts/NotoSans-Italic.ttf", "role": "latin", "weight": 400, "italic": true },
+    { "file": "NotoSans-Bold.ttf", "package": "@embedpdf/fonts-latin", "from": "fonts/NotoSans-Bold.ttf", "role": "latin", "weight": 700, "italic": false },
+    { "file": "NotoSans-BoldItalic.ttf", "package": "@embedpdf/fonts-latin", "from": "fonts/NotoSans-BoldItalic.ttf", "role": "latin", "weight": 700, "italic": true },
+    { "file": "NotoSansHans-Regular.otf", "package": "@embedpdf/fonts-sc", "from": "fonts/NotoSansHans-Regular.otf", "role": "cjk", "weight": 400, "italic": false }
+  ]
+}

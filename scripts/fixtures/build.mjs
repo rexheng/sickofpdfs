@@ -3,7 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const STEPS = ['fetch-classifier.mjs', 'make-paper50.mjs'];
+const STEPS = ['fetch-classifier.mjs', 'make-paper50.mjs', 'make-objects.mjs', 'make-tagged.mjs'];
 
 for (const step of STEPS) {
   console.log(`\n== fixtures: ${step}`);

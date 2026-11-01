@@ -1,0 +1,16 @@
+diff --git a/dist/index.browser.js b/dist/index.browser.js
+index 61b00c8..8591732 100644
+--- a/dist/index.browser.js
++++ b/dist/index.browser.js
+@@ -542,8 +542,9 @@ function findWasmBinary() {
+   }
+   if (ENVIRONMENT_IS_SHELL)
+     return 'pdfium.wasm';
+-  // Use bundler-friendly `new URL(..., import.meta.url)` pattern; works in browsers too.
+-  return new URL('pdfium.wasm', import.meta.url).href;
++  // Patched (sickofpdfs): no `new URL('pdfium.wasm', import.meta.url)`, which makes bundlers emit a second, unused
++  // copy of the wasm. The extension always passes `wasmBinary`, so this name is never fetched.
++  return 'pdfium.wasm';
+ }
+ 
+ var wasmBinaryFile;
