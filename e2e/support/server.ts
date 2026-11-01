@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join, resolve, sep } from 'node:path';
@@ -110,6 +110,7 @@ export async function startFixtureServer(): Promise<FixtureServer & { close(): P
         return void res.writeHead(400).end();
       }
       counts.set(path, (counts.get(path) ?? 0) + 1);
+      if (await serveLoaderRoute(req, res, path, counts.get(path)!)) return;
 
       const sequence = sequences.get(path);
       if (sequence) {
@@ -170,4 +171,129 @@ export async function startFixtureServer(): Promise<FixtureServer & { close(): P
         server.close(() => closed());
       }),
   };
+}
+
+// ---- Task 20: the loader's routes ----
+//   /h/once.pdf       a link that works once: the first GET gets a PDF, later ones 403 (the takeover used the one good
+//                     response, so the viewer's own fetch fails)
+//   /h/fake.pdf       a login page served as application/pdf
+//   /h/truncated.pdf  the first 60% of a valid PDF, with a matching Content-Length
+//   /h/huge.pdf       Content-Length 1.2 GB, a PDF header, then the socket is held
+//   /h/password.pdf   a PDF that opens with the password "secret"
+//   /mock?…           answers as mockPath() describes
+// `/f/*` and `/mock` answer CORS for the requesting Origin with credentials allowed, so a page on another origin (the
+// Vitest browser page) can fetch them with `credentials: 'include'`.
+
+/** What `/mock` answers. */
+export interface MockOptions {
+  /** HTTP status (default 200). */
+  status?: number;
+  contentType?: string;
+  /** The Content-Length header. With no `body` and no `chunked`, the headers are sent and the socket is then held. */
+  contentLength?: number;
+  body?: string;
+  /** Streams `%PDF-1.7` and then `bytes` zero bytes, with no Content-Length (chunked transfer). */
+  chunked?: boolean;
+  bytes?: number;
+}
+
+/** The `/mock` address that answers as `o` describes. */
+export function mockPath(o: MockOptions): string {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(o)) if (v !== undefined) q.set(k, String(v));
+  return `/mock?${q.toString()}`;
+}
+
+const PASSWORD_PDF = fileURLToPath(new URL('../../packages/viewer/test/fixtures/password-secret.pdf', import.meta.url));
+const HUGE_BYTES = 1_200_000_000;
+const PDF_HEADER = '%PDF-1.7\n';
+const ZERO_CHUNK = new Uint8Array(64 * 1024);
+
+function allowCredentialedCors(req: IncomingMessage, res: ServerResponse): void {
+  const origin = req.headers.origin;
+  if (origin === undefined) return;
+  res.setHeader('access-control-allow-origin', origin);
+  res.setHeader('access-control-allow-credentials', 'true');
+  res.setHeader('access-control-expose-headers', 'accept-ranges, content-range, content-length, content-disposition');
+  res.setHeader('vary', 'Origin');
+}
+
+/** Sends the headers and keeps the response open until the client goes away (or the server closes). */
+function holdOpen(res: ServerResponse, status: number, headers: Record<string, string | number>, first?: string): void {
+  res.writeHead(status, headers);
+  res.flushHeaders();
+  if (first !== undefined) res.write(first);
+}
+
+async function streamZeros(res: ServerResponse, bytes: number): Promise<void> {
+  res.write(PDF_HEADER);
+  let left = bytes;
+  while (left > 0 && !res.destroyed) {
+    const chunk = left >= ZERO_CHUNK.byteLength ? ZERO_CHUNK : ZERO_CHUNK.subarray(0, left);
+    left -= chunk.byteLength;
+    if (!res.write(chunk)) await new Promise<void>((resume) => res.once('drain', resume).once('close', resume));
+  }
+  res.end();
+}
+
+/** Answers the Task 20 routes; returns false for any other path (after adding CORS to `/f/*`). */
+async function serveLoaderRoute(req: IncomingMessage, res: ServerResponse, path: string, count: number): Promise<boolean> {
+  if (path.startsWith('/f/')) {
+    allowCredentialedCors(req, res);
+    return false;
+  }
+  const pdf = { 'content-type': 'application/pdf', 'cache-control': 'no-store' };
+  switch (path) {
+    case '/h/once.pdf': {
+      if (count > 1) {
+        res.writeHead(403, { 'content-type': 'text/html' }).end('<p>This link has expired.</p>');
+        return true;
+      }
+      const body = await tinyPdfBytes();
+      res.writeHead(200, { ...pdf, 'content-length': body.byteLength }).end(req.method === 'HEAD' ? undefined : body);
+      return true;
+    }
+    case '/h/fake.pdf': {
+      const body = '<!doctype html><html><body><form>Please sign in</form></body></html>';
+      res.writeHead(200, { ...pdf, 'content-length': Buffer.byteLength(body) }).end(req.method === 'HEAD' ? undefined : body);
+      return true;
+    }
+    case '/h/truncated.pdf': {
+      const whole = await tinyPdfBytes();
+      const body = whole.subarray(0, Math.floor(whole.byteLength * 0.6));
+      res.writeHead(200, { ...pdf, 'content-length': body.byteLength }).end(req.method === 'HEAD' ? undefined : body);
+      return true;
+    }
+    case '/h/huge.pdf':
+      holdOpen(res, 200, { ...pdf, 'content-length': HUGE_BYTES }, req.method === 'HEAD' ? undefined : PDF_HEADER);
+      return true;
+    case '/h/password.pdf': {
+      const body = await readFile(PASSWORD_PDF);
+      res.writeHead(200, { ...pdf, 'content-length': body.byteLength }).end(req.method === 'HEAD' ? undefined : body);
+      return true;
+    }
+    case '/mock': {
+      allowCredentialedCors(req, res);
+      const q = new URL(req.url ?? '/', 'http://x').searchParams;
+      const num = (k: string) => (q.has(k) ? Number(q.get(k)) : undefined);
+      const status = num('status') ?? 200;
+      const contentType = q.get('contentType');
+      const headers: Record<string, string | number> = { 'cache-control': 'no-store', ...(contentType !== null ? { 'content-type': contentType } : {}) };
+      const contentLength = num('contentLength');
+      const body = q.get('body');
+      if (q.get('chunked') === 'true') {
+        res.writeHead(status, headers);
+        await streamZeros(res, num('bytes') ?? 0);
+      } else if (body !== null) {
+        res.writeHead(status, { ...headers, 'content-length': contentLength ?? Buffer.byteLength(body) }).end(body);
+      } else if (contentLength !== undefined) {
+        holdOpen(res, status, { ...headers, 'content-length': contentLength });
+      } else {
+        res.writeHead(status, headers).end();
+      }
+      return true;
+    }
+    default:
+      return false;
+  }
 }

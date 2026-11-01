@@ -26,8 +26,9 @@ export default defineConfig({
           include: ['**/*.browser.test.{ts,tsx}'],
           exclude,
           // Fills apps/extension/public/pdf/ (pdfium.wasm and the fallback fonts) from the installed packages before any
-          // test, so engine tests never depend on an earlier extension build.
-          globalSetup: ['./apps/extension/scripts/copy-engine-assets.mjs'],
+          // test, so engine tests never depend on an earlier extension build; then starts the e2e fixture server
+          // (`inject('fixtureOrigin')`).
+          globalSetup: ['./apps/extension/scripts/copy-engine-assets.mjs', 'e2e/support/vitest-global-setup.ts'],
           browser: {
             enabled: true,
             provider: playwright(),

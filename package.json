@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
+    "@embedpdf/pdfium": "2.15.1",
     "@eslint/css": "2.0.1",
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.63.0",

@@ -18,6 +18,12 @@ export interface DialogProps {
   /** Right-aligned, in this order (put the primary action last). */
   actions: DialogAction[];
   onOpenChange(this: void, open: boolean): void;
+  /**
+   * Name the dialog with a `title` attribute instead of aria-labelledby. For a dialog whose title contains the label of
+   * a field inside it (the PDF password dialog's "password"): a lookup of a control by its label then finds the field
+   * alone. Screen readers announce the same name. The content carries an empty title, so no tooltip shows over it.
+   */
+  nameFromTitleAttribute?: boolean;
 }
 
 /**
@@ -25,7 +31,9 @@ export interface DialogProps {
  * chrome), radius 28 px, over a 32% scrim. It traps focus, closes on Escape and on a click outside (both through
  * onOpenChange(false)), and puts focus back where it was.
  */
-export function Dialog({ open, title, children, actions, onOpenChange }: DialogProps) {
+export function Dialog({ open, title, children, actions, onOpenChange, nameFromTitleAttribute = false }: DialogProps) {
+  // An empty title stops the dialog's own title attribute from showing as a tooltip over its content.
+  const quiet = nameFromTitleAttribute ? { title: '' } : {};
   // The dialog has no trigger, so a hidden probe where it is placed tells it the theme of that place.
   const { ref, theme } = useInheritedTheme<HTMLSpanElement>();
   // Radix gives focus back to a Dialog.Trigger; this dialog is opened by state, so it remembers the opener itself.
@@ -41,6 +49,7 @@ export function Dialog({ open, title, children, actions, onOpenChange }: DialogP
             data-theme={theme}
             aria-modal="true"
             aria-describedby={undefined}
+            {...(nameFromTitleAttribute ? { 'aria-labelledby': undefined, title } : {})}
             onOpenAutoFocus={() => {
               opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
             }}
@@ -51,10 +60,14 @@ export function Dialog({ open, title, children, actions, onOpenChange }: DialogP
               opener.current = null;
             }}
           >
-            <RadixDialog.Title className={styles.title}>{title}</RadixDialog.Title>
-            <div className={styles.body}>{children}</div>
+            <RadixDialog.Title className={styles.title} {...quiet}>
+              {title}
+            </RadixDialog.Title>
+            <div className={styles.body} {...quiet}>
+              {children}
+            </div>
             {actions.length > 0 && (
-              <div className={styles.actions}>
+              <div className={styles.actions} {...quiet}>
                 {actions.map((action) => (
                   <button
                     key={action.label}

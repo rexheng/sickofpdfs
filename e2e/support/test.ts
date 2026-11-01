@@ -197,3 +197,65 @@ export function hooks(page: Page): { eval: <T, A = undefined>(fn: (h: SopTestHoo
       page.evaluate<T>(`(${fn.toString()})(globalThis.__sopTest, ${JSON.stringify(arg) ?? 'undefined'})`),
   };
 }
+
+// ---- Task 21: scrolling and ink helpers ----
+
+/**
+ * Scrolls the viewer's page list (`[role=document]`) down by `pxPerSec / 60` CSS px in every animation frame for
+ * `seconds`, inside the page (as a steady wheel or trackpad scroll would), and resolves when done.
+ */
+export async function steadyScroll(page: Page, o: { pxPerSec: number; seconds: number }): Promise<void> {
+  await page.evaluate(
+    ({ pxPerSec, seconds }) =>
+      new Promise<void>((resolve, reject) => {
+        const el = document.querySelector<HTMLElement>('[role=document]');
+        if (!el) return reject(new Error('steadyScroll: no [role=document] element'));
+        let start: number | undefined;
+        let position = el.scrollTop;
+        const frame = (now: number) => {
+          start ??= now;
+          if (now - start >= seconds * 1000) return resolve();
+          position += pxPerSec / 60;
+          el.scrollTop = position;
+          requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+      }),
+    o,
+  );
+}
+
+/**
+ * The bounding box of the dark pixels (luminance < 128, alpha ≥ 128) of the first canvas matching `canvasSelector`,
+ * as fractions of the canvas bitmap: { left, top, width, height }, all 0 when nothing is dark. The canvas is copied
+ * with createImageBitmap, so this works for 2d and bitmaprenderer canvases alike.
+ */
+export async function inkBox(page: Page, canvasSelector: string): Promise<{ left: number; top: number; width: number; height: number }> {
+  return page.evaluate(async (sel) => {
+    const canvas = document.querySelector<HTMLCanvasElement>(sel);
+    if (!canvas) throw new Error(`inkBox: nothing matches ${sel}`);
+    const bitmap = await createImageBitmap(canvas);
+    const { width: w, height: h } = bitmap;
+    const copy = new OffscreenCanvas(w, h);
+    const ctx = copy.getContext('2d')!;
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const data = ctx.getImageData(0, 0, w, h).data;
+    let x0 = w;
+    let y0 = h;
+    let x1 = -1;
+    let y1 = -1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const o = (y * w + x) * 4;
+        if (data[o + 3] < 128 || 0.299 * data[o] + 0.587 * data[o + 1] + 0.114 * data[o + 2] >= 128) continue;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+    }
+    if (x1 < 0) return { left: 0, top: 0, width: 0, height: 0 };
+    return { left: x0 / w, top: y0 / h, width: (x1 - x0 + 1) / w, height: (y1 - y0 + 1) / h };
+  }, canvasSelector);
+}

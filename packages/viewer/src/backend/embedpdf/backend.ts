@@ -16,6 +16,11 @@ export interface EmbedPdfBackendOptions {
    * one (test/support/fault-engine.worker.ts); the product never sets it.
    */
   createWorker?: () => Worker;
+  /**
+   * Start the worker(s) now instead of on the first `open`, so PDFium's start-up (fetching and compiling the wasm)
+   * overlaps the PDF's download. The viewer page sets it; a failed start is retried by the next `open`.
+   */
+  startNow?: boolean;
 }
 
 const DEFAULT_HANG_TIMEOUT_MS = 20_000;
@@ -75,6 +80,8 @@ export function createEmbedPdfBackend(assets: EngineAssets, opts: EmbedPdfBacken
     return started;
   };
 
+  if (opts.startNow) for (let i = 0; i < slots.length; i++) workerIn(i).catch(() => {});
+
   const entry = (doc: DocHandle): OpenDoc => {
     const d = docs.get(doc);
     if (!d) throw new Error(`document ${doc} is not open`);
@@ -92,7 +99,7 @@ export function createEmbedPdfBackend(assets: EngineAssets, opts: EmbedPdfBacken
   ): Promise<Awaited<ReturnType<EngineApi[M]>>> => {
     const d = entry(doc);
     const n = d.workers.length;
-    const w = d.workers[pageIndex !== null && Number.isInteger(pageIndex) ? ((pageIndex % n) + n) % n : 0];
+    const w = d.workers[pageIndex !== null && Number.isInteger(pageIndex) ? ((pageIndex % n) + n) % n : 0]!;
     return w.call(method, [doc, ...rest] as unknown as Parameters<EngineApi[M]>, { signal });
   };
 
@@ -110,7 +117,7 @@ export function createEmbedPdfBackend(assets: EngineAssets, opts: EmbedPdfBacken
       const rejected = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
       const failure: unknown = rejected ? rejected.reason : workers.find((w) => w.failure)?.failure;
       if (failure) {
-        workers.forEach((w, i) => results[i].status === 'fulfilled' && closeQuietly(w, doc));
+        workers.forEach((w, i) => results[i]!.status === 'fulfilled' && closeQuietly(w, doc));
         throw failure instanceof Error ? failure : new Error('the engine could not open the document');
       }
       docs.set(doc, { id: doc, workers, lost: null });

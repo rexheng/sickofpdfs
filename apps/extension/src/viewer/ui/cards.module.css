@@ -1,0 +1,66 @@
+/*
+ * The loader's cards (LoadErrorCard, LargeFileNotice): a GM3 dialog surface (radius 28 px, 24 px padding, elevation
+ * 3) centred on the viewer's dark canvas, without a scrim, since nothing else is on the page.
+ */
+.stage {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  padding: var(--space-6);
+  overflow: auto;
+  background-color: var(--drive-app-bg);
+}
+
+.card {
+  box-sizing: border-box;
+  inline-size: min(var(--dialog-max-w), 100%);
+  padding: var(--space-6);
+  border-radius: var(--shape-dialog);
+  background-color: var(--dialog-bg);
+  box-shadow: var(--elev-3);
+  color: var(--gm3-sys-color-on-surface);
+}
+
+.icon {
+  display: block;
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.title {
+  margin: var(--space-4) 0 var(--space-4);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-dialog-title);
+  font-variation-settings: "opsz" 18;
+}
+
+.body {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+.body + .body {
+  margin-block-start: var(--space-2);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  margin-block-start: var(--space-6);
+}
+
+.field {
+  margin-block-start: var(--space-4);
+}
+
+.error {
+  margin: var(--space-2) 0 0;
+  color: var(--gm3-sys-color-error);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}

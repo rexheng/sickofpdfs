@@ -1,0 +1,59 @@
+/*
+ * The page area: the viewer's dark canvas with white pages, 16 px apart, with Drive's page shadow and placeholder
+ * colour (02 section 4.10). The scrollbar gutter is kept even when nothing overflows, so fit width never flips
+ * between two widths as the scrollbar comes and goes.
+ */
+.scroller {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  /* eslint-disable-next-line css/use-baseline -- a Chrome-only extension (minimum Chrome 128; Chrome has it since 94) */
+  scrollbar-gutter: stable;
+  background-color: var(--drive-app-bg);
+  outline: none;
+}
+
+.scroller:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.sizer {
+  position: relative;
+}
+
+.page {
+  position: absolute;
+  box-sizing: border-box;
+  background-color: var(--viewer-page-placeholder);
+  box-shadow: var(--shadow-pdf-page);
+}
+
+.full,
+.preview {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.preview {
+  z-index: 0;
+}
+
+.full {
+  z-index: 1;
+}
+
+.tiles {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+
+.layers {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+}

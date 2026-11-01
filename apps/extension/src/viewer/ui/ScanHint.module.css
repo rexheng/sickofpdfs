@@ -1,0 +1,12 @@
+/* A quiet pill at the bottom centre of the page area (placeholder until Task 23's viewer chrome). */
+.hint {
+  position: absolute;
+  inset-block-end: var(--space-6);
+  inset-inline-start: 50%;
+  z-index: 1;
+  padding: var(--space-1);
+  border-radius: var(--shape-full);
+  background-color: var(--gm3-sys-color-surface-container-high);
+  box-shadow: var(--elev-2);
+  transform: translateX(-50%);
+}

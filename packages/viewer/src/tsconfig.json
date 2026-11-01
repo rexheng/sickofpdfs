@@ -1,0 +1,10 @@
+{
+  // For ESLint, whose project service lints each file with the nearest tsconfig.json. The extension compiles these
+  // sources with noUncheckedIndexedAccess (WXT's default), so typed lint rules see them the same way; otherwise every
+  // `!` the extension's typecheck needs would read as unnecessary here. The package's own typecheck uses ../tsconfig.json.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noUncheckedIndexedAccess": true
+  },
+  "include": ["."]
+}

@@ -14,7 +14,7 @@ const read = (key: string | symbol): unknown => (readRuntime() as Record<string 
 // Each read goes to the registry, so a field published after this module loaded is seen.
 Object.defineProperty(globalThis, '__sopTest', {
   configurable: true,
-  value: new Proxy<SopTestHooks>({}, {
+  value: new Proxy<SopTestHooks>({} as SopTestHooks, {
     get: (_target, key) => read(key),
     has: (_target, key) => key in readRuntime(),
     ownKeys: () => Reflect.ownKeys(readRuntime()),
