@@ -23,6 +23,13 @@ export interface ChipLink {
  */
 export type CardPlacement = 'placed' | 'moved' | 'unplaced';
 
+/**
+ * Whether a sent note is kept, as the quiet sign beside its time says: 'saved' in the library; 'pending' not yet (the
+ * PDF is being saved); 'tab' in this tab only, until it closes (the PDF is not saved); 'failed' the library would not
+ * take it ("Try again").
+ */
+export type NoteKept = 'saved' | 'pending' | 'tab' | 'failed';
+
 /** The figure a card is about: its 64 px thumbnail (an object or data URL rendered on this computer) and its label. */
 export interface CardFigure {
   /** "Figure 3 · p. 4" */

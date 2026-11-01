@@ -43,6 +43,64 @@
   font-weight: 500;
 }
 
+/* The time, then the quiet "Saved" sign: one line; the time gives way first if the card is narrow. */
+.timeLine {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  min-inline-size: 0;
+}
+
+.kept {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-1);
+  align-items: center;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-docs-comment-time);
+  letter-spacing: var(--tracking-tight);
+  white-space: nowrap;
+}
+
+/* A small tick, the size of the words beside it (the icon's own box is 20 px). */
+.kept .keptIcon {
+  --_size: var(--space-4);
+}
+
+.keptFailed {
+  color: var(--gm3-sys-color-error);
+}
+
+.keptRetry {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gm3-sys-color-primary);
+  font: var(--type-docs-comment-time);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.keptRetry:hover {
+  text-decoration: underline;
+}
+
+.keptRetry:focus-visible {
+  border-radius: var(--space-1);
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* The ⋮ button sits at the right of the author row, its glyph lined up with the card's padding edge. */
 .menu {
   margin-inline-end: calc(-1 * var(--space-2));

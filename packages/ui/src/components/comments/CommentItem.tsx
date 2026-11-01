@@ -2,6 +2,7 @@ import type { ClaudeReplyMeta, CommentMeta, ConflictCopyMeta } from '@sop/core';
 import { type ReactNode, useLayoutEffect, useRef, useState } from 'react';
 import '../../tokens/comments.css';
 import { cx } from '../classes';
+import { Icon } from '../../icons/Icon';
 import { IconButton } from '../IconButton';
 import { DropdownMenu, type MenuItemDef } from '../Menu';
 import { TextButton } from '../TextButton';
@@ -10,7 +11,7 @@ import styles from './CommentItem.module.css';
 import { MarkdownBody } from './MarkdownBody';
 import { NoteBox, type NoteBoxProps } from './NoteBox';
 import { formatCommentTime, formatCommentTimeFull } from './time';
-import type { ChipLink, CommentView } from './types';
+import type { ChipLink, CommentView, NoteKept } from './types';
 
 export interface CommentItemProps {
   comment: CommentView;
@@ -30,6 +31,10 @@ export interface CommentItemProps {
   onRetry?: () => void;
   onChip?: (link: ChipLink) => void;
   renderChip?: (link: ChipLink) => ReactNode;
+  /** The quiet sign beside the time: whether the note is kept (the card shows it on its first comment). */
+  kept?: NoteKept | null;
+  /** "Try again" beside "Couldn't save". */
+  onRetrySave?: () => void;
   className?: string;
 }
 
@@ -50,6 +55,8 @@ export function CommentItem({
   onRetry,
   onChip,
   renderChip,
+  kept = null,
+  onRetrySave,
   className,
 }: CommentItemProps) {
   const claude = claudeMeta(comment.meta);
@@ -62,7 +69,10 @@ export function CommentItem({
         <CommentAvatar author={comment.author} />
         <div className={styles.who}>
           <span className={styles.name}>{AUTHOR_NAME[comment.author]}</span>
-          <CommentTime comment={comment} now={now} />
+          <span className={styles.timeLine}>
+            <CommentTime comment={comment} now={now} />
+            {kept !== null && comment.draftOfTab === null && <KeptSign kept={kept} onRetry={onRetrySave} />}
+          </span>
         </div>
         {hasActions && (
           <DropdownMenu
@@ -113,7 +123,7 @@ export function CommentItem({
 function CommentTime({ comment, now }: { comment: CommentView; now?: number }) {
   const at = now ?? Date.now();
   const parts: string[] = [];
-  if (comment.draftOfTab !== null && comment.author === 'me') parts.push('Draft');
+  if (comment.draftOfTab !== null && comment.author === 'me') parts.push('Not sent yet');
   else parts.push(formatCommentTime(comment.createdAt, at));
   if (comment.editedAt !== null) parts.push('Edited');
   const meta = comment.meta as Partial<ClaudeReplyMeta> | Partial<ConflictCopyMeta>;
@@ -127,6 +137,46 @@ function CommentTime({ comment, now }: { comment: CommentView; now?: number }) {
     >
       {parts.join(' · ')}
     </time>
+  );
+}
+
+const KEPT_WORDS: Record<NoteKept, string> = {
+  saved: 'Saved',
+  pending: 'Not saved yet',
+  tab: 'Not saved',
+  failed: 'Couldn’t save',
+};
+const KEPT_MEANING: Record<NoteKept, string> = {
+  saved: 'This note is saved in your library.',
+  pending: 'This note is saved as soon as the PDF is in your library.',
+  tab: 'This PDF isn’t saved, so this note stays only until you close this tab.',
+  failed: 'Your library didn’t take this note. Its text is kept in this tab.',
+};
+
+/**
+ * After the time, quietly: "Saved" with a small tick, so the owner can always see a note is kept; or what is true
+ * instead ("Not saved yet", "Not saved", "Couldn't save" with Try again).
+ */
+function KeptSign({ kept, onRetry }: { kept: NoteKept; onRetry?: () => void }) {
+  return (
+    <span className={cx(styles.kept, kept === 'failed' && styles.keptFailed)} title={KEPT_MEANING[kept]} data-kept={kept}>
+      <span aria-hidden="true">·</span>
+      {kept === 'saved' && <Icon name="check" size={20} className={styles.keptIcon} />}
+      <span>{KEPT_WORDS[kept]}</span>
+      <span className={styles.srOnly}>. {KEPT_MEANING[kept]}</span>
+      {kept === 'failed' && onRetry !== undefined && (
+        <button
+          type="button"
+          className={styles.keptRetry}
+          onClick={(event) => {
+            event.stopPropagation();
+            onRetry();
+          }}
+        >
+          Try again
+        </button>
+      )}
+    </span>
   );
 }
 

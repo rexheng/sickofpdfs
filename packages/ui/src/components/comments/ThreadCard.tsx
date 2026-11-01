@@ -9,7 +9,7 @@ import { summarise } from './markdown';
 import { MovedLabel, UnplacedLabel } from './MovedLabel';
 import { NoteBox, ReplyBox } from './NoteBox';
 import styles from './ThreadCard.module.css';
-import type { CardFigure, CardPlacement, ChipLink, CommentView } from './types';
+import type { CardFigure, CardPlacement, ChipLink, CommentView, NoteKept } from './types';
 
 export interface ThreadCardProps {
   /** The sent comments, root first, in `createdAt` order. Empty for a new note whose first comment is still a draft. */
@@ -60,6 +60,10 @@ export interface ThreadCardProps {
   label?: string | null;
   /** A note on a figure: its 64 px thumbnail and label. */
   figure?: CardFigure | null;
+  /** Whether the sent note is kept: the quiet sign after its first comment's time ("Saved"). Null: no sign. */
+  kept?: NoteKept | null;
+  /** "Try again" beside "Couldn't save". */
+  onRetrySave?: () => void;
 
   /** Put the caret in the note box or the reply box when the card appears (a new note, a restored draft). */
   autoFocus?: boolean;
@@ -138,19 +142,19 @@ export function ThreadCard(props: ThreadCardProps) {
   );
 }
 
-/** A new note: the owner's name and the note box (active), or the unsent text marked "Draft" (inactive). */
+/** A new note: the owner's name, "Not sent yet", and the note box (active) or the unsent text (inactive). */
 function NewNote({ draft, active, autoFocus, onDraftChange, onDraftSend, onDraftEscape, onDraftFlush }: ThreadCardProps) {
   if (!active) {
     return (
       <>
-        <AuthorRow time="Draft" />
+        <AuthorRow time={NOT_SENT} />
         <DraftText text={draft ?? ''} />
       </>
     );
   }
   return (
     <>
-      <AuthorRow />
+      <AuthorRow time={NOT_SENT} />
       <NoteBox
         className={styles.noteBox}
         variant="note"
@@ -166,7 +170,7 @@ function NewNote({ draft, active, autoFocus, onDraftChange, onDraftSend, onDraft
 }
 
 function Thread(props: ThreadCardProps & { root: CommentView; replies: CommentView[] }) {
-  const { root, replies, active, draft = null, editing, now, autoFocus, onActivate, onRetry, onChip, renderChip } = props;
+  const { root, replies, active, draft = null, editing, now, autoFocus, onActivate, onRetry, onChip, renderChip, kept = null, onRetrySave } = props;
   const item = (comment: CommentView, isRoot: boolean) => (
     <CommentItem
       key={comment.id}
@@ -181,6 +185,8 @@ function Thread(props: ThreadCardProps & { root: CommentView; replies: CommentVi
       onRetry={onRetry === undefined ? undefined : () => onRetry(comment.id)}
       onChip={onChip === undefined ? undefined : (link) => onChip(link, comment.id)}
       renderChip={renderChip}
+      kept={isRoot ? kept : null}
+      onRetrySave={onRetrySave}
     />
   );
 
@@ -191,7 +197,7 @@ function Thread(props: ThreadCardProps & { root: CommentView; replies: CommentVi
         {replies.length > 0 && <RepliesLine replies={replies} />}
         {draft !== null && draft !== '' && (
           <div className={styles.replyDraft}>
-            <span className={styles.draftLabel}>Draft reply</span>
+            <span className={styles.draftLabel}>Reply not sent yet</span>
             <DraftText text={draft} lines={2} />
           </div>
         )}
@@ -244,7 +250,10 @@ function commentActions(props: ThreadCardProps, comment: CommentView, isRoot: bo
   return items;
 }
 
-/** The author row of the owner's new note. `time` null: no time line (the active note box). */
+/** What a note or reply that is still being written says, in place of its time. */
+const NOT_SENT = 'Not sent yet';
+
+/** The author row of the owner's new note. `time` null: no time line. */
 function AuthorRow({ time }: { time?: string | null }) {
   return (
     <div className={styles.authorRow}>

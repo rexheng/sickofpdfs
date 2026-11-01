@@ -115,6 +115,12 @@
   letter-spacing: var(--tracking-tight);
 }
 
+/* While the note is being written in its box, "Not sent yet" is only a quiet fact, like the time it replaces. */
+.active .draftTime {
+  color: var(--gm3-sys-color-on-surface-variant);
+  font-weight: 400;
+}
+
 .noteBox {
   margin-block-start: var(--sop-card-body-gap);
 }

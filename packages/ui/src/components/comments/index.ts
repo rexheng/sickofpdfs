@@ -6,4 +6,4 @@ export { MovedLabel, type MovedLabelProps, UnplacedLabel } from './MovedLabel';
 export { NoteBox, type NoteBoxProps, ReplyBox, type ReplyBoxProps } from './NoteBox';
 export { ThreadCard, type ThreadCardProps } from './ThreadCard';
 export { formatCommentTime, formatCommentTimeFull } from './time';
-export type { CardFigure, CardPlacement, ChipLink, CommentView } from './types';
+export type { CardFigure, CardPlacement, ChipLink, CommentView, NoteKept } from './types';

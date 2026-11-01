@@ -45,9 +45,9 @@ export interface NoteBoxProps {
 }
 
 const DEFAULTS = {
-  note: { placeholder: 'Add a note', sendLabel: 'Comment', label: 'Note' },
-  reply: { placeholder: 'Reply', sendLabel: 'Reply', label: 'Reply' },
-  edit: { placeholder: '', sendLabel: 'Save', label: 'Edit note' },
+  note: { placeholder: 'Add a note', sendLabel: 'Comment', label: 'Note', enter: 'Enter to send' },
+  reply: { placeholder: 'Reply', sendLabel: 'Reply', label: 'Reply', enter: 'Enter to send' },
+  edit: { placeholder: '', sendLabel: 'Save', label: 'Edit note', enter: 'Enter to save' },
 } as const;
 
 /**
@@ -176,9 +176,13 @@ export function NoteBox({
         onKeyDown={onKeyDown}
       />
       <div className={styles.actions} hidden={!open}>
+        {/* A quiet hint while typing: "Enter to send · Shift+Enter for a new line", on two short lines beside the button. */}
         <span id={hintId} className={styles.hint}>
-          <span className={styles.srOnly}>Enter to send. </span>
-          Shift+Enter for a new line
+          <span className={styles.hintLine}>
+            {defaults.enter}
+            <span className={styles.srOnly}>.</span>
+          </span>
+          <span className={styles.hintLine}>Shift+Enter for a new line</span>
         </span>
         <button
           type="button"

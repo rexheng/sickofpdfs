@@ -59,12 +59,18 @@
 }
 
 .hint {
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-inline-size: 0;
-  overflow: hidden;
   color: var(--gm3-sys-color-on-surface-variant);
   font: var(--type-docs-comment-time);
   letter-spacing: var(--tracking-tight);
+}
+
+/* "Enter to send" over "Shift+Enter for a new line": two short lines, each kept whole when there is room. */
+.hintLine {
+  overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
