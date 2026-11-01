@@ -1,0 +1,16 @@
+/* Centred over the page list, 16 px under the toolbar pill, as wide as a dialog at most. */
+.place {
+  position: absolute;
+  inset: calc(var(--viewer-pill-h) + var(--space-4)) var(--space-4) auto;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.banner {
+  inline-size: min(var(--dialog-max-w), 100%);
+  border-radius: var(--shape-banner);
+  box-shadow: var(--elev-2);
+  pointer-events: auto;
+}

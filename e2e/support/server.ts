@@ -58,6 +58,18 @@ const HTML_PAGES: Record<string, string> = {
   '/h/iframe-attachment-page': '<h1>A page with an attached PDF</h1><iframe src="/h/attachment.pdf" width="600" height="400"></iframe>',
 };
 
+/**
+ * Task 31's form cases, served from `test-assets/` with Range support:
+ * - `/h/form.pdf`: HMRC's SA100 tax return, a real form with fillable fields;
+ * - `/h/form-once.pdf`: the same form from a link that works once (later GETs answer 403), so it can't be fetched again;
+ * - `/h/hyperref.pdf`: an NBER working paper, whose /AcroForm holds only LaTeX's link boxes (not a form).
+ */
+const FORM_FILES: Record<string, string> = {
+  '/h/form.pdf': 'classifier/not-learning/tax-form-hmrc-sa100-2026.pdf',
+  '/h/form-once.pdf': 'classifier/not-learning/tax-form-hmrc-sa100-2026.pdf',
+  '/h/hyperref.pdf': 'classifier/learning/nber-w29000.pdf',
+};
+
 const htmlPage = (body: string) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>fixture page</title></head><body>${body}</body></html>`;
 
 let tinyPdf: Promise<Uint8Array> | undefined;
@@ -125,6 +137,13 @@ export async function startFixtureServer(): Promise<FixtureServer & { close(): P
       }
       counts.set(path, (counts.get(path) ?? 0) + 1);
       if (await serveLoaderRoute(req, res, path, counts.get(path)!)) return;
+      const formFile = FORM_FILES[path];
+      if (formFile !== undefined) {
+        if (path === '/h/form-once.pdf' && counts.get(path)! > 1) {
+          return void res.writeHead(403, { 'content-type': 'text/html' }).end('<p>This link has expired.</p>');
+        }
+        return serveFile(req, res, formFile);
+      }
 
       const sequence = sequences.get(path);
       if (sequence) {

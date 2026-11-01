@@ -34,6 +34,7 @@ import { ShortcutsDialog } from './chrome/ShortcutsDialog';
 import { Snackbar } from './chrome/Snackbar';
 import { Toolbar } from './chrome/Toolbar';
 import { commandShortcuts, createCommands, createIdleCommands, type ViewerCommands, type ViewerContext, type ViewerUi } from './commands';
+import { FormBanner, useFormBounce } from './forms/FormBanner';
 import { maybeLeaveFrame, wantsFullTab } from './frame-escape';
 import { type LargeFileBounce, type OpenDocumentDeps, type OpenedDocument, openDocument, type OpenOutcome, openPickedFile } from './open-document';
 import { publishRuntime, type ViewerHooks, type ViewerState } from './runtime';
@@ -163,13 +164,14 @@ export function App() {
     }),
     [escape],
   );
-  // The library save (Task 30): the status chip and the first-mark question.
+  // The library save (Task 30): the status chip, the first-mark question, and then the form check (Task 31).
   const opened = view.kind === 'ready' ? view.doc : null;
   const onSaveFailure = useCallback(
     (what: 'save' | 'forget') => setNote({ text: what === 'save' ? 'Couldn’t save this PDF to your library. Try again.' : 'Couldn’t undo the save. Try again.' }),
     [],
   );
   const save = useSave({ opened, params, backend, onFailure: onSaveFailure });
+  const form = useFormBounce({ opened, save, source, backend });
   const [reader, setReader] = useState<ReaderChrome | null>(null);
   const canEscape = source !== null && !leaving;
   const idleCommands = useMemo(() => createIdleCommands({ source, canOpenInChrome: canEscape, ui }), [source, canEscape, ui]);
@@ -201,6 +203,7 @@ export function App() {
         {view.kind === 'ready' && (
           <Reader doc={view.doc} params={params} rootRef={root} pageFieldRef={pageField} ui={ui} save={save} onChrome={setReader} />
         )}
+        {view.kind === 'ready' && form.notice !== null && <FormBanner kind={form.notice} onDismiss={form.dismiss} />}
         {!leaving && view.kind === 'loading' && prompt === null && (
           <div role="progressbar" aria-label="Loading the PDF" className={styles.progress} />
         )}
