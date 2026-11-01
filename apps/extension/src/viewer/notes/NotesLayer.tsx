@@ -172,8 +172,11 @@ function Notes({ doc, textLayers, pages, store, wiring }: NotesLayerProps & { wi
     (target: NoteTarget, t0: number) => {
       opening.current = { threadId: target.threadId, t0 };
       handled.current.add(target.threadId); // opened here, not restored
+      const wasActive = session.state().active === target.threadId;
       session.setActive(target.threadId);
       setFocusThread(target.threadId);
+      // An open card already shows its box, which focuses itself only when it appears.
+      if (wasActive) focusBoxSoon(target.threadId);
     },
     [session],
   );
@@ -214,8 +217,6 @@ function Notes({ doc, textLayers, pages, store, wiring }: NotesLayerProps & { wi
           nothingOpened(target);
           // A note on the whole document sits at the top of the first page: show it there.
           if (target && pages.current && pages.current.currentPage() !== 0) void pages.current.goToPage(0);
-          // A document note sits at the top of the first page: show it there.
-          if (target && pages.current?.currentPage() !== 0) void pages.current?.goToPage(0);
         },
       },
     };
@@ -281,7 +282,7 @@ function Notes({ doc, textLayers, pages, store, wiring }: NotesLayerProps & { wi
       if (st.active === null && editingRef.current === null) return;
       const el = e.target instanceof Element ? e.target : null;
       if (!el || el === scroller) return; // the page list's own scroll bar
-      if (el.closest(`[id^="${CARD_ID_PREFIX}"]`)) return; // a card: its own click decides (activate finishes the open one)
+      if (el.closest(`[id^="${CARD_ID_PREFIX}"], [data-note-pin]`)) return; // a card or a pin: its own click decides
       if (el.closest('[role="menu"], [role="dialog"], [role="alertdialog"], [data-radix-popper-content-wrapper]')) return;
       if (st.active !== null && noteAt(e.clientX, e.clientY) === st.active) return; // the active note's own passage
       deactivate();
@@ -316,8 +317,8 @@ function Notes({ doc, textLayers, pages, store, wiring }: NotesLayerProps & { wi
     const t = s.threads.find((x) => x.id === s.active);
     if (t && t.draftOfTab !== null && !handled.current.has(t.id)) {
       handled.current.add(t.id);
-      setFocusThread(t.id);
       reveal(t.id);
+      focusBoxSoon(t.id); // its box appeared before this effect ran, so it did not take the focus itself
     }
     // A restored edit of a sent note: its editor opens again with the unsent text.
     if (editingRef.current === null) {
@@ -447,7 +448,10 @@ function Notes({ doc, textLayers, pages, store, wiring }: NotesLayerProps & { wi
         const body = session.startEdit(id);
         if (body === null) return;
         const was = editingRef.current;
-        if (was && was.id !== id) finishEdit(was);
+        if (was && was.id !== id) {
+          finishEdit(was);
+          setEditing(null); // finished once: activate() below must not finish it again
+        }
         if (session.state().active !== t.id) activate(t.id);
         setEditing({ id, threadId: t.id, body });
         focusEditorSoon(t.id);
@@ -499,6 +503,7 @@ function Notes({ doc, textLayers, pages, store, wiring }: NotesLayerProps & { wi
           key={t.id}
           type="button"
           className={styles.pin}
+          data-note-pin=""
           data-theme="light"
           data-active={s.active === t.id ? 'true' : 'false'}
           style={{ left: x - PIN_SIZE / 2, top: y - PIN_SIZE / 2 }}
@@ -545,6 +550,17 @@ function placementOf(r: Resolution | undefined): CardPlacement {
   if (!r) return 'placed';
   if (!r.placed) return 'unplaced';
   return r.by === 'fuzzy' || r.by === 'caption' || r.by === 'image' ? 'moved' : 'placed';
+}
+
+/** Puts the caret at the end of a card's note or reply box, unless the focus is already in that card. */
+function focusBoxSoon(threadId: ThreadId): void {
+  requestAnimationFrame(() => {
+    const card = document.getElementById(`${CARD_ID_PREFIX}${threadId}`);
+    const box = card?.querySelector<HTMLTextAreaElement>('textarea');
+    if (!card || !box || card.contains(document.activeElement)) return;
+    box.focus({ preventScroll: true });
+    box.setSelectionRange(box.value.length, box.value.length);
+  });
 }
 
 /**
