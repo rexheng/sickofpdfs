@@ -275,3 +275,12 @@ export function planPdfImport(read: PdfAnnotation[], known: { refs: { pdfRef: st
 - **8.2:** write on a fresh document handle that loads only the annotated pages (PDFium rewrites every loaded object). Keep `fixXrefStreamTail`: PDFium writes a broken xref stream in the incremental tail for files that use xref streams (7 of 11 inputs).
 - **8.3:** pass `replyAppearance: 'empty'` (sample A, D8.1) until the owner's 10-minute Foxit/Acrobat check (W-F1). Add `ImportedMeta` to `CommentMeta` in `packages/core/src/model/rows.ts`. Imported Claude comments come back as author 'me' with a "from Claude" label.
 - **8.1 additions (accepted):** the optional `lineRgb`, `areaRgb`, `threadRgb` and `replyAppearance`, plus `skippedMarks` in the result.
+
+## Decision after 7.0 (controller, 1 Nov 2026)
+
+- **OCR_ENGINE = PaddleOCR PP-OCRv6 tiny on onnxruntime-web** (6.0 MiB), with small (29.8 MiB) behind "Better recognition available". This departs from the zip-size tie-break, which Tesseract.js wins by 0.8 MiB, because PP-OCR is better on degraded pages, formulas, French and German accents and photographed pages, and uses about 0.55 GB against Tesseract's 1.9–3.1 GB. Backends: wasm, 1 thread, until W-O1 settles threads and WebGPU. Render at 150 dpi, det max side 1280, one pass for all Latin languages. Full report: `docs/spikes/phase7-ocr-report.md`.
+- **Targets redefined:** the synthetic CER ≤ 1.5% target applies to prose pages (formula and figure pages are reported, not gated). The 97% word-box gate is defined on text pages.
+- **Before scans ship (blocking):**
+  - **W-O2:** a comparison with Chrome's own Screen AI OCR on the owner's Windows laptop. The tooling is ready (report §9).
+  - **W-O1:** threads and WebGPU speed against the 3 s visible page p95 and 20 pages a minute.
+- **7.x:** find a clearer public-domain German scan for the German floor; the Kafka sample is too blurry for any engine. Phase 3 and 7.2 agree on one onnxruntime-web build: plain wasm unless W-O1 picks WebGPU (+3.2 MiB zipped).
