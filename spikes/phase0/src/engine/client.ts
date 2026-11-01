@@ -166,7 +166,11 @@ export async function createStockBlobEngine(): Promise<SpikeEngine> {
       const content = await fetchPdf(url);
       const d = await engine.openDocumentBuffer({ id: `doc-${++opened}`, content }, { password }).toPromise();
       docs.set(d.id, d);
-      return { docId: d.id, pageCount: d.pageCount, pages: d.pages.map((p) => ({ width: p.size.width, height: p.size.height })) };
+      return {
+        docId: d.id,
+        pageCount: d.pageCount,
+        pages: d.pages.map((p) => ({ width: p.size.width, height: p.size.height, rotation: ((p.rotation * 90) % 360) as 0 | 90 | 180 | 270 })),
+      };
     },
     async render(docId, pageIndex, scale, rect) {
       const d = doc(docId);
