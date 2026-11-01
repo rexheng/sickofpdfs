@@ -19,6 +19,9 @@ importers:
       '@axe-core/playwright':
         specifier: 4.14.0
         version: 4.14.0(playwright-core@1.63.0)
+      '@embedpdf/pdfium':
+        specifier: 2.15.1
+        version: 2.15.1(patch_hash=026cb1377c264965e1da589d8880030ba34682c95e1ae5a3175a227f623d9b00)
       '@eslint/css':
         specifier: 2.0.1
         version: 2.0.1
@@ -72,6 +75,12 @@ importers:
       '@sop/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@sop/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@sop/viewer':
+        specifier: workspace:*
+        version: link:../../packages/viewer
       '@wxt-dev/module-react':
         specifier: 1.2.2
         version: 1.2.2(vite@8.3.5(@types/node@22.20.5)(jiti@2.7.0))(wxt@0.21.5(eslint@10.14.0(jiti@2.7.0))(rolldown@1.2.16)(typescript@6.0.3)(vite@8.3.5(@types/node@22.20.5)(jiti@2.7.0)))
@@ -155,6 +164,22 @@ importers:
       '@embedpdf/pdfium':
         specifier: 2.15.1
         version: 2.15.1(patch_hash=026cb1377c264965e1da589d8880030ba34682c95e1ae5a3175a227f623d9b00)
+      '@sop/core':
+        specifier: workspace:*
+        version: link:../core
+      react:
+        specifier: 19.3.1
+        version: 19.3.1
+      react-dom:
+        specifier: 19.3.1
+        version: 19.3.1(react@19.3.1)
+    devDependencies:
+      '@types/react':
+        specifier: 19.3.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: 19.3.0
+        version: 19.3.0(@types/react@19.3.0)
 
   tooling/eslint-plugin-sop:
     dependencies:
