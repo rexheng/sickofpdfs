@@ -9,6 +9,10 @@
 //   over a row window instead of every line pair (dense table pages have thousands of lines);
 // - truncated inputs (an object list or text runs cut short by their budgets) mark the result incomplete, and cut-short
 //   text runs make every figure medium confidence (body text may be missing, so pairing is unsure).
+// Changed after Gate 2's first run (fig2, @2): sparse lines (table rows) are not body text and a table's region runs over
+// its rows; boxes follow the visible ink (cut to the page, without clipped paths or a form's background); captions pair
+// with a candidate's graphics, not its absorbed text; badges and axis-label strips are not outlined; big items join in
+// one sweep; a page over budget keeps its caption-based figures.
 //
 // Pure: FigureService (figure-service.ts) feeds it listPageObjects({ recurseForms: true }), getTextRuns with a budget and
 // getStructTree of one page. Every rect in and out is in points, unrotated page space, top-left origin of the crop box.
@@ -16,7 +20,7 @@ import type { PageFigure } from '@sop/core';
 import type { PageObjectInfo, PdfRect as Rect, Rotation, StructElement, TextRun } from '../backend/types';
 
 /** Stored with page_figures rows and figure anchors; a new value makes cached results stale. */
-export const DETECTOR_VERSION = 'objects+captions@1';
+export const DETECTOR_VERSION = 'objects+captions@2';
 /** findFigures' default time budget, in ms. Typical paper pages take 0.5–6 ms (P0-10). */
 export const FIND_FIGURES_BUDGET_MS = 20;
 
