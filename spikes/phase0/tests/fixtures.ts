@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test as base, chromium, type BrowserContext, type Page } from '@playwright/test';
 import { record, recordedBy, RESULTS_DIR } from './record';
+import type { FormInfo, FormWalk } from '../src/engine/spike-native';
 import { startServer } from './server.mjs';
 import type { TextlayerFixture } from './textlayer-fixtures';
 
@@ -78,6 +79,15 @@ export interface ObjectsPageOptions {
   pages?: number;
 }
 
+/** getFormInfo's reply (src/checks/forms.ts, P0-7), plus the check's own timings. */
+export interface FormsPageResult extends FormInfo, FormWalk {
+  pageCount: number;
+  /** The same call as the page sees it: elapsedMs plus the message round trip. */
+  roundTripMs: number;
+  /** The PDFium functions getFormInfo calls that the wasm does not export (expected: none). */
+  missingFunctions: string[];
+}
+
 interface Fixtures {
   server: SpikeServer;
   /** Opens spike.html?<q> in the test's browser (launched on first use) and resolves window.__result. */
@@ -98,6 +108,11 @@ interface Fixtures {
    * paper instead: `pages` (one row per page), `p50Ms`, `p95Ms`, `maxMs`, and `resnetPage0Labels`.
    */
   objectsPage(file: string, pageIndex: number, opts?: ObjectsPageOptions): Promise<any>;
+  /**
+   * The forms check (src/checks/forms.ts, P0-7) on fixtures/out/<root>/<path> (default root: the fetched classifier
+   * fixtures, e.g. 'learning/nber-w29000.pdf'): opens the document in the engine worker and calls getFormInfo.
+   */
+  formsPage(path: string, root?: string): Promise<FormsPageResult>;
   /** The browser that spikePage and spikeScreenshot share, launched on first use. */
   _spikeSession: () => Promise<SpikeSession>;
   /** Results of every spike page opened in this test, for the failure record. */
@@ -305,6 +320,10 @@ export const test = base.extend<Fixtures>({
       }
       return spikePage({ check: 'objects', file: server.url(file), page: pageIndex, detect: opts.detect ? 1 : 0, textRuns: opts.textRuns ? 1 : 0 });
     });
+  },
+
+  formsPage: async ({ spikePage, server }, use) => {
+    await use((path, root = 'classifier') => spikePage({ check: 'forms', file: server.url(`${root}/${path}`) }));
   },
 });
 

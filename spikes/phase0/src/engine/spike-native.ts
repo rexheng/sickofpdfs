@@ -143,6 +143,38 @@ export interface DetectFiguresResult {
   truncated: boolean;
   phases: { objectsMs: number; structMs: number; runsMs: number; findMs: number };
 }
+/** What FPDF_GetFormType says about a document (fpdf_formfill.h FORMTYPE_*, by value). */
+export type FormType = 'none' | 'acroform' | 'xfa-full' | 'xfa-foreground';
+/** The P0-7 interface, copied into PdfBackend by Task 15: getFormInfo returns these two fields (and, in the spike, the FormWalk extras). */
+export interface FormInfo {
+  formType: FormType;
+  /** Index of the first page with a fillable widget (see FILLABLE_FIELD_TYPES). Only `acroform` documents are walked; null for the rest. */
+  firstFillablePage: number | null;
+}
+/** Phase 1 treats a PDF as a form when it is XFA, or has a fillable widget: a bare /AcroForm (hyperref adds one to LaTeX papers) does not count. */
+export const hasFillableFields = (i: { formType: string; firstFillablePage: number | null }) => i.formType.startsWith('xfa') || i.firstFillablePage !== null;
+/** What the walk saw, besides the answer (the spike's own numbers: the interface does not carry them). */
+export interface FormWalk {
+  /** Pages whose widgets were read: 0 unless the form type is `acroform`; the walk stops at the first fillable page. */
+  pagesWalked: number;
+  /** The widgets on the walked pages, by form-field type name (PUSHBUTTON, TEXTFIELD, …; NO_FIELD when PDFium finds no field for the widget). */
+  widgetTypes: Record<string, number>;
+  /** Annotations of any kind opened with EPDFPage_GetAnnotRaw (each leaks 130–240 bytes in this wasm: see getFormInfo). */
+  rawAnnotsOpened: number;
+  /** Measured inside the engine worker: the whole getFormInfo call. */
+  elapsedMs: number;
+}
+/** FPDF_GetFormType's result (fpdf_formfill.h FORMTYPE_*), by value. */
+const FORM_TYPES: FormType[] = ['none', 'acroform', 'xfa-full', 'xfa-foreground'];
+/** FPDF_FORMFIELD_* (fpdf_formfill.h), by value; EmbedPDF's PDF_FORM_FIELD_TYPE has the same values for 0–7 (8–15 are its XFA kinds). */
+const FORM_FIELD_NAMES = ['UNKNOWN', 'PUSHBUTTON', 'CHECKBOX', 'RADIOBUTTON', 'COMBOBOX', 'LISTBOX', 'TEXTFIELD', 'SIGNATURE'];
+/** The field types a person fills in: CHECKBOX 2, RADIOBUTTON 3, COMBOBOX 4, LISTBOX 5, TEXTFIELD 6. Push buttons (1) and signatures (7) do not count. */
+const FILLABLE_FIELD_TYPES: ReadonlySet<number> = new Set([2, 3, 4, 5, 6]);
+/** FPDF_ANNOT_SUBTYPE WIDGET (fpdf_annot.h). */
+const FPDF_ANNOT_WIDGET = 20;
+/** FPDFAnnot_GetFormFieldType's answer for a widget that is not (yet) linked to a form field. */
+const NO_FIELD = -1;
+
 /** The production limits for getPageObjects in detectFigures (06 §3.2). */
 export const FIGURE_OBJECT_LIMITS = { recurseForms: true, maxObjects: 20_000, budgetMs: 15 } as const;
 /** How deep getStructTree reads the structure tree. */
@@ -186,8 +218,26 @@ const OBJECT_FUNCTIONS = [
   'FPDFTextObj_GetFontSize',
 ] as const;
 type ObjectFunction = (typeof OBJECT_FUNCTIONS)[number];
-/** The wasm exports the P0-10 methods call directly (no cwrap): every argument and result is a number. */
-type Exports = Record<ObjectFunction, (...args: number[]) => number> & {
+/** Every PDFium function getFormInfo (P0-7) calls, through the wasm exports. */
+const FORM_FUNCTIONS = [
+  'FPDF_GetFormType',
+  'PDFiumExt_OpenFormFillInfo',
+  'PDFiumExt_InitFormFillEnvironment',
+  'PDFiumExt_ExitFormFillEnvironment',
+  'PDFiumExt_CloseFormFillInfo',
+  'EPDFPage_GetAnnotCountRaw',
+  'EPDFPage_GetAnnotRaw',
+  'FPDFPage_GetAnnotCount',
+  'FPDFPage_GetAnnot',
+  'FPDFPage_CloseAnnot',
+  'FPDFAnnot_GetSubtype',
+  'FPDFAnnot_GetFormFieldType',
+  'FORM_OnAfterLoadPage',
+  'FORM_OnBeforeClosePage',
+] as const;
+type FormFunction = (typeof FORM_FUNCTIONS)[number];
+/** The wasm exports the P0-10 and P0-7 methods call directly (no cwrap): every argument and result is a number. */
+type Exports = Record<ObjectFunction | FormFunction, (...args: number[]) => number> & {
   memory: WebAssembly.Memory;
   malloc(bytes: number): number;
   free(ptr: number): void;
@@ -410,6 +460,119 @@ export class SpikeNative extends PdfiumNative {
   missingObjectFunctions(): string[] {
     const exported = this.pdfiumModule.pdfium.wasmExports as unknown as Record<string, unknown>;
     return OBJECT_FUNCTIONS.filter((name) => typeof exported[name] !== 'function');
+  }
+
+  /** The wasm heap's size in bytes. */
+  heapBytes(): number {
+    return this.exports().memory.buffer.byteLength;
+  }
+
+  /**
+   * Test helper: an estimate of the wasm heap's bytes in use. A heap that has grown holds free space, so its size shows
+   * nothing about a leak until that space is used up. This takes 1 KiB blocks until the heap grows and counts them (that
+   * is the free space), then frees them again; the rest is in use. It grows the heap by one step each time it runs, and
+   * counts holes under 1 KiB as in use.
+   */
+  heapInUse(): number {
+    const x = this.exports();
+    const size = this.heapBytes();
+    const blocks: number[] = [];
+    while (this.heapBytes() === size) {
+      const block = x.malloc(1024);
+      if (!block) break;
+      blocks.push(block);
+    }
+    for (const block of blocks) x.free(block);
+    return size - Math.max(0, blocks.length - 1) * 1024; // the last block is the one that did not fit
+  }
+
+  /** The PDFium functions getFormInfo calls that the wasm does not export (they are called as wasm exports). */
+  missingFormFunctions(): string[] {
+    const exported = this.pdfiumModule.pdfium.wasmExports as unknown as Record<string, unknown>;
+    return FORM_FUNCTIONS.filter((name) => typeof exported[name] !== 'function');
+  }
+
+  /**
+   * P0-7: the document's form type (FPDF_GetFormType) and, for an `acroform`, the first page with a fillable widget.
+   * Phase 1 uses it to tell a real form from a paper whose /AcroForm is empty (hyperref adds one). XFA documents are
+   * forms whatever their pages hold, so only `acroform` is walked; `firstFillablePage` is null for the other types.
+   *
+   * The walk loads no page. It reads each page's /Annots raw (EPDFPage_GetAnnotCountRaw/GetAnnotRaw) and asks every
+   * Widget (FPDFAnnot_GetSubtype) its type with FPDFAnnot_GetFormFieldType, through one form-fill environment made for
+   * the call. Walks that load the pages were too slow for the 200 ms bar on the 133-page NBER paper, in cold runs of the
+   * worker: 25–50 ms for this walk, 183–232 ms for FPDF_LoadPage + FPDFPage_GetAnnot on every page, and 127–215 ms for
+   * EmbedPDF's getPageAnnoWidgets (it also makes a form-fill environment a page and writes an /NM into every annotation).
+   *
+   * Two things to know about the raw read:
+   * - EPDFPage_GetAnnotRaw leaks 130–240 bytes an annotation here (by heap growth and by bytes in use), though every
+   *   annotation is closed with FPDFPage_CloseAnnot (a closed page-based annotation leaks nothing). It is not given back
+   *   when the document closes. The walk reads each annotation once, so that is once for a document: 136–245 KB for
+   *   NBER's 1,026 link annotations. `rawAnnotsOpened` counts them; P0-7 measures the rate.
+   * - A Widget that the /AcroForm /Fields tree leaves out is linked to its field only when its page is loaded
+   *   (FORM_OnAfterLoadPage; PDFium's FixPageFields), so FPDFAnnot_GetFormFieldType gives -1 for it. A page with such a
+   *   widget is read again loaded (FPDFPage_GetAnnot), as PDFium shows it. That only happens in malformed forms.
+   *
+   * The walk stops at the first page with a CHECKBOX, RADIOBUTTON, COMBOBOX, LISTBOX or TEXTFIELD widget
+   * (FILLABLE_FIELD_TYPES); `widgetTypes` counts every widget on the pages up to and including that one. The widgets, the
+   * page and the form-fill environment are closed when the call ends, whatever happens.
+   */
+  getFormInfo(docId: string): FormInfo & FormWalk {
+    const start = performance.now();
+    const doc = this.doc(docId);
+    const x = this.exports();
+    const ctx = this.cache.getContext(doc.id)!;
+    const formType = FORM_TYPES[x.FPDF_GetFormType(ctx.docPtr)] ?? 'none';
+    const widgetTypes: Record<string, number> = {};
+    let firstFillablePage: number | null = null;
+    let pagesWalked = 0;
+    let rawAnnotsOpened = 0;
+    if (formType === 'acroform') {
+      const formInfo = x.PDFiumExt_OpenFormFillInfo();
+      const form = x.PDFiumExt_InitFormFillEnvironment(ctx.docPtr, formInfo);
+      try {
+        for (let pageIndex = 0; pageIndex < doc.pageCount && firstFillablePage === null; pageIndex++) {
+          pagesWalked++;
+          const count = x.EPDFPage_GetAnnotCountRaw(ctx.docPtr, pageIndex);
+          rawAnnotsOpened += count;
+          let types = this.widgetFieldTypes(form, count, (i) => x.EPDFPage_GetAnnotRaw(ctx.docPtr, pageIndex, i));
+          if (types.includes(NO_FIELD)) {
+            const page = ctx.acquirePage(pageIndex);
+            x.FORM_OnAfterLoadPage(page.pagePtr, form);
+            try {
+              types = this.widgetFieldTypes(form, x.FPDFPage_GetAnnotCount(page.pagePtr), (i) => x.FPDFPage_GetAnnot(page.pagePtr, i));
+            } finally {
+              x.FORM_OnBeforeClosePage(page.pagePtr, form);
+              page.release();
+            }
+          }
+          for (const type of types) {
+            const name = FORM_FIELD_NAMES[type] ?? (type === NO_FIELD ? 'NO_FIELD' : `TYPE_${type}`);
+            widgetTypes[name] = (widgetTypes[name] ?? 0) + 1;
+            if (FILLABLE_FIELD_TYPES.has(type)) firstFillablePage = pageIndex;
+          }
+        }
+      } finally {
+        x.PDFiumExt_ExitFormFillEnvironment(form);
+        x.PDFiumExt_CloseFormFillInfo(formInfo);
+      }
+    }
+    return { formType, firstFillablePage, pagesWalked, widgetTypes, rawAnnotsOpened, elapsedMs: round2(performance.now() - start) };
+  }
+
+  /** FPDFAnnot_GetFormFieldType of each Widget among `count` annotations (`annotAt(i)` opens one); every annotation is closed again. */
+  private widgetFieldTypes(form: number, count: number, annotAt: (i: number) => number): number[] {
+    const x = this.exports();
+    const types: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const annot = annotAt(i);
+      if (!annot) continue;
+      try {
+        if (x.FPDFAnnot_GetSubtype(annot) === FPDF_ANNOT_WIDGET) types.push(x.FPDFAnnot_GetFormFieldType(form, annot));
+      } finally {
+        x.FPDFPage_CloseAnnot(annot);
+      }
+    }
+    return types;
   }
 
   /**
