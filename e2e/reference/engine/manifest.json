@@ -1,0 +1,199 @@
+{
+  "generated": "2026-11-01",
+  "note": "The engine reference set (Gate 2, CLAUDE.md rule 6). Real PDFs fetched by URL (sha256 checked) or made by `pnpm fixtures`; nothing here is committed except this list and baseline.json (hashes). 'path' is relative to test-assets/. A fixture with sha256 null is made by a generator that is not byte-for-byte reproducible (it writes a creation date): the baseline's per-page hashes still cover it.",
+  "max_bytes": 20971520,
+  "items": [
+    {
+      "id": "resnet",
+      "source": "fetch",
+      "path": "classifier/learning/arxiv-1512.03385-resnet.pdf",
+      "url": "https://arxiv.org/pdf/1512.03385",
+      "source_page": "https://arxiv.org/abs/1512.03385",
+      "sha256": "1e0651b6810ecba34a3dbc5b5b0209226f889004607c1f203540a48d64e5a93a",
+      "bytes": 819383,
+      "pages": 12,
+      "license": "arXiv non-exclusive distribution licence (not an open licence). Fetched by URL and never committed; only hashes are kept.",
+      "covers": "Real LaTeX paper, 12 pages: two columns, maths, figures and tables."
+    },
+    {
+      "id": "attention",
+      "source": "fetch",
+      "path": "classifier/learning/arxiv-1706.03762-attention.pdf",
+      "url": "https://arxiv.org/pdf/1706.03762",
+      "source_page": "https://arxiv.org/abs/1706.03762",
+      "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697",
+      "bytes": 2215244,
+      "pages": 15,
+      "license": "arXiv non-exclusive distribution licence (not an open licence). Fetched by URL and never committed; only hashes are kept.",
+      "covers": "Real LaTeX paper, 15 pages: two columns, maths, wide tables and figures."
+    },
+    {
+      "id": "paper-50",
+      "source": "fixture",
+      "path": "paper-50.pdf",
+      "made_by": "scripts/fixtures/make-paper50.mjs",
+      "sha256": "25b812065d84c68734cccb9c0eae276f30dfa7c0fc34f8f480942a664c66cbc0",
+      "bytes": 1057026,
+      "covers": "Pages 1-50 of an NBER working paper whose standard fonts (Times, Helvetica, Courier) are not embedded: the font fix (b561c78) changes how its first pages are drawn."
+    },
+    {
+      "id": "two-column",
+      "source": "fixture",
+      "path": "tl-two-column.pdf",
+      "made_by": "scripts/fixtures/make-textlayer.mjs",
+      "sha256": null,
+      "bytes": null,
+      "covers": "Text-layer fixture: two columns with a heading; selection must stay inside a column."
+    },
+    {
+      "id": "ligatures",
+      "source": "fixture",
+      "path": "tl-ligatures.pdf",
+      "made_by": "scripts/fixtures/make-textlayer.mjs",
+      "sha256": null,
+      "bytes": null,
+      "covers": "Text-layer fixture: the standard ligatures fi, fl, ff and ffi."
+    },
+    {
+      "id": "maths",
+      "source": "fixture",
+      "path": "tl-maths.pdf",
+      "made_by": "scripts/fixtures/make-textlayer.mjs",
+      "sha256": null,
+      "bytes": null,
+      "covers": "Text-layer fixture: superscripts (x squared) and spaced operators."
+    },
+    {
+      "id": "rotated-page",
+      "source": "fixture",
+      "path": "tl-rotated-page.pdf",
+      "made_by": "scripts/fixtures/make-textlayer.mjs",
+      "sha256": null,
+      "bytes": null,
+      "covers": "Text-layer fixture: the two-column page with /Rotate 90."
+    },
+    {
+      "id": "rotated-table",
+      "source": "fixture",
+      "path": "tl-rotated-table.pdf",
+      "made_by": "scripts/fixtures/make-textlayer.mjs",
+      "sha256": null,
+      "bytes": null,
+      "covers": "Text-layer fixture: a table whose text is turned 90 degrees on an upright page."
+    },
+    {
+      "id": "rtl",
+      "source": "fixture",
+      "path": "tl-rtl.pdf",
+      "made_by": "scripts/fixtures/make-textlayer.mjs",
+      "sha256": null,
+      "bytes": null,
+      "covers": "Text-layer fixture: Hebrew (right to left) mixed with Latin."
+    },
+    {
+      "id": "scan-120",
+      "source": "fixture",
+      "path": "scan-120.pdf",
+      "made_by": "scripts/fixtures/make-scan.mjs",
+      "sha256": "ac1b50c62acbb85ad465755eb2f7ed9422cf293de8482c3545f083c227fc7f84",
+      "bytes": 36711145,
+      "covers": "120-page image-only scan (JPEG pages, no text layer): the no-text path and large image decoding. Sampled."
+    },
+    {
+      "id": "tagged",
+      "source": "fixture",
+      "path": "tagged.pdf",
+      "made_by": "scripts/fixtures/make-tagged.mjs",
+      "sha256": null,
+      "bytes": null,
+      "covers": "Chromium tagged PDF: a structure tree with a Figure and its alt text."
+    },
+    {
+      "id": "mixed",
+      "source": "fixture",
+      "path": "mixed.pdf",
+      "made_by": "scripts/fixtures/make-mixed.mjs",
+      "sha256": "fa1c044cb7cf169ddfdeaa89c22a42792cfbb3748e6e71cbe6691125beba8b9f",
+      "bytes": 1556,
+      "covers": "Five pages of different sizes and /Rotate values (Letter, A4 landscape, rotated Letter, 16:9, A5)."
+    },
+    {
+      "id": "links",
+      "source": "fixture",
+      "path": "links.pdf",
+      "made_by": "scripts/fixtures/make-links.mjs",
+      "sha256": "04d5a1f187653f291ee8e81325d3d508f8551cf7edf4927b5ddd2cebe609d375",
+      "bytes": 1976,
+      "covers": "Link annotations (GoTo, URI, an inert javascript: link) drawn with the page."
+    },
+    {
+      "id": "objects",
+      "source": "fixture",
+      "path": "objects.pdf",
+      "made_by": "scripts/fixtures/make-objects.mjs",
+      "sha256": "4a39b1603ef0d8c15ee9e29b6dace1df3ab18e09b184bc58c6811fb7249cd3cb",
+      "bytes": 174942,
+      "covers": "Page 1 with a photo, a 48-path vector chart and a table; page 2 with 50,000 tiny rectangles."
+    },
+    {
+      "id": "form-1040",
+      "source": "fetch",
+      "path": "classifier/not-learning/tax-form-irs-1040.pdf",
+      "url": "https://www.irs.gov/pub/irs-pdf/f1040.pdf",
+      "source_page": "https://www.irs.gov/forms-pubs/about-form-1040",
+      "sha256": "3d31c226df0d189ced80e039d01cf0f8820c1019681a0f0ca6264de277b7e982",
+      "bytes": 220237,
+      "pages": 2,
+      "license": "US federal government work (public domain). Fetched by URL and never committed.",
+      "covers": "A real fillable form (IRS Form 1040, AcroForm fields): widgets drawn with the page. A blank public form, not a private document."
+    },
+    {
+      "id": "book-boyd",
+      "source": "fetch",
+      "path": "classifier/learning/textbook-boyd-convex-optimization.pdf",
+      "url": "https://web.stanford.edu/~boyd/cvxbook/bv_cvxbook.pdf",
+      "source_page": "https://web.stanford.edu/~boyd/cvxbook/",
+      "sha256": "40d976c83c18cce1900eff8c41bd5ad408c102b813af39d05ff85678ccf8d76e",
+      "bytes": 6881335,
+      "pages": 714,
+      "license": "Copyrighted; the author offers the PDF free to download from his site (not an open licence). Fetched by URL and never committed; only hashes are kept.",
+      "covers": "714-page book (LaTeX): the large-document path. Sampled: pages 1-5, the last 5 and every 10th."
+    },
+    {
+      "id": "multilingual",
+      "source": "fetch",
+      "path": "figures/arxiv-2108.03509.pdf",
+      "url": "https://arxiv.org/pdf/2108.03509v2",
+      "source_page": "https://arxiv.org/abs/2108.03509v2",
+      "sha256": "1f92be6747a7c1d877c4dc21ebea6f905a8f6213683d241c62951abe059c3d45",
+      "bytes": 513985,
+      "pages": 18,
+      "license": "CC BY 4.0",
+      "covers": "Multilingual semantic-parsing paper (LuaTeX): Hebrew, CJK and other scripts on its pages, so the Noto fallback fonts matter."
+    },
+    {
+      "id": "rotated-journal",
+      "source": "fetch",
+      "path": "figures/elife-74510.pdf",
+      "url": "https://cdn.elifesciences.org/articles/74510/elife-74510-v2.pdf",
+      "source_page": "https://doi.org/10.7554/eLife.74510",
+      "sha256": "14d3a4c377211e9c46632c132c85c511fb1ec959f4d47b3293edf5b68fba1dec",
+      "bytes": 4827987,
+      "pages": 17,
+      "license": "CC BY 4.0",
+      "covers": "eLife article (InDesign): a table set sideways, with its text turned 90 degrees."
+    },
+    {
+      "id": "type3-maths",
+      "source": "fetch",
+      "path": "figures/arxiv-2209.00346.pdf",
+      "url": "https://arxiv.org/pdf/2209.00346v1",
+      "source_page": "https://arxiv.org/abs/2209.00346v1",
+      "sha256": "e3a46cb6b61a78e31631e6bddb62958ea27029134e645b99ddb99c216f3533b9",
+      "bytes": 266260,
+      "pages": 16,
+      "license": "CC BY 4.0",
+      "covers": "Pure-maths paper (dvips): Type 3 bitmap fonts drawn as stencil masks, and dense formulas."
+    }
+  ]
+}
