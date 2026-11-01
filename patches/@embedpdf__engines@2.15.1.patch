@@ -29,3 +29,35 @@ index 0d295c397695e3ae0bda259a0064220911dfc0d8..36d25022d88b93b3f9c71907c253d37e
      /**
       * GetFontData - called by PDFium to get font bytes
       */
+diff --git a/dist/lib/pdfium/index.js b/dist/lib/pdfium/index.js
+index 64d60bbe3a5d62aac8aaca2f373c0310ff6991a3..64de4bfb54044f1dc953b1e3b2de61cd4e5587a4 100644
+--- a/dist/lib/pdfium/index.js
++++ b/dist/lib/pdfium/index.js
+@@ -12,15 +12,9 @@ import { fonts as fonts$1 } from "@embedpdf/fonts-hebrew";
+ import { fonts } from "@embedpdf/fonts-latin";
+ import { createPdfiumEngine } from "./web/worker-engine.js";
+ function buildCdnUrls(version = "latest") {
+-  return {
+-    jp: `https://cdn.jsdelivr.net/npm/@embedpdf/fonts-jp@${version}/fonts`,
+-    kr: `https://cdn.jsdelivr.net/npm/@embedpdf/fonts-kr@${version}/fonts`,
+-    sc: `https://cdn.jsdelivr.net/npm/@embedpdf/fonts-sc@${version}/fonts`,
+-    tc: `https://cdn.jsdelivr.net/npm/@embedpdf/fonts-tc@${version}/fonts`,
+-    arabic: `https://cdn.jsdelivr.net/npm/@embedpdf/fonts-arabic@${version}/fonts`,
+-    hebrew: `https://cdn.jsdelivr.net/npm/@embedpdf/fonts-hebrew@${version}/fonts`,
+-    latin: `https://cdn.jsdelivr.net/npm/@embedpdf/fonts-latin@${version}/fonts`
+-  };
++  // sickofpdfs: no CDN font list. Every font ships inside the extension (packages/viewer fonts.ts), and nothing may
++  // ask a CDN for one (no network traffic except what the owner turns on).
++  return { jp: "", kr: "", sc: "", tc: "", arabic: "", hebrew: "", latin: "" };
+ }
+ function toFontVariants(fonts2, baseUrl) {
+   return fonts2.map((f) => ({
+@@ -49,7 +43,7 @@ const cdnFontConfig = buildCdnFontConfig(FONT_CDN_URLS);
+ function createCdnFontConfig(version = "latest") {
+   return buildCdnFontConfig(buildCdnUrls(version));
+ }
+-const DEFAULT_PDFIUM_WASM_URL = "https://cdn.jsdelivr.net/npm/@embedpdf/pdfium@2.15.1/dist/pdfium.wasm";
++const DEFAULT_PDFIUM_WASM_URL = ""; // sickofpdfs: pdfium.wasm ships inside the extension
+ export {
+   B as BitmapFormat,
+   DEFAULT_PDFIUM_WASM_URL,
