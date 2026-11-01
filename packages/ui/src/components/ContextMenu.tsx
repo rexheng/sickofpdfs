@@ -27,6 +27,9 @@ export interface ContextMenuProps {
   label?: string;
 }
 
+/** Keys with a name that a row's hint may be, and that then run the row from anywhere in the menu, as a letter does. */
+const NAMED_KEYS: ReadonlySet<string> = new Set(['Delete']);
+
 /** Radix's own context-menu placement: the menu's top-left corner 2 px right of the pointer, so the release of the
  * right button never lands on the first item. It flips to the left of the pointer, and slides up until its bottom
  * meets the pointer, when there is no room. */
@@ -40,7 +43,7 @@ const POINTER_GAP = 2;
  *   shortcut hint right-aligned, 17 px separators, disabled rows at 38%.
  * - `swatches` adds the colour row (ColorSwatches) above the rows.
  * - Keyboard: Up and Down, Home and End, Enter and Space, Escape and typeahead as in every Radix menu. The keys 1 to 5
- *   pick a colour from anywhere in the menu, and a one-letter hint (H) runs its row. Both are consumed
+ *   pick a colour from anywhere in the menu, and a one-letter hint (H), or the hint Delete, runs its row. Both are consumed
  *   (preventDefault and stopPropagation), so the viewer's own shortcut handler never sees them a second time.
  *   Chords such as Ctrl+U are left to the viewer.
  * - It is modal, like a native context menu: a click outside only closes it, and the page does not scroll under it.
@@ -87,10 +90,10 @@ export function ContextMenu({ at, items, swatches, onClose, label = 'Mark up' }:
     let action: (() => void) | null = null;
     if (swatches !== undefined && color !== null) {
       action = () => swatches.onPick(color);
-    } else if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) {
+    } else if (!e.ctrlKey && !e.altKey && !e.metaKey && (e.key.length === 1 || NAMED_KEYS.has(e.key))) {
       const key = e.key.toLowerCase();
       const row = items.find(
-        (i) => i.kind === 'item' && i.disabled !== true && i.shortcut?.length === 1 && i.shortcut.toLowerCase() === key,
+        (i) => i.kind === 'item' && i.disabled !== true && i.shortcut !== undefined && i.shortcut.toLowerCase() === key && (key.length === 1 || NAMED_KEYS.has(i.shortcut)),
       );
       if (row?.kind === 'item') action = row.onSelect;
     }

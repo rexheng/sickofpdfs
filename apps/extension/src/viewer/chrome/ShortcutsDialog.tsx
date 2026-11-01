@@ -39,6 +39,13 @@ const READING: Row[] = [
   { id: 'reading.zoom', label: 'Zoom with the mouse wheel', keys: ['Ctrl+wheel'] },
 ];
 
+/** The keys of a mark that was clicked (mark-input.ts): not commands of their own, so they are listed here. */
+const FOCUSED_MARK: Row[] = [
+  { id: 'marks.focused.colour', label: 'Change a clicked mark’s colour', keys: ['1–5'] },
+  { id: 'marks.focused.delete', label: 'Remove a clicked mark', keys: ['Delete'] },
+  { id: 'marks.focused.step', label: 'Go to the next or previous mark', keys: ['Tab', 'Shift+Tab'] },
+];
+
 /**
  * "?" and Help → Keyboard shortcuts: the reading keys, then every command that has keys and works (`built`), in
  * command order, grouped as the menus are. Each row is the command's name (a row header) and its keys, each in a
@@ -50,6 +57,8 @@ export function ShortcutsDialog({ open, onOpenChange, commands }: ShortcutsDialo
     ...[...commands.values()]
       .filter((c) => c.built && c.keys.length > 0)
       .map((c) => ({ id: c.id, label: c.label, keys: [...new Set(c.keys.map(formatCombo))] })),
+    // Marks exist only where they can be made (not in Incognito).
+    ...(commands.get('marks.highlight')?.built === true ? FOCUSED_MARK : []),
   ];
   const groups = GROUPS.map((g) => ({ ...g, rows: rows.filter((r) => inGroup(r.id, g)) })).filter((g) => g.rows.length > 0);
   return (

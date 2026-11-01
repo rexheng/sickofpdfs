@@ -1,18 +1,22 @@
 // How the person marks text (Phase 2, S13): the mark keys, the mark-up menu's triggers, and a focused mark's keys.
 //
 // - With text selected: H highlights, Ctrl+U underlines, Ctrl+B bolds, Alt+Shift+5 strikes through (commands.ts). Each
-//   applies at once to the selection; pressing it again over the same text takes it off. The selection stays, so styles
-//   can be stacked (highlight plus underline).
+//   applies at once to the selection; doing it again over the same text takes it off. A mark action (a key, a menu row
+//   or a colour) lets go of the selection once the mark is drawn, so the mark's true colour shows at once, not under the
+//   selection's blue (ruling R71).
 // - Colour: a style the selection already has all over, in one colour, is toggled in that colour (so H always takes a
 //   highlight off again, whatever its colour). Otherwise H, the menu and the line styles use marks.lastColor. Picking a
 //   colour in the menu highlights in that colour and makes it the last colour.
-// - The menu opens only with text selected: on right-click over the pages, the menu key or Shift+F10. Shift+right-click,
-//   or a right-click with nothing selected, gives Chrome's own menu. Nothing ever opens by itself.
+// - The mark-up menu opens only with text selected: on right-click over the pages, the menu key or Shift+F10.
+// - The mark menu (ruling R72): a right-click on a mark (outside the selection) focuses the mark and opens its own menu:
+//   the five colours (keys 1 to 5), Remove (Delete) and Comment. The menu key or Shift+F10 opens it on a focused mark.
+// - Shift+right-click, or a right-click with nothing selected and no mark under it, gives Chrome's own menu. Nothing ever
+//   opens by itself.
 // - A click on a mark focuses it (a ring shows). Then 1 to 5 recolour it, Delete removes it, Tab and Shift+Tab move to the
 //   next or previous mark, and Esc lets go. A click on a commented passage makes its thread the active one.
 // - Speed: each style action is timed from the key or click to the moment the mark layer has drawn it, and recorded
 //   as the performance mark `sop:mark-drawn` (detail: { ms, style }); the budget is 50 ms (spec "Speed budgets").
-import type { MarkColor, MarkId, MarkStyle } from '@sop/core';
+import type { Anchor, MarkColor, MarkId, MarkStyle } from '@sop/core';
 import { MARK_COLOR_NAMES, markColorForKey } from '@sop/ui';
 import { type CharRange, charAtPoint, type PageSize } from '@sop/viewer';
 import type { MarkLayerItem, PageListApi, TextSelectionSource } from '@sop/viewer/react';
@@ -23,12 +27,13 @@ import type { AnnotationSession } from './session';
 
 type TextStyle = Exclude<MarkStyle, 'area'>;
 
-/** A request to show the mark-up menu: where, over which chars, and their words (for Search). */
-export interface MenuRequest {
-  at: { x: number; y: number };
-  ranges: CharRange[];
-  text: string;
-}
+/**
+ * A request to show a menu: the mark-up menu for a selection (where, over which chars, and their words, for Search), or
+ * the mark menu for one mark (R72).
+ */
+export type MenuRequest =
+  | { kind: 'selection'; at: { x: number; y: number }; ranges: CharRange[]; text: string }
+  | { kind: 'mark'; at: { x: number; y: number }; id: MarkId };
 
 export interface MarkInputDeps {
   session: AnnotationSession;
@@ -48,8 +53,19 @@ export interface MarkInputDeps {
 }
 
 export interface MarkInput {
-  /** Applies a style to the selection (or to `ranges`). `color` is an explicit pick from the menu. */
+  /**
+   * Applies a style to the selection (or to `ranges`). `color` is an explicit pick from the menu. Once the mark is drawn
+   * the selection is let go of, if it is still the one the mark was made on (R71).
+   */
   apply(style: TextStyle, o?: { color?: MarkColor; ranges?: CharRange[] }): void;
+  /** A mark's style and colour (for the mark menu), or null when it is gone. */
+  mark(id: MarkId): { style: MarkStyle; color: MarkColor | null } | null;
+  /** The mark menu's colour row and the keys 1 to 5: the mark takes colour `c`, which becomes the last colour. */
+  recolor(id: MarkId, c: MarkColor): void;
+  /** The mark menu's Remove and the Delete key. */
+  remove(id: MarkId): void;
+  /** Selects a mark's text, so that Comment acts on it (the mark menu's Comment). False when it has no text. */
+  selectText(id: MarkId): boolean;
   /** The colour the menu shows checked for these chars: the highlight they all have, else the last colour. */
   menuColour(ranges: CharRange[]): MarkColor;
   readonly menu: {
@@ -122,6 +138,10 @@ export function tooMuchToMark(ranges: readonly CharRange[]): boolean {
   return Math.max(...pages) - Math.min(...pages) + 1 > MARK_MAX_PAGES;
 }
 
+function sameRanges(a: readonly CharRange[], b: readonly CharRange[]): boolean {
+  return a.length === b.length && a.every((r, i) => r.pageIndex === b[i]?.pageIndex && r.start === b[i]?.start && r.end === b[i]?.end);
+}
+
 /** The selected text the menu's Search reads (it sends at most a few hundred chars). */
 const MENU_TEXT_CHARS = 2000;
 
@@ -131,6 +151,8 @@ const RIGHT_PRESS_MS = 1000;
 const KEY_MENU_MS = 800;
 /** A timed action that draws nothing in this long is dropped (H over spaces only, say). */
 const TIMING_MAX_MS = 2000;
+/** A mark action lets go of the selection when its mark is drawn, or after this long if nothing is drawn (R71). */
+const CLEAR_MAX_MS = 300;
 /** Hit-test slack round a mark, as a share of the page (about 2 CSS px at 100%). */
 const HIT_PAD = 0.003;
 /** Tab to a mark this close to the top or bottom of the pages scrolls it to the middle. */
@@ -147,6 +169,8 @@ export function createMarkInput(d: MarkInputDeps): MarkInput {
   let keyMenuAt = -Infinity;
   let pointerAt: { x: number; y: number } | null = null;
   let timing: { t0: number; style: TextStyle; timer: ReturnType<typeof setTimeout> } | null = null;
+  /** The selection a mark action was made on, let go of once the mark layer has drawn the action (R71). */
+  let clearAfter: { ranges: CharRange[]; style: TextStyle; timer: ReturnType<typeof setTimeout> } | null = null;
   const listeners = new AbortController();
   const signal = listeners.signal;
 
@@ -168,7 +192,13 @@ export function createMarkInput(d: MarkInputDeps): MarkInput {
   }
 
   function openMenu(at: { x: number; y: number }, ranges: CharRange[]): void {
-    setMenu({ at, ranges, text: d.textSelection.text(MENU_TEXT_CHARS) });
+    setMenu({ kind: 'selection', at, ranges, text: d.textSelection.text(MENU_TEXT_CHARS) });
+  }
+
+  /** The mark menu for `id`, which takes the focus (its ring shows which mark the menu acts on). */
+  function openMarkMenu(at: { x: number; y: number }, id: MarkId): void {
+    focusMark(id);
+    setMenu({ kind: 'mark', at, id });
   }
 
   // ---- styles
@@ -208,6 +238,23 @@ export function createMarkInput(d: MarkInputDeps): MarkInput {
     timing = { t0: performance.now(), style, timer: setTimeout(() => (timing = null), TIMING_MAX_MS) };
   }
 
+  /**
+   * R71: the selection goes once the action's mark is drawn, in the same frame, so the mark shows in its true colour
+   * at once and nothing flashes plain in between. Only the selection the mark was made on: a new one is left alone.
+   */
+  function clearSelectionWhenDrawn(ranges: CharRange[], style: TextStyle): void {
+    if (clearAfter) clearTimeout(clearAfter.timer);
+    clearAfter = { ranges, style, timer: setTimeout(clearSelectionNow, CLEAR_MAX_MS) };
+  }
+
+  function clearSelectionNow(): void {
+    const c = clearAfter;
+    clearAfter = null;
+    if (c === null) return;
+    clearTimeout(c.timer);
+    if (sameRanges(d.selection(), c.ranges)) d.textSelection.clear();
+  }
+
   function apply(style: TextStyle, o: { color?: MarkColor; ranges?: CharRange[] } = {}): void {
     if (!editable()) return;
     const ranges = (o.ranges ?? d.selection()).filter((r) => r.end > r.start);
@@ -224,7 +271,36 @@ export function createMarkInput(d: MarkInputDeps): MarkInput {
       } else color = coveringColour(style, ranges) ?? d.lastColor();
     }
     startTiming(style);
+    clearSelectionWhenDrawn(d.selection(), style);
     void session.applyStyle(ranges, style, color);
+  }
+
+  // ---- one mark: the mark menu and the focused mark's keys
+
+  function markRow(id: MarkId) {
+    return session.state().marks.find((m) => m.id === id) ?? null;
+  }
+
+  function recolor(id: MarkId, c: MarkColor): void {
+    if (!editable() || markRow(id)?.color === null) return;
+    d.setLastColor(c);
+    startTiming('highlight');
+    void session.recolor(id, c);
+    announce(`${MARK_COLOR_NAMES[c]}.`);
+  }
+
+  function remove(id: MarkId): void {
+    if (!editable()) return;
+    startTiming('highlight');
+    void session.removeMark(id);
+    if (session.state().focusedMark === id) session.setFocusedMark(null);
+    announce('Removed.');
+  }
+
+  /** The placed anchor of a mark, or null. */
+  function anchorOf(id: MarkId): Anchor | null {
+    const r = session.state().placement.get(id);
+    return r?.placed === true ? r.anchor : null;
   }
 
   // ---- the focused mark
@@ -302,10 +378,7 @@ export function createMarkInput(d: MarkInputDeps): MarkInput {
       const c = markColorForKey(e);
       const id = focused();
       if (c === null || id === null) return;
-      d.setLastColor(c);
-      startTiming('highlight');
-      void session.recolor(id, c);
-      announce(`${MARK_COLOR_NAMES[c]}.`);
+      recolor(id, c);
     },
   }));
   const offKeys = installShortcuts([
@@ -316,11 +389,7 @@ export function createMarkInput(d: MarkInputDeps): MarkInput {
       enabled: markKeysOn,
       run: () => {
         const id = focused();
-        if (id === null) return;
-        startTiming('highlight');
-        void session.removeMark(id);
-        session.setFocusedMark(null);
-        announce('Removed.');
+        if (id !== null) remove(id);
       },
     },
     { id: 'marks.focused.next', keys: ['Tab'], enabled: () => markKeysOn() && focusOnPages(), run: () => step(1) },
@@ -344,6 +413,38 @@ export function createMarkInput(d: MarkInputDeps): MarkInput {
     return null;
   }
 
+  /** Whether a client point is on a selected char (a right-click there is for the selection, not for a mark under it). */
+  function onSelectedChar(x: number, y: number, ranges: CharRange[]): boolean {
+    const root = scroller();
+    const hit = root ? charAtPoint(root, x, y) : null;
+    return hit !== null && ranges.some((r) => r.pageIndex === hit.pageIndex && hit.charIndex >= r.start && hit.charIndex < r.end);
+  }
+
+  /** Where the mark menu opens for the menu key or Shift+F10: the end of the mark's last rect, kept inside the pages. */
+  function markEnd(id: MarkId): { x: number; y: number } | null {
+    const a = anchorOf(id);
+    const pages = d.pageList.current;
+    const area = scroller()?.getBoundingClientRect();
+    if (a === null || !pages || area === undefined) return null;
+    let page: number;
+    let corner: readonly [number, number] | undefined;
+    if (a.kind === 'text') {
+      const last = [...a.rects].reverse().find((x) => x.rects.length > 0);
+      const r = last?.rects[last.rects.length - 1];
+      page = last?.page ?? a.end.page;
+      corner = r ? [r[2], r[3]] : undefined;
+    } else if (a.kind === 'area' || a.kind === 'figure') {
+      page = a.page;
+      corner = [a.rect[2], a.rect[3]];
+    } else return null;
+    const size = d.pages[page];
+    if (size === undefined || corner === undefined) return null;
+    const at = pages.clientPointOf({ pageIndex: page, x: corner[0] * size.width, y: corner[1] * size.height });
+    if (!Number.isFinite(at.x) || !Number.isFinite(at.y)) return null;
+    const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+    return { x: clamp(at.x, area.left + 8, area.right - 8), y: clamp(at.y, area.top + 8, area.bottom - 8) };
+  }
+
   // ---- listeners
 
   window.addEventListener(
@@ -363,13 +464,14 @@ export function createMarkInput(d: MarkInputDeps): MarkInput {
 
   // A right press over the pages keeps the selection, wherever it lands, as in Chrome's own PDF viewer: the browser
   // would otherwise drop the selection when the press is beside it, and the menu would have nothing to act on. That
-  // holds while a menu is open too (the press closes it, and the menu opens again there). Shift+right-click is left
-  // alone (Chrome's menu, and the browser's own selection rules), and so is a press under an open dialog.
+  // holds while a menu is open too (the press closes it, and the menu opens again there). A right press on a mark changes
+  // nothing either (the mark menu opens). Shift+right-click is left alone (Chrome's menu, and the browser's own selection
+  // rules), and so is a press under an open dialog.
   window.addEventListener(
     'mousedown',
     (e) => {
       if (e.button !== 2 || e.shiftKey || !editable() || dialogOpen() || !overPages(e.clientX, e.clientY)) return;
-      if (d.selection().length > 0) e.preventDefault();
+      if (d.selection().length > 0 || markAt(e.clientX, e.clientY) !== null) e.preventDefault();
     },
     { signal, capture: true },
   );
@@ -390,6 +492,15 @@ export function createMarkInput(d: MarkInputDeps): MarkInput {
       if (!editable() || (byMouse && !overPages(e.clientX, e.clientY))) return;
       if (dialogOpen()) return;
       const ranges = d.selection();
+      // A mark under the pointer, not under the selection: the mark menu (R72). The selection is let go of, as a
+      // right-click beside it would in a web page, and the mark takes the focus.
+      const onMark = byMouse ? markAt(e.clientX, e.clientY) : null;
+      if (onMark !== null && (ranges.length === 0 || !onSelectedChar(e.clientX, e.clientY, ranges))) {
+        e.preventDefault();
+        if (ranges.length > 0) d.textSelection.clear();
+        openMarkMenu({ x: e.clientX, y: e.clientY }, onMark);
+        return;
+      }
       if (ranges.length === 0) return; // nothing selected: Chrome's menu
       const at = byMouse ? { x: e.clientX, y: e.clientY } : selectionEnd(d.textSelection);
       if (at === null) return;
@@ -431,6 +542,18 @@ export function createMarkInput(d: MarkInputDeps): MarkInput {
 
   return {
     apply,
+    mark(id) {
+      const m = markRow(id);
+      return m === null ? null : { style: m.style, color: m.color };
+    },
+    recolor,
+    remove,
+    selectText(id) {
+      const a = anchorOf(id);
+      if (a?.kind !== 'text') return false;
+      d.textSelection.select({ pageIndex: a.start.page, charIndex: a.start.index }, { pageIndex: a.end.page, charIndex: a.end.index });
+      return true;
+    },
     menuColour: (ranges) => coveringColour('highlight', ranges) ?? d.lastColor(),
     menu: {
       get: () => menuReq,
@@ -449,13 +572,22 @@ export function createMarkInput(d: MarkInputDeps): MarkInput {
         'marks.bold': style('bold'),
         'marks.strike': style('strike'),
         'marks.menu': {
-          enabled: canMark,
+          // On a selection, the mark-up menu; on a focused mark (nothing selected), the mark menu (R72).
+          enabled: () => canMark() || (editable() && !overlayOpen() && focused() !== null),
           run: () => {
-            const at = selectionEnd(d.textSelection);
             const ranges = d.selection();
-            if (at === null || ranges.length === 0) return;
+            if (ranges.length > 0) {
+              const at = selectionEnd(d.textSelection);
+              if (at === null) return;
+              keyMenuAt = performance.now();
+              openMenu(at, ranges);
+              return;
+            }
+            const id = focused();
+            const at = id === null ? null : markEnd(id);
+            if (id === null || at === null) return;
             keyMenuAt = performance.now();
-            openMenu(at, ranges);
+            openMarkMenu(at, id);
           },
         },
         'edit.undo': { run: () => void session.undo(), enabled: () => editable() && !overlayOpen() },
@@ -463,7 +595,9 @@ export function createMarkInput(d: MarkInputDeps): MarkInput {
       };
     },
     pointer: () => pointerAt,
-    drawn(_pageIndex, what) {
+    drawn(pageIndex, what) {
+      const c = clearAfter;
+      if (c !== null && (c.style === 'bold') === (what === 'bold') && c.ranges.some((r) => r.pageIndex === pageIndex)) clearSelectionNow();
       const t = timing;
       if (t === null || (t.style === 'bold') !== (what === 'bold')) return;
       clearTimeout(t.timer);
@@ -476,6 +610,7 @@ export function createMarkInput(d: MarkInputDeps): MarkInput {
       offSelection();
       offKeys();
       if (timing) clearTimeout(timing.timer);
+      if (clearAfter) clearTimeout(clearAfter.timer);
       live.remove();
       menuListeners.clear();
     },
