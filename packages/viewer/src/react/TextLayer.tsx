@@ -71,6 +71,26 @@ export interface CharPos {
   charIndex: number;
 }
 
+/**
+ * The selection as everything else reads it (Phase 2's marks, menu, notes and Search): the model, which outlives its
+ * pages' text layers, never the DOM selection (which only holds the part on mounted pages).
+ */
+export interface TextSelectionSource {
+  /** The chars selected, by page, in page order; [] for none (TextLayerController.selectionRanges). */
+  ranges(): CharRange[];
+  /** The selected text as Copy writes it, up to `maxChars`; it stops at a page whose text is not read yet. */
+  text(maxChars?: number): string;
+  /**
+   * Where the selection starts (the top-left of its first painted line) or ends (the bottom-right of its last), in
+   * client px, on the mounted pages; null when no part of it is painted on screen.
+   */
+  point(which: 'start' | 'end'): { x: number; y: number } | null;
+  /** Lets go of the selection (the model and the DOM). */
+  clear(): void;
+  /** Calls `cb` after the selection is set, changed or cleared (not on every move of a drag: once it ends). */
+  subscribe(cb: () => void): () => void;
+}
+
 /** CharPos.charIndex (and CharRange.end) for the end of a page whose char count is not known yet. */
 export const PAGE_END = Number.MAX_SAFE_INTEGER;
 
@@ -193,6 +213,9 @@ const CONTROLS = 'input, textarea, select, button, [contenteditable]:not([conten
 
 /** One per open document: the pages' text layers, the selection model and its painting, drags, word clicks and Copy. */
 export class TextLayerController {
+  /** The selection for Phase 2 (see TextSelectionSource). */
+  readonly textSelection: TextSelectionSource;
+  private readonly selectionListeners = new Set<() => void>();
   private readonly pages = new Map<number, PageState>();
   private readonly glyphCache = new Map<number, PageGlyphs>();
   private readonly glyphLoads = new Map<number, Promise<PageGlyphs>>();
@@ -228,6 +251,19 @@ export class TextLayerController {
     this.rectSource = {
       rects: (p, s, c) => o.source.rects(p, s, c),
       glyphs: (p) => this.glyphs(p),
+    };
+    this.textSelection = {
+      ranges: () => this.selectionRanges(),
+      text: (maxChars = Infinity) => (this.model ? (this.copyText(this.model, maxChars) ?? '') : ''),
+      point: (which) => this.paintedPoint(which),
+      clear: () => {
+        this.clickedAt = null;
+        this.setModel(null);
+      },
+      subscribe: (cb) => {
+        this.selectionListeners.add(cb);
+        return () => this.selectionListeners.delete(cb);
+      },
     };
   }
 
@@ -545,10 +581,13 @@ export class TextLayerController {
    * layers (unless `dom` is false), and Copy starts reading the pages it needs.
    */
   private setModel(next: TextSelection | null, dom = true): void {
+    const was = this.model;
     this.model = next && cmpPos(next.anchor, next.focus) !== 0 ? next : null;
     if (dom) this.applyModel();
     this.prepareCopy();
     this.schedulePaint();
+    const same = was === this.model || (was && this.model && cmpPos(was.anchor, this.model.anchor) === 0 && cmpPos(was.focus, this.model.focus) === 0);
+    if (!same) for (const cb of [...this.selectionListeners]) cb();
   }
 
   /** The DOM selection's ends that show the model on the layers built now (null when none of it has a layer). */
@@ -697,6 +736,22 @@ export class TextLayerController {
         if (!s.disposed && !(err instanceof PdfEngineCrashedError)) console.error('sickofpdfs: the selection could not be drawn', err);
       },
     );
+  }
+
+  /** The corner of the selection's first (or last) painted line on the mounted pages, in client px (TextSelectionSource.point). */
+  private paintedPoint(which: 'start' | 'end'): { x: number; y: number } | null {
+    let best: { s: PageState; boxes: { x: number; y: number; width: number; height: number }[] } | null = null;
+    for (const s of this.pages.values()) {
+      if (!s.box || !s.selRects || s.selRects.length === 0 || s.selKey === '') continue;
+      if (best && (which === 'start' ? s.index > best.s.index : s.index < best.s.index)) continue;
+      const k = this.scaleOf(s);
+      best = { s, boxes: s.selRects.map((r) => normToCss(pdfRectToNorm(r, s.size), s.size, k, s.box!.rotation)) };
+    }
+    const pageEl = best?.s.host.closest<HTMLElement>('[data-page-index]');
+    if (!best || !pageEl) return null;
+    const r = pageEl.getBoundingClientRect();
+    const b = which === 'start' ? best.boxes[0] : best.boxes[best.boxes.length - 1];
+    return which === 'start' ? { x: r.left + b.x, y: r.top + b.y } : { x: r.left + b.x + b.width, y: r.top + b.y + b.height };
   }
 
   /** The page's selection path: its rects on the displayed page, edges on whole device pixels. */
@@ -1123,10 +1178,15 @@ export class TextLayerController {
     return out;
   }
 
-  /** The text Copy writes for `m`, or null while a page it needs is not read yet. */
-  private copyText(m: TextSelection): string | null {
+  /**
+   * The text Copy writes for `m`, or null while a page it needs is not read yet. With `maxChars`, only that much is
+   * wanted: the text is cut there, and a page not read yet after some text ends it instead of giving null.
+   */
+  private copyText(m: TextSelection, maxChars = Infinity): string | null {
     const parts: string[] = [];
+    let length = 0;
     for (const c of this.copyParts(m)) {
+      if (length >= maxChars) break;
       const g = this.glyphCache.get(c.pageIndex);
       let t: string | undefined;
       if (c.whole) {
@@ -1140,10 +1200,17 @@ export class TextLayerController {
           if (c.end >= chars.length) t = t.replace(/\s+$/, '');
         }
       }
-      if (t === undefined) return null;
-      if (t !== '') parts.push(t);
+      if (t === undefined) {
+        if (maxChars === Infinity || parts.length === 0) return null;
+        break;
+      }
+      if (t !== '') {
+        parts.push(t);
+        length += t.length + 2;
+      }
     }
-    return parts.join('\r\n');
+    const text = parts.join('\r\n');
+    return maxChars === Infinity ? text : text.slice(0, maxChars);
   }
 
   /** Reads, one page at a time, what Copy needs for `m` and does not have; stops early when `while` turns false. */

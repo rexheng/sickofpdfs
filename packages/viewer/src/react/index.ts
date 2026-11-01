@@ -4,7 +4,16 @@ export { OutlinePanel, type OutlinePanelProps } from './OutlinePanel';
 export { ThumbnailRail, type ThumbnailRailProps } from './ThumbnailRail';
 export { PageList, type PageListApi, type PageListDocument, type PageListProps } from './PageList';
 export type { PageLayerContext } from './PageView';
-export { TextLayer, TextLayerController, type PageTextLayer, type TextLayerControllerOptions, type TextLayerProps, type TextLayerSource } from './TextLayer';
+export {
+  PAGE_END,
+  TextLayer,
+  TextLayerController,
+  type PageTextLayer,
+  type TextLayerControllerOptions,
+  type TextLayerProps,
+  type TextLayerSource,
+  type TextSelectionSource,
+} from './TextLayer';
 export { FindBar, type FindBarProps } from './FindBar';
 export { FindHighlights, type FindHighlightsProps } from './FindHighlights';
 export { MarkLayer, type MarkLayerItem, type MarkLayerPage, type MarkLayerProps, type MarkLayerSource, type MarkLayerStyle } from './MarkLayer';

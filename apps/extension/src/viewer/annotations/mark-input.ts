@@ -15,7 +15,7 @@
 import type { MarkColor, MarkId, MarkStyle } from '@sop/core';
 import { MARK_COLOR_NAMES, markColorForKey } from '@sop/ui';
 import { type CharRange, charAtPoint, type PageSize } from '@sop/viewer';
-import type { MarkLayerItem, PageListApi } from '@sop/viewer/react';
+import type { MarkLayerItem, PageListApi, TextSelectionSource } from '@sop/viewer/react';
 import type { RefObject } from 'react';
 import type { CommandBehaviour, ViewerCommandId } from '../commands';
 import { installShortcuts, type ShortcutDef } from '../shortcuts';
@@ -37,6 +37,10 @@ export interface MarkInputDeps {
   pages: readonly PageSize[];
   pageList: RefObject<PageListApi | null>;
   selection(): CharRange[];
+  /** The text layer's selection model: the menu's text and place come from it, never from the DOM selection. */
+  textSelection: TextSelectionSource;
+  /** A short note at the bottom of the window (a selection too big to mark). */
+  showNote(text: string): void;
   lastColor(): MarkColor;
   setLastColor(c: MarkColor): void;
   /** Starts reading a page's aligned text (PageTextProvider.rawText), so an anchor on it never waits for the engine. */
@@ -90,17 +94,36 @@ function overPages(x: number, y: number): boolean {
   return r !== undefined && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
 }
 
-/** Where the menu opens for the menu key or Shift+F10: just after the end of the selection, kept inside the pages. */
-function selectionEnd(): { x: number; y: number } | null {
-  const sel = document.getSelection();
-  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
-  const rects = [...sel.getRangeAt(sel.rangeCount - 1).getClientRects()].filter((r) => r.width > 0 || r.height > 0);
-  const last = rects[rects.length - 1];
+/**
+ * Where the menu opens for the menu key or Shift+F10: just after the end of the selection (the end of its last line
+ * painted on screen), kept inside the pages.
+ */
+function selectionEnd(selection: TextSelectionSource): { x: number; y: number } | null {
+  const last = selection.point('end');
   const area = scroller()?.getBoundingClientRect();
-  if (last === undefined || area === undefined) return null;
+  if (last === null || area === undefined) return null;
   const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
-  return { x: clamp(last.right, area.left + 8, area.right - 8), y: clamp(last.bottom, area.top + 8, area.bottom - 8) };
+  return { x: clamp(last.x, area.left + 8, area.right - 8), y: clamp(last.y, area.top + 8, area.bottom - 8) };
 }
+
+/**
+ * Marks and notes act on a selection of at most this many pages. Ctrl+A then H would otherwise highlight a whole book by
+ * accident: one mark holding the text of every page as its quote, written to the library. A bigger selection is refused
+ * with a note (TOO_MUCH_TO_MARK), never cut down without saying so.
+ */
+export const MARK_MAX_PAGES = 10;
+export const TOO_MUCH_TO_MARK = 'That’s too much text to mark. Select 10 pages or less.';
+export const TOO_MUCH_FOR_A_NOTE = 'That’s too much text for one note. Select 10 pages or less.';
+
+/** Whether char ranges cover more pages than a mark or a note may (MARK_MAX_PAGES). */
+export function tooMuchToMark(ranges: readonly CharRange[]): boolean {
+  if (ranges.length === 0) return false;
+  const pages = ranges.map((r) => r.pageIndex);
+  return Math.max(...pages) - Math.min(...pages) + 1 > MARK_MAX_PAGES;
+}
+
+/** The selected text the menu's Search reads (it sends at most a few hundred chars). */
+const MENU_TEXT_CHARS = 2000;
 
 /** How long after a right button press its contextmenu event counts as the mouse's (after that it is the keyboard's). */
 const RIGHT_PRESS_MS = 1000;
@@ -145,7 +168,7 @@ export function createMarkInput(d: MarkInputDeps): MarkInput {
   }
 
   function openMenu(at: { x: number; y: number }, ranges: CharRange[]): void {
-    setMenu({ at, ranges, text: document.getSelection()?.toString() ?? '' });
+    setMenu({ at, ranges, text: d.textSelection.text(MENU_TEXT_CHARS) });
   }
 
   // ---- styles
@@ -189,6 +212,10 @@ export function createMarkInput(d: MarkInputDeps): MarkInput {
     if (!editable()) return;
     const ranges = (o.ranges ?? d.selection()).filter((r) => r.end > r.start);
     if (ranges.length === 0) return;
+    if (tooMuchToMark(ranges)) {
+      d.showNote(TOO_MUCH_TO_MARK);
+      return;
+    }
     let color: MarkColor | null = null;
     if (style !== 'bold') {
       if (o.color !== undefined) {
@@ -364,7 +391,7 @@ export function createMarkInput(d: MarkInputDeps): MarkInput {
       if (dialogOpen()) return;
       const ranges = d.selection();
       if (ranges.length === 0) return; // nothing selected: Chrome's menu
-      const at = byMouse ? { x: e.clientX, y: e.clientY } : selectionEnd();
+      const at = byMouse ? { x: e.clientX, y: e.clientY } : selectionEnd(d.textSelection);
       if (at === null) return;
       e.preventDefault();
       openMenu(at, ranges);
@@ -385,8 +412,7 @@ export function createMarkInput(d: MarkInputDeps): MarkInput {
     (e) => {
       if (e.button !== 0 || e.detail > 1 || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
       if (!(e.target instanceof Node) || scroller()?.contains(e.target) !== true) return;
-      const sel = document.getSelection();
-      if (sel !== null && !sel.isCollapsed) return; // the click ended a selection
+      if (d.selection().length > 0) return; // the click ended a selection
       const id = markAt(e.clientX, e.clientY);
       if (id !== session.state().focusedMark) focusMark(id);
       // A click on a commented passage opens its thread (the card and its mark go active together).
@@ -399,14 +425,9 @@ export function createMarkInput(d: MarkInputDeps): MarkInput {
   );
 
   // A new selection lets go of the focused mark: the keys then act on the selection.
-  document.addEventListener(
-    'selectionchange',
-    () => {
-      const sel = document.getSelection();
-      if (sel !== null && !sel.isCollapsed && session.state().focusedMark !== null) focusMark(null);
-    },
-    { signal },
-  );
+  const offSelection = d.textSelection.subscribe(() => {
+    if (d.selection().length > 0 && session.state().focusedMark !== null) focusMark(null);
+  });
 
   return {
     apply,
@@ -430,7 +451,7 @@ export function createMarkInput(d: MarkInputDeps): MarkInput {
         'marks.menu': {
           enabled: canMark,
           run: () => {
-            const at = selectionEnd();
+            const at = selectionEnd(d.textSelection);
             const ranges = d.selection();
             if (at === null || ranges.length === 0) return;
             keyMenuAt = performance.now();
@@ -452,6 +473,7 @@ export function createMarkInput(d: MarkInputDeps): MarkInput {
     },
     dispose() {
       listeners.abort();
+      offSelection();
       offKeys();
       if (timing) clearTimeout(timing.timer);
       live.remove();

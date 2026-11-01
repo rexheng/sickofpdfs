@@ -19,6 +19,7 @@ import type { PageListApi } from '@sop/viewer/react';
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import type { CommentId, CommentRow, Resolution, ThreadId, ThreadRow } from '../annotations/boundary';
+import { TOO_MUCH_FOR_A_NOTE, tooMuchToMark } from '../annotations/mark-input';
 import type { NotesHost } from '../annotations/wire';
 import { isTypingTarget } from '../shortcuts';
 import { CARD_ID_PREFIX, CardColumn, type ColumnCard } from './CardColumn';
@@ -101,11 +102,11 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
     () =>
       createCommentFlow({
         wiring,
-        clearSelection: () => document.getSelection()?.removeAllRanges(),
+        clearSelection: () => notes.textSelection.clear(),
         currentPage: () => store.get().currentPage,
         pageSize: (i) => pageSizes[i],
       }),
-    [wiring, store, pageSizes],
+    [wiring, store, pageSizes, notes.textSelection],
   );
 
   // ---------------------------------------------------------------- finishing a note
@@ -195,7 +196,12 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
           const t0 = performance.now();
           // Read what the note is about before anything moves: opening the margin lays the pages out again.
           const ctx: CommentContext = { ranges: notes.selection(), pointer: pointerOnPage(pages.current, pointer.current) };
-          const keep = selectionStart() ?? (pointer.current ? { clientX: pointer.current.x, clientY: pointer.current.y } : undefined);
+          if (tooMuchToMark(ctx.ranges)) {
+            notes.showNote(TOO_MUCH_FOR_A_NOTE);
+            return;
+          }
+          const start = notes.textSelection.point('start');
+          const keep = start ? { clientX: start.x, clientY: start.y } : pointer.current ? { clientX: pointer.current.x, clientY: pointer.current.y } : undefined;
           finishOpen();
           void flow.comment(ctx, { before: () => openMargin(keep), after: (target) => open(target, t0) }).then(nothingOpened);
         },
@@ -303,7 +309,7 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
     const click = (e: MouseEvent) => {
       if (e.button !== 0 || e.defaultPrevented) return;
       if (!(e.target instanceof Element) || !e.target.closest('[data-page-index]')) return;
-      if (document.getSelection()?.isCollapsed === false) return;
+      if (notes.selection().length > 0) return; // the click ended a selection
       const hit = noteAt(e.clientX, e.clientY);
       if (hit !== null) activate(hit);
     };
@@ -320,7 +326,7 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
       scroller?.removeEventListener('click', click);
       window.removeEventListener('keydown', key);
     };
-  }, [session, scroller, noteAt, activate, deactivate]);
+  }, [session, scroller, noteAt, activate, deactivate, notes]);
 
   // ---------------------------------------------------------------- drafts and edits restored after a reload
 
@@ -595,14 +601,6 @@ function focusEditorSoon(threadId: ThreadId): void {
 /** The page point under the pointer, when it is over a page. */
 function pointerOnPage(api: PageListApi | null, at: { x: number; y: number } | null) {
   return api && at ? api.pdfPointAt(at.x, at.y) : null;
-}
-
-/** Where the selection starts on screen: the line that must stay put when the margin opens. */
-function selectionStart(): { clientX: number; clientY: number } | undefined {
-  const sel = document.getSelection();
-  if (!sel || sel.isCollapsed || sel.rangeCount === 0) return undefined;
-  const r = sel.getRangeAt(0).getClientRects()[0];
-  return r ? { clientX: r.left, clientY: r.top } : undefined;
 }
 
 /** The page list's overlay, once its first layout has made it. */

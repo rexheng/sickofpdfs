@@ -512,7 +512,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   // Find jumps through the same history as links, so Back returns from each jump to a hit (Task 25).
   const find = useReaderFind({ backend, doc, store, api, pageText, textLayers, jumps: nav.jumps, root: rootRef, scans });
   // The document's notes: marks, comments and drafts (Phase 2). Null in Incognito, which has none.
-  const notes = useNotes(doc, pageText, store, api, textLayers, save, nav.jumps);
+  const notes = useNotes(doc, pageText, store, api, textLayers, save, nav.jumps, ui);
   const commands = useMemo(() => {
     const ctx: ViewerContext = {
       params,
@@ -624,11 +624,12 @@ function useNotes(
   textLayers: TextLayerController,
   save: SaveControllerImpl | null,
   jumps: JumpHistory,
+  ui: ViewerUi,
 ): Notes | null {
   const [notes, setNotes] = useState<Notes | null>(null);
   useEffect(() => {
     if (save === null) return;
-    const made = createNotes({ backend, opened: doc, pageText, view, pageList, jumps, selection: () => textLayers.selectionRanges(), save });
+    const made = createNotes({ backend, opened: doc, pageText, view, pageList, jumps, textSelection: textLayers.textSelection, showNote: (text) => ui.showNote(text), save });
     setNotes(made);
     publishRuntime({ annotations: made?.host.session ?? null });
     return () => {
@@ -636,7 +637,7 @@ function useNotes(
       setNotes(null);
       publishRuntime({ annotations: null });
     };
-  }, [doc, pageText, view, pageList, textLayers, save, jumps]);
+  }, [doc, pageText, view, pageList, textLayers, save, jumps, ui]);
   return notes;
 }
 

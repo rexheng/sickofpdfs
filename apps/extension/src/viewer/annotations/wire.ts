@@ -11,7 +11,7 @@
 // Incognito: no notes at all. `createNotes` returns null, so there are no marks, no menu and no features (spec).
 import { type Anchor, type CharPos, type DocumentId, type MarkColor, type NormRect, planStyle, resolveAnchor } from '@sop/core';
 import type { CharRange, DocHandle, FigureService, JumpHistory, PageBox, PageSize, PageTextProviderImpl, PdfBackend, SaveController, ViewerStore } from '@sop/viewer';
-import type { MarkLayerItem, MarkLayerPage, MarkLayerSource, PageLayerContext, PageListApi } from '@sop/viewer/react';
+import type { MarkLayerItem, MarkLayerPage, MarkLayerSource, PageLayerContext, PageListApi, TextSelectionSource } from '@sop/viewer/react';
 import type { ComponentType, RefObject } from 'react';
 import type { StoreClient } from '../../store/client';
 import type { CommandBehaviour, ViewerCommandId } from '../commands';
@@ -107,6 +107,13 @@ export interface NotesHost {
   readonly jumps: JumpHistory;
   /** The selected text as char ranges, one per page; [] when nothing is selected. */
   selection(): CharRange[];
+  /**
+   * The text layer's selection model (TextLayerController.textSelection): its ranges, text, place on screen, clearing.
+   * Read it, never the DOM selection, which only holds the part of the selection on mounted pages.
+   */
+  readonly textSelection: TextSelectionSource;
+  /** A short note at the bottom of the window (the viewer's snackbar). */
+  showNote(text: string): void;
   /** A text anchor for char ranges: the quote with its context, the positions, and the rects the selection had. */
   textAnchor(ranges: CharRange[]): Promise<TextAnchor>;
   /** The colour H, the menu and a new comment's highlight use (marks.lastColor). */
@@ -492,8 +499,10 @@ export interface NotesDeps {
   pageList: RefObject<PageListApi | null>;
   /** The reader's jump history (Task 24's links and find use the same one). */
   jumps: JumpHistory;
-  /** The text layer's selection (TextLayerController.selectionRanges). */
-  selection(): CharRange[];
+  /** The text layer's selection model (TextLayerController.textSelection). */
+  textSelection: TextSelectionSource;
+  /** The viewer's snackbar (ViewerUi.showNote). */
+  showNote(text: string): void;
   /** ViewerContext.save: Task 30's controller. The notes are made once it exists (one render after the PDF is ready). */
   save: SaveController;
 }
@@ -558,7 +567,9 @@ export function createNotes(d: NotesDeps): Notes | null {
     view: d.view,
     pageList: d.pageList,
     jumps: d.jumps,
-    selection: () => d.selection(),
+    selection: () => d.textSelection.ranges(),
+    textSelection: d.textSelection,
+    showNote: (text) => d.showNote(text),
     textAnchor,
     lastColor: () => lastColor,
     pointer: () => input?.pointer() ?? null,
@@ -572,7 +583,9 @@ export function createNotes(d: NotesDeps): Notes | null {
     layer,
     pages,
     pageList: d.pageList,
-    selection: () => d.selection(),
+    selection: () => d.textSelection.ranges(),
+    textSelection: d.textSelection,
+    showNote: (text) => d.showNote(text),
     lastColor: () => lastColor,
     setLastColor(c) {
       lastColor = c;
