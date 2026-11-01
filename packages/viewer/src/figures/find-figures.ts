@@ -158,6 +158,8 @@ interface Caption {
 }
 interface Candidate {
   rect: Rect;
+  /** The box of its graphics alone, without the text it absorbed: what pairs with a caption (loose char boxes overhang). */
+  core: Rect;
   images: number;
   paths: number;
   source: 'image' | 'form' | 'cluster' | 'tagged';
@@ -351,6 +353,12 @@ function analyseShown(input: FigureInput, tick: () => void): Analysis {
   for (const [caption, parts] of paired) {
     growFigure(caption, parts, candidates, small, usedSmall, bodyLines, captions, tick);
     let rect = absorbLines(parts.map((p) => p.rect).reduce(union), lines);
+    // Text it absorbed may poke into the caption (a loose char box, a page number set over the float): the box stops at
+    // the caption's edge (ours).
+    if (intersects(rect, caption.rect)) {
+      if (bottom(nth(parts, 0).core) <= caption.rect.y + captionSlack(caption)) rect = { ...rect, height: Math.max(0, caption.rect.y - rect.y) };
+      else rect = { ...rect, y: bottom(caption.rect), height: Math.max(0, bottom(rect) - bottom(caption.rect)) };
+    }
     const objects = parts.flatMap((p) => p.objects);
     const table = caption.table || parts.some((p) => p.table);
     if (caption.table) {
@@ -400,16 +408,23 @@ function analyseShown(input: FigureInput, tick: () => void): Analysis {
   }
 
   // 4. Uncaptioned candidates: high for a tagged one or a single image or form XObject, medium for a vector cluster.
-  //    Dropped when the object list was cut short (only caption-linked figures are kept then).
+  //    Dropped when the object list was cut short (only caption-linked figures are kept then). Ours: a single image or
+  //    form is high only when its ink is itself figure-sized (2% of the page, both sides 36 pt) and it is not in the
+  //    top or bottom margin band. A journal badge or logo ("Check for updates", a masthead) declares a big box around a
+  //    small mark, or sits in the page's head.
   if (!input.truncated) {
+    const band = RULES.marginBandShare * page.height;
+    const figureSized = (r: Rect) => area(r) >= RULES.minAreaShare * pageArea && r.width >= RULES.minSide && r.height >= RULES.minSide;
+    const inBand = (r: Rect) => r.y + r.height / 2 <= band || r.y + r.height / 2 >= page.height - band;
     for (const c of candidates) {
       if (c.claimed || found.some((f) => intersects(f.rect, c.rect))) continue;
+      const high = c.source === 'tagged' || (c.source !== 'cluster' && figureSized(c.core) && !inBand(c.core));
       found.push({
         kind: c.table ? 'table' : kindOf(c.images, c.paths),
         rect: c.rect,
         label: null,
         captionRect: null,
-        confidence: c.source === 'cluster' ? 'medium' : 'high',
+        confidence: high ? 'high' : 'medium',
         objectIndices: sortedUnique(c.objects),
         caption: null,
         imageSha256: null,
@@ -739,14 +754,50 @@ function graphicCandidates(input: FigureInput, pageArea: number, captions: Capti
       else if (o.type === 'path' || o.type === 'shading') h.paths++;
     }
   });
+  // Visible ink (ours). Nothing outside the crop box is seen, so every box is cut to the page. A path that runs past the
+  // page by more than the absorb margin is drawn under a clip (a data line of a log plot can be 40,000 pt long): its box
+  // says nothing about where its ink is, so it neither forms nor grows a candidate. A form's box is its content's:
+  // without such paths, and without its background, the first thing it draws when that is a filled, unstroked rectangle
+  // holding all the rest (matplotlib's and R's white figure patch, a few points wider than the ink on every side).
+  const clipped = (r: Rect): Rect | null => {
+    const x0 = Math.max(0, r.x);
+    const y0 = Math.max(0, r.y);
+    const x1 = Math.min(page.width, right(r));
+    const y1 = Math.min(page.height, bottom(r));
+    return x1 >= x0 && y1 >= y0 && x1 - x0 + (y1 - y0) > 0 ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } : null;
+  };
   const wrapper = (i: number) => {
     const h = holds.get(i)!;
-    return area(nth(objects, i).bounds) >= RULES.wrapperAreaShare * pageArea || (h.images === 0 && h.paths < 3);
+    const r = clipped(nth(objects, i).bounds);
+    return (r ? area(r) : 0) >= RULES.wrapperAreaShare * pageArea || (h.images === 0 && h.paths < 3);
   };
   const lookedThrough = (i: number) => {
     for (let p = nth(parent, i); p >= 0; p = nth(parent, p)) if (!wrapper(p)) return false;
     return true;
   };
+  const m = RULES.absorbMargin;
+  const overflows = (o: PageObjectInfo) =>
+    (o.type === 'path' || o.type === 'shading') && (o.bounds.x < -m || o.bounds.y < -m || right(o.bounds) > page.width + m || bottom(o.bounds) > page.height + m);
+  const background = new Set<number>();
+  const ink = new Map<number, Rect | null>();
+  for (const [f, h] of holds) {
+    tick();
+    const leaves = h.inside.filter((k) => nth(objects, k).type !== 'form' && (nth(objects, k).bounds.width > 0 || nth(objects, k).bounds.height > 0));
+    const first = leaves[0];
+    const fo = first === undefined ? null : nth(objects, first);
+    if (first !== undefined && fo && fo.type === 'path' && fo.path?.filled && !fo.path.stroked && fo.path.segmentCount <= 5 && leaves.length > 1) {
+      const rest = leaves.slice(1).map((k) => nth(objects, k).bounds).reduce(union);
+      if (inside(rest, grow(fo.bounds, 1))) background.add(first);
+    }
+    let box: Rect | null = null;
+    for (const k of leaves) {
+      const o = nth(objects, k);
+      if (background.has(k) || overflows(o)) continue;
+      const r = clipped(o.bounds);
+      if (r) box = box ? union(box, r) : r;
+    }
+    ink.set(f, box);
+  }
   const bigEnough = (r: Rect) => area(r) >= RULES.minAreaShare * pageArea && r.width >= RULES.minSide && r.height >= RULES.minSide;
   const band = RULES.marginBandShare * page.height;
   const inMarginBand = (r: Rect) => bottom(r) <= band || r.y >= page.height - band;
@@ -759,7 +810,9 @@ function graphicCandidates(input: FigureInput, pageArea: number, captions: Capti
     const o = nth(objects, i);
     if (o.type === 'text' || (input.truncated && o.type !== 'image' && o.type !== 'form') || !lookedThrough(i)) continue;
     if (o.type === 'form' && wrapper(i)) continue;
-    const r = o.bounds;
+    if (background.has(i) || overflows(o)) continue;
+    const r = o.type === 'form' ? ink.get(i) : clipped(o.bounds);
+    if (!r) continue;
     if (o.type === 'image' && area(r) >= RULES.scanAreaShare * pageArea) return 'scan';
     if (r.width <= 0 && r.height <= 0) continue;
     if (pageBorder(r)) continue;
@@ -767,8 +820,9 @@ function graphicCandidates(input: FigureInput, pageArea: number, captions: Capti
     const images = o.type === 'image' ? 1 : (h?.images ?? 0);
     const paths = o.type === 'image' ? 0 : (h?.paths ?? 1);
     const members = h ? [i, ...h.inside] : [i];
-    if ((o.type === 'image' || o.type === 'form') && bigEnough(r)) {
-      candidates.push({ rect: r, images, paths, source: o.type, table: false, claimed: false, objects: members });
+    // A form is figure-sized by the box it declares (its background counts there), and boxed by its ink.
+    if ((o.type === 'image' || o.type === 'form') && bigEnough(o.type === 'form' ? (clipped(o.bounds) ?? r) : r)) {
+      candidates.push({ rect: r, core: r, images, paths, source: o.type, table: false, claimed: false, objects: members });
       continue;
     }
     const rule = Math.min(r.width, r.height) < RULES.ruleThickness;
@@ -787,7 +841,7 @@ function graphicCandidates(input: FigureInput, pageArea: number, captions: Capti
     const members = cluster.flatMap((k) => nth(items, k).objects);
     const big = area(rect) >= RULES.clusterMinAreaShare * pageArea && !cluster.every((k) => nth(items, k).rule);
     if ((cluster.length >= RULES.clusterMinPaths || big) && !pageBorder(rect) && !inMarginBand(rect)) {
-      candidates.push({ rect, images, paths, source: 'cluster', table: false, claimed: false, objects: members });
+      candidates.push({ rect, core: rect, images, paths, source: 'cluster', table: false, claimed: false, objects: members });
     } else small.push({ rect, images, paths, objects: members, rule: cluster.every((k) => nth(items, k).rule) });
   }
   return { candidates, small };
@@ -909,8 +963,10 @@ function taggedCandidates(input: FigureInput, tick: () => void): Candidate[] {
       });
       if (members.length) {
         const objects = members.map((i) => nth(input.objects, i));
+        const rect = objects.map((o) => o.bounds).reduce(union);
         out.push({
-          rect: objects.map((o) => o.bounds).reduce(union),
+          rect,
+          core: rect,
           images: objects.filter((o) => o.type === 'image').length,
           paths: objects.filter((o) => o.type === 'path' || o.type === 'shading' || o.type === 'form').length,
           source: 'tagged',
@@ -939,6 +995,7 @@ function absorb(c: Candidate, lines: Line[], small: Graphic[], tick: () => void)
     tick();
     if (!inside(s.rect, reach)) continue;
     rect = union(rect, s.rect);
+    c.core = union(c.core, s.rect);
     c.images += s.images;
     c.paths += s.paths;
     c.objects = c.objects.concat(s.objects);
@@ -958,6 +1015,7 @@ function mergeOverlapping(candidates: Candidate[], tick: () => void): Candidate[
         const [p, q] = [nth(out, a), nth(out, b)];
         out[a] = {
           rect: union(p.rect, q.rect),
+          core: union(p.core, q.core),
           images: p.images + q.images,
           paths: p.paths + q.paths,
           // Tagged wins; any cluster keeps the merge a cluster (medium when uncaptioned): it is no longer a single object.
@@ -984,15 +1042,15 @@ function mergeOverlapping(candidates: Candidate[], tick: () => void): Candidate[
  * side at a 4 pt handicap.
  */
 function captionDistance(caption: Caption, c: Candidate, bodyLines: Line[]): number | null {
-  if (xOverlap(c.rect, caption.rect) <= 0) return null;
-  const above = caption.rect.y - bottom(c.rect);
-  const below = c.rect.y - bottom(caption.rect);
+  if (xOverlap(c.core, caption.rect) <= 0) return null;
+  const above = caption.rect.y - bottom(c.core);
+  const below = c.core.y - bottom(caption.rect);
   const overlap = -captionSlack(caption);
   const side = above >= overlap ? 'above' : below >= overlap ? 'below' : null;
   if (!side) return null;
   const d = Math.max(0, side === 'above' ? above : below);
   if (d > RULES.captionReach) return null;
-  const [from, to] = side === 'above' ? [bottom(c.rect), caption.rect.y] : [bottom(caption.rect), c.rect.y];
+  const [from, to] = side === 'above' ? [bottom(c.core), caption.rect.y] : [bottom(caption.rect), c.core.y];
   if (bodyLines.some((l) => xOverlap(l.rect, caption.rect) > 0 && l.rect.y >= from - 1 && bottom(l.rect) <= to + 1)) return null;
   const usual = caption.below ? 'below' : 'above';
   return side === usual ? d : d + RULES.otherSideHandicap;
@@ -1058,7 +1116,7 @@ function assign(cost: number[][]): number[] {
  */
 function growFigure(caption: Caption, parts: Candidate[], candidates: Candidate[], small: Graphic[], usedSmall: Set<Graphic>, bodyLines: Line[], captions: Caption[], tick: () => void): void {
   const slack = captionSlack(caption);
-  const above = bottom(nth(parts, 0).rect) <= caption.rect.y + slack;
+  const above = bottom(nth(parts, 0).core) <= caption.rect.y + slack;
   type Piece = { candidate: Candidate; graphic?: undefined } | { candidate?: undefined; graphic: Graphic };
   const pieces: Piece[] = [...candidates.map((candidate) => ({ candidate })), ...small.map((graphic) => ({ graphic }))];
   for (let changed = true; changed; ) {
@@ -1068,10 +1126,11 @@ function growFigure(caption: Caption, parts: Candidate[], candidates: Candidate[
       tick();
       if (candidate ? candidate.claimed : usedSmall.has(graphic)) continue;
       const r = (candidate ?? graphic).rect;
+      const core = candidate ? candidate.core : r;
       const near = !!candidate && gap(r, rect) <= RULES.growGap;
       const inBand = yOverlap(r, rect) > 0 && xOverlap(r, caption.rect) > 0;
       if (!near && !inBand) continue;
-      if (above ? bottom(r) > caption.rect.y + slack : r.y < bottom(caption.rect) - slack) continue;
+      if (above ? bottom(core) > caption.rect.y + slack : core.y < bottom(caption.rect) - slack) continue;
       const span = union(rect, r);
       if (bodyLines.some((l) => intersects(l.rect, span)) || captions.some((k) => k !== caption && intersects(k.rect, span))) continue;
       if (candidate) {
@@ -1079,7 +1138,7 @@ function growFigure(caption: Caption, parts: Candidate[], candidates: Candidate[
         parts.push(candidate);
       } else {
         usedSmall.add(graphic);
-        parts.push({ rect: r, images: graphic.images, paths: graphic.paths, source: 'cluster', table: false, claimed: true, objects: graphic.objects });
+        parts.push({ rect: r, core: r, images: graphic.images, paths: graphic.paths, source: 'cluster', table: false, claimed: true, objects: graphic.objects });
       }
       changed = true;
     }
