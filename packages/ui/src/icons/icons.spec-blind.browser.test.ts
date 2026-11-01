@@ -1,6 +1,8 @@
 // Spec-blind browser tests for Task 13: icons.
 // Spec "Type and icons": Material Symbols Outlined at weight 400, unfilled, filled when selected.
 // The PDF file icon is Material Design Icons file-pdf-box, in Drive's PDF red #fc413d (research 02, section 1 item 5 and section 6.3).
+// Published usage: tokens.css first, because the icon colours come from the token variables.
+import '../tokens/tokens.css';
 import { createElement } from 'react';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { render } from '../../test/render';
@@ -20,11 +22,11 @@ describe('Icon', () => {
     expect(new Set(ICON_NAMES).size).toBe(ICON_NAMES.length);
 
     // A name the font does not know shows as its own word, which is much wider than one 24 px glyph.
-    const rendered = ICON_NAMES.map((name: string) => {
+    const rendered = ICON_NAMES.map((name) => {
       const el = render(createElement(Icon, { name, size: 24 }));
       return { name, text: el.textContent?.trim(), width: el.getBoundingClientRect().width };
     });
-    const broken = rendered.filter((r: { name: string; text: string | undefined; width: number }) => r.text !== r.name || Math.abs(r.width - 24) > 2);
+    const broken = rendered.filter((r) => r.text !== r.name || Math.abs(r.width - 24) > 2);
     expect(broken).toEqual([]);
   });
 
@@ -45,13 +47,16 @@ describe('FileTypeIcon', () => {
     const el = render(createElement(FileTypeIcon, { kind: 'pdf', size: 24 }));
     const svg = el.tagName.toLowerCase() === 'svg' ? el : el.querySelector('svg');
     if (!svg) throw new Error('FileTypeIcon rendered no svg');
-    expect(svg.querySelector('path')?.getAttribute('d')).toBeTruthy();
+    const path = svg.querySelector('path');
+    if (!path) throw new Error('FileTypeIcon svg has no path');
+    expect(path.getAttribute('d')).toBeTruthy();
 
     expect(Math.abs(el.getBoundingClientRect().width - 24)).toBeLessThanOrEqual(1);
 
-    // "Filled" means the paint is not 'none'. A fill of currentColor takes the colour from the element's color.
-    const fill = getComputedStyle(svg).fill;
-    const effective = fill === 'none' ? 'none' : fill.startsWith('rgb') ? fill : getComputedStyle(svg).color;
-    expect(effective).toBe('rgb(252, 65, 61)');
+    // Check what is painted: the computed fill of the path. "Filled" means the paint is not 'none'.
+    // If the fill is currentColor, the painted colour is the path's own colour.
+    const fill = getComputedStyle(path).fill;
+    const painted = fill === 'none' ? 'none' : fill.startsWith('rgb') ? fill : getComputedStyle(path).color;
+    expect(painted).toBe('rgb(252, 65, 61)');
   });
 });
