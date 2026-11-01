@@ -54,12 +54,26 @@ describe('the extracted inputs match the manifest', () => {
     expect(NOT_LEARNING).toHaveLength(22);
   });
 
-  it.each(MANIFEST.map((i) => [i.path, i] as const))('%s has page count, sizes and a first-and-last-5-pages sample', (_path, item) => {
+  it.each(MANIFEST.map((i) => [i.path, i] as const))('%s has page count, sizes and a first-and-last-5-pages sample (plus a second look if it was empty)', (_path, item) => {
     const r = fixtureRecord(item);
     expect(r.pageCount).toBe(item.pages);
     expect(r.pageSizes).toHaveLength(item.pages);
-    expect(r.sampleText).toHaveLength(Math.min(item.pages, 10));
+    const edge = Math.min(item.pages, 10);
+    if (r.secondLook) {
+      expect(r.firstLastWords).toBeLessThan(15);
+      expect(r.sampleText.length).toBeGreaterThan(edge);
+      expect(r.sampleText.length).toBeLessThanOrEqual(Math.min(item.pages, 20));
+    } else {
+      expect(r.sampleText).toHaveLength(edge);
+    }
     expect(r.sampleText.every((t) => typeof t === 'string')).toBe(true);
+  });
+
+  it('only the image-heavy CS50 slides need the second look; the one-page image-only receipt cannot have one', () => {
+    const second = MANIFEST.filter((i) => fixtureRecord(i).secondLook).map(baseName);
+    expect(second).toEqual(['slides-cs50-2023-lecture0.pdf']);
+    const starbucks = NOT_LEARNING.find((i) => i.path.includes('starbucks'))!;
+    expect(fixtureRecord(starbucks).firstLastWords).toBe(0);
   });
 });
 
@@ -211,17 +225,30 @@ describe('with the link it came from, the files the link vouches for are saved',
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
-// SPEC GAP CANDIDATE. With PDFium, the first and last 5 pages of the CS50 lecture-0 slides hold 7 words (an image-only title
-// slide and "->" arrows; pdftotext sees the same). The research prototype did not hit this: it also read the whole file's
-// text before calling a file "no text". The spec's rule 4 says a scan with no text is never saved and "the score is not used
-// for them", and FilterInput carries only the sample. So by the spec the lecture can be at best "not sure", and together with
-// the MIT 14.01 handout that is 2 of 22 not saved, which breaks "at most 1 of 22". The controller should rule: widen the
-// sample for long slide decks, count words differently, or accept 2. This test states what the plan's gate needs.
-describe('predicted spec conflict: image-heavy slides', () => {
-  it('the CS50 lecture 0 slides (192 pages, almost no text in the sampled pages) are saved or asked, not skipped, even with no link', () => {
-    const item = LEARNING.find((i) => i.path.includes('slides-cs50'))!;
-    const d = decide(item, 'content-only');
-    expect(wordCount(fixtureRecord(item).sampleText), 'the sample really is almost empty').toBeLessThan(15);
+// DECIDED (spec, "Decided while building the filter"): "Second look for text-poor decks. If the first and last 5 pages hold
+// fewer than 15 words, up to 10 middle pages are sampled before the no-text rule applies. Slide decks such as the CS50 lectures
+// are judged on their real content. Image-only receipts and scans still never save."
+// With PDFium the first and last 5 pages of the CS50 lecture-0 slides hold 7 words (image-only title slides and arrows); the
+// extractor now applies the second look, so the sample has the words of 10 middle slides as well.
+describe('second look: image-heavy slides are judged on their middle pages', () => {
+  const cs50 = () => LEARNING.find((i) => i.path.includes('slides-cs50'))!;
+
+  it('the first and last 5 pages alone are almost empty, and the second look finds real text', () => {
+    const r = fixtureRecord(cs50());
+    expect(r.firstLastWords).toBeLessThan(15);
+    expect(r.secondLook).toBe(true);
+    expect(wordCount(r.sampleText)).toBeGreaterThanOrEqual(15);
+    expect(r.sampledPageIndexes.length).toBeLessThanOrEqual(20);
+  });
+
+  it.each(SOURCE_MODES)('the CS50 lecture 0 slides are saved or asked, not skipped, and not treated as a scan (%s)', (mode) => {
+    const d = decide(cs50(), mode);
     expect(['learning', 'unsure'], show(d)).toContain(d.verdict);
+    expect(d.rule, show(d)).not.toBe('no-text');
+  });
+
+  it('the one-page image-only receipt still never saves', () => {
+    const starbucks = NOT_LEARNING.find((i) => i.path.includes('starbucks'))!;
+    for (const mode of SOURCE_MODES) expect(decide(starbucks, mode).verdict).toBe('not-learning');
   });
 });

@@ -12,6 +12,12 @@
 //
 // Sampling rule (my reading of "sampleText: string[] /* first and last 5 pages */"): one array entry per page, in page
 // order, first five pages then last five; a document of 10 pages or fewer gives every page once.
+//
+// Second look (spec, "Decided while building the filter": "If the first and last 5 pages hold fewer than 15 words, up to 10
+// middle pages are sampled before the no-text rule applies"): when those pages hold fewer than 15 words and the file has more
+// than 10 pages, up to 10 more pages are read from the middle (pages 6 to n-5), evenly spaced, and put in page order between
+// the first five and the last five. The spec does not say which middle pages or whether to stop early; I take 10 spread out.
+// The record keeps `secondLook` and the page indexes so the unit tests can tell the two cases apart.
 import { commands } from 'vitest/browser';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { DocHandle, PdfBackend } from '../../src/backend/types';
@@ -39,6 +45,19 @@ function sampledPages(pageCount: number): number[] {
   for (let i = 0; i < pageCount; i++) if (i < 5 || i >= pageCount - 5) out.push(i);
   return out;
 }
+
+/** Up to 10 middle pages (indexes 5 .. pageCount-6), evenly spaced; all of them when there are 10 or fewer. */
+function middlePages(pageCount: number): number[] {
+  const first = 5;
+  const end = pageCount - 5; // exclusive
+  const n = end - first;
+  if (n <= 0) return [];
+  if (n <= 10) return Array.from({ length: n }, (_, k) => first + k);
+  return Array.from({ length: 10 }, (_, k) => first + Math.floor(((k + 0.5) * n) / 10));
+}
+
+const wordsIn = (texts: readonly string[]): number => texts.join(' ').split(/\s+/).filter(Boolean).length;
+const MIN_WORDS = 15;
 
 let backend: PdfBackend;
 beforeAll(() => {
@@ -69,9 +88,15 @@ describe('extract filter inputs from the 44 research fixtures with PDFium', () =
       try {
         expect(info.pageCount, `${item.path}: page count`).toBe(item.pages);
         const form = await backend.getFormInfo(doc);
-        const pageIndexes = sampledPages(info.pageCount);
-        const sampleText: string[] = [];
-        for (const p of pageIndexes) sampleText.push(await backend.getPageText(doc, p));
+        const edgeIndexes = sampledPages(info.pageCount);
+        const edgeText: string[] = [];
+        for (const p of edgeIndexes) edgeText.push(await backend.getPageText(doc, p));
+        const firstLastWords = wordsIn(edgeText);
+        const secondLook = firstLastWords < MIN_WORDS && middlePages(info.pageCount).length > 0;
+        const byPage = new Map<number, string>(edgeIndexes.map((p, k) => [p, edgeText[k] ?? ''] as const));
+        if (secondLook) for (const p of middlePages(info.pageCount)) byPage.set(p, await backend.getPageText(doc, p));
+        const pageIndexes = [...byPage.keys()].sort((a, b) => a - b);
+        const sampleText = pageIndexes.map((p) => byPage.get(p) ?? '');
         const record = {
           path: item.path,
           label: item.label,
@@ -81,6 +106,8 @@ describe('extract filter inputs from the 44 research fixtures with PDFium', () =
           metadata: info.metadata,
           formType: form.formType,
           sampledPageIndexes: pageIndexes,
+          firstLastWords,
+          secondLook,
           sampleText,
         };
         await commands.writeFile(`${OUT_DIR}/${item.path}.json`, JSON.stringify(record));

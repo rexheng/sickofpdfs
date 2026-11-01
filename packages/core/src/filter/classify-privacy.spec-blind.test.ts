@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { LATEX, SCHOLARLY_URL, asInput, deepFreeze, lines, mkInput, rulesOf } from '../../test/spec-blind/filter-kit';
 import type { FilterDecision, FilterInput, FilterRules, Spec } from '../../test/spec-blind/filter-kit';
 import { classify } from './classify';
+import { nudge } from './nudge';
 
 const decide = (input: FilterInput, rules: Partial<FilterRules> = {}): FilterDecision => classify(deepFreeze(input), deepFreeze(rulesOf(rules)));
 
@@ -336,8 +337,6 @@ interface Private {
   strict: boolean;
   /** What a hand-made PDF of this kind is likely to be. */
   producer?: string;
-  /** In the big matrix (every length, link and tool). CVs are not: see the "predicted spec conflict" describe. */
-  matrix?: boolean;
 }
 
 const PRIVATE: Private[] = [
@@ -353,8 +352,8 @@ const PRIVATE: Private[] = [
   { name: 'visa application with a passport line', pages: PASSPORT_APPLICATION, strict: true, producer: 'Microsoft® Word 2019' },
   { name: 'expense claim', pages: EXPENSES, strict: true, producer: 'Microsoft® Excel 2019' },
   { name: 'invoice made with LaTeX', pages: LATEX_INVOICE, strict: true, producer: 'pdfTeX-1.40.25' },
-  { name: 'CV with a References heading', pages: CV_REFERENCES, strict: false, producer: 'Microsoft® Word 2019', matrix: false },
-  { name: 'Résumé (CV) with a References heading', pages: CV_RESUME, strict: false, producer: 'Microsoft® Word 2019', matrix: false },
+  { name: 'CV with a References heading', pages: CV_REFERENCES, strict: false, producer: 'Microsoft® Word 2019' },
+  { name: 'Résumé (CV) with a References heading', pages: CV_RESUME, strict: false, producer: 'Microsoft® Word 2019' },
 ];
 
 const sampleFor = (pages: string[], pageCount: number): string[] => Array.from({ length: Math.min(pageCount, 10) }, (_, i) => pages[i % pages.length]);
@@ -369,13 +368,14 @@ describe('zero false saves: hand-written private documents, as the owner would m
     expect(d.reasons.length).toBeGreaterThan(0);
   });
 
-  // 12 documents x page counts x links x producers. Nothing here may come out "learning".
+  // 14 documents x page counts x links x producers. Nothing here may come out "learning".
   const LINKS: Array<string | null> = [
     null,
     'file:///C:/Users/me/Downloads/document.pdf',
     'https://mail.google.com/mail/u/0/?ui=2&view=att&th=1234',
     'https://www.barclays.co.uk/documents/abc.pdf',
     'https://shop.example.com/orders/123/document.pdf',
+    'https://www.example.ac.uk/~astudent/document.pdf',
   ];
   const PAGE_COUNTS = [1, 2, 3, 5, 7];
   const PRODUCERS = [undefined, 'pdfTeX-1.40.25'];
@@ -383,7 +383,7 @@ describe('zero false saves: hand-written private documents, as the owner would m
   it('no private document, at any length, from any of these links, made by any of these tools, gets the verdict learning', () => {
     const failures: string[] = [];
     let n = 0;
-    for (const doc of PRIVATE.filter((p) => p.matrix !== false)) {
+    for (const doc of PRIVATE) {
       for (const pageCount of PAGE_COUNTS) {
         for (const url of LINKS) {
           for (const producer of PRODUCERS) {
@@ -394,7 +394,7 @@ describe('zero false saves: hand-written private documents, as the owner would m
         }
       }
     }
-    expect(n).toBe(PRIVATE.filter((p) => p.matrix !== false).length * PAGE_COUNTS.length * LINKS.length * PRODUCERS.length);
+    expect(n).toBe(PRIVATE.length * PAGE_COUNTS.length * LINKS.length * PRODUCERS.length);
     expect(failures, `${failures.length} false saves:\n${failures.join('\n')}`).toEqual([]);
   });
 
@@ -407,18 +407,61 @@ describe('zero false saves: hand-written private documents, as the owner would m
   });
 });
 
-// SPEC GAP CANDIDATE (not a guess about the code: it follows from the spec's own weight table). A CV made in LaTeX with a
-// References heading scores -1 +1.5 (LaTeX) +2.5 (References) = 3.0 from 3 pages up, and 3.0 at 2 pages on a university
-// site (-1 -1 +1.5 +1 +2.5), which the spec says saves. The plan lists "a CV or job letter" among the held-out files, so the
-// controller should rule whether that is acceptable or needs a guard (for example: a References heading followed by
-// "available on request" does not count). These tests state the privacy goal; a faithful implementation of the table fails them.
-describe('predicted spec conflict: a CV that the weight table would save', () => {
-  it('a 3-page LaTeX CV with a References heading is not saved', () => {
-    const d = decide(mkInput({ pageCount: 3, metadata: LATEX, sampleText: sampleFor(CV_REFERENCES, 3) }));
-    expect(d.verdict).not.toBe('learning');
+// DECIDED (spec, "Decided while building the filter"): "CVs never save by score. CV evidence counts against saving: CV, resume or
+// curriculum vitae titles, Education, Experience or Skills headings, and a contact block on page 1. A CV laid out like a paper,
+// with a References heading, is personal, not learning." (Before this was decided, a LaTeX CV with a References heading scored 3.0.)
+describe('CVs never save by score, even when laid out like a paper', () => {
+  const CONTACT = 'Alex Student  |  alex.student@example.com  |  +44 20 7946 0958  |  Eastbridge';
+  const PUBLICATIONS = lines(
+    'Publications',
+    'A. Student, "Rents and tenancy deposits", Journal of Housing, 2025. doi:10.1000/jhousing.2025.114',
+    'A. Student and B. Colleague, "Heating bills", Energy Economics, 2026. doi:10.1000/ee.2026.209',
+  );
+  const NUMBERED_REFEREES = lines(
+    'References',
+    '[1] Prof. A. Referee, University of Eastbridge',
+    '[2] Dr B. Referee, Harbour Analytics',
+    '[3] Ms C. Referee, Corner Coffee',
+    '[4] Prof. D. Referee, University of Westbridge',
+    '[5] Dr E. Referee, Eastbridge Learning Centre',
+    '[6] Mr F. Referee, Harbour Analytics',
+  );
+  const SECTIONS = lines('Education', 'BSc Economics, University of Eastbridge, 2023 to 2026.', 'Experience', 'Summer intern, Harbour Analytics, 2025.', 'Skills', 'Spreadsheets, statistics software, report writing.');
+
+  const cvs: Array<[string, Spec]> = [
+    ['a 3-page LaTeX CV with a References heading', { pageCount: 3, metadata: LATEX, sampleText: sampleFor(CV_REFERENCES, 3) }],
+    ['a 2-page LaTeX CV with a References heading on a university site', { pageCount: 2, url: 'https://www.example.ac.uk/~astudent/cv.pdf', metadata: LATEX, sampleText: sampleFor(CV_REFERENCES, 2) }],
+    ['a LaTeX Resume (title, contact block, Education, Experience, Skills) with a References heading, 8 pages', { pageCount: 8, metadata: LATEX, first: lines('Résumé', CONTACT, SECTIONS), last: 'References\r\nAvailable on request.' }],
+    ['an academic CV of 35 pages on a .edu site, LaTeX, with a publication list and numbered referees', { pageCount: 35, url: 'https://www.example.edu/~astudent/cv.pdf', metadata: LATEX, first: lines('Curriculum Vitae', CONTACT, SECTIONS, PUBLICATIONS), last: NUMBERED_REFEREES }],
+    ['a CV with no title, found by its contact block and headings alone, LaTeX, 3 pages, References heading', { pageCount: 3, metadata: LATEX, first: lines(CONTACT, SECTIONS), last: NUMBERED_REFEREES }],
+    ['a CV laid out like a paper: Abstract-style summary, DOIs, References, LaTeX, 30 pages, on a scholarly-looking site', { pageCount: 30, url: SCHOLARLY_URL, metadata: LATEX, first: lines('Curriculum Vitae', CONTACT, 'Summary', 'Applied economist working on housing and energy bills.', SECTIONS, PUBLICATIONS), last: NUMBERED_REFEREES }],
+  ];
+
+  it.each(cvs)('%s is not saved', (_name, spec) => {
+    const d = decide(mkInput(spec));
+    expect(d.verdict, `${JSON.stringify(d.reasons)} score ${d.score} rule ${d.rule}`).not.toBe('learning');
+    expect(d.reasons.length).toBeGreaterThan(0);
   });
-  it('a 2-page LaTeX CV with a References heading on a university site is not saved', () => {
-    const d = decide(mkInput({ pageCount: 2, url: 'https://www.example.ac.uk/~astudent/cv.pdf', metadata: LATEX, sampleText: sampleFor(CV_REFERENCES, 2) }));
-    expect(d.verdict).not.toBe('learning');
+
+  it('a CV is not rescued by the model: nudge cannot turn it into learning either', () => {
+    // nudge only moves "unsure"; if a CV comes back unsure, the strongest similarity must still not save it.
+    const d = decide(mkInput(cvs[0][1]));
+    if (d.verdict === 'unsure') expect(nudge(d, { learning: 0.95, notLearning: 0.05 }).verdict).not.toBe('learning');
+  });
+
+  // The counter-check: one or two CV-like headings are not "CV evidence" by themselves. A labour-economics paper has sections
+  // called Education and Experience, and it is a reading. (Guess: the spec lists headings, titles and a contact block as
+  // evidence, but not how much is needed; a paper with two section names, no CV title and no contact block must still save.)
+  it('a paper with sections called Education and Experience, no CV title and no contact block, is still saved', () => {
+    const d = decide(
+      mkInput({
+        pageCount: 30,
+        metadata: LATEX,
+        first: lines('Returns to Education and Experience', 'Abstract', 'We describe how pay changes with years of schooling and years of work.'),
+        pages: [],
+        last: lines('Education', 'Experience', 'References', 'A. Author. A Title. Journal of Things, 2020.'),
+      }),
+    );
+    expect(d.verdict).toBe('learning');
   });
 });

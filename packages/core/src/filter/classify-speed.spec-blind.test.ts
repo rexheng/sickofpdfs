@@ -47,7 +47,8 @@ describe('speed on the largest real sample', () => {
   });
 
   it.each(SOURCE_MODES)('every one of the 44 fixtures classifies in under 150 ms (%s)', (mode) => {
-    const slow = MANIFEST.map((item) => ({ item, ms: timeOnce(fixtureInput(item, mode)) })).filter((r) => r.ms >= LIMIT_MS);
+    // best of 3 per file: a scheduler or GC pause while other test files run must not fail a sweep of 44
+    const slow = MANIFEST.map((item) => ({ item, ms: bestOf(3, fixtureInput(item, mode)) })).filter((r) => r.ms >= LIMIT_MS);
     expect(slow.map((r) => `${r.item.path}: ${r.ms.toFixed(0)} ms`)).toEqual([]);
   });
 });
@@ -83,9 +84,9 @@ describe('speed on hostile text of the same size (no catastrophic back-tracking)
     expect(bestOf(3, input)).toBeLessThan(LIMIT_MS);
   });
 
-  it('one page of 200,000 characters with no spaces', () => {
+  it('one page of 200,000 characters with no spaces (3.3 times the largest sample: linear time allows 500 ms)', () => {
     const input = mkInput({ pageCount: 1, sampleText: ['x'.repeat(200_000)] });
-    expect(bestOf(3, input)).toBeLessThan(LIMIT_MS);
+    expect(bestOf(3, input)).toBeLessThan(LIMIT_MS * (200_000 / 60_000));
   });
 
   it('a very long link and file name', () => {

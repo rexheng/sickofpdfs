@@ -14,7 +14,7 @@
 // Every score row builds its input from neutral filler (see filter-kit.ts) so the expected score is the starting -1 plus the
 // ONE weight under test. I cross-checked these expected numbers against the research prototype on the same texts.
 import { describe, expect, it } from 'vitest';
-import { ALL_HARD_BLOCKS, LATEX, SCHOLARLY_URL, deepFreeze, lines, mkInput, rulesOf } from '../../test/spec-blind/filter-kit';
+import { ALL_HARD_BLOCKS, FILLER_PAGE, LATEX, SCHOLARLY_URL, deepFreeze, lines, mkInput, rulesOf } from '../../test/spec-blind/filter-kit';
 import type { FilterDecision, FilterRules, HardBlock, Spec } from '../../test/spec-blind/filter-kit';
 import { classify } from './classify';
 
@@ -221,6 +221,46 @@ describe('rule order: your choice, hard block, lists, force save, score', () => 
 
     it('no stored choice (null) changes nothing', () => {
       expect(run(POS_6_5, { fileChoice: null })).toEqual(run(POS_6_5));
+    });
+  });
+
+  // DECIDED (spec, "Decided while building the filter"): "Your own choice to save always wins (D9). This holds even over a card
+  // or bank-number block. A warning shows, and the file's text is not indexed." The warning and the indexing switch live in the
+  // save controller; what the filter can do is save, say it was the owner's choice, and keep naming the blocked KINDS (never
+  // the numbers) so the controller knows to warn and to switch indexing off. That last part is my reading (guess).
+  describe('1b. your own save wins over a hard block (D9)', () => {
+    const cases: Array<[string, HardBlock[]]> = [
+      ['a card number', ['card']],
+      ['an IBAN with a sort code and account', ['iban', 'sort-code-account']],
+      ['a National Insurance number with a UTR', ['ni-number', 'utr']],
+      ['a passport line with a boarding-pass code', ['passport-line', 'boarding-pass']],
+      ['every kind at once', [...ALL_HARD_BLOCKS]],
+    ];
+
+    it.each(cases)('%s: saved by choice', (_name, kinds) => {
+      const spec: Spec = { pageCount: 3, first: kinds.map((k) => SNIPPET[k]).join('\r\n') };
+      const without = run(spec);
+      expect([without.verdict, without.rule], 'without the choice it is blocked').toEqual(['not-learning', 'hard-block']);
+      const d = run(spec, { fileChoice: 'save' });
+      expect([d.verdict, d.rule]).toEqual(['learning', 'file-choice']);
+      expect(d.reasons.length).toBeGreaterThan(0);
+    });
+
+    it.each(cases)('%s: the decision still names the blocked kinds (so the warning shows and indexing stays off), and holds no number', (_name, kinds) => {
+      const d = run({ pageCount: 3, first: kinds.map((k) => SNIPPET[k]).join('\r\n') }, { fileChoice: 'save' });
+      expect(d.hardBlocks ?? []).toEqual(expect.arrayContaining(kinds));
+      expect(JSON.stringify(d)).not.toMatch(/\d{4}|WEST|ERIKSSON|DESMARAIS/);
+    });
+
+    it('a document with no hard block does not carry the warning kinds', () => {
+      const d = run({ pageCount: 3 }, { fileChoice: 'save' });
+      expect([d.verdict, d.rule]).toEqual(['learning', 'file-choice']);
+      expect(d.hardBlocks ?? []).toEqual([]);
+    });
+
+    it('your choice never to save still wins over everything, including a strong paper', () => {
+      const d = run(POS_9_0, { fileChoice: 'never', allow: ['arxiv.org'] });
+      expect([d.verdict, d.rule]).toEqual(['not-learning', 'file-choice']);
     });
   });
 
@@ -502,6 +542,28 @@ describe('scans with no text are never saved by score', () => {
     expect([d.verdict, d.rule]).toEqual(['not-learning', 'no-text']);
   });
 
+  // DECIDED (spec, second look): after the extra middle pages are sampled the no-text rule applies to the whole sample. The sampler
+  // does the looking; classify only ever sees the final sampleText (up to 20 entries), so it must judge that.
+  it('a long scan whose middle pages were sampled too and are blank is still a scan (20 blank entries)', () => {
+    const d = run({ pageCount: 192, sampleText: Array.from({ length: 20 }, () => ''), url: 'https://example.com/scan.pdf' });
+    expect([d.verdict, d.rule]).toEqual(['not-learning', 'no-text']);
+  });
+
+  it('a long deck whose edge pages are images but whose middle pages hold text is judged on that text, not as a scan', () => {
+    const sampleText = [...blank(5), ...Array.from({ length: 10 }, () => FILLER_PAGE), ...blank(5)];
+    const d = run({ pageCount: 192, pageSize: { width: 720, height: 405 }, sampleText, url: 'https://example.com/lecture0.pdf' });
+    expect(d.rule).toBe('score');
+    expect(d.verdict).toBe('unsure'); // -1 +2.5 (100+ pages) +1 (slide-deck shape) = 2.5
+    expect(d.score).toBeCloseTo(2.5, 5);
+    expect(d.needsModel).toBe(true);
+  });
+
+  it('the same long scan with a few words of text on one middle page is still too little to judge', () => {
+    const sampleText = [...blank(5), 'Slide 7', ...Array.from({ length: 9 }, () => ''), ...blank(5)];
+    const d = run({ pageCount: 192, pageSize: { width: 720, height: 405 }, sampleText, url: 'https://example.com/scan.pdf' });
+    expect([d.verdict, d.rule]).toEqual(['not-learning', 'no-text']);
+  });
+
   it('an empty sample (no pages sampled) counts as no text', () => {
     const d = run({ pageCount: 5, sampleText: [], url: 'https://example.com/scan.pdf' });
     expect([d.verdict, d.rule]).toEqual(['not-learning', 'no-text']);
@@ -542,6 +604,38 @@ describe('the chip wording for a not-learning verdict (plan S2)', () => {
   it('the invoice wording is the plan\'s "an invoice or receipt"', () => {
     const d = run({ pageCount: 1, first: invoice });
     expect(d.reasons[0]).toMatch(/invoice or receipt/i);
+  });
+
+  // DECIDED (spec, "Decided while building the filter"): "The first reason of a not-learning verdict is a plain 'looks like ...'
+  // phrase for the most specific admin group that matched. For example: 'looks like a tax form', 'an invoice or receipt', 'a bank
+  // statement'." So when a file matches a specific group AND the general invoice words, the specific one is named.
+  describe('the chip names the most specific group that matched', () => {
+    const generic = lines('Invoice', 'Invoice number: 2026-004711', 'Bill to: Ms A. Student', 'Subtotal £14,660.00', 'Total amount due £14,660.00', 'Payment method: bank transfer');
+    const specific: Array<[string, string, RegExp]> = [
+      ['a tax form', lines('Self Assessment tax return', 'Unique Taxpayer Reference', 'HMRC', 'Internal Revenue Service', 'taxpayer'), /tax form/i],
+      ['a payslip', lines('Payslip', 'Gross pay', 'Net pay', 'Deductions', 'PAYE', 'Year to date'), /payslip/i],
+      ['a bank statement', lines('Statement date', 'Opening balance', 'Closing balance', 'Direct debit', 'Sort code'), /bank statement/i],
+      ['a ticket or boarding pass', lines('Boarding pass', 'Gate A36', 'Seat 14C', 'Flight AK 1996', 'Booking reference (PNR)'), /ticket or boarding pass/i],
+      ['a contract', lines('Landlord', 'Tenant', 'hereinafter', 'terms and conditions', 'Signature of Tenant'), /contract/i],
+    ];
+
+    it.each(specific)('%s wins over the general invoice wording that is also on the page', (_name, block, wanted) => {
+      const d = run({ pageCount: 2, first: lines(block, generic) });
+      expect(d.verdict).toBe('not-learning');
+      expect(d.reasons[0], JSON.stringify(d.reasons)).toMatch(/looks like|^an? |^has /i);
+      expect(d.reasons[0], JSON.stringify(d.reasons)).toMatch(wanted);
+      expect(d.reasons[0]).not.toMatch(/invoice or receipt/i);
+    });
+
+    it.each(specific)('%s is named on its own as well', (_name, block, wanted) => {
+      const d = run({ pageCount: 2, first: block });
+      expect(d.verdict).toBe('not-learning');
+      expect(d.reasons[0], JSON.stringify(d.reasons)).toMatch(wanted);
+    });
+
+    it('with only the general words, it is an invoice or receipt', () => {
+      expect(run({ pageCount: 2, first: generic }).reasons[0]).toMatch(/invoice or receipt/i);
+    });
   });
 
   it('a learning verdict by score gives labels such as the plan\'s "References section, DOI, 40 pages"', () => {

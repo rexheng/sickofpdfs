@@ -153,6 +153,10 @@ export interface FixtureRecord {
   metadata: { title: string | null; author: string | null; subject: string | null; keywords: string | null; creator: string | null; producer: string | null; pdfId: string | null };
   formType: 'none' | 'acroform' | 'xfa-full' | 'xfa-foreground';
   sampledPageIndexes: number[];
+  /** Words in the first and last 5 pages alone (the second-look test). */
+  firstLastWords: number;
+  /** True when those pages held fewer than 15 words and up to 10 middle pages were added (spec, "Decided while building the filter"). */
+  secondLook: boolean;
   sampleText: string[];
 }
 
