@@ -4,8 +4,9 @@
 // What it does with drafts, so no text is lost:
 // - Esc in a note or reply box sends what was typed (the controller's reading of the spec: Esc "saves typed text");
 //   Esc on an empty box drops it, and an empty new note takes its highlight with it.
-// - Leaving a card (another card, Esc on the card, next or previous note) drops an empty draft only. Text that was
-//   typed stays as a draft on its card, saved by the draft keeper, until it is sent.
+// - Leaving a card (another card, Esc on the card, next or previous note) does the same, as in the margin (S14; the
+//   controller's ruling): a note or reply with text is sent, an empty one is dropped. While it is being typed, the
+//   draft keeper keeps the text safe.
 import type { CommentId, ThreadId } from '@sop/core';
 import { Icon, Tooltip } from '@sop/ui';
 import type { JumpHistory, PageSize, ViewerStore } from '@sop/viewer';
@@ -80,10 +81,10 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
     goToSpot(spot, { jumps, api, pages, scale: viewer.get().scale });
   }, [jumps, pageList, pages, viewer]);
 
-  /** Leaving a card: an empty draft goes (an empty new note with its highlight). Typed text stays a draft. */
+  /** Leaving a card: a draft with text is sent; an empty one goes (an empty new note with its highlight). */
   const leave = useCallback((id: ThreadId | null) => {
     if (id === null) return;
-    for (const d of session.state().drafts) if (d.threadId === id && d.body.trim() === '') void session.cancel(d.id);
+    for (const d of session.state().drafts) if (d.threadId === id) void (d.body.trim() === '' ? session.cancel(d.id) : session.send(d.id));
   }, [session]);
 
   const activate = useCallback((id: ThreadId) => {
