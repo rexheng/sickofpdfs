@@ -62,6 +62,22 @@ export const ICON_NAMES = [
   'person', // the owner's avatar on comment cards (S5)
   // TB1 chrome polish: Go to page (not 'pageview', which looked like Find's icon beside it)
   'move_down',
+  // Phase 3: the library shell, list and grid (S7): the nav, "+ New", the view toggle, sorting and the row actions
+  'home',
+  'library_books',
+  'schedule',
+  'star',
+  'settings',
+  'upload_file',
+  'file_open',
+  'add_link',
+  'menu',
+  'grid_view',
+  'sort',
+  'arrow_upward',
+  'arrow_downward',
+  'restore_from_trash',
+  'search_off',
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

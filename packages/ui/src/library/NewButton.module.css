@@ -1,0 +1,49 @@
+/*
+ * "+ New" (02 section 4.3): 56 px tall, radius 16, white, elevation 1 and elevation 2 on hover, padding 0 20 0 16, the
+ * icon and the label 12 px apart. The label is the dark blue Drive measured (#001d35).
+ */
+.button {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-3);
+  align-items: center;
+  box-sizing: border-box;
+  min-inline-size: var(--new-btn-min-w);
+  block-size: var(--new-btn-h);
+  margin: 0;
+  padding: var(--sop-lib-new-pad);
+  border: 0;
+  border-radius: var(--shape-new-button);
+  background-color: var(--gm3-sys-color-surface);
+  box-shadow: var(--elev-1);
+  color: var(--gm3-sys-color-on-secondary-fixed);
+  font: var(--type-lib-new);
+  cursor: pointer;
+  transition: box-shadow 150ms ease, background-color 150ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.button:hover,
+.button[aria-expanded='true'] {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-primary) calc(var(--gm3-state-hover) * 100%), var(--gm3-sys-color-surface));
+  box-shadow: var(--elev-2);
+}
+
+.button:active {
+  background-color: color-mix(
+    in srgb,
+    var(--gm3-sys-color-primary) calc((var(--gm3-state-hover) + var(--gm3-state-pressed)) * 100%),
+    var(--gm3-sys-color-surface)
+  );
+}
+
+.button:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button {
+    transition: none;
+  }
+}

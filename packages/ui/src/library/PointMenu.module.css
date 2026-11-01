@@ -1,0 +1,8 @@
+/* The point the menu opens at: a zero-size fixed element portaled to <body>, as the viewer's right-click menu does. */
+.anchor {
+  position: fixed;
+  inline-size: 0;
+  block-size: 0;
+  overflow: hidden;
+  pointer-events: none;
+}

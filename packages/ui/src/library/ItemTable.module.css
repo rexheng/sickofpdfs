@@ -1,0 +1,184 @@
+/*
+ * Drive's list view (02 section 4.6). The table is one CSS grid; the header, the groups and the rows are subgrids,
+ * so every row shares the column widths. Header and rows are 48 px with a 1 px #c4c7c5 divider.
+ */
+.table {
+  display: grid;
+  align-content: start;
+  min-inline-size: 0;
+}
+
+.row,
+.group {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+}
+
+.row {
+  box-sizing: border-box;
+  block-size: var(--row-h);
+  border-bottom: 1px solid var(--drive-row-divider);
+}
+
+/* The header stays in place while the rows scroll under it. */
+.header {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  block-size: var(--header-row-h);
+  background-color: var(--drive-content-bg);
+}
+
+.headCell {
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-table-header);
+  font-variation-settings: "opsz" 17;
+  white-space: nowrap;
+}
+
+.headLabel {
+  padding: 0 var(--space-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.headEnd {
+  justify-content: flex-end;
+}
+
+/* A sortable header fills its cell; hovering it shows Drive's state layer with round top corners. */
+.sortButton {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+  box-sizing: border-box;
+  inline-size: 100%;
+  block-size: 100%;
+  margin: 0;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--shape-header-cell-hover);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.sortButton > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sortButton:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.sortButton:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.sorted,
+.primaryHead .sortButton.sorted {
+  color: var(--gm3-sys-color-on-surface);
+}
+
+.sortChip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--sop-sort-chip);
+  block-size: var(--sop-sort-chip);
+  border-radius: var(--shape-full);
+  background-color: var(--drive-sort-chip-bg);
+  color: var(--drive-row-selected-fg);
+}
+
+/* A group heading in Recent ("Today", "Earlier this week"): on-surface 14/20 500, 16 px above and 8 px below. */
+.section {
+  grid-column: 1 / -1;
+  padding: var(--space-4) var(--space-2) var(--space-2);
+  border-bottom: 1px solid var(--drive-row-divider);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-lib-section);
+  font-variation-settings: "opsz" 18;
+}
+
+.item {
+  color: var(--gm3-sys-color-on-surface-variant);
+  cursor: default;
+  outline: none;
+  -webkit-user-select: none;
+}
+
+.item:hover {
+  background-color: var(--drive-row-hover);
+}
+
+.selected {
+  background-color: var(--drive-row-selected-bg);
+}
+
+.selected:hover {
+  background-color: var(--drive-row-selected-hover);
+}
+
+/* The keyboard's row: Drive's 2 px #0b57d0 ring with a 2 px #d3e3fd ring inside it (live-04). */
+.item:focus-visible {
+  box-shadow: var(--shadow-lib-focus);
+}
+
+.cell {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-inline-size: 0;
+  padding: 0 var(--space-2);
+  overflow: hidden;
+  font: var(--type-row);
+  font-variation-settings: "opsz" 17;
+  white-space: nowrap;
+}
+
+/* The name: the type icon 16 px in, the text 16 px after it (x 56 from the table's edge, as in Drive). */
+.primaryCell {
+  gap: var(--space-4);
+  padding-inline-start: var(--space-4);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-row-name);
+  font-variation-settings: "opsz" 17;
+}
+
+.selected .cell {
+  color: var(--drive-row-selected-fg);
+}
+
+.text {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.actionsCell {
+  justify-content: flex-end;
+  gap: 0;
+  padding-inline-end: 0;
+}
+
+/* Inline actions: there while the row is hovered, selected or holds the focus. */
+.hoverActions {
+  display: inline-flex;
+  visibility: hidden;
+}
+
+.item:hover .hoverActions,
+.item:focus-within .hoverActions,
+.selected .hoverActions {
+  visibility: visible;
+}

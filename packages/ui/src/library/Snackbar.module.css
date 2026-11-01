@@ -1,0 +1,77 @@
+/*
+ * GM3 snackbar, as Drive shows it: bottom left, 24 px from the edges, the inverse surface (#303030) with #f2f2f2 text,
+ * 4 px corners, elevation 3, at least 48 px tall. The action is a text button in the inverse primary (#a8c7fa).
+ */
+.region {
+  position: fixed;
+  inset: auto auto var(--space-6) var(--space-6);
+  z-index: var(--z-tooltip);
+  pointer-events: none;
+}
+
+.bar {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  box-sizing: border-box;
+  min-inline-size: var(--sop-snackbar-min-w);
+  max-inline-size: var(--sop-snackbar-max-w);
+  min-block-size: var(--snackbar-min-h);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4);
+  border-radius: var(--shape-snackbar);
+  background-color: var(--gm3-sys-color-inverse-surface);
+  box-shadow: var(--elev-3);
+  color: var(--gm3-sys-color-inverse-on-surface);
+  pointer-events: auto;
+  animation: rise 150ms ease-out;
+}
+
+.text {
+  flex: 1 1 auto;
+  padding-block: var(--space-2);
+  font: var(--type-snackbar);
+  font-variation-settings: "opsz" 17;
+}
+
+.action {
+  flex: none;
+  block-size: var(--btn-h);
+  margin: 0;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--shape-full);
+  background: transparent;
+  color: var(--gm3-sys-color-inverse-primary);
+  font: var(--type-text-button);
+  cursor: pointer;
+}
+
+.action:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-inverse-primary) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.action:focus-visible {
+  outline: var(--focus-ring-width) solid var(--gm3-sys-color-inverse-primary);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.bar .close {
+  color: var(--gm3-sys-color-inverse-on-surface);
+}
+
+.bar .close:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-inverse-on-surface) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-2));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    animation: none;
+  }
+}

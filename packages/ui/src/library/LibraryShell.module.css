@@ -1,0 +1,125 @@
+/*
+ * Drive's shell (02 section 4.1) at any window size: the top bar is 64 px, the navigation column 256 px, and the
+ * content card fills the rest, 16 px from the right and bottom edges. The page itself never scrolls; the card's body
+ * and the navigation scroll on their own.
+ */
+.shell {
+  display: grid;
+  grid-template-columns: var(--nav-w) minmax(0, 1fr);
+  grid-template-rows: var(--topbar-h) minmax(0, 1fr);
+  block-size: 100vh;
+  block-size: 100dvh;
+  overflow: hidden;
+  background-color: var(--drive-app-bg);
+  color: var(--gm3-sys-color-on-surface);
+}
+
+.top {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  min-inline-size: 0;
+}
+
+/* The mark sits at x 20, so the word lines up with the navigation labels at x 68. */
+.brand {
+  display: flex;
+  flex: none;
+  align-items: center;
+  box-sizing: border-box;
+  inline-size: var(--nav-w);
+  padding-inline-start: var(--space-5);
+}
+
+.search {
+  display: flex;
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.topEnd {
+  display: flex;
+  flex: none;
+  gap: var(--space-1);
+  align-items: center;
+  padding: 0 var(--space-4) 0 var(--space-6);
+}
+
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-block-size: 0;
+  padding-block: var(--space-2) var(--space-4);
+  overflow-y: auto;
+}
+
+/* "+ New" at x 16, 8 px under the top bar (y 72). */
+.newSlot {
+  padding-inline-start: var(--nav-item-inset-x);
+}
+
+.main {
+  display: flex;
+  min-inline-size: 0;
+  min-block-size: 0;
+  padding: 0 var(--content-card-right-gap) var(--content-card-right-gap) 0;
+}
+
+.card {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow: hidden;
+  border-radius: var(--shape-content-card);
+  background-color: var(--drive-content-bg);
+}
+
+.cardHeader {
+  flex: none;
+  padding: 0 var(--space-3) 0 var(--space-5);
+}
+
+.cardBody {
+  position: relative;
+  flex: 1 1 auto;
+  min-block-size: 0;
+  padding: 0 var(--space-3) var(--space-4) var(--space-5);
+  overflow-y: auto;
+}
+
+.titleRow {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+  block-size: var(--space-16);
+}
+
+.title {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-page-title);
+  font-variation-settings: "opsz" 18;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.titleEnd {
+  display: flex;
+  flex: none;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  padding-block: 0 var(--space-3);
+}

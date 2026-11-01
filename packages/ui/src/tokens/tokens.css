@@ -367,6 +367,39 @@
   --sop-notes-panel-radius: var(--shape-docs-sidebar); /* 16px */
   --sop-notes-tab-bar-h: 3px;      /* [live] the bar under the selected All or Mine tab, round on top */
 
+  /* ===== Phase 3: the library (S7). Light only: Drive's shell, list and grid, research 02 sections 4.1–4.9 ===== */
+  /* Our mark in Drive's logo slot, drawn as the extension icon is: menu_book (FILL 1, white) on a primary tile with
+     corners at 22% and the glyph at 72% of the tile. Drive's logo is 40 px tall at x 20, and its word starts at x 68. */
+  --sop-lib-mark: 40px;
+  --sop-lib-mark-radius: 9px;
+  --sop-lib-mark-glyph: 29px;
+  --type-lib-search: 400 16px/24px var(--font-text);  /* "Search in library": Google Sans Text 16/24 [inf] */
+  --type-lib-new: 500 14px/20px var(--font-flex);     /* "New": Google Sans (Flex) 14 500 [img] */
+  --sop-lib-new-pad: 0 20px 0 16px;                   /* [inf] */
+  --type-lib-section: 500 14px/20px var(--font-display); /* a date group in Recent ("Today", "Earlier this week") [inf] */
+  --type-lib-empty-title: 400 22px/28px var(--font-display); /* GM3 title large, the empty state's heading */
+  --sop-lib-empty-art: 120px;       /* the round tile behind the empty state's icon */
+  --sop-lib-empty-glyph: 56px;
+  --sop-lib-empty-max-w: 440px;
+  /* Table columns (02 section 4.6): the name takes the rest; Owner and Date modified are 215 px, File size 88 px */
+  --sop-col-authors: 215px;
+  --sop-col-date: 180px;
+  --sop-col-pages: 88px;
+  --sop-col-actions: 168px;         /* three 40 px row actions and the ⋮ button */
+  --sop-sort-chip: 24px;            /* [live] the circle behind the sort arrow */
+  /* Keyboard focus on a row or card: a 2 px #0b57d0 ring with a 2 px #d3e3fd ring inside it [px] (live-04) */
+  --shadow-lib-focus: inset 0 0 0 2px var(--drive-focus-ring), inset 0 0 0 4px var(--drive-focus-ring-inner);
+  /* Grid (02 section 4.7): 220 × 220 cards, a 48 px header strip, and the page thumbnail inset 8 px below it. Cards
+     stretch to fill a row and are never narrower than the minimum, so the card beside the nav stays near Drive's square. */
+  --sop-grid-card: 220px;
+  --sop-grid-card-min: 200px;
+  --sop-grid-thumb-h: 164px;
+  /* Snackbar (GM3): the inverse surface, 4 px corners, an action in the inverse primary */
+  --shape-snackbar: 4px;
+  --sop-snackbar-min-w: 288px;
+  --sop-snackbar-max-w: 568px;
+  --type-snackbar: 400 14px/20px var(--font-text);
+
   /* ===== Part 3: component roles that change with the theme. tokens-dark.css declares each one again. ===== */
   --menu-bg: var(--gm3-sys-color-surface-container);           /* #f0f4f9 light context menu [live] */
   --menu-row-h: var(--menu-item-h);                            /* 32px light library menu */

@@ -1,0 +1,65 @@
+/*
+ * The search pill (02 section 4.2): 48 px tall, round ends, #e9eef6; the 24 px search icon sits in a 40 px circle 4 px
+ * in, as Drive's does. Focused: white with elevation 1. Text: Google Sans Text 16/24, placeholder #444746.
+ */
+.pill {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: var(--search-max-w);
+  block-size: var(--search-h);
+  padding: 0 var(--space-1);
+  border-radius: var(--shape-search);
+  background-color: var(--gm3-sys-color-surface-container-high);
+  color: var(--gm3-sys-color-on-surface-variant);
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.pill:focus-within {
+  background-color: var(--gm3-sys-color-surface);
+  box-shadow: var(--elev-1);
+}
+
+.lead {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--icon-btn-lg);
+  block-size: var(--icon-btn-lg);
+}
+
+.input {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  block-size: 100%;
+  margin: 0;
+  padding: 0 var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-lib-search);
+  font-variation-settings: "opsz" 17;
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--gm3-sys-color-on-surface-variant);
+  opacity: 1;
+}
+
+/* The browser's own clear cross: ours is the round button after the field. */
+.input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.clear {
+  flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pill {
+    transition: none;
+  }
+}

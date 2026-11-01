@@ -1,0 +1,52 @@
+/*
+ * The segmented list/grid toggle (02 section 4.5): 32 px tall, 56 px halves, a 1 px outline and divider in #747775,
+ * round ends. Selected: #c2e7ff, a check and the icon in #001d35. Hover: an 8% state layer.
+ */
+.group {
+  display: inline-flex;
+  flex: none;
+  box-sizing: border-box;
+  block-size: var(--chip-h);
+  border: 1px solid var(--gm3-sys-color-outline);
+  border-radius: var(--shape-full);
+  overflow: hidden;
+}
+
+.half {
+  display: inline-flex;
+  gap: 0;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  inline-size: var(--space-14);
+  block-size: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  color: var(--gm3-sys-color-on-surface-variant);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.half + .half {
+  border-inline-start: 1px solid var(--gm3-sys-color-outline);
+}
+
+.half:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.on {
+  background-color: var(--gm3-sys-color-secondary-container);
+  color: var(--gm3-sys-color-on-secondary-fixed);
+}
+
+.on:hover {
+  background-color: var(--drive-row-selected-hover);
+}
+
+.half:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(-1 * var(--focus-ring-width) - 1px);
+}

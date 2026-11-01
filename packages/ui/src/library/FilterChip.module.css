@@ -1,0 +1,58 @@
+/*
+ * Drive's filter chips (02 section 4.5): 32 px tall, radius 8, 1 px outline #747775, label Google Sans 14/20 500
+ * #444746, padding 16 px (8 px on the side of an icon). Selected: #c2e7ff, no outline, label #001d35.
+ */
+.chip {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-2);
+  align-items: center;
+  box-sizing: border-box;
+  block-size: var(--chip-h);
+  margin: 0;
+  padding: 0 var(--space-2) 0 var(--space-4);
+  border: 1px solid var(--gm3-sys-color-outline);
+  border-radius: var(--shape-chip);
+  background-color: transparent;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-chip);
+  font-family: var(--font-display);
+  font-variation-settings: "opsz" 18;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chip[aria-pressed] {
+  padding-inline-end: var(--space-4);
+}
+
+.checked {
+  padding-inline-start: var(--space-2);
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chip:hover,
+.chip[aria-expanded='true'] {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface-variant) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.selected {
+  border-color: transparent;
+  background-color: var(--gm3-sys-color-secondary-container);
+  color: var(--gm3-sys-color-on-secondary-fixed);
+}
+
+.selected:hover,
+.selected[aria-expanded='true'] {
+  background-color: var(--drive-row-selected-hover);
+}
+
+.chip:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
