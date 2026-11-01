@@ -384,6 +384,7 @@ export interface SyncStatus { state: 'off' | 'ok' | 'syncing' | 'offline' | 'sto
   - The server bumps `rev` and assigns a global `seq`, the pull cursor.
   - A push applies only where `baseRev` equals the server's `rev`. Otherwise it is a conflict:
     - An edit concurrent with a delete wins, and the note comes back (spec).
+      R58: when one device edits then deletes a note offline while another edits it, the other device's edit wins, and the deleting device's last words go with its delete (the owner chose to delete them).
     - Otherwise the newer `hlc` wins the whole row.
     - For comments, if both bodies are non-empty and differ, the loser's body becomes a new comment in the same thread with `ConflictCopyMeta`.
 - **The local side.**

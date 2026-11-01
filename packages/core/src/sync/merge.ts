@@ -14,7 +14,8 @@
 //   1. A retry of an applied push is a no-op, not a conflict: the same content as the server's row, or an entry the server
 //      has already processed (`ctx.processedUpTo`), so a replayed log does nothing.
 //   2. An edit beats a delete. Otherwise the newer stamp wins the whole row; equal stamps break the tie by content, so the
-//      result never depends on object key order. A row's stored stamp never moves backwards.
+//      result never depends on object key order. The stored stamp is the stamp of the version that won: an edit that beats
+//      a newer delete keeps its own stamp, so the push order never decides which of two edits is the later one.
 //   3. Two live comments with different, non-empty bodies: the loser's body becomes a new comment in the same thread with
 //      `ConflictCopyMeta`. Its id comes from (comment id, body), so a retry makes the same copy, never a second one. A
 //      device's own earlier version is superseded, not a rival, so it gets no copy.
@@ -254,8 +255,9 @@ function needsCopy(a: WireRow, b: WireRow): boolean {
 
 /**
  * Two reading histories of one document. `firstOpened` is the smaller, `lastOpened` the larger, the counters the larger,
- * the pages visited the union, and `lastPosition` comes from the side that was opened last (its stamp is the newer one).
- * Order does not matter: `mergeHistoryRows(a, b)` equals `mergeHistoryRows(b, a)`.
+ * the pages visited the union, and `lastPosition` comes from the side that was opened last. Order does not matter:
+ * `mergeHistoryRows(a, b)` equals `mergeHistoryRows(b, a)`. `mergeEntry` then takes `lastPosition` from the newer stamp
+ * (plan CL2); `planReparent` has no stamps and keeps this choice.
  */
 export function mergeHistoryRows(a: WireRow, b: WireRow): WireRow {
   const aNewer = num(a.lastOpened) > num(b.lastOpened) || (num(a.lastOpened) === num(b.lastOpened) && canonicalJson(a.lastPosition ?? null) >= canonicalJson(b.lastPosition ?? null));
@@ -339,8 +341,10 @@ export function mergeEntry(server: ServerRow | null, entry: ChangeEntry, ctx: Me
     return { kind: 'apply', row: incoming, hlc: stamp, rev: 1, rebase: norm.adjusted || stamp !== entry.hlc, why: 'created', conflictCopy: null };
   }
 
-  // 6. A retry of a push that already applied (or a second device that made the same change)
-  if (sameRow(table, server.row, incoming)) return { kind: 'noop', why: 'replay', rebase: false, conflictCopy: null };
+  // 6. A retry of a push that already applied (or a second device that made the same change). A same-content entry with a
+  //    newer stamp is a real, later change (a delete then a restore): it must raise the stored stamp, or a later change
+  //    could lose to an earlier one depending on push order (spec: "the later change wins").
+  if (sameRow(table, server.row, incoming) && compareStamps(stamp, server.hlc) <= 0) return { kind: 'noop', why: 'replay', rebase: false, conflictCopy: null };
   // ...or an entry the server has already processed, replayed after the row moved on
   const done = ctx.processedUpTo?.(table, entry.id) ?? null;
   if (done !== null && compareStamps(entry.hlc, done) <= 0) return { kind: 'noop', why: 'replay', rebase: true, conflictCopy: null };
@@ -365,9 +369,17 @@ export function mergeEntry(server: ServerRow | null, entry: ChangeEntry, ctx: Me
     return { kind: 'apply', row: kept, hlc: maxStamp(stamp, server.hlc), rev, rebase: !sameButDelete || changed, why: 'claude-row-delete', conflictCopy: null };
   }
 
+  // 8b. R57 (contracts CA10): the owner's delete beats a concurrent Claude edit, and Claude's newer text is kept in the
+  //     tombstone, so a restore brings it back. Claude never undoes a delete made by another device.
+  if (fromClaude && (table === 'marks' || table === 'comments') && isDeleted(server.row) && !isDeleted(incoming) && server.device !== CLAUDE_DEVICE) {
+    return { kind: 'apply', row: { ...incoming, deletedAt: server.row.deletedAt }, hlc: maxStamp(stamp, server.hlc), rev, rebase: true, why: 'claude-row-delete', conflictCopy: null };
+  }
+
   // 9. Tables that merge by field (these do not look at the revision)
   if (table === 'history') {
-    const merged = mergeHistoryRows(server.row, incoming);
+    // plan CL2: `lastPosition` from the newer stamp (a computer that opened earlier may have kept reading later)
+    const newer = compareStamps(stamp, server.hlc) > 0 ? incoming : server.row;
+    const merged = { ...mergeHistoryRows(server.row, incoming), lastPosition: newer.lastPosition ?? null };
     const hlc = maxStamp(stamp, server.hlc);
     if (sameRow(table, merged, server.row)) return { kind: 'noop', why: 'older', rebase: true, conflictCopy: null };
     return { kind: 'apply', row: merged, hlc, rev, rebase: !sameRow(table, merged, incoming) || changed, why: 'merged-fields', conflictCopy: null };
@@ -414,11 +426,15 @@ export function mergeEntry(server: ServerRow | null, entry: ChangeEntry, ctx: Me
   const result: WireRow =
     table === 'locations' ? (incomingWins ? mergeLocationRows(incoming, server.row) : mergeLocationRows(server.row, incoming)) : incomingWins ? incoming : server.row;
 
-  if (sameRow(table, result, server.row)) return { kind: 'noop', why: incomingWins ? 'older' : (why as NoopWhy), rebase: true, conflictCopy };
+  // An edit that beats a newer delete keeps its own stamp (spec: "the later change wins"): with the delete's stamp, a later
+  // concurrent edit would lose to this earlier one in some push orders. A losing entry never raises the stored stamp.
+  const hlc = incomingWins && why === 'edit-beats-delete' ? stamp : maxStamp(stamp, server.hlc);
+  // Same content is a no-op only when the stored stamp would not rise (see step 6)
+  if (sameRow(table, result, server.row) && (!incomingWins || hlc === server.hlc)) return { kind: 'noop', why: incomingWins ? 'older' : (why as NoopWhy), rebase: true, conflictCopy };
   return {
     kind: 'apply',
     row: result,
-    hlc: maxStamp(stamp, server.hlc),
+    hlc,
     rev,
     rebase: changed || !sameRow(table, result, incoming),
     why: incomingWins ? (why as ApplyWhy) : 'merged-fields',
