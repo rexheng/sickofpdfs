@@ -2,15 +2,17 @@
 // Spec: Release 1 is done when "A 50-page paper shows its first page in under 1 second on the reference laptop" (criterion 1);
 // Speed budgets: "first page under 1 s for a 50-page paper ... CI runs looser smoke versions".
 // The clock is the page's own: milliseconds from the start of the viewer page's navigation to the first picture of a
-// page on screen. SOP_BUDGET_SLACK=2 (say) loosens every time budget by that factor for a slower machine.
+// page on screen. The bound is the spec's 1 s with SOP_PERF_STRICT=1 (the reference laptop), and looser otherwise
+// (support/perf-budget.ts).
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { budgetMs, budgetNote } from '../support/perf-budget';
 import { REAL } from './support/fixtures.spec-blind';
 import { inkBox } from './support/pixels.spec-blind';
 import { expect, note, probe, rt, shoot, snap, test, waitForFirstPage } from './support/viewer.spec-blind';
 
-const SLACK = Number(process.env.SOP_BUDGET_SLACK ?? '1');
-const FIRST_PAGE_BUDGET_MS = 1000 * SLACK;
+const FIRST_PAGE_SPEC_MS = 1000;
+const FIRST_PAGE_BUDGET_MS = budgetMs(FIRST_PAGE_SPEC_MS);
 
 test('a 50-page paper shows its first page in under a second', async ({ openViewer, server }, testInfo) => {
   const page = await openViewer(server.url(REAL.paper50.url));
@@ -18,7 +20,7 @@ test('a 50-page paper shows its first page in under a second', async ({ openView
   note(testInfo, 'first page on screen (ms)', firstInkMs.toFixed(0));
   await snap(page, testInfo, '01-first-page');
 
-  expect(firstInkMs, `first picture of page 1 after ${firstInkMs.toFixed(0)} ms; the budget is ${FIRST_PAGE_BUDGET_MS} ms`).toBeLessThan(FIRST_PAGE_BUDGET_MS);
+  expect(firstInkMs, `first picture of page 1 after ${firstInkMs.toFixed(0)} ms; ${budgetNote(FIRST_PAGE_SPEC_MS)}`).toBeLessThan(FIRST_PAGE_BUDGET_MS);
 
   // The viewer's own mark for "page 0 fully drawn" (interface file: performance.mark('sop:first-page')) exists and agrees.
   await expect
@@ -26,7 +28,7 @@ test('a 50-page paper shows its first page in under a second', async ({ openView
     .toBeGreaterThan(0);
   const markMs = await page.evaluate(() => performance.getEntriesByName('sop:first-page')[0].startTime);
   note(testInfo, 'sop:first-page mark (ms)', markMs.toFixed(0));
-  expect(markMs, `the fully drawn first page took ${markMs.toFixed(0)} ms`).toBeLessThan(FIRST_PAGE_BUDGET_MS);
+  expect(markMs, `the fully drawn first page took ${markMs.toFixed(0)} ms; ${budgetNote(FIRST_PAGE_SPEC_MS)}`).toBeLessThan(FIRST_PAGE_BUDGET_MS);
 });
 
 test('the first page is page 1 of this paper, drawn on a white page with real text on it', async ({ openViewer, server }, testInfo) => {

@@ -5,6 +5,7 @@
 // sends takeover:open-in-chrome after 2000 ms.
 // The size comes from the response header, so the fixture server's /mock route (a Content-Length and no body: headers are sent, then
 // the socket is held) stands in for the huge file; no gigabyte is ever sent. Guess: the limit is "larger than", so exactly 1 GiB opens.
+import { budgetMs, budgetNote } from '../support/perf-budget';
 import { mockUrl } from './support/mock.spec-blind';
 import { expect, rt, snap, test } from './support/viewer.spec-blind';
 
@@ -40,7 +41,8 @@ test('"Open now" goes to Chrome\'s viewer at once', async ({ openViewer, server 
   const clicked = Date.now();
   await page.getByRole('button', { name: /Open now/ }).click();
   await expect.poll(() => page.url(), { message: 'Open now left our viewer', timeout: 10_000 }).toBe(url);
-  expect(Date.now() - clicked, 'sooner than the automatic 2 s wait, give or take the browser').toBeLessThan(5_000);
+  // Sooner than the automatic 2 s wait; a smoke run allows the browser more (support/perf-budget.ts).
+  expect(Date.now() - clicked, `sooner than the automatic 2 s wait (${budgetNote(2_000)})`).toBeLessThan(budgetMs(2_000));
 });
 
 test('one byte over 1 GiB is turned away; exactly 1 GiB is not', async ({ openViewer, server }) => {
