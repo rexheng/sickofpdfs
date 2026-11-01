@@ -23,7 +23,7 @@ export function installTabLifecycle(): void {
     // The viewer's own reload keeps its rule and its records; any other page ends the rule and puts the records to sleep.
     if (!url.startsWith(chrome.runtime.getURL(VIEWER_PATH))) {
       void clearStickyReferer(tabId);
-      void leaveGrants(tabId);
+      void leaveGrants(tabId, url); // a file:// address the tab itself opened keeps its own record (grants.ts)
     }
   });
   chrome.tabs.onRemoved.addListener((tabId) => {

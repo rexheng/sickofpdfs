@@ -185,11 +185,18 @@ export function findGrant(tabId: number, url: string): Promise<Grant | null> {
 /**
  * The tab went to a page that is not the viewer: its records go dormant (`Grant.dormant`). A page the tab shows from
  * now on must not re-open, by a link of its own, a PDF the owner opened in the tab earlier.
+ *
+ * `committed` is the address the tab went to. When it is a file:// address, that file's own record stays awake: the tab
+ * navigating to a file:// address is itself a grant (see above; a web page cannot start such a navigation), and the
+ * file:// fallback grants the file and sends the tab to the viewer while Chrome may still commit the file's own
+ * navigation. Putting that record to sleep there raced the viewer's question and refused the file (1 run in 3 under load).
  */
-export function leaveGrants(tabId: number): Promise<void> {
+export function leaveGrants(tabId: number, committed?: string): Promise<void> {
   return inOrder(async () => {
     const records = await read(tabId);
-    if (records.some((g) => g.dormant !== true)) await chrome.storage.session.set({ [keyOf(tabId)]: records.map((g) => ({ ...g, dormant: true })) });
+    const keep = committed !== undefined && /^file:/i.test(committed) ? keyUrl(committed) : null;
+    const next = records.map((g): Grant => (g.url === keep ? g : { ...g, dormant: true }));
+    if (next.some((g, i) => g.dormant !== records[i]?.dormant)) await chrome.storage.session.set({ [keyOf(tabId)]: next });
   });
 }
 
