@@ -14,6 +14,7 @@
     "test": "vitest run --project unit --project cloud",
     "test:browser": "vitest run --project browser",
     "fixtures": "node scripts/fixtures/build.mjs",
+    "fixtures:inputs": "node scripts/fixtures/extract-filter-inputs.mjs",
     "golden:figures": "node scripts/gates/figures-score.mjs",
     "golden:check": "node scripts/gates/engine-golden.mjs check",
     "golden:record": "node scripts/gates/engine-golden.mjs record",
