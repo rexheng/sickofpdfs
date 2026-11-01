@@ -52,7 +52,7 @@ describe('writing and listing notes', () => {
     expect(got.threads).toEqual([stamped(thread)]);
     expect(got.comments).toEqual([stamped(comment)]);
     expect(got.marks).toEqual(mark ? [stamped(mark)] : []);
-    expect(got.threads[0]!.anchor).toEqual(anchor);
+    expect(got.threads[0].anchor).toEqual(anchor);
   });
 
   it('keeps JSON fields it does not know, at any depth, through a rewrite (anchor and comment meta)', async () => {
@@ -62,27 +62,27 @@ describe('writing and listing notes', () => {
     await env.api.writeAnnotations([up('threads', threadRow({ id: 't1', anchor })), up('comments', commentRow({ id: 'c1', threadId: 't1', author: 'claude', meta }))]);
 
     const first = await env.api.listAnnotations(DOC);
-    expect(first.threads[0]!.anchor).toEqual(anchor);
-    expect(first.comments[0]!.meta).toEqual(meta);
+    expect(first.threads[0].anchor).toEqual(anchor);
+    expect(first.comments[0].meta).toEqual(meta);
     // an owner edit rewrites the row from what was read: nothing the store does may drop the unknown parts
-    await env.api.writeAnnotations([up('comments', { ...first.comments[0]!, body: 'edited', editedAt: 5 })]);
+    await env.api.writeAnnotations([up('comments', { ...first.comments[0], body: 'edited', editedAt: 5 })]);
     const again = await env.api.listAnnotations(DOC);
     expect(again.comments[0]).toMatchObject({ body: 'edited', editedAt: 5, author: 'claude' });
-    expect(again.comments[0]!.meta).toEqual(meta);
-    expect(again.threads[0]!.anchor).toEqual(anchor);
+    expect(again.comments[0].meta).toEqual(meta);
+    expect(again.threads[0].anchor).toEqual(anchor);
   });
 
   it('stamps hlc and rev itself and ignores the caller\'s values; a later write gets a later stamp', async () => {
     const env = await freshStore();
     await env.api.writeAnnotations([up('marks', { ...M1, rev: 99, hlc: 'bogus' })]);
-    const first = (await env.api.listAnnotations(DOC)).marks[0]!;
+    const first = (await env.api.listAnnotations(DOC)).marks[0];
     expect(first.rev).not.toBe(99);
     expect(first.hlc).not.toBe('bogus');
     expect(first.hlc).toMatch(HLC);
 
     env.clock.t += 5;
     await env.api.writeAnnotations([up('marks', { ...first, color: 4, hlc: '9999999999999-ffff-evil', rev: 500 })]);
-    const second = (await env.api.listAnnotations(DOC)).marks[0]!;
+    const second = (await env.api.listAnnotations(DOC)).marks[0];
     expect(second.color).toBe(4);
     expect(second.hlc).toMatch(HLC);
     expect(second.hlc).not.toBe('9999999999999-ffff-evil');
@@ -135,7 +135,7 @@ describe('deleting and restoring (a soft delete keeps a tombstone)', () => {
     const queued = outboxRows(env.db).length;
     env.clock.t += 10;
 
-    await env.api.writeAnnotations([del('marks', live!), del('comments', C1)]);
+    await env.api.writeAnnotations([del('marks', live), del('comments', C1)]);
     const hidden = await env.api.listAnnotations(DOC);
     expect(hidden.marks).toEqual([]);
     expect(hidden.comments).toEqual([]);
@@ -146,12 +146,12 @@ describe('deleting and restoring (a soft delete keeps a tombstone)', () => {
     expect(newEntries.map((r) => `${r.table}:${r.op}`).sort()).toEqual(['comments:upsert', 'marks:upsert']); // sync sees an update with deletedAt, not a hard delete
 
     env.clock.t += 10;
-    await env.api.writeAnnotations([restore('marks', live!), restore('comments', C1)]);
+    await env.api.writeAnnotations([restore('marks', live), restore('comments', C1)]);
     const back = await env.api.listAnnotations(DOC);
     // a restore is a write: the stamp and the update time move on, nothing else changes
-    expect(back.marks).toEqual([stamped({ ...live!, deletedAt: null, updatedAt: expect.any(Number) as number })]);
+    expect(back.marks).toEqual([stamped({ ...live, deletedAt: null, updatedAt: expect.any(Number) as number })]);
     expect(back.comments).toEqual([expect.objectContaining({ id: 'c1', body: C1.body, deletedAt: null })]);
-    expect(compareHlc(back.marks[0]!.hlc, live!.hlc)).toBeGreaterThan(0); // delete and restore are writes: each moves the stamp on
+    expect(compareHlc(back.marks[0].hlc, live.hlc)).toBeGreaterThan(0); // delete and restore are writes: each moves the stamp on
   });
 
   it('a whole batch is one transaction: if one operation fails, none of them is applied', async () => {
@@ -185,7 +185,7 @@ describe('change events', () => {
     await env.api.writeAnnotations([up('marks', { ...M1, color: 2 })]);
     expect(env.changes()).toHaveLength(1);
     expect(env.changes()[0]).toMatchObject({ table: 'marks', ids: ['m1'], documentId: DOC });
-    expect(env.changes()[0]!.tabId, 'no tabId given, none published').toBeUndefined();
+    expect(env.changes()[0].tabId, 'no tabId given, none published').toBeUndefined();
   });
 
   it('a soft delete is announced too (the other tab must redraw)', async () => {
@@ -245,7 +245,7 @@ describe('drafts: owned by one tab, never synced, never indexed', () => {
   it('sendDraft makes the comment and its new thread real in one step: listed, queued once, searchable, announced', async () => {
     const env = await freshStore();
     await env.api.saveDraft(rootDraft('quokka final words'), draftThread());
-    const draftStamp = (await env.api.listDrafts(DOC, T_A))[0]!.hlc;
+    const draftStamp = (await env.api.listDrafts(DOC, T_A))[0].hlc;
     env.clock.t += 20;
 
     await env.api.sendDraft(cid('d1'));
@@ -256,7 +256,7 @@ describe('drafts: owned by one tab, never synced, never indexed', () => {
     expect(await env.api.listDrafts(DOC, T_A)).toEqual([]);
     expect(outboxRows(env.db).map((r) => `${r.table}:${r.id}:${r.op}`).sort()).toEqual(['comments:d1:upsert', 'threads:dt1:upsert']);
     expect(ftsHits(env.db, 'quokka')).toEqual(['d1']);
-    expect(compareHlc(got.comments[0]!.hlc, draftStamp)).toBeGreaterThan(0);
+    expect(compareHlc(got.comments[0].hlc, draftStamp)).toBeGreaterThan(0);
     expect(env.changes().map((c) => c.table).sort()).toEqual(['comments', 'threads']);
     expect(env.changes().every((c) => c.documentId === DOC)).toBe(true);
   });

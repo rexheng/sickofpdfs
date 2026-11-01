@@ -34,7 +34,7 @@ describe('upgrade from a filled v1 database', () => {
     const db = await filledV1();
     expect(userVersion(db)).toBe(1);
     const before = snapshot(db);
-    expect(before['comments']!.rows).toHaveLength(6); // the dataset is really filled: notes, a Claude reply, a draft, a tombstone
+    expect(before['comments'].rows).toHaveLength(6); // the dataset is really filled: notes, a Claude reply, a draft, a tombstone
 
     expect(migrate(db as never)).toBe(2);
 
