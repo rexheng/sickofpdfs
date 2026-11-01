@@ -3844,12 +3844,14 @@ Each item below is binding for the task named.
     - The draft keeper also writes every draft and edit draft, in the same call, to a journal in the extension's localStorage (`draft-journal.ts`), with the same save rules as the store.
     - `restore` takes the journal's text when the store has not confirmed it.
     - When the service worker starts, it reloads every viewer tab whose page is dead. It reloads each tab at most once in 5 minutes. Each tab opens at its own `#page=N` and gets its draft back.
-    - The owner's way back is one click on Chrome's notification.
+    - The extension has no `tabs` permission (c536e32), so the worker cannot read its own pages' addresses. Each viewer notes its own tab id in `chrome.storage.local` (`viewerTab:<id>`, the id only) and removes it when the page goes normally (`shared/viewer-tabs.ts`). `chrome.storage.session` cannot be used: Chrome clears it when it terminates the extension (measured).
+    - **R65:** one tab keeps one draft-owner id across its own reloads. The id is kept in the tab's sessionStorage and claimed with its `sop-tab:` Web Lock as the page starts (`claimTabIdentity`). A duplicated tab gets a new id, because the original still holds the lock. So after the crash and the owner's click, an unsent draft comes back in the tab that owned it. If that tab does not come back, the first reopened tab for the PDF adopts it, once.
+    - The owner's way back is one click on Chrome's notification. The store stays in the offscreen document for Release 1 (R65).
   - **Binding for later tasks:**
     - Anything that forgets a document (the library's Forget, Phase 3) also calls `forgetDraftJournal(id)`.
     - A crash test must reload the extension the way the owner would (`e2e/support/crash.ts`).
-    - No test may expect a second viewer tab to outlive another tab's crash.
-    - Moving the store out of the offscreen document (for example into a dedicated worker owned by a viewer tab) is the only change that would stop a tab crash from terminating the extension. It is the controller's call.
+    - No test may expect a second viewer tab to outlive another tab's crash. Tabs that died are read through a fresh CDP session (`lookInside` in `e2e/support/crash.ts`), because Playwright never lets a crashed page be used again.
+    - Moving the store out of the offscreen document is the only change that would stop a tab crash from terminating the extension. R65 keeps it in the offscreen document for Release 1; revisit at the Phase 2 gate if real crashes are seen.
 - **Task 32.** Add these to the Windows checklist:
   - alignment at DPR 1.5;
   - Blink ascent and descent;
