@@ -71,8 +71,15 @@
   user-select: none;
 }
 
-/* A line's text for screen readers, as generated content: not selectable, not found by find-in-page, never hit. */
+/*
+ * A line's text for screen readers, as generated content: not selectable, not found by find-in-page, never hit. Chrome
+ * reads generated content into the accessibility tree in its visual order, so a right-to-left line laid out with bidi
+ * reordering would be read run by run from the left. The line is invisible, so it is laid out with no reordering: the
+ * tree then holds PDFium's text in its logical order.
+ */
 .sop-text-layer .sop-a11y-line {
+  direction: ltr;
+  unicode-bidi: bidi-override;
   pointer-events: none;
   /* eslint-disable-next-line css/use-baseline -- a Chrome-only extension (minimum Chrome 128 has it) */
   user-select: none;

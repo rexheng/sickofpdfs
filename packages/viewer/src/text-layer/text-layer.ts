@@ -127,7 +127,8 @@ class TextLayer {
     line.el.style.setProperty('--font-height', `${(Math.hypot(a, b) / this.#scale).toFixed(4)}px`);
     const angle = Math.atan2(b, a);
     if (angle !== 0) line.el.style.setProperty('--rotate', `${(angle * 180) / Math.PI}deg`);
-    line.el.dir = line.item.dir;
+    // No dir: the line is laid out with no bidi reordering (text-layer.css), so the accessibility tree reads it in
+    // PDFium's order, which is the logical order, right-to-left text included.
     line.el.dataset.text = line.text;
     this.#place(line.el, line.item, this.#scale);
   }
