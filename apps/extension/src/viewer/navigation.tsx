@@ -145,5 +145,5 @@ export function useReaderNavigation({ backend, doc, store, api }: NavigationDeps
     },
     [api, pages, source],
   );
-  return { jumps, renderPage, onPage, onOutline };
+  return useMemo(() => ({ jumps, renderPage, onPage, onOutline }), [jumps, renderPage, onPage, onOutline]);
 }

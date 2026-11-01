@@ -178,17 +178,18 @@ function reveal(nav: HTMLElement, index: number, opening: boolean): void {
   else if (r.bottom > view.bottom - pad) nav.scrollTop += r.bottom - (view.bottom - pad);
 }
 
+/** The list is built this long after the rail mounts at the latest (sooner if the page is idle first). */
+const LIST_IDLE_TIMEOUT_MS = 300;
+
 /** The rail's thumbnail list: `<nav aria-label="Thumbnails">`. */
 export function ThumbnailRail({ scheduler, pages, store, onSelect }: ThumbnailRailProps): JSX.Element {
-  const current = useViewerState(store, (s) => s.currentPage);
   const rotation = useViewerState(store, (s) => s.viewRotation);
   const nav = useRef<HTMLElement>(null);
   const [drawer] = useState(() => new ThumbnailDrawer(scheduler, pages));
-  // The keyboard's place in the list (one tab stop; the arrows move it). It follows the page in view.
-  const [keys, setKeys] = useState({ index: current, current });
-  if (keys.current !== current) setKeys({ index: current, current });
-  const focusIndex = keys.current === current ? keys.index : current;
-  const opened = useRef(false);
+  // The list is built once the page list has asked for its first page: a 600-page list costs a frame.
+  const [ready, setReady] = useState(false);
+  // Where the arrow keys moved the focus; null: the page in view. Either way the list is one tab stop.
+  const [keyIndex, setKeyIndex] = useState<number | null>(null);
 
   useLayoutEffect(() => {
     drawer.connect(nav.current!);
@@ -196,11 +197,39 @@ export function ThumbnailRail({ scheduler, pages, store, onSelect }: ThumbnailRa
   }, [drawer]);
   // After the page list's layout effects, so the scheduler has the new rotation (and an emptied cache) by then.
   useEffect(() => drawer.setRotation(rotation), [drawer, rotation]);
+  useEffect(() => {
+    const idle = requestIdleCallback(() => setReady(true), { timeout: LIST_IDLE_TIMEOUT_MS });
+    return () => cancelIdleCallback(idle);
+  }, []);
 
-  useLayoutEffect(() => {
-    if (nav.current) reveal(nav.current, current, !opened.current);
-    opened.current = true;
-  }, [current]);
+  // Follows the page in view, without re-rendering the list: its thumbnail comes into view (centred when the rail
+  // opens), and the keyboard's place goes back to it.
+  useEffect(() => {
+    if (!ready) return;
+    let shown = -1;
+    let opening = true;
+    let frame = 0;
+    const follow = () => {
+      const page = store.get().currentPage;
+      if (page === shown) return;
+      shown = page;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (nav.current) reveal(nav.current, page, opening);
+        opening = false;
+      });
+    };
+    follow();
+    const unsubscribe = store.subscribe(() => {
+      if (store.get().currentPage === shown) return;
+      setKeyIndex(null);
+      follow();
+    });
+    return () => {
+      unsubscribe();
+      cancelAnimationFrame(frame);
+    };
+  }, [store, ready]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLOListElement>) => {
     const step: Record<string, number> = { ArrowDown: 1, ArrowUp: -1, Home: -Infinity, End: Infinity, PageDown: 5, PageUp: -5 };
@@ -208,26 +237,27 @@ export function ThumbnailRail({ scheduler, pages, store, onSelect }: ThumbnailRa
     if (d === undefined || e.altKey || e.ctrlKey || e.metaKey) return;
     e.preventDefault();
     e.stopPropagation();
-    const next = Math.min(pages.length - 1, Math.max(0, focusIndex + d));
-    setKeys({ index: next, current });
+    const next = Math.min(pages.length - 1, Math.max(0, (keyIndex ?? store.get().currentPage) + d));
+    setKeyIndex(next);
     nav.current?.querySelector<HTMLElement>(`[data-thumb-index="${next}"]`)?.focus();
   };
 
   return (
     <nav ref={nav} aria-label="Thumbnails" className={styles.rail}>
       <ol className={styles.list} onKeyDown={onKeyDown}>
-        {pages.map((page, i) => (
-          <ThumbnailItem
-            key={i}
-            index={i}
-            page={page}
-            rotation={rotation}
-            current={i === current}
-            tabbable={i === focusIndex}
-            drawer={drawer}
-            onSelect={onSelect}
-          />
-        ))}
+        {ready &&
+          pages.map((page, i) => (
+            <ThumbnailItem
+              key={i}
+              index={i}
+              page={page}
+              rotation={rotation}
+              store={store}
+              keyTab={keyIndex === null ? null : keyIndex === i}
+              drawer={drawer}
+              onSelect={onSelect}
+            />
+          ))}
       </ol>
     </nav>
   );
@@ -237,13 +267,16 @@ interface ThumbnailItemProps {
   index: number;
   page: PageSize;
   rotation: Rotation;
-  current: boolean;
-  tabbable: boolean;
+  store: ViewerStore;
+  /** Whether the arrow keys put the tab stop here; null: it is on the page in view. */
+  keyTab: boolean | null;
   drawer: ThumbnailDrawer;
   onSelect: (i: number) => void;
 }
 
-const ThumbnailItem = memo(function ThumbnailItem({ index, page, rotation, current, tabbable, drawer, onSelect }: ThumbnailItemProps) {
+/** One thumbnail. It reads "is this the page in view" itself, so a page change re-renders two thumbnails, not the list. */
+const ThumbnailItem = memo(function ThumbnailItem({ index, page, rotation, store, keyTab, drawer, onSelect }: ThumbnailItemProps) {
+  const current = useViewerState(store, (s) => s.currentPage === index);
   const button = useRef<HTMLButtonElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   useLayoutEffect(() => {
@@ -264,13 +297,17 @@ const ThumbnailItem = memo(function ThumbnailItem({ index, page, rotation, curre
         data-thumb-index={index}
         aria-label={`Page ${index + 1}`}
         aria-current={current ? 'page' : undefined}
-        tabIndex={tabbable ? 0 : -1}
+        tabIndex={(keyTab ?? current) ? 0 : -1}
         style={{ aspectRatio: `${shown.width} / ${shown.height}` }}
         // A click shows the page without taking the focus, so the reading keys keep moving the pages.
         onMouseDown={(e) => e.preventDefault()}
-        onClick={() => onSelect(index)}
+        onClick={(e) => {
+          // The focus moves to the clicked thumbnail only if it was in the list already.
+          if (e.currentTarget.parentElement?.parentElement?.contains(document.activeElement)) e.currentTarget.focus();
+          onSelect(index);
+        }}
       >
-        <canvas ref={canvas} className={styles.canvas} aria-hidden="true" />
+        <canvas ref={canvas} className={styles.canvas} width={0} height={0} aria-hidden="true" />
       </button>
     </li>
   );

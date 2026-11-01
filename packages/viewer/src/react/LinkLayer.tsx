@@ -8,7 +8,8 @@
 //   background tab, Ctrl+Shift in a new foreground tab, Shift in a new window. Nothing is fetched on hover.
 // - Links never block text selection. A press on a link that moves 3 px or more becomes a text selection from the
 //   press point: every link layer lets the pointer through for the rest of the drag, and the selection is extended to
-//   the pointer (the text layer then makes it glyph-exact on release). A press without movement is a click.
+//   the pointer (the text layer then makes it glyph-exact on release). A press without movement is a click. A press
+//   never drags the link, and never takes the focus (Tab still reaches every link).
 // - While Alt is held the links let the pointer through too (Alt+drag draws an area; links are ignored).
 import { type JSX, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { LinkTarget, PageSize, PdfLink, PdfRect, Rotation } from '../backend/types';
@@ -86,10 +87,32 @@ function register(el: HTMLElement): () => void {
   };
 }
 
-/** The text position under a client point (links are off by then), or null when it is not in text. */
+/**
+ * The text position under a client point (the links are off by then), or null when no text is there. A text layer may
+ * lay a cover over itself while a selection is made (pdf.js's endOfContent), so when the caret lands on that, the text
+ * span under the point is found and the char boundary nearest the point is used.
+ */
 function caretAt(x: number, y: number): { node: Node; offset: number } | null {
   const p = document.caretPositionFromPoint(x, y);
-  return p && p.offsetNode.nodeType === Node.TEXT_NODE ? { node: p.offsetNode, offset: p.offset } : null;
+  if (p && p.offsetNode.nodeType === Node.TEXT_NODE) return { node: p.offsetNode, offset: p.offset };
+  for (const el of document.elementsFromPoint(x, y)) {
+    const text = el.firstChild;
+    if (!(text instanceof Text) || el.childNodes.length !== 1 || text.length === 0) continue;
+    const r = document.createRange();
+    let best = 0;
+    let bestDistance = Infinity;
+    for (let k = 0; k <= text.length; k++) {
+      r.setStart(text, k);
+      r.setEnd(text, k);
+      const d = Math.abs(r.getBoundingClientRect().left - x);
+      if (d < bestDistance) {
+        best = k;
+        bestDistance = d;
+      }
+    }
+    return { node: text, offset: best };
+  }
+  return null;
 }
 
 /** Follows a mouse press that began on a link: a click, or (after DRAG_MIN_PX) a text selection from the press point. */
@@ -103,6 +126,7 @@ function trackPress(down: ReactPointerEvent): void {
     window.removeEventListener('pointermove', onMove, true);
     window.removeEventListener('pointerup', onUp, true);
     window.removeEventListener('pointercancel', onCancel, true);
+    window.removeEventListener('dragstart', noDrag, true);
     if (selecting) {
       dragging = false;
       syncLayers();
@@ -136,6 +160,9 @@ function trackPress(down: ReactPointerEvent): void {
   const onCancel = (e: PointerEvent) => {
     if (e.pointerId === id) end();
   };
+  // Chrome would start dragging the link, or the text just selected under the pointer, instead of selecting on.
+  const noDrag = (e: DragEvent) => e.preventDefault();
+  window.addEventListener('dragstart', noDrag, true);
   window.addEventListener('pointermove', onMove, true);
   window.addEventListener('pointerup', onUp, true);
   window.addEventListener('pointercancel', onCancel, true);
@@ -173,6 +200,11 @@ export function LinkLayer({ links, box, page, onInternal }: LinkLayerProps): JSX
     if (e.altKey) setAlt(true);
     if (e.button === 0 && e.pointerType === 'mouse' && !e.altKey) trackPress(e);
   };
+  // The press is ours (a click, or a selection made by trackPress): no link drag, and the focus stays where it was, so
+  // the reading keys keep moving the pages. The keyboard still reaches the links with Tab.
+  const onMouseDown = (e: ReactMouseEvent<HTMLAnchorElement>) => {
+    if (e.button === 0 && !e.altKey) e.preventDefault();
+  };
   const guard = (e: ReactMouseEvent<HTMLAnchorElement>): boolean => {
     // After a drag, and with Alt (Chrome would download a web link on Alt+click), a link does nothing.
     if (!swallowClick && !e.altKey) return false;
@@ -204,6 +236,7 @@ export function LinkLayer({ links, box, page, onInternal }: LinkLayerProps): JSX
               draggable={false}
               style={style}
               onPointerDown={onPointerDown}
+              onMouseDown={onMouseDown}
               onClick={(e) => {
                 if (guard(e)) return;
                 e.preventDefault();
@@ -227,6 +260,7 @@ export function LinkLayer({ links, box, page, onInternal }: LinkLayerProps): JSX
             draggable={false}
             style={style}
             onPointerDown={onPointerDown}
+            onMouseDown={onMouseDown}
             onClick={guard}
             onAuxClick={guard}
           />
@@ -243,6 +277,9 @@ export interface PageLinksProps {
   onInternal(this: void, t: PageTarget): void;
 }
 
+/** Links are read no later than this after their page appears, however busy the page is. */
+const LINKS_IDLE_TIMEOUT_MS = 500;
+
 /** A page's LinkLayer, once its links are read (PageLinkSource reads each page once). Nothing for a page without links. */
 export function PageLinks({ source, box, page, onInternal }: PageLinksProps): JSX.Element | null {
   const index = box.index;
@@ -252,9 +289,12 @@ export function PageLinks({ source, box, page, onInternal }: PageLinksProps): JS
   });
   useEffect(() => {
     let live = true;
-    void source.get(index).then((links) => live && setRead({ index, links }));
+    // Links share the one engine with the page renders: they are read once the main thread is idle, so a page's first
+    // render is always asked for first, and pages scrolled past at speed are never read at all.
+    const idle = requestIdleCallback(() => void source.get(index).then((links) => live && setRead({ index, links })), { timeout: LINKS_IDLE_TIMEOUT_MS });
     return () => {
       live = false;
+      cancelIdleCallback(idle);
     };
   }, [source, index]);
   if (read === null || read.index !== index || read.links.length === 0) return null;

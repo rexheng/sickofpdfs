@@ -134,7 +134,9 @@ export function OutlinePanel({ items, onSelect }: OutlinePanelProps): JSX.Elemen
             // A click goes there without taking the focus, so the reading keys keep moving the pages.
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
-              setActive(row.key);
+              // The keyboard's place follows the click; the focus moves only if it was in the tree already.
+              if (tree.current?.contains(document.activeElement)) focus(row.key);
+              else setActive(row.key);
               choose(row);
             }}
           >
