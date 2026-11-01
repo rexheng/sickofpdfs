@@ -113,7 +113,7 @@ test('the hidden library page: three viewers opening together get one, and after
   const pages = await Promise.all(links.map((link) => openViewer(link)));
   await Promise.all(pages.map((p) => waitForStore(p)));
   expect(await offscreenCount(sw), 'two callers must not each create a hidden page').toBe(1);
-  for (const page of pages) expect(await store(page).call<number>('schemaVersion')).toBe(2);
+  for (const page of pages) expect(await store(page).call<number>('schemaVersion')).toBe(3);
   const page = pages[0];
   const input = await inputFor(page, links[0]);
   await store(page).saveDocument(input);
@@ -124,7 +124,7 @@ test('the hidden library page: three viewers opening together get one, and after
   expect(await offscreenCount(sw)).toBe(0);
   const answers = await connectTogether(page, 4);
   expect(answers).toHaveLength(4);
-  for (const answer of answers) expect(answer).toMatchObject({ id: 1, ok: true, value: 2 });
+  for (const answer of answers) expect(answer).toMatchObject({ id: 1, ok: true, value: 3 });
   expect(await offscreenCount(sw), 'one hidden page came back, not four (and not an error from a second createDocument)').toBe(1);
 
   // the tab's own connection was to the page that is gone: it notices, reconnects and asks again

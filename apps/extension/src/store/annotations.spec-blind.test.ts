@@ -367,8 +367,8 @@ describe('reload: only what was committed survives, and it survives whole', () =
     await env.api.saveDraft(draftRow({ id: 'd1', threadId: 'dt1', body: 'a brand new note, half written', draftOfTab: T_A }), threadRow({ id: 'dt1', draftOfTab: T_A, anchor: textAnchor(1, 20, 30) }));
 
     const db2 = await reopen(env.db);
-    expect(migrate(db2 as never)).toBe(2);
-    expect(userVersion(db2)).toBe(2);
+    expect(migrate(db2 as never)).toBe(3);
+    expect(userVersion(db2)).toBe(3);
     const { api } = wrapStore(db2);
 
     const notes = await api.listAnnotations(DOC);

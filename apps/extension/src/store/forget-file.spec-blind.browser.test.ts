@@ -73,7 +73,7 @@ describe('Forget on the real file', () => {
     dirs.push(dir);
 
     const filled = await once('fill', dir);
-    expect(filled.settings).toMatchObject({ user_version: 2, foreign_keys: 1, secure_delete: 1, synchronous: 2 });
+    expect(filled.settings).toMatchObject({ user_version: 3, foreign_keys: 1, secure_delete: 1, synchronous: 2 });
     expect(String(filled.settings['journal_mode']).toLowerCase(), 'a journal left in a free slot would keep old bytes').toBe('truncate');
 
     const before = await readAllFiles(dir);
