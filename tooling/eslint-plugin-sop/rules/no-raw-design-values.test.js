@@ -23,6 +23,10 @@ cssTester.run('no-raw-design-values', rule, {
     // the token file itself is exempt, whatever it declares
     { code: 'a { color: #0b57d0; padding: 8px; font-family: Arial; box-shadow: 0 1px 2px #000 }', filename: TOKENS_FILE },
     { code: ':root { --x: #fff }', filename: '/work/repo/packages/ui/src/tokens/tokens-dark.css' },
+    // custom properties outside the token directory may hold token references of any kind
+    ':root { --ui-font: var(--gm3-sys-font-family-body); --card-shadow: var(--gm3-sys-elevation-2); --row-h: var(--space-2); --accent: var(--gm3-sys-color-primary) }',
+    // and values that are not design values
+    ':root { --card-shadow: none; --gap: 0; --track: 1fr; --hairline: 1px; --speed: 200ms; --font-weight-strong: 600 }',
     // allowed without tokens
     'a { color: transparent; background: currentColor; border-color: inherit; box-shadow: none; outline: none }',
     'a { margin: 0px; padding: 0 0 0 0; top: auto; height: auto; flex: 1 1 0 }',
@@ -76,6 +80,18 @@ cssTester.run('no-raw-design-values', rule, {
     // outside the token directory
     { code: ':root { --x: #fff }', filename: 'packages/ui/src/components/Button.module.css', errors: [{ messageId: 'rawColor' }] },
     { code: 'a { color: #fff }', filename: 'packages/ui/src/tokens-extra/a.css', errors: [{ messageId: 'rawColor' }] },
+    // custom properties are checked for lengths, fonts and shadows too, not only for colours
+    { code: ':root { --row-h: 48px }', errors: [{ messageId: 'rawLength' }] },
+    { code: 'a { --gap: calc(100% - 8px) }', errors: [{ messageId: 'rawLength' }] },
+    { code: ':root { --font-size-body: 14px }', errors: [{ messageId: 'rawLength' }] },
+    { code: ':root { --ui-font: Inter, sans-serif }', errors: [{ messageId: 'rawFont' }] },
+    { code: ":root { --ui-font: 'Google Sans' }", errors: [{ messageId: 'rawFont' }] },
+    { code: ':root { --body-copy: Inter, sans-serif }', errors: [{ messageId: 'rawFont' }] },
+    { code: ':root { --card-shadow: 0 1px 2px var(--x) }', errors: [{ messageId: 'rawShadow' }] },
+    { code: ':root { --gm3-sys-elevation-2: 0 2px 4px rgba(0 0 0 / 0.3) }', errors: [{ messageId: 'rawShadow' }] },
+    // vendor-prefixed properties are checked like their unprefixed form
+    { code: 'a { -webkit-text-stroke: red }', errors: [{ messageId: 'rawColor' }] },
+    { code: 'a { -webkit-box-shadow: 0 1px 2px #000 }', errors: [{ messageId: 'rawShadow' }] },
   ],
 });
 
@@ -88,6 +104,7 @@ jsxTester.run('no-raw-design-values', rule, {
     "<div style={{ background: 'transparent', color: 'currentColor', boxShadow: 'none' }} />",
     "<div style={{ height: '100vh', minWidth: '50vw' }} />",
     "<div style={{ fontFamily: 'var(--gm3-sys-font-family-body)', boxShadow: 'var(--gm3-sys-elevation-2)' }} />",
+    "<div style={{ '--ui-font': 'var(--gm3-sys-font-family-body)', '--row-h': 'var(--space-2)' }} />",
     // not the style attribute, not an inline object, or not static: out of scope
     "<div className={{ color: '#fff' }} data-x={{ padding: 12 }} />",
     '<div style={styles.row} />',
@@ -109,5 +126,11 @@ jsxTester.run('no-raw-design-values', rule, {
       errors: [{ messageId: 'rawColor' }, { messageId: 'rawLength' }, { messageId: 'rawFont' }],
     },
     { code: "<div style={{ color: '#fff' }} />", filename: 'packages/ui/src/components/Chip.tsx', errors: [{ messageId: 'rawColor' }] },
+    // vendor-prefixed keys: React spells them WebkitTextStroke and msBoxShadow
+    { code: "<div style={{ WebkitTextStroke: 'red' }} />", errors: [{ messageId: 'rawColor' }] },
+    { code: "<div style={{ '-webkit-text-stroke': 'red' }} />", errors: [{ messageId: 'rawColor' }] },
+    { code: "<div style={{ msBoxShadow: '0 1px 2px #000' }} />", errors: [{ messageId: 'rawShadow' }] },
+    // custom properties in inline styles
+    { code: "<div style={{ '--ui-font': 'Inter, sans-serif' }} />", errors: [{ messageId: 'rawFont' }] },
   ],
 });

@@ -49,10 +49,21 @@ const LENGTH_UNITS = new Set([
 
 // Properties whose value can hold a named colour. Custom properties count, so a new token cannot be declared outside
 // the token directory. Other properties (animation-name: red, grid-area: red) can use the same words for other things.
+// The vendor prefix is removed from the name first, so -webkit-text-stroke is matched as text-stroke.
 const COLOR_PROPERTY =
-  /^(--.*|(.*-)?color|background(-image)?|border(-(top|right|bottom|left|block|inline)(-(start|end))?)?|outline|fill|stroke|text-decoration|column-rule|caret|-webkit-text-stroke)$/u;
+  /^(--.*|(.*-)?color|background(-image)?|border(-(top|right|bottom|left|block|inline)(-(start|end))?)?|outline|fill|stroke|text-decoration|text-stroke|column-rule|caret)$/u;
 const SHADOW_PROPERTIES = new Set(['box-shadow', 'text-shadow']);
 const FONT_PROPERTIES = new Set(['font-family', 'font']);
+
+// A custom property has no fixed meaning, so it is a font or a shadow when its name says so (`--ui-font`,
+// `--card-shadow`, `--gm3-sys-elevation-2`) or when its value names a generic family (`Inter, sans-serif`).
+// `--font-size-body: 14px` is a length, so it is not a font.
+const FONT_NAME = /(^|-)(font|typeface|font-family)$/u;
+const SHADOW_NAME = /(^|-)(shadow|elevation)(-|$)/u;
+const GENERIC_FAMILIES = new Set([
+  'serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui', 'ui-serif', 'ui-sans-serif', 'ui-monospace',
+  'ui-rounded', 'math', 'emoji', 'fangsong',
+]);
 
 // React appends "px" to a bare number, except for these properties (React's own unitless list).
 const UNITLESS_PROPERTIES = new Set(
@@ -68,6 +79,11 @@ const UNITLESS_PROPERTIES = new Set(
 
 const isType = (node, type) => typeof node === 'object' && node !== null && node.type === type;
 const lower = (text) => text.toLowerCase();
+
+// -webkit-, -moz-, -ms- and -o- prefixes. React writes them as WebkitTextStroke and msBoxShadow, and kebab() turns those
+// into -webkit-text-stroke and ms-box-shadow, so the leading dash is optional here.
+const VENDOR_PREFIX = /^-?(webkit|moz|ms|o)-/u;
+const unprefixed = (property) => lower(property).replace(VENDOR_PREFIX, '');
 
 /** `var(--x)`, or a var() whose fallback is made of token references and keywords only. */
 function isTokenReference(node) {
@@ -95,6 +111,15 @@ function isTokenList(children) {
   );
 }
 
+/** True when a generic font family (sans-serif, monospace, ...) appears anywhere in the value. */
+function hasGenericFamily(nodes) {
+  return nodes.some(
+    (node) =>
+      (isType(node, 'Identifier') && GENERIC_FAMILIES.has(lower(node.name))) ||
+      (Array.isArray(node.children) && hasGenericFamily(node.children)),
+  );
+}
+
 function describeNode(node) {
   switch (node.type) {
     case 'Hash':
@@ -117,16 +142,19 @@ function describeNode(node) {
  * @param {(messageId: string, data: Record<string, string>, node: object) => void} report
  */
 function checkValue(property, value, report) {
-  const name = property.startsWith('--') ? property : lower(property).replace(/^-(webkit|moz|ms|o)-/u, '');
+  const custom = property.startsWith('--');
+  const name = custom ? lower(property) : unprefixed(property);
   const children = valueChildren(value);
   if (children === null) return;
 
   // A shadow or a font is a list of parts, so it is judged as a whole: one report per declaration.
-  if (SHADOW_PROPERTIES.has(name) && !isTokenList(children)) {
+  const isShadow = SHADOW_PROPERTIES.has(name) || (custom && SHADOW_NAME.test(name));
+  const isFont = FONT_PROPERTIES.has(name) || (custom && (FONT_NAME.test(name) || hasGenericFamily(children)));
+  if (isShadow && !isTokenList(children)) {
     report('rawShadow', { property }, value);
     return;
   }
-  if (FONT_PROPERTIES.has(name) && !isTokenList(children)) {
+  if (isFont && !isTokenList(children)) {
     report('rawFont', { property }, value);
     return;
   }
@@ -236,7 +264,7 @@ export default {
     /** A JSX number: React turns a bare number into px, so 12 is 12px. 0 and 1 (1px) are the allowed forms. */
     function checkNumber(property, amount, at) {
       if (amount === 0 || amount === 1) return;
-      if (UNITLESS_PROPERTIES.has(property.replace(/^-(webkit|moz|ms|o)-/u, ''))) return;
+      if (UNITLESS_PROPERTIES.has(unprefixed(property))) return;
       context.report({ node: at, messageId: 'rawLength', data: { property, value: `${amount}` } });
     }
 
