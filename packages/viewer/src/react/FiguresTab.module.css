@@ -1,0 +1,116 @@
+/*
+ * The rail's Figures tab, in the outline's width (02 section 4.10; research 06 section 4): one row per figure, a
+ * 64 px thumbnail (a piece of the white page, 4 px corners) beside its label in Google Sans Text 14/20 500 and its
+ * page in 12/16 on-surface-variant. Rows take the dark chrome's hover layer and focus ring; the figure that is
+ * selected on the pages keeps the selected toggle's disc colour.
+ */
+.tab {
+  box-sizing: border-box;
+  block-size: 100%;
+  padding: var(--space-2) var(--space-2) var(--space-4) 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* eslint-disable-next-line css/use-baseline -- a Chrome-only extension (minimum Chrome 128; Chrome has it since 121) */
+  scrollbar-width: thin;
+  /* eslint-disable-next-line css/use-baseline -- as above */
+  scrollbar-color: var(--gm3-sys-color-outline-variant) transparent;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: block;
+}
+
+.row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  box-sizing: border-box;
+  inline-size: 100%;
+  margin: 0;
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--shape-chip);
+  background: transparent;
+  color: var(--gm3-sys-color-on-surface);
+  text-align: start;
+  cursor: pointer;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.row:hover {
+  background-color: var(--icon-btn-hover);
+}
+
+.row[aria-current='true'] {
+  background-color: var(--gm3-sys-color-surface-container-highest);
+}
+
+.row:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.thumb {
+  display: block;
+  flex: none;
+  box-sizing: border-box;
+  inline-size: var(--sop-card-thumb);
+  block-size: var(--sop-card-thumb);
+  border-radius: var(--shape-grid-thumb);
+  background-color: var(--viewer-page);
+  object-fit: contain;
+}
+
+.text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.label {
+  overflow-wrap: anywhere;
+  font: var(--type-viewer-toolbar);
+  font-variation-settings: "opsz" 17;
+}
+
+.page {
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-tooltip);
+  font-variation-settings: "opsz" 17;
+}
+
+.status {
+  margin: var(--space-2) var(--space-2) 0;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-tooltip);
+  font-variation-settings: "opsz" 17;
+}
+
+.empty {
+  padding: var(--space-2);
+}
+
+.emptyTitle {
+  margin: 0 0 var(--space-1);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-viewer-toolbar);
+  font-variation-settings: "opsz" 17;
+}
+
+.emptyHint {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}

@@ -18,3 +18,5 @@ export { FindBar, type FindBarProps } from './FindBar';
 export { FindHighlights, type FindHighlightsProps } from './FindHighlights';
 export { MarkLayer, type MarkLayerItem, type MarkLayerPage, type MarkLayerProps, type MarkLayerSource, type MarkLayerStyle } from './MarkLayer';
 export { BoldLayer, type BoldLayerProps, type BoldRange } from '../marks/BoldLayer';
+export { FigureLayer, type FigureLayerNote, type FigureLayerPage, type FigureLayerProps, type FigureLayerSource } from './FigureLayer';
+export { FiguresTab, type FiguresTabItem, type FiguresTabProps } from './FiguresTab';
