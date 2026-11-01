@@ -6,7 +6,9 @@
 // Rules this file keeps:
 // - The store stamps `hlc` on every write and keeps `rev` as it is (0 for a new row); the caller's values are ignored.
 // - A draft is a comment (or a new thread) with `draft_of_tab` set. Drafts never reach the outbox, `comments_fts` or a
-//   published change. The only way in is `saveDraft`; the only ways out are `sendDraft` and `discardDraft`.
+//   published change. The only way in is `saveDraft`. The ways out: `sendDraft`; a `writeAnnotations` upsert of the same id
+//   with `draftOfTab` null (the session sends a note as one batch: mark, thread, comment), which turns the stored draft
+//   live in place; and `discardDraft`.
 // - Sent text is never overwritten by a draft, and a draft is never overwritten by another tab.
 // - JSON columns (`anchor`, `meta`) are stored and returned as they are, so fields this version does not know survive.
 // - Every write is one transaction, and a change event is published only after it commits.
@@ -36,7 +38,11 @@ export interface AnnotationChange {
 export interface AnnotationsApi {
   /** Live, non-draft rows of one document. */
   listAnnotations(documentId: DocumentId): Promise<{ marks: MarkRow[]; threads: ThreadRow[]; comments: CommentRow[] }>;
-  /** One transaction. `o.tabId` goes into the published events so the writing tab can ignore its own echo. */
+  /**
+   * One transaction. `o.tabId` goes into the published events so the writing tab can ignore its own echo.
+   * Upserting a thread or comment whose id is a stored draft (and whose row has `draftOfTab` null) sends it: the draft marker
+   * is cleared on that same row, so the draft and the live note are never both there and the text is never absent.
+   */
   writeAnnotations(ops: AnnotationOp[], o?: { tabId?: TabId }): Promise<void>;
   /** Saves (or updates) an unsent comment, with its new thread when there is one. Publishes nothing and queues nothing. */
   saveDraft(row: CommentRow & { draftOfTab: TabId }, thread?: ThreadRow): Promise<void>;
@@ -325,14 +331,25 @@ export function createAnnotationsApi(db: SqlDb, deps: AnnotationDeps): Annotatio
     checkThread(row);
     const now = deps.now();
     const cur = one('SELECT document_id, draft_of_tab FROM threads WHERE id = ?', [row.id]);
+    if (row.draftOfTab != null) fail('use-save-draft', 'a thread with an unsent draft is written with saveDraft');
     if (cur?.draft_of_tab != null) {
-      if (o.op !== 'soft-delete') fail('use-save-draft', 'this thread is an unsent draft; use sendDraft');
-      // A draft was never synced, so deleting it leaves nothing to tell anyone about. It goes for good, with its comments.
-      run('DELETE FROM comments WHERE thread_id = ? AND draft_of_tab IS NOT NULL', [row.id]);
-      run('DELETE FROM threads WHERE id = ? AND draft_of_tab IS NOT NULL', [row.id]);
+      if (o.op === 'soft-delete') {
+        // A draft was never synced, so deleting it leaves nothing to tell anyone about. It goes for good, with its comments.
+        run('DELETE FROM comments WHERE thread_id = ? AND draft_of_tab IS NOT NULL', [row.id]);
+        run('DELETE FROM threads WHERE id = ? AND draft_of_tab IS NOT NULL', [row.id]);
+        return;
+      }
+      if (o.op === 'restore') fail('use-save-draft', 'this thread is an unsent draft; there is nothing to restore');
+      // An upsert of a stored draft thread (this row is not a draft) sends it: same id, the draft marker cleared, and the
+      // row queued for sync by the trigger, all in this transaction.
+      if (cur.document_id !== row.documentId) fail('immutable-field', 'a thread cannot move to another document');
+      run(
+        `UPDATE threads SET draft_of_tab = NULL, anchor = ?, page_index = ?, sort_key = ?, placement = ?, updated_at = ?, deleted_at = ?, hlc = ? WHERE id = ?`,
+        [JSON.stringify(row.anchor), row.pageIndex, row.sortKey, row.placement, row.updatedAt, row.deletedAt, deps.hlc.tick(), row.id],
+      );
+      touch('threads', row.documentId, row.id, tabId);
       return;
     }
-    if (row.draftOfTab != null) fail('use-save-draft', 'a thread with an unsent draft is written with saveDraft');
     if (cur) {
       if (cur.document_id !== row.documentId) fail('immutable-field', 'a thread cannot move to another document');
       if (o.op === 'soft-delete') {
@@ -364,12 +381,28 @@ export function createAnnotationsApi(db: SqlDb, deps: AnnotationDeps): Annotatio
     checkComment(row);
     const now = deps.now();
     const cur = one('SELECT document_id, thread_id, author, draft_of_tab FROM comments WHERE id = ?', [row.id]);
+    if (row.draftOfTab != null) fail('use-save-draft', 'an unsent draft is written with saveDraft');
     if (cur?.draft_of_tab != null) {
-      if (o.op !== 'soft-delete') fail('use-save-draft', 'this comment is an unsent draft; use saveDraft and sendDraft');
-      deleteDraftComment(row.id, text(cur, 'thread_id'));
+      if (o.op === 'soft-delete') {
+        deleteDraftComment(row.id, text(cur, 'thread_id'));
+        return;
+      }
+      if (o.op === 'restore') fail('use-save-draft', 'this comment is an unsent draft; there is nothing to restore');
+      // An upsert of a stored draft (this row is not a draft) sends it: same id, the draft marker cleared, the final text
+      // stored, and the row queued for sync and search by the triggers, all in this transaction.
+      if (cur.document_id !== row.documentId || cur.thread_id !== row.threadId) fail('immutable-field', 'a comment cannot move to another thread');
+      if (cur.author !== row.author) fail('immutable-field', 'the author of a comment never changes');
+      run('UPDATE comments SET draft_of_tab = NULL, body = ?, meta = ?, edited_at = ?, deleted_at = ?, hlc = ? WHERE id = ?', [
+        row.body,
+        JSON.stringify(row.meta),
+        row.editedAt,
+        row.deletedAt,
+        deps.hlc.tick(),
+        row.id,
+      ]);
+      touch('comments', row.documentId, row.id, tabId);
       return;
     }
-    if (row.draftOfTab != null) fail('use-save-draft', 'an unsent draft is written with saveDraft');
     if (cur) {
       if (cur.document_id !== row.documentId || cur.thread_id !== row.threadId) fail('immutable-field', 'a comment cannot move to another thread');
       if (cur.author !== row.author) fail('immutable-field', 'the author of a comment never changes');
@@ -442,6 +475,16 @@ export function createAnnotationsApi(db: SqlDb, deps: AnnotationDeps): Annotatio
               if (op.table === 'marks') writeMark(op, o?.tabId);
               else if (op.table === 'threads') writeThread(op, o?.tabId);
               else writeComment(op, o?.tabId);
+            }
+            // Whatever the order of the ops, a note is sent whole: no sent comment may be left in a thread that is still a draft.
+            const sentIds = [...touched.values()].filter((c) => c.table === 'comments').flatMap((c) => c.ids);
+            if (sentIds.length > 0) {
+              const stranded = one(
+                `SELECT c.id FROM comments c JOIN threads t ON t.id = c.thread_id
+                 WHERE c.id IN (${sentIds.map(() => '?').join(', ')}) AND c.draft_of_tab IS NULL AND t.draft_of_tab IS NOT NULL`,
+                sentIds,
+              );
+              if (stranded) fail('bad-row', 'a sent comment cannot sit in a thread that is still a draft; send the thread in the same batch');
             }
           });
         } catch (e) {
