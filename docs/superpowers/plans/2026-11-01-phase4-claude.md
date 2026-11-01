@@ -206,3 +206,7 @@ What changed since research 03/06 (31 Oct), and what it changes here:
 - **Action, for the live check:** create a separate API key with a $5 monthly spend limit, and add it in GitHub → Settings → Secrets → Actions as `ANTHROPIC_API_KEY_LIVE`. Without it, the live check moves to your PC, in the Release 1 checklist.
 - **Decided (owner, 1 Nov 2026):** at most 1 web search per question (`max_uses: 1`).
 - **At release:** sign `docs/checklists/release1-windows.md`, then press Publish on the draft GitHub release.
+
+## Carried requirements (controller, 1 Nov 2026)
+
+- **Lint config:** any new `no-restricted-imports` block (for example, the SDK import rule) must repeat `LOCAL_ONLY_IMPORT_PATTERN` and `LOCAL_ONLY_SYNTAX` from `eslint.config.mjs`. ESLint replaces a rule with the same name, so otherwise the secrets boundary silently disappears.
