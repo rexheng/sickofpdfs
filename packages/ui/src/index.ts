@@ -1,6 +1,8 @@
 export { Banner, type BannerProps } from './components/Banner';
 export { Chip, type ChipProps } from './components/Chip';
 export * from './components/comments';
+export { MARK_COLOR_NAMES, MARK_COLORS, markColorForKey } from './components/ColorSwatches';
+export { ContextMenu, type ContextMenuProps } from './components/ContextMenu';
 export { Dialog, type DialogAction, type DialogProps } from './components/Dialog';
 export { IconButton, type IconButtonProps } from './components/IconButton';
 export { DropdownMenu, type DropdownMenuProps, type MenuDef, type MenuItemDef } from './components/Menu';

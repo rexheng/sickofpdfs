@@ -1,0 +1,76 @@
+/*
+ * The colour row of the right-click menu (dark viewer menu, #282a2c). It is one menu row tall (36 px). Each swatch is
+ * a 36 px slot holding a 20 px dot; the row starts 4 px in, so the first dot sits in the menu's icon column (12 px in)
+ * and the second starts on the label column (48 px in). "1–5" is right-aligned like a shortcut hint.
+ * The current colour shows a dark check. The hovered or keyboard-focused swatch gets a 2 px on-surface ring, 2 px out:
+ * a dot has no room for the rows' 8% state layer, and the ring stays visible on every colour.
+ */
+.row {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  block-size: var(--menu-row-h);
+  padding-inline: calc(var(--space-3) - (var(--sop-swatch-slot) - var(--icon-size-20)) / 2) var(--space-3);
+}
+
+.swatch {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--sop-swatch-slot);
+  block-size: var(--sop-swatch-slot);
+  border-radius: var(--shape-full);
+  cursor: pointer;
+  outline: none;
+  -webkit-user-select: none;
+}
+
+.swatch[data-color='1'] {
+  --_swatch: var(--sop-mark-1-swatch);
+}
+
+.swatch[data-color='2'] {
+  --_swatch: var(--sop-mark-2-swatch);
+}
+
+.swatch[data-color='3'] {
+  --_swatch: var(--sop-mark-3-swatch);
+}
+
+.swatch[data-color='4'] {
+  --_swatch: var(--sop-mark-4-swatch);
+}
+
+.swatch[data-color='5'] {
+  --_swatch: var(--sop-mark-5-swatch);
+}
+
+.dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  inline-size: var(--sop-swatch-size);
+  block-size: var(--sop-swatch-size);
+  border-radius: var(--shape-full);
+  background-color: var(--_swatch);
+  color: var(--sop-swatch-check);
+}
+
+.swatch[data-highlighted] .dot {
+  outline: var(--sop-swatch-ring-w) solid var(--gm3-sys-color-on-surface);
+  outline-offset: var(--sop-swatch-ring-gap);
+}
+
+.check {
+  display: inline-flex;
+}
+
+.hint {
+  flex: none;
+  margin-inline-start: auto;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-menu-shortcut);
+  letter-spacing: var(--tracking-tight);
+}

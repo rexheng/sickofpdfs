@@ -1,0 +1,12 @@
+/*
+ * The point the right-click menu opens at. Radix positions a menu against an element, so this is a zero-size fixed
+ * element at the pointer, portaled to <body> so no transformed ancestor can move it. The menu itself uses
+ * Menu.module.css (the dark viewer menu).
+ */
+.anchor {
+  position: fixed;
+  inline-size: 0;
+  block-size: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
