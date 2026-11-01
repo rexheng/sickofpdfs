@@ -2,6 +2,7 @@
 // only: the library entry loads this module only when import.meta.env.MODE is 'test' and the address asks for it, so a
 // production build does not contain it. Nothing here is written anywhere.
 import type { DocumentId, DocumentRow, LocationId, LocationRow } from '@sop/core';
+import { compareTitles, shownTitle } from '../../shared/shown-title';
 import type { LibraryChange, LibraryData, LibraryItem, LibraryPage, LibraryQuery } from './types';
 
 export interface FakeLibraryOptions {
@@ -112,7 +113,7 @@ const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: tr
 function compare(a: LibraryItem, b: LibraryItem, by: LibraryQuery['sort']['by']): number {
   switch (by) {
     case 'title':
-      return collator.compare(a.doc.title ?? '', b.doc.title ?? '');
+      return compareTitles(shownTitle(a.doc.title, a.location?.raw ?? null), shownTitle(b.doc.title, b.location?.raw ?? null));
     case 'lastOpened':
       return a.lastOpened - b.lastOpened;
     case 'added':

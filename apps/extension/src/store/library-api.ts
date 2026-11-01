@@ -11,6 +11,7 @@
 // - The store stamps `hlc` on every synced write and leaves `rev` alone (sync owns it).
 // - Errors are rejections whose message starts with a code (`bad-input: …`), so the code survives a message port.
 import type { Author, CommentId, CommentRow, DocumentId, DocumentRow, HlcStamp, LocationRow, PageHit, ThreadId, ThreadRow } from '@sop/core';
+import { compareTitles, shownTitle } from '../shared/shown-title';
 import { commentFromRow, threadFromRow } from './annotations';
 import type { StoreChange } from './change-bus';
 import { ftsQuery, isTooBroad } from './fts-query';
@@ -320,12 +321,12 @@ function addFilter(f: LibraryFilter | undefined, where: string[], bind: SqlValue
 
 // ---- the sort ---------------------------------------------------------------------------------------------------------------
 
-/** The sort key of a reading, as SQL over `d` (documents) and `h` (history). Never null, so a cursor can always compare. */
-function sortKey(by: LibrarySortBy, dir: 'asc' | 'desc'): string {
+/**
+ * The sort key of a reading, as SQL over `d` (documents) and `h` (history). Never null, so a cursor can always compare.
+ * Titles are not sorted here: the title a row shows can be its file name, which only the code in `pageByTitle` can work out.
+ */
+function sortKey(by: Exclude<LibrarySortBy, 'title'>): string {
   switch (by) {
-    case 'title':
-      // Untitled readings come last in either direction.
-      return `CASE WHEN d.title IS NULL OR trim(d.title) = '' THEN ${dir === 'asc' ? 'char(1114111)' : `''`} ELSE lower(trim(d.title)) END`;
     case 'lastOpened':
       return 'coalesce(h.last_opened, d.created_at)';
     case 'added':
@@ -371,6 +372,45 @@ export function createLibraryApi(db: SqlDb, deps: LibraryDeps, readers: RowReade
     return out;
   };
 
+  /**
+   * One page of readings in the order of the title each row shows (`shownTitle`: the title, else the file name, else "Untitled PDF"),
+   * so the sort and the words on screen cannot disagree. SQL cannot work that title out, so every matching reading is ordered here.
+   */
+  const pageByTitle = (
+    from: string,
+    where: readonly string[],
+    bind: readonly SqlValue[],
+    dir: 'asc' | 'desc',
+    limit: number,
+    after: { key: string | number; id: string } | undefined,
+  ): { rows: Row[]; more: boolean; lastKey: string } => {
+    const all = select(`SELECT d.id AS id, d.title AS title ${from} WHERE ${where.join(' AND ')}`, bind);
+    const locations = latestLocations(all.map((r) => text(r, 'id')));
+    const sign = dir === 'asc' ? 1 : -1;
+    type Entry = { key: string; id: string };
+    const order = (a: Entry, b: Entry): number => sign * (compareTitles(a.key, b.key) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    const sorted: Entry[] = all
+      .map((r) => ({ id: text(r, 'id'), key: shownTitle(textOrNull(r, 'title'), locations.get(text(r, 'id'))?.raw ?? null) }))
+      .sort(order);
+    const rest = after === undefined ? sorted : sorted.filter((e) => order(e, { key: String(after.key), id: after.id }) > 0);
+    const chosen = rest.slice(0, limit);
+    const byId = new Map<string, Row>();
+    if (chosen.length > 0) {
+      for (const r of select(
+        `SELECT d.*, h.first_opened AS h_first, h.last_opened AS h_last, h.reading_ms AS h_ms ${from} WHERE d.id IN (SELECT value FROM json_each(?))`,
+        [JSON.stringify(chosen.map((e) => e.id))],
+      )) {
+        byId.set(text(r, 'id'), r);
+      }
+    }
+    const rows: Row[] = [];
+    for (const e of chosen) {
+      const r = byId.get(e.id);
+      if (r !== undefined) rows.push(r);
+    }
+    return { rows, more: rest.length > limit, lastKey: chosen[chosen.length - 1]?.key ?? '' };
+  };
+
   // ---- lists ----
 
   const listDocuments: LibraryApi['listDocuments'] = (q) =>
@@ -394,25 +434,40 @@ export function createLibraryApi(db: SqlDb, deps: LibraryDeps, readers: RowReade
       const from = 'FROM documents d LEFT JOIN history h ON h.document_id = d.id';
       const total = Number(db.selectValue(`SELECT count(*) ${from} WHERE ${where.join(' AND ')}`, binding(bind)) ?? 0);
 
-      const key = sortKey(by, dir);
       const tag = `doc:${q.view}:${by}:${dir}`;
-      const pageWhere = [...where];
-      const pageBind = [...bind];
+      let after: { key: string | number; id: string } | undefined;
       if (q.cursor !== undefined) {
         if (typeof q.cursor !== 'string') fail('bad-input', 'the page marker is not text');
-        const c = decodeCursor(q.cursor, tag);
-        if (typeof c.key !== (by === 'title' ? 'string' : 'number')) fail('bad-input', 'the page marker is not valid for this list');
-        pageWhere.push(`(${key}, d.id) ${dir === 'asc' ? '>' : '<'} (?, ?)`);
-        pageBind.push(c.key, c.id);
+        after = decodeCursor(q.cursor, tag);
+        if (typeof after.key !== (by === 'title' ? 'string' : 'number')) fail('bad-input', 'the page marker is not valid for this list');
       }
-      const rows = select(
-        `SELECT d.*, h.first_opened AS h_first, h.last_opened AS h_last, h.reading_ms AS h_ms, ${key} AS sk
-         ${from} WHERE ${pageWhere.join(' AND ')}
-         ORDER BY sk ${dir.toUpperCase()}, d.id ${dir.toUpperCase()} LIMIT ?`,
-        [...pageBind, limit + 1],
-      );
-      const more = rows.length > limit;
-      const page = rows.slice(0, limit);
+      let page: Row[];
+      let more: boolean;
+      let lastKey: string | number;
+      if (by === 'title') {
+        const found = pageByTitle(from, where, bind, dir, limit, after);
+        page = found.rows;
+        more = found.more;
+        lastKey = found.lastKey;
+      } else {
+        const key = sortKey(by);
+        const pageWhere = [...where];
+        const pageBind = [...bind];
+        if (after !== undefined) {
+          pageWhere.push(`(${key}, d.id) ${dir === 'asc' ? '>' : '<'} (?, ?)`);
+          pageBind.push(after.key, after.id);
+        }
+        const rows = select(
+          `SELECT d.*, h.first_opened AS h_first, h.last_opened AS h_last, h.reading_ms AS h_ms, ${key} AS sk
+           ${from} WHERE ${pageWhere.join(' AND ')}
+           ORDER BY sk ${dir.toUpperCase()}, d.id ${dir.toUpperCase()} LIMIT ?`,
+          [...pageBind, limit + 1],
+        );
+        more = rows.length > limit;
+        page = rows.slice(0, limit);
+        const tail = page[page.length - 1];
+        lastKey = tail === undefined ? 0 : num(tail, 'sk');
+      }
 
       const ids = page.map((r) => text(r, 'id'));
       const notes = new Map<string, number>();
@@ -439,7 +494,7 @@ export function createLibraryApi(db: SqlDb, deps: LibraryDeps, readers: RowReade
         };
       });
       const last = page[page.length - 1];
-      const nextCursor = more && last ? encodeCursor(tag, by === 'title' ? text(last, 'sk') : num(last, 'sk'), text(last, 'id')) : null;
+      const nextCursor = more && last ? encodeCursor(tag, lastKey, text(last, 'id')) : null;
       return { items, nextCursor, total };
     });
 

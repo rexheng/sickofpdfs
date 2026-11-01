@@ -1,21 +1,11 @@
 // Plain words and dates for the library's rows and cards. Dates follow the browser's language, as Drive's do: the time
 // for today, the day and month this year, the full date before that.
+import { shownTitle } from '../../shared/shown-title';
 import type { LibraryItem } from '../data/types';
 
-/** What a reading is called: its title, else the file name it was opened from, else "Untitled PDF". */
+/** What a reading is called: its title, else the file name it was opened from, else "Untitled PDF". The store sorts by the same words. */
 export function readingTitle(item: LibraryItem): string {
-  const title = item.doc.title?.trim();
-  if (title !== undefined && title !== '') return title;
-  const raw = item.location?.raw;
-  if (raw !== undefined) {
-    try {
-      const last = new URL(raw).pathname.split('/').filter(Boolean).pop();
-      if (last !== undefined) return decodeURIComponent(last);
-    } catch {
-      // not a link we can read: fall through
-    }
-  }
-  return 'Untitled PDF';
+  return shownTitle(item.doc.title, item.location?.raw ?? null);
 }
 
 const surname = (name: string) => name.trim().split(/\s+/).pop() ?? name;
