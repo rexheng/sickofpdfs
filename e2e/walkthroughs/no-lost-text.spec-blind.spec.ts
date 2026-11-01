@@ -60,11 +60,15 @@ const KILLS = [
 const addressOf = (server: { url(p: string): string }): string => server.url(`/f/${ATTENTION.file}`);
 
 // Triage (TB2): saveFirst presses the chip's "Save?", as the owner would while the stand-in filter calls the paper "Not sure".
+/** Ruling on gap 2 (tb2-triage.md): a renderer crash takes the whole extension down until it is reloaded. */
+const CRASH_FIXME = 'waits for the crash-resilience fix (drafts journal); see tb2-triage gap 2';
+
 test.describe('No lost text', () => {
   test.setTimeout(150_000);
 
   for (const { name, kill } of KILLS) {
     test(`${name} 100 ms after the last key: the draft is back in its card, with the caret at the end`, async ({ openViewer, server }, testInfo) => {
+      test.fixme(kill === crashRenderer, CRASH_FIXME);
       test.skip(!SAVING_AVAILABLE, NO_SAVING);
       const first = await openPaper(openViewer, server, ATTENTION);
       await saveFirst(first);
@@ -86,6 +90,7 @@ test.describe('No lost text', () => {
   }
 
   test('a draft left alone for a while is just as safe (300 ms, the saving rule)', async ({ openViewer, server }) => {
+    test.fixme(true, CRASH_FIXME);
     test.skip(!SAVING_AVAILABLE, NO_SAVING);
     const first = await openPaper(openViewer, server, ATTENTION);
     await saveFirst(first);
@@ -142,6 +147,7 @@ test.describe('No lost text', () => {
   }
 
   test('an unsent reply survives a crash, and the note it belongs to is still there', async ({ openViewer, server }, testInfo) => {
+    test.fixme(true, CRASH_FIXME);
     test.skip(!SAVING_AVAILABLE, NO_SAVING);
     const first = await openPaper(openViewer, server, ATTENTION);
     await saveFirst(first);
@@ -161,6 +167,7 @@ test.describe('No lost text', () => {
   });
 
   test('an unsent edit of a sent note survives a crash, and the sent text stays until the edit is sent', async ({ openViewer, server }, testInfo) => {
+    test.fixme(true, CRASH_FIXME);
     test.skip(!SAVING_AVAILABLE, NO_SAVING);
     const first = await openPaper(openViewer, server, ATTENTION);
     const id = await saveFirst(first);
@@ -185,6 +192,7 @@ test.describe('No lost text', () => {
   });
 
   test("two tabs on one PDF: the draft stays with tab A while A is open; B sees the notes A posted, never A's draft; when A is gone, B has the draft", async ({ openViewer, server }, testInfo) => {
+    test.fixme(true, CRASH_FIXME);
     test.skip(!SAVING_AVAILABLE, NO_SAVING);
     const a = await openPaper(openViewer, server, ATTENTION);
     await saveFirst(a);

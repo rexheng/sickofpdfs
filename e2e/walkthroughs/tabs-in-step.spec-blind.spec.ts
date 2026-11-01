@@ -36,13 +36,15 @@ const GREEN = 1;
 const YELLOW = 0;
 
 test('a highlight, a sent comment, a reply and a removed highlight made in tab A appear in tab B without a reload', async ({ openViewer, server }, testInfo) => {
-  // Triage (TB2): the paper is saved in A (the chip's "Save?", while the stand-in filter calls it "Not sure") before B
-  // opens: a tab that is already open does not hear of a save made in another tab (a gap, tb2-triage.md).
+  // Triage (TB2): the paper is saved in A with the chip's "Save?" (the stand-in filter calls it "Not sure"); tab B, open
+  // already, hears of that save and follows (ruling on gap 3, tb2-triage.md).
   const a = await openPaper(openViewer, server, ATTENTION);
-  const tokens = await markTokens(a);
-  await saveFirst(a);
   const b = await openPaper(openViewer, server, ATTENTION);
+  const tokens = await markTokens(a);
+  await a.bringToFront();
+  await saveFirst(a);
   await waitSaved(b);
+  await expect.poll(() => hooks(b).eval((h) => h.save.state().kind), { message: 'tab B, open already, follows the save made in tab A', timeout: 10_000 }).toBe('saved');
 
   // 1. a highlight in A
   await a.bringToFront();
