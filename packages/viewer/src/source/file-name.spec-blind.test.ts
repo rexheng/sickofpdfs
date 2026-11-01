@@ -18,7 +18,8 @@ describe('displayNameFor', () => {
     ['a filename without quotes', 'https://example.org/get', 'inline; filename=report.pdf', 'report.pdf'],
     ['filename* (UTF-8, percent-encoded) beats filename', 'https://example.org/x', "attachment; filename=\"fallback.pdf\"; filename*=UTF-8''na%C3%AFve%20caf%C3%A9.pdf", 'naïve café.pdf'],
     ['a directory in the filename is dropped (forward slashes)', 'https://example.org/x', 'attachment; filename="../../etc/evil.pdf"', 'evil.pdf'],
-    ['a directory in the filename is dropped (backslashes)', 'https://example.org/x', 'attachment; filename="C:\\temp\\a.pdf"', 'a.pdf'],
+    // Quoted, a backslash escapes the next character (RFC 6266 quoted-pair), so a Windows path is only seen unquoted.
+    ['a directory in the filename is dropped (backslashes)', 'https://example.org/x', 'attachment; filename=C:\\temp\\a.pdf', 'a.pdf'],
     ['an empty filename falls back to the address', 'https://example.org/papers/real-name.pdf', 'attachment; filename=""', 'real-name.pdf'],
     ['a Content-Disposition with no filename falls back to the address', 'https://example.org/papers/real-name.pdf', 'inline', 'real-name.pdf'],
   ] as const)('%s', (_what, url, cd, expected) => {

@@ -46,7 +46,7 @@ const live = (r: Rig) => r.store.listAnnotations(DOC);
 
 describe('the page text the tests use', () => {
   it('has the words the offsets point at', () => {
-    expect([textOf(SENTENCE), textOf(WORD), textOf(PAGE1)]).toEqual(['difference-in-differences', 'estimator', PAGES[1]!.slice(0, 20)]);
+    expect([textOf(SENTENCE), textOf(WORD), textOf(PAGE1)]).toEqual(['difference-in-differences', 'estimator', PAGES[1].slice(0, 20)]);
   });
 });
 
@@ -89,7 +89,7 @@ describe('select: which thread a selection lands on', () => {
     off();
     r.session.setActive(n.threadId);
     expect(seen).toHaveLength(2);
-    const mark = r.session.state().marks[0]!;
+    const mark = r.session.state().marks[0];
     r.session.setFocusedMark(mark.id);
     expect(r.session.state().focusedMark).toBe(mark.id);
     r.session.setFocusedMark(null);
@@ -135,18 +135,18 @@ describe('mark: it draws first, then writes', () => {
     await settle();
     const [m] = r.session.state().marks;
     expect(m).toMatchObject({ style, color, pageIndex: 0, author: 'me' });
-    expect(m!.anchor).toMatchObject({ kind: 'text', start: { page: 0, index: 30 }, end: { page: 0, index: 39 }, quote: { quote: 'estimator' } });
-    expect(m!.sortKey).toBe((m!.anchor as { rects: { rects: number[][] }[] }).rects[0]!.rects[0]![1]); // the top of the first rect (0-1)
+    expect(m.anchor).toMatchObject({ kind: 'text', start: { page: 0, index: 30 }, end: { page: 0, index: 39 }, quote: { quote: 'estimator' } });
+    expect(m.sortKey).toBe((m.anchor as { rects: { rects: number[][] }[] }).rects[0].rects[0][1]); // the top of the first rect (0-1)
     expect((await live(r)).marks).toHaveLength(1);
   });
 
   it('a selection that runs over a page break is one mark that starts on the first page', async () => {
     const r = rig();
-    await r.session.applyStyle([range(0, 100, PAGES[0]!.length), range(1, 0, 12)], 'highlight', 1);
+    await r.session.applyStyle([range(0, 100, PAGES[0].length), range(1, 0, 12)], 'highlight', 1);
     const marks = r.session.state().marks;
     expect(marks).toHaveLength(1);
-    expect(marks[0]!.pageIndex).toBe(0);
-    expect(marks[0]!.anchor).toMatchObject({ start: { page: 0, index: 100 }, end: { page: 1, index: 12 } });
+    expect(marks[0].pageIndex).toBe(0);
+    expect(marks[0].anchor).toMatchObject({ start: { page: 0, index: 100 }, end: { page: 1, index: 12 } });
   });
 
   it('the same style again on the same words takes the mark off; pressing H twice quickly does the same', async () => {
@@ -186,8 +186,8 @@ describe('mark: it draws first, then writes', () => {
   it.each([
     { name: 'taking the style off the whole selection (H again)', act: (s: Rig['session']) => s.applyStyle([SENTENCE], 'highlight', 1) },
     { name: 'splitting the mark', act: (s: Rig['session']) => s.applyStyle([MIDDLE], 'highlight', 1) },
-    { name: 'removing the mark', act: (s: Rig['session']) => s.removeMark(s.state().marks[0]!.id) },
-    { name: 'recolouring the mark', act: (s: Rig['session']) => s.recolor(s.state().marks[0]!.id, 4) },
+    { name: 'removing the mark', act: (s: Rig['session']) => s.removeMark(s.state().marks[0].id) },
+    { name: 'recolouring the mark', act: (s: Rig['session']) => s.recolor(s.state().marks[0].id, 4) },
     { name: 'putting another style on the same words', act: (s: Rig['session']) => s.applyStyle([SENTENCE], 'underline', 2) },
   ])('$name never touches the comment on the same words', async ({ act }) => {
     const r = rig();
@@ -204,7 +204,7 @@ describe('mark: it draws first, then writes', () => {
   it('recolour changes the colour and nothing else', async () => {
     const r = rig();
     await r.session.applyStyle([SENTENCE], 'underline', 2);
-    const before = r.session.state().marks[0]!;
+    const before = r.session.state().marks[0];
     await r.session.recolor(before.id, 5);
     await settle();
     expect(r.session.state().marks[0]).toMatchObject({ id: before.id, style: 'underline', color: 5, anchor: before.anchor });
@@ -254,7 +254,7 @@ describe('undo and redo', () => {
   it('undoing a removal brings back the very same mark (same id), and redo removes it again', async () => {
     const r = rig();
     await r.session.applyStyle([SENTENCE], 'highlight', 2);
-    const original = r.session.state().marks[0]!;
+    const original = r.session.state().marks[0];
     await r.session.removeMark(original.id);
     expect(r.session.state().marks).toEqual([]);
 
@@ -338,7 +338,7 @@ describe('fast actions keep their order', () => {
     r.store.hold();
     const made = r.session.applyStyle([SENTENCE], 'highlight', 1);
     await until(() => r.session.state().marks.length === 1);
-    const id = r.session.state().marks[0]!.id;
+    const id = r.session.state().marks[0].id;
     const removed = r.session.removeMark(id);
     await settle(); // the write is still held; the removal is drawn all the same
     expect(r.session.state().marks).toEqual([]);
@@ -674,7 +674,7 @@ describe('editing and deleting notes', () => {
     const n = await sentNote(r);
     await r.session.editComment(n.commentId, 'Why does this hold? (edited)');
     await settle();
-    const edited = r.session.state().comments[0]!;
+    const edited = r.session.state().comments[0];
     expect(edited).toMatchObject({ body: 'Why does this hold? (edited)' });
     expect(edited.editedAt).toEqual(expect.any(Number));
     expect((await live(r)).comments[0]).toMatchObject({ body: 'Why does this hold? (edited)' });
@@ -688,7 +688,7 @@ describe('editing and deleting notes', () => {
   it('emptying an existing note keeps its highlight', async () => {
     const r = rig();
     await sentNote(r);
-    const root = r.session.state().comments[0]!;
+    const root = r.session.state().comments[0];
     await r.session.editComment(root.id, '').catch(() => undefined);
     await settle();
     expect(r.session.state().marks).toHaveLength(1);
@@ -707,7 +707,7 @@ describe('editing and deleting notes', () => {
     expect(r.session.state().comments.map((c) => c.id)).toEqual([n.commentId]);
     expect(r.session.state().marks).toHaveLength(1);
 
-    await r.session.removeMark(r.session.state().marks[0]!.id);
+    await r.session.removeMark(r.session.state().marks[0].id);
     await settle();
     expect(r.session.state().threads.map((t) => t.id)).toEqual([n.threadId]);
     expect(r.session.state().comments.map((c) => c.id)).toEqual([n.commentId]);

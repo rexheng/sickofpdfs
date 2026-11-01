@@ -35,18 +35,18 @@ export const PAGES = [
   'Standard errors are clustered by state. See Table 2 for robustness checks and Figure 3 for the event study.',
 ];
 export const range = (pageIndex: number, start: number, end: number): CharRange => ({ pageIndex, start, end });
-export const textOf = (r: CharRange) => PAGES[r.pageIndex]!.slice(r.start, r.end);
+export const textOf = (r: CharRange) => PAGES[r.pageIndex].slice(r.start, r.end);
 
 /** What the viewer's anchor builder gives the session: quote, positions and rects for these ranges (one anchor for the whole selection). */
 export async function makeTextAnchor(ranges: CharRange[]): Promise<TextAnchor> {
-  const first = ranges[0]!;
-  const last = ranges[ranges.length - 1]!;
+  const first = ranges[0];
+  const last = ranges[ranges.length - 1];
   return {
     kind: 'text',
     quote: {
       quote: ranges.map(textOf).join('\n'),
-      prefix: PAGES[first.pageIndex]!.slice(Math.max(0, first.start - 32), first.start),
-      suffix: PAGES[last.pageIndex]!.slice(last.end, last.end + 32),
+      prefix: PAGES[first.pageIndex].slice(Math.max(0, first.start - 32), first.start),
+      suffix: PAGES[last.pageIndex].slice(last.end, last.end + 32),
     },
     start: { page: first.pageIndex, index: first.start },
     end: { page: last.pageIndex, index: last.end },
