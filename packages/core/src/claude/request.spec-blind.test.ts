@@ -171,7 +171,7 @@ describe('the system prompt says what plan section 3 says it says', () => {
     { idea: 'use the tools instead of guessing', test: [/tool/i, /guess/i] },
     { idea: 'say so when the PDF does not answer', test: [/(say so|tell the user|doesn'?t answer|does not answer|not (in|answered)|cannot find|can'?t find)/i] },
     { idea: 'search the web only for outside knowledge', test: [/web/i, /(outside|beyond|background|external)/i] },
-    { idea: 'figure rule: describe only what is visible', test: [/visible/i] },
+    { idea: 'figure rule: describe only what is visible', test: [/visible|can see/i] }, // research 06 7.3 says "visible"; "what you can see" is the same rule
     { idea: 'figure rule: values read from a chart are approximate', test: [/approximate/i] },
     { idea: 'figure rule: too small to read, so say so and suggest Think harder', test: [/Think harder/i] },
     { idea: 'figure rule: never name people in photos', test: [/(people|person|faces)/i] },
@@ -412,6 +412,14 @@ describe('the builder is a plain function (the cache and the tests depend on it)
     const b = await build(makePack({ figures: 1 }), FOLLOW_UP, { webSearch: true });
     expect(json(b.params)).toBe(json(a.params));
     expect(json(b.blocks)).toBe(json(a.blocks));
+  });
+
+  it('it returns a promise: it encodes the figure images itself, so nobody has to remember a pre-step', async () => {
+    const pending = buildFn(makePack({ figures: 1 }), [userTurn(QUESTION)], DEFAULTS) as Promise<BuiltRequest>;
+    expect(typeof (pending as unknown as { then?: unknown }).then).toBe('function');
+    const built = await pending;
+    const image = messageBlocks(built.params).find((x) => x.block.type === 'image');
+    expect(String(image?.block.source.data).length).toBeGreaterThan(0); // a Blob in the pack, base64 in the request
   });
 
   it('it does not change what it is given', async () => {

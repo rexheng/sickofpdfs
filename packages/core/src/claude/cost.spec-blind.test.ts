@@ -30,7 +30,7 @@ const usdFromUsage = api['usdFromUsage'] as (usage: unknown, price: unknown) => 
 const estimate = api['estimate'] as (pack: ContextPack, role: Role, model: ModelChoice) => unknown;
 const decide = api['decide'] as (a: DecideArgs) => Decision;
 
-interface DecideArgs { estimateUsd: number; spentUsd: number; capUsd: number | null; confirmOverUsd: number; saved: boolean; scope: 'passages' | 'whole-document' }
+interface DecideArgs { estimateUsd: number; priceKnown: boolean; spentUsd: number; capUsd: number | null; confirmOverUsd: number; saved: boolean; scope: 'passages' | 'whole-document' }
 type Decision = 'send' | { ask: string; usd: number } | { block: string };
 
 interface U { input?: number; output?: number; read?: number; write?: number; searches?: number }
@@ -142,12 +142,14 @@ describe('priceFor: the line and the version, never the id (slice H; research: "
     expect(usd(SONNET_MODEL, SAMPLE)).toBeLessThan(usd(THINK_MODEL, SAMPLE));
   });
 
-  /** "Has no price": nothing, a throw, or an object that says so. Anything else is a price the code made up. */
+  /** "Has no price": nothing, a throw, an object that says so, or a price whose `basis` says the line was unknown (the highest
+   *  known price is then only a safe stand-in: triage G7). Anything else is a price the code made up. */
   const hasNoPrice = (model: ModelChoice): boolean => {
     let p: unknown;
     try { p = priceFor(model); } catch { return true; }
     if (p === null || p === undefined) return true;
     if (typeof p === 'object') {
+      if ((p as Record<string, unknown>)['basis'] === 'unknown-line') return true;
       const flags = ['unknown', 'unpriced', 'noPrice', 'ask', 'askFirst', 'askBeforeSending', 'missing'];
       return flags.some((f) => (p as Record<string, unknown>)[f] === true);
     }
@@ -222,6 +224,13 @@ describe('estimate(pack, role, model) (slice H; done-when 3, risks table)', () =
     expect(est(wholeDocument, 'default', DEFAULT_MODEL)).toBeGreaterThan(est(typical, 'default', DEFAULT_MODEL) * 5); // 50 times the text
   });
 
+  it('says whether the price was known: true for a priced line, false for a model with no line', () => {
+    const known = estimate(typical, 'default', DEFAULT_MODEL) as { priceKnown?: boolean };
+    const none = estimate(typical, 'default', modelChoice({ line: null, displayName: 'Some Model 1.0' })) as { priceKnown?: boolean };
+    expect(known.priceKnown).toBe(true);
+    expect(none.priceKnown).toBe(false); // the caller passes this to decide(), which then asks
+  });
+
   it('a model with no price is never a small, confident number', () => {
     const lineless = modelChoice({ line: null, displayName: 'Some Model 1.0' });
     let v: number | undefined;
@@ -236,7 +245,7 @@ describe('estimate(pack, role, model) (slice H; done-when 3, risks table)', () =
 });
 
 describe('decide: when to send, ask, or block (slice H; contracts section 6 "Before sending", spec privacy table)', () => {
-  const base: DecideArgs = { estimateUsd: 0.01, spentUsd: 0, capUsd: null, confirmOverUsd: 0.25, saved: true, scope: 'passages' };
+  const base: DecideArgs = { estimateUsd: 0.01, priceKnown: true, spentUsd: 0, capUsd: null, confirmOverUsd: 0.25, saved: true, scope: 'passages' };
   type Want = { kind: 'send' } | { kind: 'ask'; reasons?: string[] } | { kind: 'block' } | { kind: 'not-send' };
   const kindOf = (d: Decision): 'send' | 'ask' | 'block' | 'other' => (d === 'send' ? 'send' : typeof d === 'object' && d !== null && 'ask' in d ? 'ask' : typeof d === 'object' && d !== null && 'block' in d ? 'block' : 'other');
 
@@ -267,6 +276,10 @@ describe('decide: when to send, ask, or block (slice H; contracts section 6 "Bef
     { name: 'the cap beats the dear-request prompt', over: { capUsd: 1, spentUsd: 1, estimateUsd: 5 }, want: { kind: 'block' } },
     { name: 'the cap beats the whole-document prompt', over: { capUsd: 1, spentUsd: 1, scope: 'whole-document' }, want: { kind: 'block' } },
     { name: 'a dear request under a roomy cap still asks', over: { capUsd: 5, spentUsd: 0, estimateUsd: 1 }, want: { kind: 'ask', reasons: ['over-threshold'] } },
+    // a model with no price asks (ruling after triage G7: `decide` requires `priceKnown`)
+    { name: 'a model with no known price asks first, however small the guess', over: { priceKnown: false, estimateUsd: 0.01 }, want: { kind: 'ask' } },
+    { name: 'a model with no known price asks first on a saved PDF with no cap', over: { priceKnown: false, estimateUsd: 0.13, saved: true, capUsd: null }, want: { kind: 'ask' } },
+    { name: 'a model with no known price and an unsaved PDF is still an ask, never a send', over: { priceKnown: false, saved: false }, want: { kind: 'ask' } },
     // never send on a number that is not a number
     { name: 'an estimate that is not a number is never sent', over: { estimateUsd: Number.NaN }, want: { kind: 'not-send' } },
     { name: 'an estimate of infinity (an unpriced model) is never sent', over: { estimateUsd: Number.POSITIVE_INFINITY }, want: { kind: 'not-send' } },
@@ -280,7 +293,9 @@ describe('decide: when to send, ask, or block (slice H; contracts section 6 "Bef
     expect(kindOf(d), JSON.stringify(d)).toBe(want.kind);
     if (want.kind === 'ask') {
       if (want.reasons) expect(want.reasons).toContain((d as { ask: string }).ask);
-      expect((d as { ask: string }).ask).toMatch(/^(unsaved|over-threshold|whole-document)$/);
+      // an unpriced model may carry a reason of its own: the ruling says it asks, not why
+      if (args.priceKnown) expect((d as { ask: string }).ask).toMatch(/^(unsaved|over-threshold|whole-document)$/);
+      else expect(typeof (d as { ask: string }).ask).toBe('string');
       if (Number.isFinite(args.estimateUsd)) expect((d as { usd: number }).usd).toBeCloseTo(args.estimateUsd, 9); // the dialog shows this number
     }
     if (want.kind === 'block') expect(d).toMatchObject({ block: 'over-cap' });

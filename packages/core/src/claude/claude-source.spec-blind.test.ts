@@ -96,7 +96,9 @@ describe('the SDK and the key stay where the plan puts them', () => {
     expect(files.map((f) => f.path)).toContain('packages/core/src/claude/request.ts');
     const rules: [string, RegExp][] = [
       ['the SDK', /@anthropic-ai\/sdk/],
-      ['getSecret or the key\'s name', /getSecret|anthropic_api_key|\bapiKey\b/],
+      ['getSecret or the secret\'s name', /getSecret|anthropic_api_key/],
+      ['a field named apiKey', /\bapiKey\b/], // not for the double: its `apiKey: 'present'` record field is a presence flag, never a key (triage G4)
+      ['a key-shaped value', /sk-ant-[A-Za-z0-9_-]{6,}|\bsk-[A-Za-z0-9]{20,}/], // for every file, the double included
       ['the key header', /x-api-key/i],
       ['the real API host', /api\.anthropic\.com/],
       ['fetch', /\bfetch\s*\(/],
@@ -109,10 +111,10 @@ describe('the SDK and the key stay where the plan puts them', () => {
     ];
     const hits: string[] = [];
     for (const f of files) {
-      // the replay double is a server: it answers requests and may name the key header to refuse or ignore it, so it is checked for the key only
+      // the replay double is a server: it answers requests and may name the key header, or keep a flag that one arrived, so it is checked for the key's name and for key-shaped values only
       const serverSide = f.path.endsWith('claude-replay.ts');
       for (const [what, re] of rules) {
-        if (serverSide && what !== 'the SDK' && what !== 'getSecret or the key\'s name') continue;
+        if (serverSide && !['the SDK', 'getSecret or the secret\'s name', 'a key-shaped value'].includes(what)) continue;
         if (re.test(code(f.text))) hits.push(`${f.path}: ${what}`);
       }
     }

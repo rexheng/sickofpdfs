@@ -39,24 +39,36 @@ type Replay = { use(name: string): unknown; requests(): unknown[] };
 // Small tools
 
 interface Raw { status: number; headers: http.IncomingHttpHeaders; text: string }
-function raw(server: Server, method: string, path: string, o: { headers?: Record<string, string>; body?: unknown } = {}): Promise<Raw> {
+function raw(server: Server, method: string, path: string, o: { headers?: Record<string, string>; body?: unknown; timeoutMs?: number } = {}): Promise<Raw> {
   const { hostname, port } = new URL(server.origin);
   const body = o.body === undefined ? undefined : JSON.stringify(o.body);
   return new Promise((ok, fail) => {
+    const ms = o.timeoutMs ?? 10_000;
     const req = http.request({ hostname, port, path, method, headers: { ...(body ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } : {}), ...o.headers } }, (res) => {
       const chunks: Buffer[] = [];
       res.on('data', (c: Buffer) => chunks.push(c));
-      res.on('end', () => ok({ status: res.statusCode ?? 0, headers: res.headers, text: Buffer.concat(chunks).toString('utf8') }));
+      res.on('end', () => { clearTimeout(timer); ok({ status: res.statusCode ?? 0, headers: res.headers, text: Buffer.concat(chunks).toString('utf8') }); });
+      res.on('error', (e) => { clearTimeout(timer); fail(e); });
+      res.on('close', () => { if (!res.complete) { clearTimeout(timer); fail(new Error('the connection closed before the end of the answer')); } });
     });
-    req.on('error', fail);
+    const timer = setTimeout(() => req.destroy(new Error(`no complete answer within ${ms} ms`)), ms); // a stalled stream must not hang the run
+    req.on('error', (e) => { clearTimeout(timer); fail(e); });
     if (body) req.write(body);
     req.end();
   });
 }
 
 const KEY_HEADERS = { 'x-api-key': FAKE_KEY, 'anthropic-version': '2026-10-21', 'anthropic-dangerous-direct-browser-access': 'true' };
-const ASK = { model: 'fixture-model-default-0001', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'ZQ_CAPTURE_SENTINEL a plain question' }] };
-const ask = (server: Server, extra: Obj = {}): Promise<Raw> => raw(server, 'POST', '/claude/v1/messages', { headers: KEY_HEADERS, body: { ...ASK, ...extra } });
+/** A document the way buildRequest sends one. Recorded answers cite blocks of documents by title, and the double resolves a citation
+ *  against the documents of the request it is answering, so a question with no document cannot be answered by those recordings
+ *  (triage R1). The titles are the plan's: the map, the passages, one pack per figure. */
+const documentBlock = (title: string, blocks = 6): Obj => ({
+  type: 'document', title, citations: { enabled: true },
+  source: { type: 'content', content: Array.from({ length: blocks }, (_, i) => ({ type: 'text', text: `[p. ${i + 1}] ZQ_BLOCK_${i} of ${title}` })) },
+});
+const DOCS = ['Document map', 'Relevant passages', 'Figure 1 (page 5)', 'Figure 2 (page 6)'].map((t) => documentBlock(t));
+const ASK = { model: 'fixture-model-default-0001', max_tokens: 64, stream: true, messages: [{ role: 'user', content: [...DOCS, { type: 'text', text: 'ZQ_CAPTURE_SENTINEL a plain question' }] }] };
+const ask = (server: Server, extra: Obj = {}, timeoutMs?: number): Promise<Raw> => raw(server, 'POST', '/claude/v1/messages', { headers: KEY_HEADERS, body: { ...ASK, ...extra }, timeoutMs });
 const asJson = (r: Raw): Obj | null => { try { return JSON.parse(r.text) as Obj; } catch { return null; } };
 
 /** Every file under the fixtures folder, as text, with its path from the repo root. */
@@ -130,29 +142,38 @@ beforeAll(async () => {
   found = { messages: [], models: [] };
   for (const name of scenarioNames()) {
     try { await replay.use(name); } catch { continue; }
-    const m = await ask(server);
-    if (m.status === 200 && /text\/event-stream/.test(String(m.headers['content-type']))) found.messages.push({ name, events: parseSse(m.text).events, wire: m.text });
-    const l = await raw(server, 'GET', '/claude/v1/models', { headers: KEY_HEADERS });
-    const body = l.status === 200 ? asJson(l) : null;
-    if (body && Array.isArray(body['data'])) found.models.push({ name, body });
+    try {
+      const m = await ask(server, {}, 2000);
+      if (m.status === 200 && /text\/event-stream/.test(String(m.headers['content-type']))) found.messages.push({ name, events: parseSse(m.text).events, wire: m.text });
+    } catch { /* a stall, a dropped connection or a scenario that cannot be answered whole: not a stream to read end to end */ }
+    try {
+      const l = await raw(server, 'GET', '/claude/v1/models', { headers: KEY_HEADERS, timeoutMs: 2000 });
+      const body = l.status === 200 ? asJson(l) : null;
+      if (body && Array.isArray(body['data'])) found.models.push({ name, body });
+    } catch { /* not a models scenario */ }
   }
 });
 afterAll(async () => { await server.close(); });
 
 describe('the recordings cover what the walkthroughs need (plan slice E live-check list, Gate 1)', () => {
+  // Coverage is read from the recordings themselves: a recorded answer may need the right documents in the question to be replayed
+  // (its citations are placeholders until then), so the wire is not the place to count what was recorded (triage R5).
+  const recorded = () => fixtureFiles();
+
   it('has a model list and several streams to replay', () => {
     expect(scenarioNames().length, 'no files under e2e/fixtures/claude').toBeGreaterThan(0);
     expect(found.models.length, 'no scenario answers GET /claude/v1/models').toBeGreaterThanOrEqual(1);
-    expect(found.messages.length, 'fewer than 3 scenarios answer POST /claude/v1/messages with a stream').toBeGreaterThanOrEqual(3);
+    const streams = recorded().filter((f) => /message_start/.test(f.text));
+    expect(streams.length, 'fewer than 3 recorded streams (a file with a message_start)').toBeGreaterThanOrEqual(3);
+    expect(found.messages.length, 'not one recording could be replayed whole over HTTP, so the wire checks below would check nothing').toBeGreaterThanOrEqual(1);
   });
 
   it('includes cited page answers, a web search with a cited source, and a follow-up that reads the cache', () => {
-    const all = found.messages.flatMap((m) => m.events);
-    const cites = (type: string) => all.some((e) => e.type === 'content_block_delta' && e.delta?.type === 'citations_delta' && e.delta.citation?.type === type);
-    expect(cites('content_block_location'), 'no stream cites a passage (Gate 1 item 1)').toBe(true);
-    expect(all.some((e) => e.type === 'content_block_start' && e.content_block?.type === 'server_tool_use' && e.content_block?.name === 'web_search'), 'no web search (item 4)').toBe(true);
-    expect(cites('web_search_result_location'), 'no web source is cited (item 4)').toBe(true);
-    expect(all.some((e) => e.type === 'message_start' && Number(e.message?.usage?.cache_read_input_tokens) > 0), 'no stream shows cache reads (item 9, done-when 3)').toBe(true);
+    const all = recorded().map((f) => f.text).join('\n');
+    expect(/content_block_location/.test(all) || /\$cite/.test(all), 'no recording cites a passage (Gate 1 item 1)').toBe(true); // `$cite` is a placeholder the double fills in
+    expect(/"name"\s*:\s*"web_search"/.test(all), 'no web search (item 4)').toBe(true);
+    expect(/web_search_result_location/.test(all), 'no web source is cited (item 4)').toBe(true);
+    expect(/"cache_read_input_tokens"\s*:\s*[1-9]/.test(all), 'no recording shows cache reads (item 9, done-when 3)').toBe(true);
   });
 });
 
@@ -235,9 +256,10 @@ describe('what the double does with a request', () => {
         ...ASK,
         cache_control: { type: 'ephemeral' },
         messages: [{ role: 'user', content: [
-          { type: 'document', title: 't', citations: { enabled: true }, cache_control: { type: 'ephemeral' }, source: { type: 'content', content: [{ type: 'text', text: 'ZQ_CAPTURE_DOC passage text' }] } },
+          { ...DOCS[0], cache_control: { type: 'ephemeral' } },
+          ...DOCS.slice(1),
           { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBORw0KGgo=' } },
-          { type: 'text', text: 'ZQ_CAPTURE_SENTINEL why?' },
+          { type: 'text', text: 'ZQ_CAPTURE_SENTINEL why? ZQ_CAPTURE_DOC passage text' },
         ] }],
       };
       const res = await raw(s, 'POST', '/claude/v1/messages', { headers: KEY_HEADERS, body });
@@ -361,7 +383,9 @@ describe('the recorder (scripts/claude/record.mjs): key from the environment onl
 
   it('has no key in its source, never takes one on the command line, and guards what it writes against key shapes', () => {
     expect(existsSync(script), 'scripts/claude/record.mjs is missing').toBe(true);
-    const src = readFileSync(script, 'utf8').replace(/\/\*[\s\S]*?\*\/|(^|[^:])\/\/.*$/gm, '$1');
+    // the key is read in the shared helper the recorder imports (triage R6), so the two files are read together
+    const strip = (p: string) => (existsSync(p) ? readFileSync(p, 'utf8').replace(/\/\*[\s\S]*?\*\/|(^|[^:])\/\/.*$/gm, '$1') : '');
+    const src = `${strip(script)}\n${strip(join(ROOT, 'scripts', 'claude', 'lib.mjs'))}`;
     expect(looksLikeKey(src.replace(/sk-ant-\[[^\]]*\][^\s'"`]*/g, ''))).toBeNull(); // a pattern is fine, a key is not
     expect(src).toMatch(/process\.env/);
     expect(src).not.toMatch(/--(?:api-?)?key\b/i);
@@ -379,6 +403,23 @@ describe('the recorder (scripts/claude/record.mjs): key from the environment onl
     const out = `${run.stdout}\n${run.stderr}`;
     expect(out.trim().length).toBeGreaterThan(0);
     expect(out).toMatch(/key/i);
+    expect(looksLikeKey(out)).toBeNull();
+    expect(fixtureFiles().map((f) => `${f.path}:${f.text.length}`).sort()).toEqual(before);
+  });
+
+  it('the live check is the other way round: with no key it skips cleanly with exit 0 (CI must not go red), says nothing was sent, and prints no key', () => {
+    const live = join(ROOT, 'scripts', 'claude', 'live-check.mjs');
+    expect(existsSync(live), 'scripts/claude/live-check.mjs is missing').toBe(true);
+    const before = fixtureFiles().map((f) => `${f.path}:${f.text.length}`).sort();
+    const run = spawnSync(process.execPath, [live], {
+      cwd: ROOT, encoding: 'utf8', timeout: 20_000,
+      env: { PATH: process.env['PATH'] ?? '', HOME: process.env['TMPDIR'] ?? '/tmp', NODE_ENV: 'test' },
+    });
+    expect(run.error, 'it should exit by itself, not hang').toBeUndefined();
+    expect(run.status, `${run.stdout}\n${run.stderr}`).toBe(0); // a clean skip: the recorder (run on purpose) exits 1, the CI check does not
+    const out = `${run.stdout}\n${run.stderr}`;
+    expect(out).toMatch(/key|not set/i);
+    expect(out).toMatch(/nothing was sent|skipp|no request/i);
     expect(looksLikeKey(out)).toBeNull();
     expect(fixtureFiles().map((f) => `${f.path}:${f.text.length}`).sort()).toEqual(before);
   });

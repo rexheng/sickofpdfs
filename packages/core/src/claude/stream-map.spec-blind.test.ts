@@ -77,6 +77,14 @@ describe('citations land on the right page and characters (slice A; A5)', () => 
     for (const [n, c] of byN) expect(c).toEqual(out.citations.find((x) => x.n === n));
   });
 
+  it('a chip follows every cited sentence, even when the same passage is cited twice in a row (the second sentence must not read as unsourced)', async () => {
+    const events = new StreamBuilder().text('First claim.', [docCite(1, 0, 'a')]).text(' Second claim.', [docCite(1, 0, 'a')]).text(' Third claim.', [docCite(1, 0, 'a')]).end().events;
+    const { out } = await runMapper(create, BLOCKS, events);
+    expect(out.citations).toHaveLength(1); // one passage, one number ...
+    expect(linksOf(out.body).map((l) => [l.text, l.kind, l.n])).toEqual([['p. 4', 'cite', 1], ['p. 4', 'cite', 1], ['p. 4', 'cite', 1]]); // ... and three chips
+    expect(out.body).toMatch(/First claim\.\s*\[p\. 4\]\(cite:1\)\s*Second claim\.\s*\[p\. 4\]\(cite:1\)\s*Third claim\.\s*\[p\. 4\]\(cite:1\)/);
+  });
+
   it.each<{ name: string; cite: Obj }>([
     { name: 'a document that was never sent', cite: docCite(7, 0, 'x') },
     { name: 'the right document, a block it does not have', cite: docCite(1, 9, 'x') },
@@ -190,7 +198,7 @@ describe('web search results become source chips (slice A, contracts section 6)'
     expect(linksOf(out.body).map((l) => [l.kind, l.n])).toEqual([['web', 1], ['web', 2]]);
   });
 
-  it('[guess] one page cited by two sentences is one source with two chips', async () => {
+  it('one page cited by two sentences in a row is one source with a chip after each sentence', async () => {
     const b = new StreamBuilder().webSearch('q', [R1])
       .text('One claim.', [webCite(R1.url, R1.title, 'x')]).text(' Another claim.', [webCite(R1.url, R1.title, 'y')]).end();
     const { out } = await runMapper(create, BLOCKS, b.events);
