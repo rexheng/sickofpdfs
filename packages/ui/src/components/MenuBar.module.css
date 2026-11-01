@@ -1,0 +1,41 @@
+/*
+ * Menu-bar buttons [live]: 24 px tall, padding 0 9px, Google Sans Flex 14 400 in on-surface, no gap between them.
+ * The open one: --menubar-open-bg (#37393b in the dark chrome) with radius 4px 4px 0 0, so it joins the menu below.
+ */
+.bar {
+  display: flex;
+  align-items: center;
+}
+
+.trigger {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  box-sizing: border-box;
+  block-size: var(--menubar-btn-h);
+  margin: 0;
+  padding: 0 var(--menubar-btn-pad-x);
+  border: 0;
+  border-radius: var(--shape-menu);
+  background-color: transparent;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-menu-item);
+  white-space: nowrap;
+  cursor: pointer;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.trigger:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.trigger[data-state='open'] {
+  border-radius: var(--shape-menu) var(--shape-menu) 0 0;
+  background-color: var(--menubar-open-bg);
+}
+
+.trigger:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 0;
+}

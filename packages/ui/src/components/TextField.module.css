@@ -1,0 +1,50 @@
+/*
+ * Outlined text box [live, the viewer's page box]: 1 px outline (#8e918f dark, #747775 light), radius 4 px, text in
+ * on-surface. 40 px tall by default; a PillToolbar sets --sop-field-h to the compact 24 px and centres the text.
+ * Focus: 2 px primary outline over the border (no layout shift). Invalid: the same in the error colour.
+ */
+.field {
+  box-sizing: border-box;
+  block-size: var(--sop-field-h, var(--field-h));
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--gm3-sys-color-outline);
+  border-radius: var(--shape-field);
+  background-color: transparent;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-body);
+  font-weight: inherit;
+  font-variation-settings: "opsz" 17;
+  text-align: var(--sop-field-align, start);
+  caret-color: var(--gm3-sys-color-primary);
+  outline: none;
+  appearance: none;
+}
+
+.field::placeholder {
+  color: var(--gm3-sys-color-on-surface-variant);
+  opacity: 1;
+}
+
+.field:hover {
+  border-color: var(--gm3-sys-color-on-surface);
+}
+
+.field:focus {
+  border-color: var(--gm3-sys-color-primary);
+  outline: var(--focus-ring-width) solid var(--gm3-sys-color-primary);
+  outline-offset: calc(var(--focus-ring-width) / -2);
+}
+
+.field[aria-invalid='true'] {
+  border-color: var(--gm3-sys-color-error);
+}
+
+.field[aria-invalid='true']:focus {
+  outline-color: var(--gm3-sys-color-error);
+}
+
+.field:disabled {
+  opacity: var(--gm3-state-disabled-content);
+}

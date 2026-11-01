@@ -5,7 +5,8 @@
  * Switch it on with data-theme="dark" on <html> (or on a viewer root element). Themes are explicit: the operating
  * system's colour scheme is ignored on purpose, so a page without data-theme is light.
  *
- * Only the colours that differ from tokens.css are set here. A token that aliases another token
+ * Only the colours that differ from tokens.css are set here, plus the component roles of tokens.css part 3 (menu
+ * colour and size, open menu-bar button, icon-button hover, dialog surface). A token that aliases another token
  * (--drive-app-bg, --drive-row-divider) is declared again, because var() is resolved where it is declared,
  * so the :root alias would keep the light value inside a dark subtree.
  *
@@ -48,4 +49,12 @@
   --drive-app-bg: var(--gm3-sys-color-surface-container-low);
   --drive-row-divider: var(--gm3-sys-color-outline-variant);
   --focus-ring-color: var(--viewer-focus);
+
+  /* Component roles (tokens.css part 3) */
+  --menu-bg: var(--gm3-sys-color-surface-container-high);      /* #282a2c dark File menu [live] */
+  --menu-row-h: var(--menu-dark-item-h);                       /* 36px, ruling R15 */
+  --menu-min-w: var(--menu-dark-w);                            /* 288px [live] */
+  --menubar-open-bg: var(--gm3-sys-color-surface-bright);      /* #37393b open File button [live] */
+  --icon-btn-hover: var(--viewer-icon-hover);                  /* #3e4041 [px] */
+  --dialog-bg: var(--gm3-sys-color-surface-container-high);
 }

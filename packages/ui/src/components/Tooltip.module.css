@@ -1,0 +1,31 @@
+/*
+ * Drive tooltip [live]: inverse surface, Google Sans Text 12/16 with .1px tracking, padding 4px 8px inside a 1px
+ * transparent border (26px tall), radius 4px. The border keeps an edge in forced-colours mode.
+ */
+.tooltip {
+  z-index: var(--z-tooltip);
+  box-sizing: border-box;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--shape-tooltip);
+  background-color: var(--gm3-sys-color-inverse-surface);
+  color: var(--gm3-sys-color-inverse-on-surface);
+  font: var(--type-tooltip);
+  font-variation-settings: "opsz" 17;
+  letter-spacing: var(--tracking-tight);
+  overflow-wrap: break-word;
+  pointer-events: none;
+  animation: fade-in 120ms ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tooltip {
+    animation: none;
+  }
+}

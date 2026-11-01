@@ -1,0 +1,112 @@
+/*
+ * Drive menus (02 sections 4.9 and 4.10). The theme picks the surface, the row height and the width through the
+ * part-3 tokens:
+ *   light library menu: #f0f4f9, 32 px rows, at least 320 px wide;
+ *   dark viewer menu:   #282a2c, 36 px rows, at least 288 px wide (ruling R15).
+ * Both: radius 4, 8 px top and bottom padding, elevation 2. Rows: 20 px icon 12 px in, label 48 px in
+ * (Google Sans Flex 14/20), shortcut right-aligned 12 px from the edge (Google Sans 11/16 500, .1px tracking, muted).
+ * Separator: 8 px + 1 px outline-variant + 8 px = 17 px. Disabled rows: content at 38%.
+ */
+.content {
+  z-index: var(--z-menu);
+  box-sizing: border-box;
+  min-inline-size: var(--menu-min-w);
+  padding: var(--space-2) 0;
+  border-radius: var(--shape-menu);
+  background-color: var(--menu-bg);
+  box-shadow: var(--elev-2);
+  color: var(--gm3-sys-color-on-surface);
+  overflow-y: auto;
+  outline: none;
+  animation: fade-in 100ms ease-out;
+}
+
+.dropdown {
+  max-block-size: var(--radix-dropdown-menu-content-available-height);
+}
+
+.menubar {
+  max-block-size: var(--radix-menubar-content-available-height);
+}
+
+/* A short list of plain labels (zoom levels): GM3's minimum width and 16 px label padding, like Drive's zoom list. */
+.compact {
+  min-inline-size: var(--menu-compact-min-w);
+}
+
+.item {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+  box-sizing: border-box;
+  block-size: var(--menu-row-h);
+  padding: 0 var(--space-3);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-menu-item);
+  white-space: nowrap;
+  cursor: pointer;
+  outline: none;
+  -webkit-user-select: none;
+}
+
+.compact .item {
+  padding-inline: var(--space-4);
+}
+
+/* Pointer hover and keyboard focus: an 8% on-surface state layer */
+.item[data-highlighted] {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.item[data-disabled] {
+  cursor: default;
+}
+
+.item[data-disabled] > * {
+  color: var(--gm3-sys-color-on-surface);
+  opacity: var(--gm3-state-disabled-content);
+}
+
+.icon {
+  display: inline-flex;
+  flex: none;
+  inline-size: var(--icon-size-20);
+  block-size: var(--icon-size-20);
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.label {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shortcut {
+  flex: none;
+  margin-inline-start: var(--space-6);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-menu-shortcut);
+  letter-spacing: var(--tracking-tight);
+}
+
+.separator {
+  box-sizing: content-box;
+  block-size: 1px;
+  margin: 0;
+  padding-block: var(--menu-separator-gap);
+  background-color: var(--gm3-sys-color-outline-variant);
+  background-clip: content-box;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .content {
+    animation: none;
+  }
+}

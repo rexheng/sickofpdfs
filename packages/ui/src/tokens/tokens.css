@@ -7,11 +7,17 @@
  * The dark viewer-chrome theme is in tokens-dark.css (imported here, so one import is enough) and is switched on with
  * data-theme="dark" on the viewer root.
  * Themes are explicit (data-theme on <html>); the OS colour-scheme preference is ignored on purpose.
+ * Part 3 holds the component roles that change with the theme; tokens-dark.css declares them again for the dark chrome.
  */
 @import './tokens-dark.css';
 
 /* ===== Part 1: Drive tokens, verbatim from 02 section 3.1 ===== */
-:root {
+/*
+ * The light values also apply under data-theme="light", so a light island inside a dark page (and a Radix portal that
+ * copies its trigger's theme, see components/theme.ts) gets the light set back.
+ */
+:root,
+[data-theme='light'] {
   /* ===== GM3 system colours — LIGHT. Exact copy of Drive's production block [css] ===== */
   --gm3-sys-color-primary: #0b57d0;
   --gm3-sys-color-on-primary: #ffffff;
@@ -202,4 +208,45 @@
 
   /* The letters of the PDF file tile: the tile is cut out of the glyph, so this shows through the cut-out */
   --filetype-glyph: #ffffff;
+
+  /* Letter spacing of the menu shortcuts and the tooltips (02 sections 4.9 and 4.10) [live] */
+  --tracking-tight: 0.1px;
+
+  /* Menus and the menu bar (02 sections 4.9 and 4.10) */
+  --menu-compact-min-w: 112px;   /* GM3 menu minimum, for menus of plain labels (zoom levels) [inf] */
+  --menubar-btn-pad-x: 9px;      /* [live] File / View / Tools / Help buttons */
+
+  /* Buttons and chips */
+  --btn-h: 40px;                 /* GM3 text and filled buttons; Drive's row "Download" text button [live] */
+  --chip-h: 32px;                /* GM3 chip [css default] */
+  --type-chip: 500 14px/20px var(--font-text);
+
+  /* Text fields: a 1px outlined box. The viewer's page box is the compact one (02 section 4.10). */
+  --field-h: 40px;
+  --field-h-compact: 24px;       /* [live] page input in the toolbar pill */
+  --shape-field: 4px;            /* [live] */
+
+  /* Dialogs: GM3 basic dialog [inf, GM3 defaults] */
+  --shape-dialog: 28px;
+  --dialog-min-w: 280px;
+  --dialog-max-w: 560px;
+  --type-dialog-title: 400 24px/32px var(--font-display);
+  --scrim-opacity: 32%;
+
+  /* Banner (the viewer's notice row) */
+  --banner-min-h: 48px;
+  --shape-banner: 12px;
+
+  /* Stacking order of the layers that Radix portals into <body> */
+  --z-dialog: 900;
+  --z-menu: 1000;
+  --z-tooltip: 1100;
+
+  /* ===== Part 3: component roles that change with the theme. tokens-dark.css declares each one again. ===== */
+  --menu-bg: var(--gm3-sys-color-surface-container);           /* #f0f4f9 light context menu [live] */
+  --menu-row-h: var(--menu-item-h);                            /* 32px light library menu */
+  --menu-min-w: var(--menu-light-min-w);                       /* 320px [live] */
+  --menubar-open-bg: var(--gm3-sys-color-surface-container-highest);
+  --icon-btn-hover: color-mix(in srgb, var(--gm3-sys-color-on-surface-variant) 8%, transparent); /* 8% state layer */
+  --dialog-bg: var(--gm3-sys-color-surface);
 }

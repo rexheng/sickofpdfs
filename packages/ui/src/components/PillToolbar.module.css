@@ -1,0 +1,29 @@
+/*
+ * Toolbar pill [live]: 48 px tall, surface-container-highest (#333537 dark), radius --shape-full, padding 8 px.
+ * Controls sit 8 px apart. Separators are 1x12 px outline-variant (#444746 dark) with 8 px on each side.
+ * A text field inside the pill takes the compact 24 px form with centred text (Drive's page box).
+ */
+.pill {
+  --sop-field-h: var(--field-h-compact);
+  --sop-field-align: center;
+
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  box-sizing: border-box;
+  block-size: var(--viewer-pill-h);
+  padding: var(--viewer-pill-pad);
+  border-radius: var(--shape-full);
+  background-color: var(--gm3-sys-color-surface-container-highest);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-viewer-toolbar);
+  font-variation-settings: "opsz" 17;
+  white-space: nowrap;
+}
+
+.separator {
+  flex: none;
+  inline-size: 1px;
+  block-size: var(--space-3);
+  background-color: var(--gm3-sys-color-outline-variant);
+}

@@ -1,0 +1,60 @@
+/*
+ * Round icon button (02 section 4.10): 32x32 with a 20 px icon in the toolbar pill, 40x40 with a 24 px icon in the
+ * header and the rail. Icons are on-surface-variant (#c4c7c5 dark, #444746 light).
+ * Hover: an 8% on-surface-variant state layer. In the dark chrome that is --viewer-icon-hover (#3e4041, measured over
+ * the #333537 pill); in the light theme it is translucent, so it works on any light surface.
+ * Pressed (aria-pressed="true"): the GM3 tonal selected state, secondary-container with a filled icon.
+ */
+.button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  inline-size: var(--_size);
+  block-size: var(--_size);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--shape-full);
+  background-color: transparent;
+  color: var(--gm3-sys-color-on-surface-variant);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.s32 {
+  --_size: var(--icon-btn);
+}
+
+.s40 {
+  --_size: var(--icon-btn-lg);
+}
+
+.button:hover:not(:disabled),
+.button[aria-expanded='true'] {
+  background-color: var(--icon-btn-hover);
+}
+
+.button[aria-pressed='true'] {
+  background-color: var(--gm3-sys-color-secondary-container);
+  color: var(--gm3-sys-color-on-secondary-container);
+}
+
+.button[aria-pressed='true']:hover:not(:disabled) {
+  background-color: color-mix(
+    in srgb,
+    var(--gm3-sys-color-on-secondary-container) calc(var(--gm3-state-hover) * 100%),
+    var(--gm3-sys-color-secondary-container)
+  );
+}
+
+.button:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.button:disabled {
+  cursor: default;
+  opacity: var(--gm3-state-disabled-content);
+}

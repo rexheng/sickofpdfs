@@ -1,0 +1,106 @@
+/*
+ * GM3 basic dialog [inf, GM3 defaults with Drive's colours]: 24 px padding, radius --shape-dialog (28 px),
+ * 280 to 560 px wide, elevation 3. Title Google Sans 24/32 in on-surface; body 14/20 in on-surface-variant;
+ * actions right-aligned 24 px below, 8 px apart. Primary action: filled pill in primary / on-primary.
+ */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  background-color: color-mix(in srgb, var(--gm3-sys-color-scrim) var(--scrim-opacity), transparent);
+  animation: fade-in 150ms ease-out;
+}
+
+.dialog {
+  position: fixed;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  z-index: var(--z-dialog);
+  box-sizing: border-box;
+  min-inline-size: var(--dialog-min-w);
+  max-inline-size: min(var(--dialog-max-w), calc(100vw - var(--space-12)));
+  max-block-size: calc(100vh - var(--space-12));
+  padding: var(--space-6);
+  overflow-y: auto;
+  border-radius: var(--shape-dialog);
+  background-color: var(--dialog-bg);
+  box-shadow: var(--elev-3);
+  color: var(--gm3-sys-color-on-surface);
+  transform: translate(-50%, -50%);
+  outline: none;
+  animation: fade-in 150ms ease-out;
+}
+
+.title {
+  margin: 0 0 var(--space-4);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-dialog-title);
+  font-variation-settings: "opsz" 18;
+}
+
+.body {
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  margin-block-start: var(--space-6);
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  block-size: var(--btn-h);
+  margin: 0;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--shape-full);
+  background-color: transparent;
+  color: var(--gm3-sys-color-primary);
+  font: var(--type-text-button);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.action:hover {
+  background-color: color-mix(in srgb, currentColor calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.primary {
+  padding: 0 var(--space-6);
+  background-color: var(--gm3-sys-color-primary);
+  color: var(--gm3-sys-color-on-primary);
+}
+
+.primary:hover {
+  background-color: color-mix(
+    in srgb,
+    var(--gm3-sys-color-on-primary) calc(var(--gm3-state-hover) * 100%),
+    var(--gm3-sys-color-primary)
+  );
+  box-shadow: var(--elev-1);
+}
+
+.action:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrim,
+  .dialog {
+    animation: none;
+  }
+}

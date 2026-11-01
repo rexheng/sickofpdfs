@@ -1,0 +1,32 @@
+/* Notice row: at least 48 px tall, 4 px padding (16 px before the icon), 12 px gaps, radius 12 px. */
+.banner {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  box-sizing: border-box;
+  min-block-size: var(--banner-min-h);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4);
+  border-radius: var(--shape-banner);
+  background-color: var(--gm3-sys-color-surface-container-high);
+  color: var(--gm3-sys-color-on-surface);
+}
+
+.icon {
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.message {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  margin: 0;
+  padding-block: var(--space-2);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+.actions {
+  display: flex;
+  flex: none;
+  gap: var(--space-1);
+  align-items: center;
+}

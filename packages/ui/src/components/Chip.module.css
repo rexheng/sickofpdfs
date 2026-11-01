@@ -1,0 +1,71 @@
+/*
+ * GM3 chip (02 section 4.5): 32 px tall, radius --shape-chip (8 px), padding 0 16px (8 px on the icon side),
+ * label Google Sans Text 14/20 500. Hover: an 8% state layer of the label colour. Keyboard focus: a 2 px ring in
+ * --focus-ring-color (#0b57d0 light, #a8c7fa in the dark chrome).
+ */
+.chip {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-2);
+  align-items: center;
+  box-sizing: border-box;
+  block-size: var(--chip-h);
+  margin: 0;
+  padding: 0 var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--shape-chip);
+  background-color: transparent;
+  font: var(--type-chip);
+  font-variation-settings: "opsz" 17;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.withIcon {
+  padding-inline-start: var(--space-2);
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.saved {
+  border-color: transparent;
+  background-color: var(--gm3-sys-color-secondary-container);
+  color: var(--gm3-sys-color-on-secondary-container);
+}
+
+.attention {
+  border-color: var(--gm3-sys-color-outline);
+  color: var(--gm3-sys-color-primary);
+}
+
+.neutral {
+  border-color: var(--gm3-sys-color-outline);
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.saved:hover:not(:disabled) {
+  background-color: color-mix(
+    in srgb,
+    var(--gm3-sys-color-on-secondary-container) calc(var(--gm3-state-hover) * 100%),
+    var(--gm3-sys-color-secondary-container)
+  );
+}
+
+.attention:hover:not(:disabled),
+.neutral:hover:not(:disabled) {
+  background-color: color-mix(in srgb, currentColor calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.chip:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.chip:disabled {
+  cursor: default;
+  opacity: var(--gm3-state-disabled-content);
+}
