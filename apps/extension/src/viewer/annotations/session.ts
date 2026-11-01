@@ -12,10 +12,14 @@
  *   3. Sending a note first flushes its draft, then writes the live rows. If the draft keeper still had a delayed
  *      save pending, that save could land after ours and turn the sent note back into a draft that nobody lists.
  *   4. Nothing is written while the save question is open, or when the PDF is memory-only. Those changes wait in
- *      the queue and are written, oldest first, the moment the PDF is saved.
+ *      the queue and are written, oldest first, the moment the PDF is saved. While a save is on its way they are also
+ *      kept at once in the save-pending record (R67 a, save-pending.ts), so a tab that closes or crashes mid-save
+ *      loses nothing. Rows made before the save carry the file's fingerprint as their document id, never ''.
  *   5. A batch the store keeps refusing is parked after its retries, so it cannot hold up the writes behind it. The
  *      text of its new comments is handed to the draft keeper as drafts, so it survives a reload, and `retryParked`
  *      sends it again.
+ * - Saving (R67). Only real content saves: the first applied mark, or the first keystroke in a new note (b). The
+ *   first-mark Undo goes as soon as there is anything else, in any tab (c); a save a note started has none (f).
  * - Undo.
  *   1. Undo and redo run inverse batches (undo.ts) and refuse to overwrite a newer edit from another tab.
  *   2. Undoing the save that a first mark caused ("Undo" on the status chip) deletes the document and every row of
