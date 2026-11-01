@@ -4,6 +4,20 @@
 export type * from './backend/types';
 export { PdfEngineCrashedError, PdfFormatError, PdfPasswordError, type EngineFailure } from './backend/errors';
 export { hasFillableFields } from './backend/forms';
+// Phase 2 S12: figure detection.
+export {
+  analysePage,
+  CAPTION_PATTERN,
+  DETECTOR_VERSION,
+  FIND_FIGURES_BUDGET_MS,
+  findFigures,
+  RULES as FIGURE_RULES,
+  type FigureInput,
+  type FindFiguresOptions,
+  type PageAnalysis,
+} from './figures/find-figures';
+export { createFigureService, isOutlined, OUTLINE_RULE, TEXT_RUNS_BUDGET_MS, type FigureService, type FigureServiceOptions, type PageFigureStore } from './figures/figure-service';
+export { DHASH_COLUMNS, DHASH_ROWS, normToPdfRect, regionGrey9x8 } from './figures/region-dhash';
 export { ENGINE_WORKERS, type EngineAssets } from './backend/engine-config';
 export { engineAssets } from './backend/embedpdf/assets';
 export { createEmbedPdfBackend, type EmbedPdfBackendOptions } from './backend/embedpdf/backend';
