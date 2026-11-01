@@ -29,6 +29,7 @@ import {
 } from '@sop/core';
 import type { Database } from '@sqlite.org/sqlite-wasm';
 import { type AnnotationsApi, createAnnotationsApi } from './annotations';
+import { type BackupApi, createBackupApi } from './backup-api';
 import type { StoreChange } from './change-bus';
 import { ftsQuery } from './fts-query';
 import { createLibraryApi, type LibraryApi } from './library-api';
@@ -84,7 +85,7 @@ export interface TouchLocationInput {
   at: number;
 }
 
-export interface StoreApi extends AnnotationsApi, PageFiguresApi, LibraryApi {
+export interface StoreApi extends AnnotationsApi, PageFiguresApi, LibraryApi, BackupApi {
   schemaVersion(): Promise<number>;
   stats(): Promise<StoreStats>;
   /** The library document these bytes are: `documents.id`, or the document an alias (a stamped copy) points to. */
@@ -678,5 +679,6 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
     ...createAnnotationsApi(db, deps),
     ...createPageFiguresApi(db, deps),
     ...createLibraryApi(db, deps, { document: documentFromRow, location: locationFromRow }),
+    ...createBackupApi(db, deps),
   };
 }

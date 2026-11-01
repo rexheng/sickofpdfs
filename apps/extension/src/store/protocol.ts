@@ -8,12 +8,13 @@
 // running gets the same answer when it is done, and a replayed write that already succeeded gets its stored answer. That
 // is what lets a client reconnect and replay without doing a write twice or out of order.
 import { ANNOTATION_METHODS } from './annotations';
+import { BACKUP_API_METHODS, BACKUP_READ_METHODS } from './backup-api';
 import { LIBRARY_API_METHODS, LIBRARY_READ_METHODS } from './library-api';
 import { PAGE_FIGURES_METHODS } from './page-figures';
 import { LIBRARY_METHODS, type StoreApi } from './store-api';
 
 /** Every method a store port serves. */
-export const STORE_METHODS = [...LIBRARY_METHODS, ...ANNOTATION_METHODS, ...PAGE_FIGURES_METHODS, ...LIBRARY_API_METHODS] as const;
+export const STORE_METHODS = [...LIBRARY_METHODS, ...ANNOTATION_METHODS, ...PAGE_FIGURES_METHODS, ...LIBRARY_API_METHODS, ...BACKUP_API_METHODS] as const;
 export type StoreMethod = (typeof STORE_METHODS)[number];
 
 // Every StoreApi method must be served: this line stops compiling when one is missing from the lists above.
@@ -38,6 +39,7 @@ const READ_METHODS: ReadonlySet<string> = new Set<StoreMethod>([
   'listEditDrafts',
   'getPageFigures',
   ...LIBRARY_READ_METHODS,
+  ...BACKUP_READ_METHODS,
 ]);
 
 export interface StoreRequest {
