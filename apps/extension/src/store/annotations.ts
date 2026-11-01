@@ -10,6 +10,10 @@
 //   with `draftOfTab` null (the session sends a note as one batch: mark, thread, comment), which turns the stored draft
 //   live in place; and `discardDraft`.
 // - Sent text is never overwritten by a draft, and a draft is never overwritten by another tab.
+// - An unsent edit of a comment that was already sent (R54) is an edit draft: its own table, keyed to the comment, owned by a
+//   tab, never synced, never searched, never shown as the live text. Sending the edit (a `writeAnnotations` upsert of the
+//   comment by the same tab) replaces the live text and closes the edit draft in one transaction. A closed edit stays as a
+//   marker without text, so a late save of that edit session is refused instead of bringing the edit back.
 // - JSON columns (`anchor`, `meta`) are stored and returned as they are, so fields this version does not know survive.
 // - Every write is one transaction, and a change event is published only after it commits.
 
@@ -35,6 +39,18 @@ export interface AnnotationChange {
   tabId?: TabId;
 }
 
+/** An unsent edit of a sent comment (R54). The live comment is not touched until the edit is sent. */
+export interface EditDraft {
+  commentId: CommentId;
+  threadId: ThreadId;
+  documentId: DocumentId;
+  /** Names one edit session. A save of a closed session is refused. */
+  editId: string;
+  draftOfTab: TabId;
+  body: string;
+  updatedAt: number;
+}
+
 export interface AnnotationsApi {
   /** Live, non-draft rows of one document. */
   listAnnotations(documentId: DocumentId): Promise<{ marks: MarkRow[]; threads: ThreadRow[]; comments: CommentRow[] }>;
@@ -55,6 +71,23 @@ export interface AnnotationsApi {
   listDraftThreads(documentId: DocumentId, tabId: TabId): Promise<ThreadRow[]>;
   /** Addition to the contract: deletes an unsent draft (and its new thread). Does nothing to a comment that was sent. */
   discardDraft(commentId: CommentId): Promise<void>;
+  /**
+   * R54. Saves (or updates) the unsent edit of a comment that was already sent. Publishes nothing and queues nothing, and the
+   * live text is not touched. Refused when the comment is unknown, deleted or itself a draft; when this edit session was
+   * closed (`edit-closed`, a late save after a send or a cancel, or of a session that a newer one of this tab has replaced);
+   * when another tab owns the edit (`draft-owned-elsewhere`); and when another tab has a different edit of the same comment
+   * still open (`edit-in-progress`). Edit ids sort by the time the session began.
+   */
+  saveEditDraft(e: { commentId: CommentId; editId: string; draftOfTab: TabId; body: string }): Promise<void>;
+  /** R54. The open edits this tab owns, for comments that are still live. */
+  listEditDrafts(documentId: DocumentId, tabId: TabId): Promise<EditDraft[]>;
+  /** R54. Hands the open edits of tabs that are gone to `tabId`. Returns what it adopted. */
+  claimEditDrafts(documentId: DocumentId, tabId: TabId, liveTabs: TabId[]): Promise<EditDraft[]>;
+  /**
+   * R54. Closes one edit session (a cancel, or the clean-up after a send): its text is cleared and a late save of it is
+   * refused from now on. Does nothing to a newer session of the same comment, and nothing to the live text.
+   */
+  discardEditDraft(commentId: CommentId, editId: string): Promise<void>;
 }
 
 /** The method names `protocol.ts` serves and `client.ts` proxies. */
@@ -67,6 +100,10 @@ export const ANNOTATION_METHODS = [
   'claimDrafts',
   'listDraftThreads',
   'discardDraft',
+  'saveEditDraft',
+  'listEditDrafts',
+  'claimEditDrafts',
+  'discardEditDraft',
 ] as const satisfies readonly (keyof AnnotationsApi)[];
 
 export type AnnotationErrorCode =
@@ -78,7 +115,9 @@ export type AnnotationErrorCode =
   | 'use-save-draft'
   | 'document-missing'
   | 'thread-missing'
-  | 'immutable-field';
+  | 'immutable-field'
+  | 'edit-closed'
+  | 'edit-in-progress';
 
 /** The message starts with the code, so it can still be told apart after it crosses a message port as plain text. */
 export class AnnotationStoreError extends Error {
@@ -93,7 +132,7 @@ export class AnnotationStoreError extends Error {
 /** Errors that retrying cannot fix. Works on the error object and on its text after a port. */
 export function isPermanentAnnotationError(e: unknown): boolean {
   const text = e instanceof Error ? e.message : typeof e === 'string' ? e : '';
-  return /\b(read-only|bad-row|not-a-draft|draft-owned-elsewhere|use-save-draft|document-missing|thread-missing|immutable-field): /.test(text);
+  return /\b(read-only|bad-row|not-a-draft|draft-owned-elsewhere|use-save-draft|document-missing|thread-missing|immutable-field|edit-closed|edit-in-progress|not-found): /.test(text);
 }
 
 export interface AnnotationDeps {
@@ -292,6 +331,29 @@ export function createAnnotationsApi(db: SqlDb, deps: AnnotationDeps): Annotatio
     );
   };
 
+  // -- edit drafts (R54) --
+
+  const EDIT_TOMBSTONE_DAYS = 7;
+  const editFromRow = (r: Row): EditDraft => ({
+    commentId: text(r, 'comment_id') as CommentId,
+    threadId: text(r, 'thread_id') as ThreadId,
+    documentId: text(r, 'document_id') as DocumentId,
+    editId: text(r, 'edit_id'),
+    draftOfTab: text(r, 'draft_of_tab') as TabId,
+    body: text(r, 'body'),
+    updatedAt: num(r, 'updated_at'),
+  });
+
+  /** The tab's own open edit of this comment ends with the live write that replaces or removes the text. Same transaction. */
+  const closeOwnEdit = (commentId: string, tabId: TabId | undefined, now: number): void => {
+    if (!tabId) return;
+    run(`UPDATE comment_edits SET state = 'closed', body = '', draft_of_tab = NULL, updated_at = ? WHERE comment_id = ? AND state = 'open' AND draft_of_tab = ?`, [
+      now,
+      commentId,
+      tabId,
+    ]);
+  };
+
   // -- marks --
 
   function writeMark(o: AnnotationOp, tabId: TabId | undefined): void {
@@ -408,6 +470,7 @@ export function createAnnotationsApi(db: SqlDb, deps: AnnotationDeps): Annotatio
       if (cur.author !== row.author) fail('immutable-field', 'the author of a comment never changes');
       if (o.op === 'soft-delete') {
         run('UPDATE comments SET deleted_at = ?, hlc = ? WHERE id = ?', [row.deletedAt ?? now, deps.hlc.tick(), row.id]);
+        closeOwnEdit(row.id, tabId, now);
       } else if (o.op === 'restore') {
         run('UPDATE comments SET deleted_at = NULL, hlc = ? WHERE id = ?', [deps.hlc.tick(), row.id]);
       } else {
@@ -419,6 +482,8 @@ export function createAnnotationsApi(db: SqlDb, deps: AnnotationDeps): Annotatio
           deps.hlc.tick(),
           row.id,
         ]);
+        // Sending an edit: the live text is replaced and the edit draft closed in this one transaction.
+        closeOwnEdit(row.id, tabId, now);
       }
     } else {
       if (!documentExists(row.documentId)) fail('document-missing', 'comments are only stored for saved documents');
@@ -615,6 +680,106 @@ export function createAnnotationsApi(db: SqlDb, deps: AnnotationDeps): Annotatio
           'draft threads',
         ),
       ),
+
+    saveEditDraft: (e) =>
+      attempt(() => {
+        assertWritable();
+        if (!nonEmpty(e.commentId) || !nonEmpty(e.editId) || e.editId.length > 100) fail('bad-row', 'an edit draft needs a comment and an edit id');
+        if (!nonEmpty(e.draftOfTab)) fail('bad-row', 'an edit draft needs the tab that owns it');
+        if (typeof e.body !== 'string') fail('bad-row', 'the edit text is not text');
+        db.savepoint(() => {
+          const c = one('SELECT document_id, draft_of_tab, deleted_at FROM comments WHERE id = ?', [e.commentId]);
+          if (!c || c.deleted_at != null) fail('not-found', 'there is no such comment to edit');
+          if (c.draft_of_tab != null) fail('use-save-draft', 'this comment is an unsent draft; its text is saved with saveDraft');
+          const cur = one('SELECT edit_id, draft_of_tab, state FROM comment_edits WHERE comment_id = ?', [e.commentId]);
+          if (cur) {
+            if (cur.edit_id === e.editId) {
+              // A late save of a session that was sent or cancelled must not bring the edit back.
+              if (cur.state === 'closed') fail('edit-closed', 'this edit was already sent or cancelled');
+              if (cur.draft_of_tab !== e.draftOfTab) fail('draft-owned-elsewhere', 'another tab owns this edit');
+            } else if (cur.state === 'open') {
+              if (cur.draft_of_tab !== e.draftOfTab) fail('edit-in-progress', 'another tab has an unsent edit of this comment; restore it or cancel it first');
+              // The same tab: edit ids sort by when the session began. A newer session takes over from an older one that was
+              // never closed (the first save of the new one can overtake the clean-up of the old one). An older session is over.
+              if (e.editId < text(cur, 'edit_id')) fail('edit-closed', 'a newer edit of this comment has begun');
+            }
+          }
+          run(
+            `INSERT INTO comment_edits (comment_id, document_id, edit_id, draft_of_tab, body, state, updated_at) VALUES (?, ?, ?, ?, ?, 'open', ?)
+             ON CONFLICT (comment_id) DO UPDATE SET edit_id = excluded.edit_id, draft_of_tab = excluded.draft_of_tab, body = excluded.body,
+               state = 'open', updated_at = excluded.updated_at`,
+            [e.commentId, text(c, 'document_id'), e.editId, e.draftOfTab, e.body, deps.now()],
+          );
+        });
+      }),
+
+    listEditDrafts: (documentId, tabId) =>
+      attempt(() =>
+        mapRows(
+          db.selectObjects(
+            `SELECT e.*, c.thread_id FROM comment_edits e JOIN comments c ON c.id = e.comment_id
+             WHERE e.document_id = ? AND e.draft_of_tab = ? AND e.state = 'open' AND c.deleted_at IS NULL AND c.draft_of_tab IS NULL
+             ORDER BY e.updated_at, e.comment_id`,
+            [documentId, tabId],
+          ),
+          editFromRow,
+          'edit drafts',
+        ),
+      ),
+
+    claimEditDrafts: (documentId, tabId, liveTabs) =>
+      attempt(() => {
+        assertWritable();
+        const keep: SqlValue[] = [...new Set([tabId, ...liveTabs.filter((t) => typeof t === 'string' && t.length > 0)])];
+        const marks = keep.map(() => '?').join(', ');
+        let claimed: EditDraft[] = [];
+        db.savepoint(() => {
+          // Closed markers carry no text and only matter for a moment; they do not pile up.
+          run(`DELETE FROM comment_edits WHERE state = 'closed' AND updated_at < ?`, [deps.now() - EDIT_TOMBSTONE_DAYS * 86_400_000]);
+          const ids = db
+            .selectObjects(
+              `SELECT e.comment_id FROM comment_edits e JOIN comments c ON c.id = e.comment_id
+               WHERE e.document_id = ? AND e.state = 'open' AND e.draft_of_tab NOT IN (${marks}) AND c.deleted_at IS NULL AND c.draft_of_tab IS NULL`,
+              [documentId, ...keep],
+            )
+            .map((r) => text(r, 'comment_id'));
+          for (const id of ids) run('UPDATE comment_edits SET draft_of_tab = ? WHERE comment_id = ?', [tabId, id]);
+          if (ids.length > 0) {
+            claimed = mapRows(
+              db.selectObjects(
+                `SELECT e.*, c.thread_id FROM comment_edits e JOIN comments c ON c.id = e.comment_id
+                 WHERE e.comment_id IN (${ids.map(() => '?').join(', ')}) ORDER BY e.updated_at, e.comment_id`,
+                ids,
+              ),
+              editFromRow,
+              'edit drafts',
+            );
+          }
+        });
+        return claimed;
+      }),
+
+    discardEditDraft: (commentId, editId) =>
+      attempt(() => {
+        assertWritable();
+        db.savepoint(() => {
+          const c = one('SELECT document_id FROM comments WHERE id = ?', [commentId]);
+          if (!c) return; // the comment is gone, and its edit with it
+          const cur = one('SELECT edit_id FROM comment_edits WHERE comment_id = ?', [commentId]);
+          if (!cur) {
+            // Nothing stored yet: leave the marker anyway, so a save of this session that is still on its way is refused.
+            run(`INSERT INTO comment_edits (comment_id, document_id, edit_id, draft_of_tab, body, state, updated_at) VALUES (?, ?, ?, NULL, '', 'closed', ?)`, [
+              commentId,
+              text(c, 'document_id'),
+              editId,
+              deps.now(),
+            ]);
+          } else if (cur.edit_id === editId) {
+            run(`UPDATE comment_edits SET state = 'closed', body = '', draft_of_tab = NULL, updated_at = ? WHERE comment_id = ?`, [deps.now(), commentId]);
+          }
+          // A different session is a newer (or older, already closed) one: leave it alone.
+        });
+      }),
 
     claimDrafts: (documentId, tabId, liveTabs) =>
       attempt(() => {

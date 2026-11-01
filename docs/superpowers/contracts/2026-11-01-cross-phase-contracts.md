@@ -137,7 +137,7 @@ export interface ConflictCopyMeta { kind: 'conflict-copy'; v: 1; of: CommentId; 
   4. On an error, the partial text stays, with status `error`. It stays local until "Try again", which reuses the same id, or until the owner dismisses it.
   5. On open, a `pending` or `streaming` row whose tab is gone becomes `error: interrupted`.
 - **The "no lost text" gate.** Phase 2 must pass it before the marks UI ships, and Phase 4 again for replies.
-  - A draft is saved within 300 ms of the last keystroke, and at once on blur, Esc, `visibilitychange` (hidden) and `pagehide`.
+  - A draft is saved within 300 ms of the last keystroke, and at once on blur, Esc, `visibilitychange` (hidden) and `pagehide`. The 100 ms crash rule below is stricter and wins: the keeper saves 5 ms after the last keystroke (`DRAFT_DELAY_MS`), and 300 ms is only the cap during continuous typing (`DRAFT_MAX_MS`).
   - Kill the renderer 100 ms after typing stops, then reopen: the draft is back in its card with the caret at the end.
   - A draft disappears only when it is sent, when an empty new note is cancelled, or when the owner discards it.
   - A tab adopts drafts whose owner tab is gone. Live tabs answer a roll call on BroadcastChannel `sop-tabs` within 200 ms.
@@ -148,6 +148,28 @@ export interface ConflictCopyMeta { kind: 'conflict-copy'; v: 1; of: CommentId; 
   - `saveDraft(row: CommentRow & { draftOfTab: TabId }, thread?: ThreadRow): Promise<void>`. It publishes no change event and queues nothing for sync.
   - `sendDraft(commentId): Promise<void>`. It clears `draftOfTab` on the comment and its new thread in one transaction.
   - `listDrafts(documentId, tabId)`, and `claimDrafts(documentId, tabId, liveTabs: TabId[]): Promise<CommentRow[]>`.
+- **Draft APIs added during Phase 2** (triage rulings and R54, recorded 1 Nov). They are normative: `apps/extension/src/store/annotations.ts` and `apps/extension/src/viewer/annotations/drafts.ts` implement them, and a store without any of them is a compile error in `DraftStore`.
+  - **`StoreApi`**
+    - `listDraftThreads(documentId, tabId): Promise<ThreadRow[]>`. The new threads of a tab's drafts, so a restored draft knows where it sits (`listDrafts` returns comments only).
+    - `discardDraft(commentId): Promise<void>`. Deletes an unsent draft and its new thread when nothing else is in it. It does nothing to a comment that was sent, so it is safe to call after a send.
+    - `writeAnnotations` also sends a stored draft in place: an upsert of a thread or comment whose id is a stored draft, with a row that is not itself a draft (`draftOfTab` null), clears `draft_of_tab` on that same row, keeps the id and stores the final text and `meta`. The outbox and `comments_fts` triggers then queue and index it in the same transaction. A row that is itself a draft is refused (`use-save-draft`); `soft-delete` of a draft deletes it for good. A batch that would leave a sent comment in a thread that is still a draft is refused.
+    - A late `saveDraft` for a comment that was sent is refused (`not-a-draft`), and `saveDraft` for a draft owned by another tab is refused (`draft-owned-elsewhere`). Neither can overwrite text.
+    - Errors are rejections whose message starts with a code (`read-only: …`, `edit-closed: …`), so the code survives a message port.
+  - **Edit drafts (R54): editing a note that was already sent is crash-safe too.** The in-progress edit is a tab-owned edit draft keyed to the comment, in its own table `comment_edits` (§4). It never syncs, is never searched, never shows as the live text, and publishes no change event. One row per comment.
+    - `saveEditDraft(e: { commentId; editId: string; draftOfTab: TabId; body: string }): Promise<void>`. `editId` names one edit session and sorts by the time the session began. Refused: an unknown or deleted comment (`not-found`), a comment that is itself a draft (`use-save-draft`), a session that was sent or cancelled or replaced by a newer one of the same tab (`edit-closed`, the late-save guard), an edit owned by another tab (`draft-owned-elsewhere`), and another tab's different edit still open (`edit-in-progress`). A newer session of the same tab takes over from an older one.
+    - `listEditDrafts(documentId, tabId): Promise<EditDraft[]>` and `claimEditDrafts(documentId, tabId, liveTabs): Promise<EditDraft[]>`, which adopts the open edits of tabs that are gone, like `claimDrafts`. `EditDraft` is `{ commentId, threadId, documentId, editId, draftOfTab, body, updatedAt }`. An edit of a deleted comment is hidden and comes back with the comment.
+    - `discardEditDraft(commentId, editId): Promise<void>`. Closes that session: its text is cleared and a late save of it is refused from now on (a closed row stays as a marker with no text, and is swept after 7 days). It leaves a different session alone and never touches the live text. It leaves the marker even when nothing was stored yet.
+    - **Sending an edit** is a `writeAnnotations` upsert of the comment by the same tab (`o.tabId` is the owner of the open edit). The live text is replaced and that tab's open edit closed in the same transaction. A soft-delete of the comment by the owner tab closes it too. A write by another tab, or one with no `tabId`, leaves the edit open.
+    - **Cancelling** an edit is `discardEditDraft`.
+  - **`DraftKeeper`** (viewer, `createDraftKeeper({ store, presence, memoryOnly, onError? })`)
+    - `draftThread(threadId): ThreadRow | undefined`. The new thread of a restored or changed draft.
+    - `dispose(): void`. Removes the page listeners and timers. It does not write; `flush()` first if that is wanted.
+    - `changeEdit(comment: CommentRow, body: string): void`. The person is editing a sent comment; `comment` is the sent row as it is (its live text is not touched). Saved like a draft (5 ms after the last change, at once on `flush()`, `visibilitychange` (hidden), `pagehide` and `freeze`). The first call starts an edit session.
+    - `dropEdit(commentId): void`. The edit is over, sent or cancelled: forget it and close it in the store. Call it after the live write and on cancel.
+    - `editDrafts(documentId): EditDraft[]`. The unsent edits this tab holds, restored by `restore` or typed here. `restore` adopts the edits of gone tabs with the same roll call.
+    - `onError(id, error)` in the deps is told about every failed write or delete. A failed write stays in memory and is retried; `flush()` rejects while one is unsaved.
+    - **For the session (S9):** type each keystroke of an edit with `drafts.changeEdit`, show `drafts.editDrafts()` as the unsent edits after a reload, send with the existing `editComment` write and then `dropEdit`, cancel with `dropEdit`. A restored edit reopens the editor with the unsent text; the live text stays until it is sent.
+  - **`TabPresence`**: every tab also holds a Web Lock `sop-tab:<tabId>` for as long as it lives, and `liveTabs` counts holders as live too, so a busy tab that misses the 200 ms roll call is not mistaken for a gone one. `createTabPresence` takes an optional `{ tabId }` for tests.
 
 ## 4. Store schema v2 and later steps
 
@@ -156,6 +178,18 @@ export interface ConflictCopyMeta { kind: 'conflict-copy'; v: 1; of: CommentId; 
 ALTER TABLE marks ADD COLUMN author TEXT NOT NULL DEFAULT 'me' CHECK (author IN ('me','claude'));
 ALTER TABLE threads ADD COLUMN draft_of_tab TEXT;     -- non-NULL = a new thread whose first comment is unsent; never synced
 CREATE INDEX comments_drafts ON comments(draft_of_tab) WHERE draft_of_tab IS NOT NULL;
+-- R54: the unsent edit of a comment that was already sent. A table of its own: a column on comments would fire the outbox and
+-- comments_fts triggers on every keystroke. Not a synced table, so no triggers; goes with its comment or document (cascade).
+CREATE TABLE comment_edits (
+  comment_id TEXT PRIMARY KEY REFERENCES comments(id) ON DELETE CASCADE,
+  document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  edit_id TEXT NOT NULL,                  -- names one edit session; sorts by start time
+  draft_of_tab TEXT,                      -- the owner tab; NULL once closed
+  body TEXT NOT NULL,                     -- the unsent text; '' once closed
+  state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open','closed')),   -- a closed row is the marker that refuses a late save
+  updated_at INTEGER NOT NULL,
+  CHECK (state = 'closed' OR draft_of_tab IS NOT NULL));
+CREATE INDEX comment_edits_owner ON comment_edits(document_id, draft_of_tab);
 -- Triggers re-created by v2 (DROP TRIGGER, then CREATE):
 --   threads outbox triggers: WHEN NEW.draft_of_tab IS NULL (DELETE: OLD.draft_of_tab IS NULL), as v1 already does for comments.
 --   comments -> comments_fts: index only rows with draft_of_tab IS NULL AND deleted_at IS NULL. The UPDATE trigger handles

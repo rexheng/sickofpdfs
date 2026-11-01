@@ -1,5 +1,5 @@
-// Store schema v2 (Phase 2, contracts §4). Additive only: two columns, one index, re-created triggers and one rebuild of
-// comments_fts. Nothing is dropped from a synced table, no CHECK changes, no value changes meaning.
+// Store schema v2 (Phase 2, contracts §4). Additive only: two columns, a table for unsent edits (R54), two indexes, re-created
+// triggers and one rebuild of comments_fts. Nothing is dropped from a synced table, no CHECK changes, no value changes meaning.
 //
 // Wiring (Task 28's `migrate`): after the v1 block, `if (version < 2) applySchemaV2(db)`. Before anything else, call
 // `guardNewerSchema(db)`: a database written by a newer version opens read-only and is never written.
@@ -27,6 +27,21 @@ const MARKS_AUTHOR = `ALTER TABLE marks ADD COLUMN author TEXT NOT NULL DEFAULT 
 // Non-NULL = a new thread whose first comment is unsent. Never synced.
 const THREADS_DRAFT = 'ALTER TABLE threads ADD COLUMN draft_of_tab TEXT';
 const COMMENTS_DRAFTS_INDEX = 'CREATE INDEX IF NOT EXISTS comments_drafts ON comments(draft_of_tab) WHERE draft_of_tab IS NOT NULL';
+
+// R54: an unsent edit of a comment that was already sent. A separate table, not a column of `comments`: the edit text must
+// never reach the outbox, the search index or the live text, and a column on `comments` would fire their triggers on every
+// keystroke. Not a synced table, so it has no triggers. One row per comment. `edit_id` names one edit session: a 'closed'
+// row (text cleared) is the marker that makes a late save of that session fail instead of bringing the edit back.
+const COMMENT_EDITS_TABLE = `CREATE TABLE IF NOT EXISTS comment_edits (
+  comment_id TEXT PRIMARY KEY REFERENCES comments(id) ON DELETE CASCADE,
+  document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  edit_id TEXT NOT NULL,
+  draft_of_tab TEXT,
+  body TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'closed')),
+  updated_at INTEGER NOT NULL,
+  CHECK (state = 'closed' OR draft_of_tab IS NOT NULL))`;
+const COMMENT_EDITS_INDEX = 'CREATE INDEX IF NOT EXISTS comment_edits_owner ON comment_edits(document_id, draft_of_tab)';
 
 const NOW_MS = `CAST(unixepoch('subsec') * 1000 AS INTEGER)`;
 
@@ -78,6 +93,8 @@ export const SCHEMA_V2 = [
   MARKS_AUTHOR,
   THREADS_DRAFT,
   COMMENTS_DRAFTS_INDEX,
+  COMMENT_EDITS_TABLE,
+  COMMENT_EDITS_INDEX,
   ...OWN_TRIGGERS.map((n) => `DROP TRIGGER IF EXISTS ${n}`),
   ...outboxTriggers('threads'),
   ...outboxTriggers('comments'),
@@ -131,6 +148,8 @@ export function applySchemaV2(db: SqlDb): void {
     if (!hasColumn(tx, 'marks', 'author')) tx.exec(MARKS_AUTHOR);
     if (!hasColumn(tx, 'threads', 'draft_of_tab')) tx.exec(THREADS_DRAFT);
     tx.exec(COMMENTS_DRAFTS_INDEX);
+    tx.exec(COMMENT_EDITS_TABLE);
+    tx.exec(COMMENT_EDITS_INDEX);
 
     const old = tx
       .selectObjects(

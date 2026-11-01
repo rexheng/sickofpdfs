@@ -10,6 +10,7 @@
 //   FakeSave     - the SaveController of Task 23 with the transitions of Task 30's table (unsure + first mark -> saved with
 //                  an Undo; not-learning + first mark -> asking; answerAsk; memory-only; undo -> forget).
 //   FakeKeeper   - a DraftKeeper without timers: change() remembers, flush() writes through saveDraft, drop() discards.
+//                  changeEdit()/dropEdit()/editDrafts() do the same for the unsent edit of a sent note (R54).
 //   PresenceHub  - TabPresence objects that answer a roll call at once; crash(tab) makes a tab stop answering.
 /* eslint-disable @typescript-eslint/require-await -- the fakes keep the async signatures of the interfaces they stand in for */
 import { vi } from 'vitest';
@@ -17,6 +18,7 @@ import type { Anchor, CommentRow, DocumentId, MarkRow, ThreadRow } from '../../.
 import type { CommentId, TabId, ThreadId } from '../../../../../packages/core/src/ids';
 import type { StoreChange } from './boundary';
 import { DOC, DOC2, T_A, T_B, T_C } from '../../store/rows.spec-blind';
+import type { EditDraft } from '../../store/annotations';
 import type { DraftKeeper } from './drafts';
 import type { TabPresence } from './tab-presence';
 
@@ -221,6 +223,50 @@ export class FakeStore {
     const t = this.threads.get(c.threadId);
     if (t?.draftOfTab && ![...this.comments.values()].some((x) => x.threadId === t.id)) this.threads.delete(t.id);
   }
+  /** R54: unsent edits of sent notes, one per comment, with the rules the contract records. A closed one only refuses a late save. */
+  edits = new Map<string, { documentId: DocumentId; threadId: ThreadId; editId: string; tab: TabId | null; body: string; state: 'open' | 'closed'; updatedAt: number }>();
+  async saveEditDraft(e: { commentId: CommentId; editId: string; draftOfTab: TabId; body: string }): Promise<void> {
+    this.calls.push({ method: 'saveEditDraft', args: [e] });
+    if (this.gate) await this.gate;
+    const c = this.comments.get(e.commentId);
+    if (!c || c.deletedAt !== null) throw new Error('not-found: there is no such comment to edit');
+    if (c.draftOfTab) throw new Error('use-save-draft: this comment is an unsent draft');
+    const cur = this.edits.get(e.commentId);
+    if (cur?.editId === e.editId) {
+      if (cur.state === 'closed') throw new Error('edit-closed: this edit was already sent or cancelled');
+      if (cur.tab !== e.draftOfTab) throw new Error('draft-owned-elsewhere: another tab owns this edit');
+    } else if (cur?.state === 'open') {
+      if (cur.tab !== e.draftOfTab) throw new Error('edit-in-progress: another tab has an unsent edit of this comment');
+      if (e.editId < cur.editId) throw new Error('edit-closed: a newer edit of this comment has begun');
+    }
+    this.edits.set(e.commentId, { documentId: c.documentId, threadId: c.threadId, editId: e.editId, tab: e.draftOfTab, body: e.body, state: 'open', updatedAt: this.clock++ });
+  }
+  private editDraft(commentId: string, x: NonNullable<ReturnType<FakeStore['edits']['get']>>): EditDraft {
+    return { commentId: commentId as CommentId, threadId: x.threadId, documentId: x.documentId, editId: x.editId, draftOfTab: x.tab!, body: x.body, updatedAt: x.updatedAt };
+  }
+  async listEditDrafts(documentId: DocumentId, tabId: TabId): Promise<EditDraft[]> {
+    this.calls.push({ method: 'listEditDrafts', args: [documentId, tabId] });
+    return [...this.edits].filter(([id, x]) => x.documentId === documentId && x.tab === tabId && x.state === 'open' && this.comments.get(id)?.deletedAt === null).map(([id, x]) => this.editDraft(id, x));
+  }
+  async claimEditDrafts(documentId: DocumentId, tabId: TabId, liveTabs: TabId[]): Promise<EditDraft[]> {
+    this.calls.push({ method: 'claimEditDrafts', args: [documentId, tabId, liveTabs] });
+    const claimed: EditDraft[] = [];
+    for (const [id, x] of this.edits) {
+      if (x.documentId !== documentId || x.state !== 'open' || x.tab === tabId || (x.tab && liveTabs.includes(x.tab))) continue;
+      x.tab = tabId;
+      claimed.push(this.editDraft(id, x));
+    }
+    return claimed;
+  }
+  async discardEditDraft(commentId: CommentId, editId: string): Promise<void> {
+    this.calls.push({ method: 'discardEditDraft', args: [commentId, editId] });
+    if (this.gate) await this.gate;
+    const c = this.comments.get(commentId);
+    if (!c) return;
+    const cur = this.edits.get(commentId);
+    if (!cur) this.edits.set(commentId, { documentId: c.documentId, threadId: c.threadId, editId, tab: null, body: '', state: 'closed', updatedAt: this.clock++ });
+    else if (cur.editId === editId) this.edits.set(commentId, { ...cur, tab: null, body: '', state: 'closed' });
+  }
   /** A draft thread row, as saveDraft(row, thread) stored it. A test can read it; the contract gives callers no method for it. */
   draftThread(id: ThreadId): ThreadRow | undefined {
     return this.threads.get(id);
@@ -313,6 +359,11 @@ export class FakeKeeper implements DraftKeeper {
       this.pending.delete(id);
       if (this.store && !this.memoryOnly) await this.store.saveDraft(row, thread);
     }
+    for (const x of this.edits.values()) {
+      if (!x.dirty || !this.store || this.memoryOnly) continue;
+      x.dirty = false;
+      await this.store.saveEditDraft({ commentId: x.comment.id, editId: x.editId, draftOfTab: this.presence.tabId, body: x.body });
+    }
   }
   /** Like the real keeper: forget the draft and ask the store to discard it. A comment that was sent is never touched (the store's rule). */
   drop(id: CommentId): void {
@@ -323,12 +374,36 @@ export class FakeKeeper implements DraftKeeper {
   async restore(documentId: DocumentId): Promise<CommentRow[]> {
     this.calls.push({ method: 'restore', args: [documentId] });
     if (!this.store) return [...this.pending.values()].map((p) => p.row);
-    await this.store.claimDrafts(documentId, this.presence.tabId, await this.presence.liveTabs());
+    const live = await this.presence.liveTabs();
+    await this.store.claimDrafts(documentId, this.presence.tabId, live);
     for (const t of await this.store.listDraftThreads(documentId, this.presence.tabId)) this.threads.set(t.id, t);
+    await this.store.claimEditDrafts(documentId, this.presence.tabId, live);
+    for (const e of await this.store.listEditDrafts(documentId, this.presence.tabId)) {
+      const comment = (await this.store.listAnnotations(documentId)).comments.find((c) => c.id === e.commentId);
+      if (comment && !this.edits.has(e.commentId)) this.edits.set(e.commentId, { comment, editId: e.editId, body: e.body, dirty: false });
+    }
     return this.store.listDrafts(documentId, this.presence.tabId);
   }
   draftThread(threadId: ThreadId): ThreadRow | undefined {
     return [...this.pending.values()].find((p) => p.thread?.id === threadId)?.thread ?? this.threads.get(threadId);
+  }
+  /** R54: unsent edits of sent notes, held until flush() writes them through the store. */
+  private edits = new Map<string, { comment: CommentRow; editId: string; body: string; dirty: boolean }>();
+  changeEdit(comment: CommentRow, body: string): void {
+    this.calls.push({ method: 'changeEdit', args: [structuredClone(comment), body] });
+    const had = this.edits.get(comment.id);
+    this.edits.set(comment.id, { comment: structuredClone(comment), editId: had?.editId ?? `${Date.now().toString(36).padStart(10, '0')}-${this.edits.size}`, body, dirty: true });
+  }
+  dropEdit(commentId: CommentId): void {
+    this.calls.push({ method: 'dropEdit', args: [commentId] });
+    const x = this.edits.get(commentId);
+    this.edits.delete(commentId);
+    if (x && this.store && !this.memoryOnly) void this.store.discardEditDraft(commentId, x.editId);
+  }
+  editDrafts(documentId: DocumentId): EditDraft[] {
+    return [...this.edits.values()]
+      .filter((x) => x.comment.documentId === documentId)
+      .map((x) => ({ commentId: x.comment.id, threadId: x.comment.threadId, documentId, editId: x.editId, draftOfTab: this.presence.tabId, body: x.body, updatedAt: 0 }));
   }
   dispose(): void {
     this.calls.push({ method: 'dispose', args: [] });
