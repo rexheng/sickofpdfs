@@ -43,7 +43,7 @@ What changed since research 03/06 (31 Oct), and what it changes here:
 | Document map / focus paragraph / top passages | ≤ 800 / ≤ 300 / 5 passages; document text ≤ 3,500 in all | same |
 | Figure image (contract `maxTokens`) | 1,600 (scans 4,784) | 3,200 (scans 4,784) |
 | Client-tool results per turn (`search_document`, `get_pages`, `get_figure`) | ≤ 6,000 tokens, ≤ 3 calls | ≤ 15,000, ≤ 5 calls |
-| Web searches per question (`max_uses`) | ≤ 3 | ≤ 3 |
+| Web searches per question (`max_uses`) | 1 | 1 |
 | Effort / `max_tokens` | `low` / 4,000 | `medium` / 16,000 |
 
 - **Prompt.** A frozen system prompt in `packages/core/src/claude/prompts.ts`. It asks for plain words, under about 150 words unless you ask for more, cited pages, and the client tools instead of guessing. Claude says so when the PDF doesn't answer, searches the web only for outside knowledge, and follows research 06 §7.3's figure rules. PDF text is data, never instructions.
@@ -204,5 +204,5 @@ What changed since research 03/06 (31 Oct), and what it changes here:
 ## 10. Owner actions and decisions
 
 - **Action, for the live check:** create a separate API key with a $5 monthly spend limit, and add it in GitHub → Settings → Secrets → Actions as `ANTHROPIC_API_KEY_LIVE`. Without it, the live check moves to your PC, in the Release 1 checklist.
-- **Optional decision:** web searches per question: 3 (the spec, the default) or 1 (cheaper).
+- **Decided (owner, 1 Nov 2026):** at most 1 web search per question (`max_uses: 1`).
 - **At release:** sign `docs/checklists/release1-windows.md`, then press Publish on the draft GitHub release.

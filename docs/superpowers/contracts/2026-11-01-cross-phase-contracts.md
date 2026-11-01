@@ -291,7 +291,7 @@ export interface ClaudeTurnRunner { run(req: ClaudeTurnRequest, onEvent: (e: Cla
 - **Citations.** Each passage and figure text is its own citable text block. `content_block_location` maps back through `blocks[i]` to a page and char range. Claude cannot cite an image, so a figure answer always carries a "Fig. N · p. M" chip.
 - **The request.**
   - The order is: a frozen system prompt; the document map with `cache_control`; the images before their text packs; the passages; the question.
-  - Web search is Anthropic's server tool, at most 3 uses per question, and only when `claude.webSearch` is on.
+  - Web search is Anthropic's server tool, at most 1 use per question (`max_uses: 1`, owner 1 Nov 2026), and only when `claude.webSearch` is on.
   - Follow-ups append to the exact blocks held in the tab's memory. After a reload, the thread is rebuilt from stored comments as plain text turns, and a cache miss is accepted. Nothing large is stored in `meta`.
 - **Settings keys** (synced settings rows):
   - `claude.model.default` and `claude.model.thinkHarder`: the owner's choices, stored as data (D1);
