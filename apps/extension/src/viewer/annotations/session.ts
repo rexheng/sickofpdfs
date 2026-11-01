@@ -13,6 +13,9 @@
  *      save pending, that save could land after ours and turn the sent note back into a draft that nobody lists.
  *   4. Nothing is written while the save question is open, or when the PDF is memory-only. Those changes wait in
  *      the queue and are written, oldest first, the moment the PDF is saved.
+ *   5. A batch the store keeps refusing is parked after its retries, so it cannot hold up the writes behind it. The
+ *      text of its new comments is handed to the draft keeper as drafts, so it survives a reload, and `retryParked`
+ *      sends it again.
  * - Undo.
  *   1. Undo and redo run inverse batches (undo.ts) and refuse to overwrite a newer edit from another tab.
  *   2. Undoing the save that a first mark caused ("Undo" on the status chip) deletes the document and every row of
@@ -78,6 +81,17 @@ import {
 
 // ---------------------------------------------------------------- the public shape (contracts plan section 7)
 
+/**
+ * A batch of changes that the store keeps refusing. Its notes are safe as drafts; the card shows
+ * "Couldn't save this note" with a Retry that calls `retryParked()`.
+ */
+export interface ParkedBatch {
+  id: string;
+  commentIds: CommentId[];
+  threadIds: ThreadId[];
+  markIds: MarkId[];
+}
+
 export interface AnnotationState {
   marks: MarkRow[];
   threads: ThreadRow[];
@@ -87,6 +101,8 @@ export interface AnnotationState {
   active: ThreadId | null;
   focusedMark: MarkId | null;
   mode: 'stored' | 'pending-save' | 'memory-only' | 'view-only';
+  /** Changes the store would not take after the retries. Empty when all is well. */
+  parked: ParkedBatch[];
 }
 
 export interface AnnotationSession {
@@ -112,6 +128,8 @@ export interface AnnotationSession {
   setFocusedMark(m: MarkId | null): void;
   undo(): Promise<void>;
   redo(): Promise<void>;
+  /** Sends every parked batch to the store once more. Whatever fails again is parked again. */
+  retryParked(): Promise<void>;
   /** Looks for drafts whose tab is gone and takes them. Runs on open and when this tab becomes visible; wiring may call it too. */
   adoptDrafts(): Promise<void>;
   dispose(): void;
@@ -131,6 +149,8 @@ export interface SessionDeps {
   planStyle?: PlanStyleFn;
   /** Defaults to S3's resolveAnchor. */
   resolveAnchor?: ResolveAnchorFn;
+  /** Waits between retries of a failing write; the batch is parked after this many retries. Default 250, 500, 1000, 2000, 4000 ms. */
+  retryMs?: readonly number[];
   /** Told about failures that the session survives (a failed write that will be retried, a placement that threw). */
   onError?(e: unknown, where: string): void;
 }
@@ -147,7 +167,7 @@ interface DraftStash {
 }
 const STASH_KEY = 'sopDraft';
 
-const WRITE_RETRY_MS = [250, 500, 1000, 2000, 4000, 8000];
+const DEFAULT_RETRY_MS: readonly number[] = [250, 500, 1000, 2000, 4000];
 const REFRESH_ROUNDS = 4;
 /** How long undo waits for the store to catch up, and how long a send waits for the draft keeper. */
 const SYNC_WAIT_MS = 400;
@@ -239,22 +259,40 @@ interface Committed {
 }
 
 interface Batch {
+  id: string;
   ops: AnnotationOp[];
-  /** Resolves when the first write attempt ends, whether it worked or not, or when the batch is discarded. */
+  /** Resolves when the next write attempt ends, whether it worked or not, or when the batch is discarded or parked. */
   firstAttempt: Promise<void>;
   attempted(): void;
+  /** Failed attempts so far. */
+  attempts: number;
+  /** Set once a parked batch has had its one probe after a later write went through. */
+  probed: boolean;
+  /** The text of its new comments has been given to the draft keeper as drafts. */
+  safe: boolean;
 }
 
 function newBatch(ops: AnnotationOp[]): Batch {
-  let attempted!: () => void;
-  const firstAttempt = new Promise<void>((r) => (attempted = r));
-  return { ops, firstAttempt, attempted };
+  const b: Batch = { id: newId<string>(), ops, firstAttempt: Promise.resolve(), attempted() {}, attempts: 0, probed: false, safe: false };
+  renewAttempt(b);
+  return b;
+}
+
+/** Gives a batch a fresh "first attempt" promise, for a retry. */
+function renewAttempt(b: Batch): void {
+  b.firstAttempt = new Promise<void>((r) => (b.attempted = r));
+}
+
+/** What a draft carries to be restored in its card. */
+function stashMeta(thread: ThreadRow, highlight: MarkColor | null): CommentRow['meta'] {
+  return { [STASH_KEY]: { thread, highlight } } as unknown as CommentRow['meta'];
 }
 
 // ---------------------------------------------------------------- the session
 
 export function createAnnotationSession(d: SessionDeps): AnnotationSession {
   const tabId = d.presence.tabId;
+  const retryMs = d.retryMs ?? DEFAULT_RETRY_MS;
   const planStyleFn: PlanStyleFn = d.planStyle ?? corePlanStyle;
   const resolveFn: ResolveAnchorFn = d.resolveAnchor ?? coreResolveAnchor;
   const undo = createUndoStack();
@@ -292,6 +330,10 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
 
   // The write queue.
   const queue: Batch[] = [];
+  /** Batches the store kept refusing. They wait here for a Retry, and do not hold up the queue. */
+  const parked: Batch[] = [];
+  /** Comments whose text was handed to the keeper as a draft because their batch is parked. */
+  const safeCopied = new Set<CommentId>();
   /** Keys of rows known to be in the store. */
   const persisted = new Set<string>();
   let inflight: Batch | null = null;
@@ -333,6 +375,12 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       active,
       focusedMark,
       mode,
+      parked: parked.map((b) => ({
+        id: b.id,
+        commentIds: b.ops.filter((o) => o.table === 'comments' && o.op !== 'soft-delete').map((o) => o.row.id as CommentId),
+        threadIds: b.ops.filter((o) => o.table === 'threads' && o.op !== 'soft-delete').map((o) => o.row.id as ThreadId),
+        markIds: b.ops.filter((o) => o.table === 'marks' && o.op !== 'soft-delete').map((o) => o.row.id as MarkId),
+      })),
     };
     return snap;
   }
@@ -504,13 +552,16 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       } else comments.delete(id as CommentId);
       placement.delete(id);
     }
-    for (const b of [...queue]) {
-      b.ops = b.ops.filter((op) => !gone.has(rowKey(op.table, op.row.id)));
-      if (b.ops.length === 0) {
-        queue.splice(queue.indexOf(b), 1);
-        b.attempted();
+    for (const list of [queue, parked]) {
+      for (const b of [...list]) {
+        b.ops = b.ops.filter((op) => !gone.has(rowKey(op.table, op.row.id)));
+        if (b.ops.length === 0) {
+          list.splice(list.indexOf(b), 1);
+          b.attempted();
+        }
       }
     }
+    safeCopied.clear(); // the store forgot the drafts along with everything else
     undo.prune((table, id) => gone.has(rowKey(table, id)));
     for (const [id, c] of comments) if (!threads.has(c.threadId)) comments.delete(id);
     if (active && !threads.has(active)) active = null;
@@ -524,9 +575,13 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
    * database, the backup and sync, as a soft-deleted row. Undo history that points at such a row goes too.
    */
   function compactQueue(): void {
+    // A batch being written right now may not be changed, and rows it touches are not candidates.
+    const waiting = [...parked, ...queue].filter((b) => b !== inflight);
+    const busy = new Set<string>();
+    if (inflight) for (const op of inflight.ops) busy.add(rowKey(op.table, op.row.id));
     const first = new Map<string, AnnotationOp['op']>();
     const last = new Map<string, AnnotationOp['op']>();
-    for (const b of queue) {
+    for (const b of waiting) {
       for (const op of b.ops) {
         const k = rowKey(op.table, op.row.id);
         if (!first.has(k)) first.set(k, op.op);
@@ -534,13 +589,27 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       }
     }
     const dead = new Set<string>();
-    for (const [k, op] of first) if (op === 'upsert' && last.get(k) === 'soft-delete' && !persisted.has(k)) dead.add(k);
+    for (const [k, op] of first) if (op === 'upsert' && last.get(k) === 'soft-delete' && !persisted.has(k) && !busy.has(k)) dead.add(k);
     if (dead.size === 0) return;
-    for (const b of [...queue]) {
-      b.ops = b.ops.filter((op) => !dead.has(rowKey(op.table, op.row.id)));
-      if (b.ops.length === 0) {
-        queue.splice(queue.indexOf(b), 1);
-        b.attempted();
+    for (const list of [queue, parked]) {
+      for (const b of [...list]) {
+        if (b === inflight) continue;
+        b.ops = b.ops.filter((op) => !dead.has(rowKey(op.table, op.row.id)));
+        if (b.ops.length === 0) {
+          list.splice(list.indexOf(b), 1);
+          b.attempted();
+        }
+      }
+    }
+    // A note that was parked had its text given to the keeper as a draft. It was deleted, so the draft goes too.
+    for (const k of dead) {
+      const id = k.slice('comments:'.length) as CommentId;
+      if (k.startsWith('comments:') && safeCopied.delete(id)) {
+        try {
+          d.drafts.drop(id);
+        } catch (e) {
+          report(e, 'drafts.drop');
+        }
       }
     }
     undo.prune((table, id) => dead.has(rowKey(table, id)));
@@ -555,30 +624,158 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
 
   function dirtyKeys(): Set<string> {
     const out = new Set<string>();
-    for (const b of inflight ? [inflight, ...queue.filter((x) => x !== inflight)] : queue) {
+    for (const b of [...(inflight ? [inflight] : []), ...queue, ...parked]) {
       for (const op of b.ops) out.add(rowKey(op.table, op.row.id));
     }
     return out;
   }
 
+  /** True when a change rests on a row that is stuck in a parked batch: it would only fail the same way. */
+  function dependsOnParked(ops: AnnotationOp[]): boolean {
+    if (parked.length === 0) return false;
+    const keys = new Set<string>();
+    const newThreads = new Set<string>();
+    for (const b of parked) {
+      for (const op of b.ops) {
+        keys.add(rowKey(op.table, op.row.id));
+        if (op.table === 'threads' && op.op !== 'soft-delete' && !persisted.has(rowKey('threads', op.row.id))) newThreads.add(op.row.id);
+      }
+    }
+    return ops.some((op) => keys.has(rowKey(op.table, op.row.id)) || (op.table === 'comments' && newThreads.has((op.row as CommentRow).threadId)));
+  }
+
   function enqueue(ops: AnnotationOp[]): Batch | null {
     if (ops.length === 0 || !d.store) return null; // with no store there is nothing to wait for, and nothing would ever drain
     const b = newBatch(ops);
-    queue.push(b);
+    if (dependsOnParked(ops)) {
+      parked.push(b);
+      b.attempted();
+      emit(); // the card for this change shows "couldn't save" too
+    } else queue.push(b);
+    if (parked.length > 0) compactQueue();
     void pump();
     return b;
   }
 
-  function scheduleRetry(): void {
+  function scheduleRetry(attempts: number): void {
     if (retryTimer || disposed) return;
-    const ms = WRITE_RETRY_MS[Math.min(failures, WRITE_RETRY_MS.length) - 1] ?? 8000;
+    const ms = retryMs[Math.min(attempts, retryMs.length) - 1] ?? 8000;
     retryTimer = setTimeout(() => {
       retryTimer = null;
       void pump();
     }, ms);
   }
 
-  /** Writes queued batches, oldest first, one at a time. Stops at the first failure and tries again later. */
+  /**
+   * Gives up on a batch that failed every retry. It must not hold up the writes behind it: it waits in `parked`,
+   * the card says it could not be saved, and the text of its new comments is handed to the draft keeper, which saves
+   * it by a different road (saveDraft), so a reload brings it back in its card. Later changes that rest on its rows
+   * wait with it, since they could only fail the same way.
+   */
+  async function parkBatch(b: Batch): Promise<void> {
+    const at = queue.indexOf(b);
+    if (at >= 0) queue.splice(at, 1);
+    parked.push(b);
+    failures = 0;
+    const waiting: string[] = [];
+    const newThreads = new Set<string>();
+    const note = (x: Batch) => {
+      for (const op of x.ops) {
+        waiting.push(rowKey(op.table, op.row.id));
+        if (op.table === 'threads' && op.op !== 'soft-delete' && !persisted.has(rowKey('threads', op.row.id))) newThreads.add(op.row.id);
+      }
+    };
+    for (const x of parked) note(x);
+    for (const later of [...queue]) {
+      if (later === inflight) continue;
+      const rests = later.ops.some((op) => waiting.includes(rowKey(op.table, op.row.id)) || (op.table === 'comments' && newThreads.has((op.row as CommentRow).threadId)));
+      if (!rests) continue;
+      queue.splice(queue.indexOf(later), 1);
+      parked.push(later);
+      later.attempted();
+      note(later);
+    }
+    emit();
+    await keepTextSafe(parked.filter((x) => !x.safe));
+  }
+
+  /** Hands the text of comments that exist only in a parked batch to the draft keeper, as drafts of this tab. */
+  async function keepTextSafe(batches: Batch[]): Promise<void> {
+    if (mode !== 'stored') return;
+    let any = false;
+    for (const b of batches) {
+      b.safe = true;
+      for (const op of b.ops) {
+        // An edit of a note the store already has is left alone: its old text is stored, and a draft with the same id
+        // would hide it.
+        if (op.table !== 'comments' || op.op !== 'upsert' || persisted.has(rowKey('comments', op.row.id))) continue;
+        const c = comments.get(op.row.id as CommentId);
+        if (!c || c.author !== 'me') continue;
+        const thread = threads.get(c.threadId);
+        const threadIsNew = !!thread && !persisted.has(rowKey('threads', thread.id));
+        const threadCopy: ThreadRow | undefined = thread && threadIsNew ? { ...thread, draftOfTab: tabId } : undefined;
+        const isRoot = !!threadCopy && liveCommentsOf(c.threadId)[0]?.id === c.id;
+        const meta = isRoot && threadCopy ? stashMeta(threadCopy, parkedHighlightFor(threadCopy)) : c.meta;
+        try {
+          d.drafts.change({ ...c, draftOfTab: tabId, meta }, threadCopy);
+          safeCopied.add(c.id);
+          any = true;
+        } catch (e) {
+          report(e, 'drafts.change');
+        }
+      }
+    }
+    if (any) await within(d.drafts.flush(), FLUSH_WAIT_MS);
+  }
+
+  /** The colour of the highlight that was going to be written with this thread, if it is in a parked batch. */
+  function parkedHighlightFor(thread: ThreadRow): MarkColor | null {
+    if (thread.anchor.kind !== 'text') return null;
+    const want = anchorKey(thread.anchor);
+    for (const b of parked) {
+      for (const op of b.ops) {
+        if (op.table !== 'marks' || op.op !== 'upsert' || persisted.has(rowKey('marks', op.row.id))) continue;
+        const m = op.row as MarkRow;
+        if (m.style === 'highlight' && m.color !== null && anchorKey(m.anchor) === want) return m.color;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * A write has just gone through, so the store is alive. A parked batch gets one more try: it may only have been
+   * parked by an outage. If it fails again it stays parked until the owner presses Retry.
+   */
+  function probeParked(): void {
+    const again = parked.filter((x) => !x.probed);
+    if (again.length === 0) return;
+    for (const x of again) {
+      x.probed = true;
+      x.attempts = retryMs.length; // one more failure and it is parked again
+      renewAttempt(x);
+      parked.splice(parked.indexOf(x), 1);
+    }
+    queue.unshift(...again);
+    emit();
+  }
+
+  /** The owner's Retry: every parked batch goes to the store once more, oldest first. */
+  function retryParkedImpl(): Committed | null {
+    if (parked.length === 0) return null;
+    const all = parked.splice(0);
+    for (const x of all) {
+      x.attempts = retryMs.length;
+      x.probed = true;
+      x.safe = false;
+      renewAttempt(x);
+    }
+    queue.unshift(...all);
+    emit();
+    void pump();
+    return { batch: all[all.length - 1] ?? null, started: false };
+  }
+
+  /** Writes queued batches, oldest first, one at a time. A batch that keeps failing is parked, not allowed to block. */
   async function pump(): Promise<void> {
     if (pumping) return;
     syncSaveState();
@@ -592,25 +789,37 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
         writeEpoch++;
         let finish!: () => void;
         inflightDone = new Promise<void>((r) => (finish = r));
+        let outcome: 'ok' | 'retry' | 'park' | 'gone' = 'ok';
         try {
           await d.store!.writeAnnotations(ops, { tabId });
           // A batch can be emptied and removed while it was in flight (the document was forgotten); only pop our own.
           if (queue[0] === b) queue.shift();
-          for (const op of ops) persisted.add(rowKey(op.table, op.row.id));
+          for (const op of ops) {
+            persisted.add(rowKey(op.table, op.row.id));
+            if (op.table === 'comments') safeCopied.delete(op.row.id as CommentId); // it is live now, no longer a draft
+          }
           failures = 0;
+          b.attempts = 0;
         } catch (e) {
-          // The batch was emptied and dropped while it was in flight (the document was forgotten): nothing to retry.
-          if (!queue.includes(b)) continue;
-          failures++;
-          report(e, 'writeAnnotations');
-          scheduleRetry();
-          return;
+          if (!queue.includes(b)) outcome = 'gone'; // emptied and dropped while in flight (the document was forgotten)
+          else {
+            failures++;
+            b.attempts++;
+            report(e, 'writeAnnotations');
+            outcome = b.attempts > retryMs.length ? 'park' : 'retry';
+          }
         } finally {
           inflight = null;
           inflightDone = null;
           finish();
           b.attempted();
         }
+        if (outcome === 'retry') {
+          scheduleRetry(b.attempts);
+          return;
+        }
+        if (outcome === 'park') await parkBatch(b);
+        else if (outcome === 'ok') probeParked();
       }
     } finally {
       pumping = false;
@@ -851,7 +1060,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
   function pushDraft(c: CommentRow): void {
     const stash = rootDrafts.get(c.id);
     const thread = stash ? threads.get(c.threadId) : undefined;
-    const meta = stash && thread ? ({ [STASH_KEY]: { thread, highlight: stash.highlight } } as unknown as CommentRow['meta']) : c.meta;
+    const meta = stash && thread ? stashMeta(thread, stash.highlight) : c.meta;
     // While the PDF is not saved, the text stays in this session only. It goes to the keeper the moment the PDF is saved.
     if (mode !== 'stored') return;
     keeperHas.add(c.id);
@@ -1506,6 +1715,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
 
     undo: () => mutate('undo', () => undoRedo('undo')),
     redo: () => mutate('redo', () => undoRedo('redo')),
+    retryParked: () => mutate('retryParked', () => retryParkedImpl()),
     adoptDrafts: () => adoptDraftsImpl(),
 
     dispose() {
