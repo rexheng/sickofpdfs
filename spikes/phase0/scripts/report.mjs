@@ -1,6 +1,8 @@
 // Rebuilds the results table in docs/spikes/phase0-report.md (between the results markers) from
 // results/P0-<n>.json, the files tests/record.ts appends to. One row per check. Within a check,
 // the latest entry of each test is used, so re-running a test replaces its earlier measurement.
+// An entry's `deferred` names a part of the check not run by decision: the result gains ", PART DEFERRED"
+// and the note says what and why.
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -47,10 +49,11 @@ async function row([id, name]) {
   const entries = latestPerTest(JSON.parse(await readFile(file, 'utf8')));
   if (entries.length === 0) return `| ${id} | ${name} | NOT RUN | | |`;
   const statuses = entries.map((e) => statusOf(e.pass));
-  const status = overall(statuses);
+  const deferred = [...new Set(entries.map((e) => e.deferred).filter(Boolean))];
+  const status = `${overall(statuses)}${deferred.length ? ', PART DEFERRED' : ''}`;
   const labelled = new Set(statuses).size > 1;
   const measured = entries.map((e, i) => `${labelled ? `${statuses[i]}: ` : ''}${e.measured}`).join('; ');
-  const notes = [...new Set(entries.map((e) => e.note).filter(Boolean))].join('; ');
+  const notes = [...deferred.map((d) => `DEFERRED: ${d}`), ...new Set(entries.map((e) => e.note).filter(Boolean))].join('; ');
   return `| ${id} | ${name} | ${status} | ${cell(measured)} | ${cell(notes)} |`;
 }
 

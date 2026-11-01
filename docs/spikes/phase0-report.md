@@ -21,7 +21,7 @@ Runs on headless Linux are smoke runs only. The speed budgets are measured on th
 
 ## Results
 
-Result values: PASS, FAIL, BLOCKED, NOT RUN, and MIXED. MIXED means some variants of the check passed and some failed; each part of "Measured" then names its own result.
+Result values: PASS, FAIL, BLOCKED, NOT RUN, and MIXED. MIXED means some variants of the check passed and some failed; each part of "Measured" then names its own result. ", PART DEFERRED" after a result means a part of the check was not run, by decision; the Notes cell says which part and why.
 
 <!-- results:start -->
 | Check | Name | Result | Measured | Notes |
@@ -31,7 +31,7 @@ Result values: PASS, FAIL, BLOCKED, NOT RUN, and MIXED. MIXED means some variant
 | P0-3 | 600-page scan scrolls with no blank page over 150 ms | PASS | workers=1 steady: blank p50 0 / p95 0 / max 0 ms over 34 pages; workers=1 jump: blank p50 52.9 / p95 56.3 / max 56.3 ms over 3 pages; workers=2 steady: blank p50 0 / p95 0 / max 0 ms over 32 pages; workers=2 jump: blank p50 49.3 / p95 49.6 / max 49.6 ms over 3 pages |  |
 | P0-4 | Text-layer selection suite | PASS | two-column@100% drag 20/20; two-column@100% edge 0.509 px, overlap 1; two-column@200% drag 20/20; two-column@200% edge 0.506 px, overlap 1; rotated-table@100% drag 20/20; rotated-table@100% edge 0.472 px, overlap 0.999; rotated-table@200% drag 20/20; rotated-table@200% edge 0.468 px, overlap 1; ligatures@100% drag 20/20; ligatures@100% edge 0.485 px, overlap 1; ligatures@200% drag 20/20; ligatures@200% edge 0.506 px, overlap 1; maths@100% drag 20/20; maths@100% edge 0.477 px, overlap 0.999; maths@200% drag 20/20; maths@200% edge 0.505 px, overlap 0.999; rtl@100% drag 20/20; rtl@100% edge 0.507 px, overlap 1; rtl@200% drag 20/20; rtl@200% edge 0.512 px, overlap 1; rotated-page@100% drag 20/20; rotated-page@100% edge 0.509 px, overlap 1; rotated-page@200% drag 20/20; rotated-page@200% edge 0.506 px, overlap 1; resnet-p1@100% drag 20/20; resnet-p1@100% edge 0.516 px, overlap 0.973; resnet-p1@200% drag 20/20; resnet-p1@200% edge 0.516 px, overlap 0.998; attention-p1@100% drag 20/20; attention-p1@100% edge 0.521 px, overlap 0.973; attention-p1@200% drag 20/20; attention-p1@200% edge 0.509 px, overlap 0.999; attention-p2@100% drag 20/20; attention-p2@100% edge 0.521 px, overlap 0.998; attention-p2@200% drag 20/20; attention-p2@200% edge 0.521 px, overlap 0.999; two-column select-all = PDFium text (2163 chars); = truth; rotated-table select-all = PDFium text (205 chars); = truth but for PDFium line breaks (R26 engine limit); ligatures select-all = PDFium text (57 chars); = truth; maths select-all = PDFium text (202 chars); = truth but for PDFium line breaks (R26 engine limit); rtl select-all = PDFium text (245 chars); rotated-page select-all = PDFium text (2163 chars); = truth; resnet-p1 select-all = PDFium text (4258 chars); attention-p1 select-all = PDFium text (2855 chars); attention-p2 select-all = PDFium text (4249 chars); column drag: 1 range, 37 chars, no column-2 lower text; rtl: 77/85 spans rtl; drags both ways [[0,249]] and [[0,249]] | vs truth first difference at 40: " station Statio n D e pth T e " vs " station Station Depth Tempera"; vs truth first difference at 37: "as an area of x 2 square units" vs "as an area of x2 square units." |
 | P0-5 | Bold as a glyph-outline overlay | PASS | 17/17 PDFium functions that getGlyphOutlines calls are in the wasm and the wrapper; @100%: 20 words (116 glyphs) p95 22.5 ms (first 22.5, p50 12.4), ink coverage 0.966, spill 0.003; glyph argument: unicode 116; whole page 2458 glyphs in 174.2 ms, coverage 0.956, spill 0.076, unicode 2453, ligature 4, hyphen 1, 0 undrawn; @200%: 20 words (116 glyphs) p95 18.1 ms (first 18.1, p50 9.9), ink coverage 0.985, spill 0.002; glyph argument: unicode 116; whole page 2458 glyphs in 180.9 ms, coverage 0.993, spill 0.067, unicode 2453, ligature 4, hyphen 1, 0 undrawn | @100% screenshots: spikes/phase0/results/bold-zoom1.png, spikes/phase0/results/bold-zoom1-detail.png, spikes/phase0/results/bold-zoom1-page.png; @200% screenshots: spikes/phase0/results/bold-zoom2.png, spikes/phase0/results/bold-zoom2-detail.png, spikes/phase0/results/bold-zoom2-page.png |
-| P0-6 | 300 MB tab↔offscreen moves; the 1 GB open limit | NOT RUN | | |
+| P0-6 | 300 MB tab↔offscreen moves; the 1 GB open limit | PASS, PART DEFERRED | 6a port: 300 MiB to offscreen 2 ms, back 0.4 ms, round trip with the offscreen hash 1293.1 ms; detached after each send true; SHA-256 matches both ways; 6b OPFS: 300 MiB in 2924.9 ms (tab write 1105.7 ms, offscreen stream and hash 1818.5 ms); SHA-256 matches; 6c runtime.sendMessage: the 300 MiB ArrayBuffer arrived as object {} (receivedBytes null, error none) in 1.2 ms; small control message answered | DEFERRED: 1 GiB open limit not measured (stubbed by user decision); MAX_OPEN_BYTES stays 1 GiB, and larger files go to Chrome's viewer per the spec |
 | P0-7 | Form-field detection | NOT RUN | | |
 | P0-8 | Backup-folder permission from an extension origin | NOT RUN | | |
 | P0-9 | TypeScript 7 with typescript-eslint | NOT RUN | | |
@@ -254,6 +254,50 @@ All numbers so far come from Chrome for Testing 153.0.8010.12 on Linux, launched
   - **Not covered:** pages with /Rotate (the check refuses them; outlines are in unrotated space), Type3 fonts (`FPDFFont_GetGlyphPath` needs a font program), vertical CJK text, and DPR 1.5.
 - **Test title.** "the nine glyph-path functions" is verbatim from the plan. The probe checks all 17 functions `getGlyphOutlines` calls, in both the wrapper and the wasm.
 
+### P0-6 300 MB between a tab and the offscreen document
+
+- **6a–6c PASS. 6d and 6e (the 1 GiB open limit) were not run: the user stubbed them.** There are no 1 / 1.5 / 1.9 GiB fixtures and no `big-open` check. `MAX_OPEN_BYTES` stays 1 GiB, and larger files go to Chrome's viewer, as the spec says. The Task 10 engine rule asks for a P0-6d PASS, so the gate needs a ruling on that rule.
+- **Results**, all 300 MiB of `crypto.getRandomValues` bytes, with SHA-256 compared on both sides:
+
+| Transport | Recorded run | Three earlier runs | Bar |
+| --- | --- | --- | --- |
+| 6a SW-brokered MessagePort, ArrayBuffer transferred | to the offscreen document 2 ms, back 0.4 ms | 1.8–6.2 ms, 0.2–0.4 ms | < 1000 ms each way |
+| 6b OPFS: `createWritable` in 16 MiB slices, then `getFile().stream()` | 2925 ms: write 1106 ms, stream and hash 1819 ms | 2670–3689 ms | < 5000 ms |
+| 6c `chrome.runtime.sendMessage({ buffer })` | arrived as `{}`, no error, 1.2 ms | the same | must not arrive |
+
+- **`STORE_TRANSPORT = sw-brokered-port` works.** The steps, as built in `entrypoints/background.ts`:
+  1. The tab calls `(await navigator.serviceWorker.ready).active.postMessage({ type: 'connect-offscreen' }, [port2])`. This works from an extension page.
+  2. The service worker checks `runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] })` and, if there is none, calls `offscreen.createDocument` with reason `WORKERS`. Concurrent callers share one creation.
+  3. `clients.matchAll({ includeUncontrolled: true })` lists the offscreen document, and `client.postMessage({ type: 'port' }, [port])` hands it the port.
+  4. The offscreen document gets the port in `navigator.serviceWorker.onmessage`.
+
+  If any step fails, the service worker answers `{ type: 'error' }` on the port, so the tab never waits forever. Task 28 should keep that.
+- **The port move is a zero-copy transfer.** After each `postMessage` the sender's ArrayBuffer is detached. 300 MiB arrives in about 2 ms and returns in 0.4 ms, which is possible only without a copy. The viewer tab and the offscreen document are both pages of the extension, in one renderer process. That is inferred from the timing, not observed. If Chrome ever puts them in separate processes, the bytes are copied; this spike does not measure that case.
+- **The 1.2–1.4 s "round trip" in 6a is almost all hashing.** It includes the offscreen document's SHA-256 of 300 MiB with hash-wasm, which runs at about 220–250 MB/s here (`sha256sum`, with SHA-NI, does 1.2 GB/s on the same machine). That hash only verifies the spike. Phase 1 hashes the PDF while it streams into the viewer, so the store never needs to hash it again.
+- **OPFS needs large writes.** A diagnostic (temporary, not committed) wrote 300 MiB through `createWritable` in a fresh profile, timed from `createWritable` to `close`:
+
+| Size of each `write()` | Write time |
+| --- | --- |
+| the whole 300 MiB buffer | 1.0–4.0 s (2.3–4.0 s the first time in a profile) |
+| 16 MiB | 1.05–1.44 s |
+| 4 MiB | 1.15–1.23 s |
+| 1 MiB | 1.35–1.61 s |
+| 64 KiB (a fetch stream's chunk size) | 6.0–6.3 s |
+
+  - Reading the file back with `getFile().stream()` took 0.33–1.65 s.
+  - The first 6b run wrote the whole buffer in one `write()` and failed the bar: 5992 ms (write 3954 ms, stream and hash 2037 ms). The check now writes 16 MiB slices.
+  - **For Phase 1** ("PDF bytes go straight to OPFS"): do not `pipeTo` a fetch body straight into the writable. Gather its chunks into writes of at least 4 MiB.
+  - For scale, `dd` with `fsync` writes 300 MiB to this disk in 1.8 s.
+- **`chrome.runtime.sendMessage` cannot carry bytes.** The 300 MiB ArrayBuffer arrived as `{}`, with no error and no bytes, in about 1 ms. A small control message was answered first, so the channel itself worked.
+  - The 64 MB message limit was never reached, because the buffer serialises to two characters. This spike does not measure that limit.
+  - `chrome.runtime.connect` ports are documented to serialise the same way (not tested here). So with `STORE_TRANSPORT = runtime-port`, PDF bytes would have to go through OPFS.
+- **How it is measured.** All times come from the tab's `performance.now()`.
+  - `toOffscreenMs` runs from the tab's `postMessage` to the offscreen document's `got` reply. `backMs` runs from the tab's `send-back` request to the buffer's arrival. Each includes one small control message, so both are upper bounds.
+  - 6b's time runs from `createWritable` to the offscreen document's reply after it has read and hashed the whole file. The hash is included, so the number is conservative.
+- **Fixture server** (`tests/server.mjs`, checked by `tests/server.spec.ts`).
+  - Files are streamed with `pipeline()`. A client that leaves mid-file now closes the file; before, its read stream stayed open. A read error no longer goes unhandled.
+  - A single byte range gets 206 with `Content-Range`.
+
 ### P0-10 Page objects find figures within 20 ms a page
 
 - **PASS.** Objects plus detection on 50 real paper pages (the first 10 pages of ResNet, Attention, XGBoost, AlphaFold and Deep hedging), timed inside the engine worker:
@@ -330,6 +374,7 @@ All numbers so far come from Chrome for Testing 153.0.8010.12 on Linux, launched
 ## Handed to the Windows checklist
 
 - P0-5: bold timing and look at 150% scaling on Windows. The overlay and its rasterisation grow with DPR, and Windows text rendering may differ from PDFium's bitmaps.
+- P0-6b: the OPFS move on Windows, where real-time antivirus scanning of the profile folder may slow writes. Headless Linux uses 2.7–3.7 s of the 5 s bar.
 - P0-10: detection time per page on the reference laptop (the perf-gate job), with the page and its text page loaded and with the text page still to load. Headless Linux gives p95 5–7 ms and 10–14 ms.
 
 ## Decision

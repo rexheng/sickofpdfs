@@ -10,6 +10,8 @@ export interface CheckResult {
   pass: boolean | 'blocked';
   measured: string;
   note?: string;
+  /** A part of the check that was not run, by decision: what and why (the report marks the check PART DEFERRED). */
+  deferred?: string;
 }
 
 /** The last result each test recorded in this worker, by test id (see recordedBy). */
