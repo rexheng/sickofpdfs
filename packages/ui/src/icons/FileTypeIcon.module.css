@@ -1,3 +1,7 @@
+/*
+ * The tile carries its own colour from the token, so it is red on any page and does not take the colour of the text
+ * around it. (The glyph body says fill="currentColor"; the rule on the path wins over that attribute.)
+ */
 .tile {
   display: block;
   flex: none;
@@ -5,6 +9,10 @@
 
 .pdf {
   color: var(--filetype-pdf);
+}
+
+.pdf path {
+  fill: var(--filetype-pdf);
 }
 
 /* Shows through the letters that are cut out of the tile, so they are white on the red, on any background. */

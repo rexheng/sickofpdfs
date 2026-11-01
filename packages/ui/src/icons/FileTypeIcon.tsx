@@ -1,3 +1,4 @@
+import '../tokens/tokens.css'; // the colour tokens this icon uses, so it never depends on the page importing them
 import styles from './FileTypeIcon.module.css';
 import { FILE_PDF_BOX } from './file-pdf-box';
 

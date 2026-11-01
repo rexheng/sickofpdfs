@@ -1,3 +1,4 @@
+import '../tokens/tokens.css'; // the size and font tokens this icon uses, so it never depends on the page importing them
 import styles from './Icon.module.css';
 import type { IconName } from './names';
 
