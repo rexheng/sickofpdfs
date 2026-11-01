@@ -199,7 +199,7 @@ function markFromRow(r: Row): MarkRow {
   };
 }
 
-function threadFromRow(r: Row): ThreadRow {
+export function threadFromRow(r: Row): ThreadRow {
   return {
     id: text(r, 'id') as ThreadId,
     documentId: text(r, 'document_id') as DocumentId,
@@ -216,7 +216,7 @@ function threadFromRow(r: Row): ThreadRow {
   };
 }
 
-function commentFromRow(r: Row): CommentRow {
+export function commentFromRow(r: Row): CommentRow {
   return {
     id: text(r, 'id') as CommentId,
     threadId: text(r, 'thread_id') as ThreadId,

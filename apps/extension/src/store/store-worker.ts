@@ -3,12 +3,14 @@
 //
 // It never imports the secrets store (ruling R14): the database, backups and sync must never be able to read a secret.
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
-import { Hlc } from '@sop/core';
+import { type DocumentId, Hlc } from '@sop/core';
+import { type BlobStore, openBlobStore } from './blob-store';
 import { createChangePublisher } from './change-bus';
 import { ensureDeviceId } from './device-id';
 import { migrate } from './migrate';
 import { createStoreServer } from './protocol';
 import { createStoreApi, type StoreApi } from './store-api';
+import { startDailyPurge } from './trash-purge';
 import { DB_DIRECTORY, DB_FILE, isMessageOf, STORE_OWNER_LOCK, STORE_PORT, type StorePortMessage } from './transport';
 
 /** How long a new worker waits for the previous owner to go (say, while an old offscreen document is still closing). */
@@ -68,6 +70,17 @@ async function openPool(sqlite3: Sqlite3) {
   }
 }
 
+let blobs: Promise<BlobStore> | null = null;
+
+/** Removes a document's saved PDF. The blob store is opened the first time a purge needs it. */
+async function deleteBlob(id: DocumentId): Promise<void> {
+  blobs ??= openBlobStore().catch((e: unknown) => {
+    blobs = null; // tried again at the next purge
+    throw e;
+  });
+  await (await blobs).delete(id);
+}
+
 async function openStore(): Promise<StoreApi> {
   await becomeOwner();
   const sqlite3 = await sqlite3InitModule();
@@ -81,7 +94,7 @@ async function openStore(): Promise<StoreApi> {
   const newest = db.selectValue(newestStampSql());
   if (typeof newest === 'string') hlc.receive(newest);
   const changes = createChangePublisher();
-  return createStoreApi(db, { now: () => Date.now(), hlc, publish: (c) => changes.publish(c) });
+  return createStoreApi(db, { now: () => Date.now(), hlc, publish: (c) => changes.publish(c), deleteBlob });
 }
 
 let opening: Promise<StoreApi> | null = null;
@@ -98,6 +111,9 @@ function getApi(): Promise<StoreApi> {
 }
 
 const server = createStoreServer(getApi);
+
+// Trash is emptied once the store has started and then once a day. It goes through the server's own queue, like any request.
+startDailyPurge(server);
 
 self.onmessage = (e: MessageEvent) => {
   const port = e.ports[0];

@@ -30,11 +30,25 @@ import {
 import type { Database } from '@sqlite.org/sqlite-wasm';
 import { type AnnotationsApi, createAnnotationsApi } from './annotations';
 import type { StoreChange } from './change-bus';
+import { ftsQuery } from './fts-query';
+import { createLibraryApi, type LibraryApi } from './library-api';
 import { createPageFiguresApi, type PageFiguresApi } from './page-figures';
 import { FTS_TABLES } from './schema';
 import { isReadOnly, type SqlValue, userVersion } from './schema-v2';
 
 export { migrate } from './migrate';
+export { ftsQuery } from './fts-query';
+export type {
+  LibraryFilter,
+  LibraryItem,
+  LibraryQuery,
+  NoteItem,
+  ReadingReport,
+  ReadingState,
+  SearchHit,
+  SearchKind,
+  SearchQuery,
+} from './library-api';
 
 /** The oo1 database: an `OpfsSAHPoolDb` in the store worker, `:memory:` in Node tests. */
 export type Sqlite3Database = Database;
@@ -52,6 +66,14 @@ export interface SaveDocumentInput {
   saveReasons: string[];
   location: { kind: LocationKind; raw: string; viaPage: string | null } | null;
   openedAt: number;
+  /** Phase 3. Filled from the PDF's first page (or the DOI and arXiv lookups). Saving again fills only what is empty. */
+  year?: number | null;
+  doi?: string | null;
+  arxivId?: string | null;
+  /** A guess from page count, page shape and headings. Default 'other'. */
+  kind?: DocumentRow['kind'];
+  /** False keeps this document's page text out of search (a hard-blocked PDF saved by choice). Default true. */
+  indexText?: boolean;
 }
 
 export interface TouchLocationInput {
@@ -62,7 +84,7 @@ export interface TouchLocationInput {
   at: number;
 }
 
-export interface StoreApi extends AnnotationsApi, PageFiguresApi {
+export interface StoreApi extends AnnotationsApi, PageFiguresApi, LibraryApi {
   schemaVersion(): Promise<number>;
   stats(): Promise<StoreStats>;
   /** The library document these bytes are: `documents.id`, or the document an alias (a stamped copy) points to. */
@@ -88,6 +110,8 @@ export interface StoreDeps {
   now(): number;
   hlc: Hlc;
   publish(c: StoreChange): void;
+  /** Removes the saved PDF of a document. Only the store worker has file storage, so Node tests leave this out. */
+  deleteBlob?(id: DocumentId): Promise<void>;
 }
 
 /** The method names of this file's part of the API (the annotation and figure parts list their own). */
@@ -140,10 +164,10 @@ function attempt<T>(f: () => T): Promise<T> {
 const HEX64 = /^[0-9a-f]{64}$/;
 /** Links and file paths longer than this are refused rather than stored. */
 const MAX_LINK = 16_384;
+/** A DOI or arXiv id longer than this is refused. */
+const MAX_ID_TEXT = 256;
 /** The most hits one search returns. */
 const MAX_HITS = 500;
-/** The most words of a search query that are used. */
-const MAX_QUERY_WORDS = 32;
 
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v);
 const isTime = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0;
@@ -172,6 +196,12 @@ function checkSaveInput(input: SaveDocumentInput): void {
   }
   if (!isStringList(input.saveReasons)) fail('bad-input', 'the save reasons are not a list');
   if (!isTime(input.openedAt)) fail('bad-input', 'the open time is not a time');
+  if (input.year != null && (!isInt(input.year) || input.year < 0 || input.year > 9999)) fail('bad-input', 'the year is not a year');
+  for (const [name, value] of [['doi', input.doi], ['arXiv id', input.arxivId]] as const) {
+    if (value != null && (typeof value !== 'string' || value.length === 0 || value.length > MAX_ID_TEXT)) fail('bad-input', `the ${name} is not text`);
+  }
+  if (input.kind !== undefined && !KINDS.has(input.kind)) fail('bad-input', 'the kind is paper, book, slides or other');
+  if (input.indexText !== undefined && typeof input.indexText !== 'boolean') fail('bad-input', 'indexText is not true or false');
   if (input.location !== null) {
     if (typeof input.location !== 'object') fail('bad-input', 'the location is not a location');
     checkLocation(input.location.kind, input.location.raw, input.location.viaPage);
@@ -270,19 +300,6 @@ async function prepareLocation(kind: LocationKind, raw: string, viaPage: string 
     raw: kind === 'url' ? cleanLink(raw) : raw,
     viaPage: viaPage === null ? null : canonicalLink(viaPage),
   };
-}
-
-/**
- * A search box's words as an FTS5 query: each word is a quoted phrase (so no word is read as FTS5 syntax), and all of
- * them must match. Words with no letter or digit are dropped. Null when nothing is left.
- */
-export function ftsQuery(query: string): string | null {
-  if (typeof query !== 'string') return null;
-  const words = query
-    .split(/\s+/u)
-    .filter((w) => /[\p{L}\p{N}]/u.test(w))
-    .slice(0, MAX_QUERY_WORDS);
-  return words.length === 0 ? null : words.map((w) => `"${w.replaceAll('"', '""')}"`).join(' ');
 }
 
 // ---- the store -----------------------------------------------------------------------------------------------------------
@@ -421,18 +438,23 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
           const cur = one('SELECT * FROM documents WHERE id = ?', [input.id]);
           if (!cur) {
             run(
-              `INSERT INTO documents (id, page_count, byte_size, title, authors, pdf_id, has_text, encrypted, blob_stored, save_reasons,
-                 created_at, updated_at, rev, hlc)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+              `INSERT INTO documents (id, page_count, byte_size, title, authors, year, doi, arxiv_id, pdf_id, kind, has_text, encrypted,
+                 index_text, blob_stored, save_reasons, created_at, updated_at, rev, hlc)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
               [
                 input.id,
                 input.pageCount,
                 input.byteSize,
                 input.title,
                 JSON.stringify(input.authors),
+                input.year ?? null,
+                input.doi ?? null,
+                input.arxivId ?? null,
                 input.pdfId,
+                input.kind ?? 'other',
                 input.hasText ? 1 : 0,
                 input.encrypted ? 1 : 0,
+                input.indexText === false ? 0 : 1,
                 input.blobStored ? 1 : 0,
                 JSON.stringify([...new Set(input.saveReasons)]),
                 now,
@@ -464,6 +486,22 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
             if (cur.pdf_id == null && input.pdfId !== null) {
               sets.push('pdf_id = ?');
               binds.push(input.pdfId);
+            }
+            if (cur.year == null && input.year != null) {
+              sets.push('year = ?');
+              binds.push(input.year);
+            }
+            if (cur.doi == null && input.doi != null) {
+              sets.push('doi = ?');
+              binds.push(input.doi);
+            }
+            if (cur.arxiv_id == null && input.arxivId != null) {
+              sets.push('arxiv_id = ?');
+              binds.push(input.arxivId);
+            }
+            if (cur.kind === 'other' && input.kind !== undefined && input.kind !== 'other') {
+              sets.push('kind = ?');
+              binds.push(input.kind);
             }
             if (sets.length > 0) {
               run(`UPDATE documents SET ${sets.join(', ')}, updated_at = ?, hlc = ? WHERE id = ?`, [...binds, now, deps.hlc.tick(), input.id]);
@@ -598,7 +636,7 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
 
     searchPages: (query, limit) =>
       attempt(() => {
-        const match = ftsQuery(query);
+        const match = ftsQuery(query, { prefix: false });
         const n = isInt(limit) ? Math.min(limit, MAX_HITS) : 0;
         if (match === null || n <= 0) return [];
         return db
@@ -622,5 +660,10 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
       }),
   };
 
-  return { ...base, ...createAnnotationsApi(db, deps), ...createPageFiguresApi(db, deps) };
+  return {
+    ...base,
+    ...createAnnotationsApi(db, deps),
+    ...createPageFiguresApi(db, deps),
+    ...createLibraryApi(db, deps, { document: documentFromRow, location: locationFromRow }),
+  };
 }
