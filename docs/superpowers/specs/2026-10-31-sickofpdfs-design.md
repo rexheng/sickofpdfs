@@ -169,7 +169,7 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 | Feature | How it works |
 | --- | --- |
 | Print | Ctrl+P renders pages through PDFium into a print-only copy, with or without your marks |
-| Zoom | Fit width, fit page, 25 to 400%; Ctrl+= / Ctrl+− / Ctrl+0, Ctrl+wheel and pinch zoom the page, not the browser |
+| Zoom | Fit width, fit page, 25 to 400%; Ctrl+= / Ctrl+− / Ctrl+0, Ctrl+wheel and pinch zoom the page, not the browser. A PDF opens at fit width but no larger than 100%, as Chrome's and Drive's viewers do; a narrow window goes below 100% to fit (ruling R61) |
 | Find | Ctrl+F with match count, next and previous |
 | Navigate | Thumbnails, outline, a Figures tab listing every figure and table, go to page, links inside the PDF (contents, citations) and out to the web |
 | Rotate and views | Rotate 90°, two-page view, presentation mode for slides, dark (inverted) pages |
@@ -531,7 +531,7 @@ The riskiest unknowns are tested first, in Phase 0, before anything is built on 
 | Removing the extension deletes local data | Unbacked-up notes lost | Nightly backup folder (Release 1), cloud plus 30-day snapshots (Release 2), badges when either stops |
 | A sync bug copies a loss to the cloud | Notes lost everywhere | Independent local backup folder; build agents use staging only |
 | The double-click chain on Windows is untested | Local PDFs open in Chrome's viewer | Your checklist after Phase 1; the library's "Open file" works regardless |
-| Some PDFs cannot be re-fetched (form posts, expiring links) | Viewer shows an error | Our error page offers "Import this PDF" and "Open in Chrome's viewer" |
+| Some PDFs cannot be re-fetched (form posts, expiring links) | Viewer shows an error | Our error page offers "Choose a file from your computer" (import) and "Open in Chrome's viewer" |
 | Filter mistakes on new kinds of PDF | A reading not saved, or a private PDF saved | Asymmetric thresholds, a held-out test set, one-click fixes |
 | Ctrl+Alt+M on AltGr keyboards (UK, German, Polish) | Shortcut misfires or never fires | Never fires while typing; letters follow your layout; checked on UK, US, German and Polish layouts; rebindable |
 | API key in the browser | Key misuse if the PC is compromised | Extension-private database only, spend limit, one-click delete |
