@@ -190,7 +190,72 @@ All numbers so far come from Chrome for Testing 153.0.8010.12 on Linux, launched
   - 26–2,550 spans.
 - **Controls.** Moving the layer 2 px along the text direction raises the maximum edge error from about 0.5 px to 2.37–2.51 px on every page. On the rotated page the move has to be vertical.
 
+### P0-5 Bold as a glyph-outline overlay
+
+> `embed-pdf-viewer-v2/packages/pdfium/src/vendor/functions.ts` exports these in the wasm wrapper: `FPDFFont_GetGlyphPath` (l.404), `FPDFFont_GetGlyphWidth` (405), `FPDFGlyphPath_CountGlyphSegments`/`GetGlyphPathSegment` (412–413), `FPDFPathSegment_GetPoint/GetType/GetClose` (541–543), `FPDFText_GetMatrix` (568), `FPDFText_GetTextObject` (575), `FPDFTextObj_GetFont`/`GetFontSize` (586–587).
+>
+> `PdfiumNative` (`engines/src/lib/pdfium/engine.ts`) wraps none of them. Its only page-object bounds call is at l.8291. v3 exports the same functions (`engine/runtime/src/core/pdf-functions.generated.ts`).
+>
+> So bold needs our subclass and no wasm rebuild.
+
+- **Correction from re-grepping (the conclusion stands).** `PdfiumNative` does call a few of these internally: `FPDFText_GetTextObject` (l.4996, 5130) to group runs, `FPDFTextObj_GetFont` (l.5231) for font info, and `FPDFPathSegment_GetType/GetClose/GetPoint` (l.8327–8331) for annotation path objects. It never calls `FPDFFont_GetGlyphPath` or `FPDFGlyphPath_*`, and it exposes no glyph-outline method. The other functions `getGlyphOutlines` needs are also in the wrapper: `FPDFText_GetCharOrigin` (l.562), `FPDFText_GetUnicode` (576), `FPDFText_HasUnicodeMapError` (577) and `FPDFText_IsHyphen` (579). All of them are in v3's list too, and the probe test finds all 17 in the installed 2.15.1 wasm and wrapper.
+- **PASS.** 20 words (116 glyphs) of the attention paper's abstract, page 1, timed over 10 reps from the request to the `<path>` elements in the DOM:
+
+| Zoom | p95 (= the cold first rep) | p50 | Ink coverage | Spill | Whole page (2,458 glyphs, one call), diagnostic |
+| --- | --- | --- | --- | --- | --- |
+| 100% | 22.5 ms | 12.4 ms | 0.966 | 0.003 | 174 ms; coverage 0.956, spill 0.076 |
+| 200% | 18.1 ms | 9.9 ms | 0.985 | 0.002 | 181 ms; coverage 0.993, spill 0.067 |
+
+- **Screenshots for the gate review** (in `spikes/phase0/results/`, not committed):
+  - `bold-zoom1.png` and `bold-zoom2.png`: the page with the 20 words in bold;
+  - `bold-zoom1-detail.png` and `bold-zoom2-detail.png`: those lines, close up;
+  - `bold-zoom1-page.png` and `bold-zoom2-page.png`: every glyph on the page in bold, as a diagnostic.
+- **What bold is here.** `getGlyphOutlines(docId, page, charStart, charCount)` returns `{ charIndex, d }` per char: the glyph's outline as SVG path data in points, origin top-left (unrotated page space, like `Glyph` boxes). Per char it does the following:
+  1. It reads the text object, its font and size (`FPDFText_GetTextObject`, `FPDFTextObj_GetFont`, `FPDFTextObj_GetFontSize`).
+  2. It gets the outline with `FPDFFont_GetGlyphPath(font, argument, size)`. The outline is in ems.
+  3. It scales the segments by size × the char matrix's linear part (`FPDFText_GetMatrix`, whose translation is the text object's, not the char's) and moves them to `FPDFText_GetCharOrigin`.
+  4. It flips the result to a top-left origin.
+
+  The check draws one `<path fill="currentColor" stroke="currentColor">` per char in an SVG over PDFium's render. Each path's stroke width is 0.03 × the char's effective font size, with round joins. Nothing is re-rendered by PDFium, and text render modes are not touched.
+- **Glyph argument: `GLYPH_ARG = unicode`.** `FPDFFont_GetGlyphPath` takes a Unicode value and maps it to the font's char code itself. PDFium has no call that returns a char's code. For a char without Unicode, `FPDFText_GetUnicode` returns the code itself (`FPDFText_HasUnicodeMapError`), so "retry with the char code" is the same call. On this page no char needed it. Two cases need a different argument, and `glyphArgForms` counts them:
+  - **Ligatures.** PDFium expands one "fi" glyph into two chars, "f" and "i", which share the text object and the origin. Passing "f" draws an f where the fi ligature is (width 3.98 pt against the glyph's 6.65 pt). `getGlyphOutlines` groups such chars and asks for U+FB01, which matches. There were 4 on the page. Surrogate pairs and decomposed accents are grouped the same way, but this page has none, so that path is untested.
+  - **The joined line-end hyphen.** In "English-⏎to-German", `FPDFText_GetUnicode` gives 0x2 (the hyphen PDFium joins, `FPDFText_IsHyphen`), which has no glyph. U+002D draws it: its width × the line's 1.02 horizontal scale equals the char's box.
+  - Whole page: unicode 2,453, ligature 4, hyphen 1, charcode 0, and **0 visible chars undrawn**. The passage is all unicode.
+- **How it is measured.**
+  - **Speed.** Each rep removes the bold, waits for a frame, then times `engine.call('getGlyphOutlines')` plus building and appending the paths. p95 is nearest-rank, so with 10 reps it is the slowest: the first rep, with a cold JIT and a cold PDFium glyph cache.
+  - A diagnostic run on the same build gave this breakdown:
+    - warm reps 7–13 ms;
+    - the worker round trip 7–17 ms of each rep, and the DOM 0.4–1.9 ms;
+    - the next animation frame 16–19 ms after the request.
+  - **Coverage.** Glyph ink is the pixels of PDFium's render (same scale) with luminance < 128 inside the covered chars' tight boxes (`FPDFText_GetCharBox`, taken to every pixel each box touches). Coverage is the share of those pixels where the rasterised overlay (the serialised `<svg>` drawn into a canvas) has alpha ≥ 128.
+  - **Spill.** The share of overlay pixels (alpha ≥ 128) whose centre is more than 2 px from every ink pixel on the page.
+  - **Device px are CSS px.** This run uses DPR 1.
+- **Controls** (temporary edits, not committed):
+
+| Control | Passage coverage, 100% / 200% | Passage spill, 100% / 200% |
+| --- | --- | --- |
+| As committed | 0.966 / 0.985 | 0.003 / 0.002 |
+| Overlay moved 1 pt along the line | 0.288 / 0.273 | 0.012 / **0.155** |
+| Fill only, no stroke | **0.760 / 0.848** | 0.001 / 0 |
+| Empty paths | 0 / 0 | 1 / 1 |
+
+  - The fill alone covers only 76% (100%) and 85% (200%) of PDFium's ink. PDFium's glyph pixels reach up to about half a pixel past the exact outline. A likely cause, not verified, is glyph bitmaps placed at whole pixels. The 0.03 em stroke, 0.2 px a side at 100%, closes that gap, so the 95% bar holds only with the stroke.
+  - The whole page's higher spill comes from the grey arXiv stamp in the margin: its pixels are lighter than the ink threshold, so the overlay on it counts as spill. Coverage everywhere else is high: title, CMSY superscripts, typewriter e-mails, rotated text and the non-embedded Times substitute all sit on their glyphs.
+- **Look.** In the screenshots the 20 words read as bold next to regular text, with crisp edges at both zooms and no doubled outlines. Bold on text that is already bold (author names, title) gets heavier still. On this evidence the "strong" fallback is not needed; the gate decides on the screenshots.
+- **For Phase 2:**
+  - **Colour.** `currentColor` black turns coloured text black. The red licence line and the grey arXiv stamp show it in `bold-zoom*-page.png`. Draw each glyph in its own fill colour: `FPDFText_GetFillColor` is exported.
+  - **Invisible text.** Skip text with render mode 3 or 7, for example the OCR layer of a scan. Its outlines would draw an OCR font over the scan image, and for scans bold has to be the "strong" style. Not tested here.
+  - **Speed scales with glyph count.** The spike's wrapped calls cost about 0.07 ms a glyph: the whole page took 174–181 ms, and about 600 glyphs (≈ 100 words) would reach the 50 ms budget.
+    - In Node, for the same page, direct `wasmExports` calls instead of the `ccall` wrappers took 81–101 ms against 243–255 ms.
+    - Adding a cache of each glyph's em-space outline by (font, argument) took it to 29–38 ms.
+    - The `PdfBackend` port should do both.
+  - **Stroke width unit.** With the viewBox in points, the stroke width must be a unitless number of points. A literal `pt` suffix is converted at 96/72 before the viewBox scale, so it draws a third heavier.
+  - **Not covered:** pages with /Rotate (the check refuses them; outlines are in unrotated space), Type3 fonts (`FPDFFont_GetGlyphPath` needs a font program), vertical CJK text, and DPR 1.5.
+- **Test title.** "the nine glyph-path functions" is verbatim from the plan. The probe checks all 17 functions `getGlyphOutlines` calls, in both the wrapper and the wasm.
+
 ## Handed to the Windows checklist
+
+- P0-5: bold timing and look at 150% scaling on Windows. The overlay and its rasterisation grow with DPR, and Windows text rendering may differ from PDFium's bitmaps.
 
 ## Decision
 
