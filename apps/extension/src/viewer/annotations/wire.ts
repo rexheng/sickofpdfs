@@ -17,7 +17,7 @@ import type { StoreClient } from '../../store/client';
 import type { CommandBehaviour, ViewerCommandId } from '../commands';
 import { isIncognito } from '../incognito';
 import type { OpenedDocument } from '../open-document';
-import { whenStore } from '../runtime';
+import { libraryStore } from '../use-store';
 import { createAnchorContext, createDocumentFigures, createTextAnchorMaker, type DocumentText, markNormRects } from './anchor-context';
 import { createDraftKeeper } from './drafts';
 import { createMarkInput, type MarkInput } from './mark-input';
@@ -39,17 +39,17 @@ export interface NotesSaveGate {
 
 /**
  * THE question "is this PDF saved in the library, and may its notes be written?" Everything that decides whether a
- * note reaches the store goes through here.
+ * note reaches the store goes through here: Task 30's save controller (ViewerContext.save), which the session follows.
  *
- * Until Task 30 (the save decision) merges, the answer is "not saved": no save controller, so the annotation session
- * keeps every mark, comment and draft in memory only and writes nothing (a mark cannot be stored before its PDF has a
- * document row). Task 30 replaces this body: it returns its SaveController (ViewerContext.save) and the saved
- * document's id, and the session then writes, asks first, or stays in memory as the controller says.
+ * - 'incognito': view only (createNotes makes no notes there at all).
+ * - 'saved': rows are written under `save.state.documentId`, never the loaded file's hash (a stamped copy keeps the
+ *   first copy's id).
+ * - Not saved yet: the first mark calls `save.firstMark()`; while 'asking' the session waits on `save.subscribe`; a
+ *   PDF kept 'memory-only' (No to the question) keeps its notes in this tab and writes nothing. Undo on the chip
+ *   removes the save and the mark that caused it (R62); a later first mark saves again.
  */
-export function notesSaveGate(save: SaveController | null): NotesSaveGate {
-  // Task 30: return { save, documentId: () => (save?.state.kind === 'saved' ? save.state.documentId : null) }.
-  void save;
-  return { save: null, documentId: () => null };
+export function notesSaveGate(save: SaveController): NotesSaveGate {
+  return { save, documentId: () => (save.state.kind === 'saved' ? save.state.documentId : null) };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -117,6 +117,12 @@ export interface NotesHost {
   rectsOf(id: string, pageIndex: number): readonly NormRect[];
   /** Saves typed text now (the draft keeper's flush): a note box calls it on blur and Esc. */
   flushDrafts(): void;
+  /**
+   * Resolves once this PDF's stored notes have had their chance to appear: the save state is known and, for a saved PDF,
+   * its notes are loaded (or NOTES_LOAD_MAX_MS went by with none, as when another tab deleted them all). R60 keeps the
+   * margin a PDF opened with until then.
+   */
+  notesSettled(): Promise<void>;
 }
 
 export interface ViewerFeature {
@@ -444,6 +450,37 @@ function createLayerSource(session: AnnotationSession, text: DocumentText, onDra
 // One document's notes
 // ---------------------------------------------------------------------------------------------------------------------
 
+/** How long a saved PDF's notes may take to load before the margin it opened with is let go of (R60). */
+const NOTES_LOAD_MAX_MS = 5000;
+
+/** NotesHost.notesSettled: the save state leaves 'checking'; a saved PDF then waits for its notes, with a cap. */
+function whenNotesSettled(save: SaveController, session: AnnotationSession): Promise<void> {
+  const known = new Promise<void>((resolve) => {
+    if (save.state.kind !== 'checking') return resolve();
+    let off: (() => void) | null = null;
+    off = save.subscribe((s) => {
+      if (s.kind === 'checking') return;
+      off?.();
+      resolve();
+    });
+  });
+  return known.then(
+    () =>
+      new Promise<void>((resolve) => {
+        if (save.state.kind !== 'saved' || session.state().threads.length > 0) return resolve();
+        const done = () => {
+          clearTimeout(timer);
+          off();
+          resolve();
+        };
+        const timer = setTimeout(done, NOTES_LOAD_MAX_MS);
+        const off = session.subscribe(() => {
+          if (session.state().threads.length > 0) done();
+        });
+      }),
+  );
+}
+
 export interface NotesDeps {
   backend: PdfBackend;
   opened: OpenedDocument;
@@ -452,8 +489,8 @@ export interface NotesDeps {
   pageList: RefObject<PageListApi | null>;
   /** The text layer's selection (TextLayerController.selectionRanges). */
   selection(): CharRange[];
-  /** ViewerContext.save: Task 30's controller, null until then. */
-  save: SaveController | null;
+  /** ViewerContext.save: Task 30's controller. The notes are made once it exists (one render after the PDF is ready). */
+  save: SaveController;
 }
 
 export interface Notes {
@@ -472,7 +509,7 @@ export function createNotes(d: NotesDeps): Notes | null {
   const pages = d.opened.open.pages;
   const gate = notesSaveGate(d.save);
   const presence = createTabPresence();
-  const store = storeWhenReady(whenStore());
+  const store = storeWhenReady(libraryStore());
   const drafts = createDraftKeeper({
     store,
     presence,
@@ -501,6 +538,7 @@ export function createNotes(d: NotesDeps): Notes | null {
   const layer = createLayerSource(session, text, (pageIndex, what) => input?.drawn(pageIndex, what));
 
   let lastColor = readLastColor();
+  const settled = whenNotesSettled(d.save, session);
 
   const host: NotesHost = {
     session,
@@ -518,6 +556,7 @@ export function createNotes(d: NotesDeps): Notes | null {
     pointer: () => input?.pointer() ?? null,
     rectsOf: (id, pageIndex) => layer.rectsOf(id, pageIndex),
     flushDrafts: () => void drafts.flush().catch((e: unknown) => logNotesError(e, 'drafts.flush')),
+    notesSettled: () => settled,
   };
 
   input = createMarkInput({

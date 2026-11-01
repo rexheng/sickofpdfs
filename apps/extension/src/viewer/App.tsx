@@ -406,7 +406,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   // Find jumps through the same history as links, so Back returns from each jump to a hit (Task 25).
   const find = useReaderFind({ backend, doc, store, api, pageText, textLayers, jumps: nav.jumps, root: rootRef });
   // The document's notes: marks, comments and drafts (Phase 2). Null in Incognito, which has none.
-  const notes = useNotes(doc, pageText, store, api, textLayers);
+  const notes = useNotes(doc, pageText, store, api, textLayers, save);
   const commands = useMemo(() => {
     const ctx: ViewerContext = {
       params,
@@ -505,8 +505,9 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
 });
 
 /**
- * The open document's notes, made once the page list is up and disposed with the document. In Incognito there are none
- * (null). Published to the test hooks as `annotations`.
+ * The open document's notes, made once the page list is up and the save controller exists (one render after the PDF is
+ * ready), and disposed with the document. In Incognito there are none (null). Published to the test hooks as
+ * `annotations`. Whether they are written is wire.ts's notesSaveGate.
  */
 function useNotes(
   doc: OpenedDocument,
@@ -514,11 +515,12 @@ function useNotes(
   view: ViewerStore,
   pageList: RefObject<PageListApi | null>,
   textLayers: TextLayerController,
+  save: SaveControllerImpl | null,
 ): Notes | null {
   const [notes, setNotes] = useState<Notes | null>(null);
   useEffect(() => {
-    // ViewerContext.save is null until Task 30; wire.ts's notesSaveGate is where saving is decided.
-    const made = createNotes({ backend, opened: doc, pageText, view, pageList, selection: () => textLayers.selectionRanges(), save: null });
+    if (save === null) return;
+    const made = createNotes({ backend, opened: doc, pageText, view, pageList, selection: () => textLayers.selectionRanges(), save });
     setNotes(made);
     publishRuntime({ annotations: made?.host.session ?? null });
     return () => {
@@ -526,7 +528,7 @@ function useNotes(
       setNotes(null);
       publishRuntime({ annotations: null });
     };
-  }, [doc, pageText, view, pageList, textLayers]);
+  }, [doc, pageText, view, pageList, textLayers, save]);
   return notes;
 }
 

@@ -224,16 +224,16 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
 
   // The column shows while the document has a note, unless the notes panel holds the cards (open, or a narrow window).
   // A note box that is opening has already opened it (openMargin). R60: a PDF that had notes last time opened with the
-  // margin (reserveAtOpen); it is kept until the stored notes have loaded, so the page never narrows late.
+  // margin (reserveAtOpen); it is kept until the stored notes have had their chance to load, so the page never narrows late.
   const sha = notes.opened.loaded.sha256;
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     let live = true;
-    void session.ready.then(() => live && setLoaded(true));
+    void notes.notesSettled().then(() => live && setLoaded(true));
     return () => {
       live = false;
     };
-  }, [session]);
+  }, [notes]);
   const [heldAtOpen] = useState(() => hadNotes(sha));
   const hasNotes = s.threads.length > 0;
   const marginOn = (hasNotes || (heldAtOpen && !loaded)) && !folded;

@@ -64,25 +64,10 @@ export interface SaveHooks {
 }
 
 let registry: Partial<ViewerRuntime> = {};
-let storeWaiters: ((s: StoreClient | null) => void)[] = [];
 
 /** Merges `p` into the registry. */
 export function publishRuntime(p: Partial<ViewerRuntime>): void {
   registry = { ...registry, ...p };
-  if ('store' in p) {
-    const waiting = storeWaiters;
-    storeWaiters = [];
-    for (const w of waiting) w(p.store ?? null);
-  }
-}
-
-/**
- * The library store once it is known: it connects after the first page is on screen (use-store.ts). Resolves with null
- * in Incognito or when the library cannot be reached.
- */
-export function whenStore(): Promise<StoreClient | null> {
-  if ('store' in registry) return Promise.resolve(registry.store ?? null);
-  return new Promise((resolve) => storeWaiters.push(resolve));
 }
 
 /** A copy of everything published so far. */
