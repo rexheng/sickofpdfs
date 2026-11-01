@@ -24,9 +24,9 @@ Result values: PASS, FAIL, BLOCKED, NOT RUN, and MIXED. MIXED means some variant
 <!-- results:start -->
 | Check | Name | Result | Measured | Notes |
 | --- | --- | --- | --- | --- |
-| P0-1 | EmbedPDF renders in MV3 with bundled wasm and fonts | PASS | v2-blob first page 271 ms; v2-file first page 196 ms |  |
-| P0-2 | Zero network beyond the PDF | PASS | 2 requested URLs in the net log, all 127.0.0.1:39311: /font-fixture.pdf, /paper-50.pdf | Chromium's own service requests left out: clients2.google.com, accounts.google.com, www.google.com, update.googleapis.com |
-| P0-3 | 600-page scan scrolls with no blank page over 150 ms | MIXED | FAIL: maxBlankMs=0, p50BlankMs=0, p95BlankMs=0, pagesEntered=34, pagesOverBudget=0, worstPage=null, worstUntil=null, workers=1, pattern="steady", pageCount=600, openMs=906, scroll={…}, blanks=[34], renderMs={…}, paintMs={…}, longTasks={…}, bitmapSize={…}, droppedFull=0, layout={…}; PASS: workers=1 jump: blank p50 50.3 / p95 50.6 / max 50.6 ms over 3 pages; FAIL: maxBlankMs=0, p50BlankMs=0, p95BlankMs=0, pagesEntered=32, pagesOverBudget=0, worstPage=null, worstUntil=null, workers=2, pattern="steady", pageCount=600, openMs=1335, scroll={…}, blanks=[32], renderMs={…}, paintMs={…}, longTasks={…}, bitmapSize={…}, droppedFull=0, layout={…}; PASS: workers=2 jump: blank p50 52.5 / p95 54 / max 54 ms over 3 pages | Error: expect(received).toBeGreaterThan(expected) Expected: > 40 Received:   34; Error: expect(received).toBeGreaterThan(expected) Expected: > 40 Received:   32 |
+| P0-1 | EmbedPDF renders in MV3 with bundled wasm and fonts | PASS | v2-blob first page 262 ms; v2-file first page 221 ms |  |
+| P0-2 | Zero network beyond the PDF | PASS | 2 requested URLs in the net log, all 127.0.0.1:37719: /font-fixture.pdf, /paper-50.pdf | Chromium's own service requests left out: clients2.google.com, accounts.google.com, www.google.com, update.googleapis.com |
+| P0-3 | 600-page scan scrolls with no blank page over 150 ms | PASS | workers=1 steady: blank p50 0 / p95 0 / max 0 ms over 34 pages; workers=1 jump: blank p50 49.5 / p95 50.8 / max 50.8 ms over 3 pages; workers=2 steady: blank p50 0 / p95 0 / max 0 ms over 32 pages; workers=2 jump: blank p50 49.2 / p95 55 / max 55 ms over 3 pages |  |
 | P0-4 | Text-layer selection suite | NOT RUN | | |
 | P0-5 | Bold as a glyph-outline overlay | NOT RUN | | |
 | P0-6 | 300 MB tab↔offscreen moves; the 1 GB open limit | NOT RUN | | |
@@ -81,15 +81,15 @@ All numbers so far come from Chrome for Testing 153.0.8010.12 on Linux, launched
 
 ### P0-3 600-page scan scroll
 
-- **The blank budget is met with both worker counts.** In the steady 3000 px/s scroll, no page was ever blank. A jump shows its page after about 50 ms.
-- **The two steady tests fail only on `pagesEntered > 40`, which cannot be reached.** This bound needs a ruling (see below); it is not a budget miss.
+- **PASS with both worker counts.** In the steady 3000 px/s scroll, no page was ever blank. A jump shows its page after about 50 ms.
+- **The steady tests check `pagesEntered > 30` (ruling R23).** The plan's `> 40` cannot be reached at fit width; see below.
 
 | workers | Pattern | Blank p50 / p95 / max | Pages entered | Test |
 | --- | --- | --- | --- | --- |
-| 1 | steady, 20 s | 0 / 0 / 0 ms | 34 | FAIL: `pagesEntered > 40` |
-| 1 | jumps 400, 120, 599 | 50.3 / 50.6 / 50.6 ms | 3 | PASS |
-| 2 | steady, 20 s | 0 / 0 / 0 ms | 32 | FAIL: `pagesEntered > 40` |
-| 2 | jumps 400, 120, 599 | 52.5 / 54 / 54 ms | 3 | PASS |
+| 1 | steady, 20 s | 0 / 0 / 0 ms | 34 | PASS |
+| 1 | jumps 400, 120, 599 | 49.5 / 50.8 / 50.8 ms | 3 | PASS |
+| 2 | steady, 20 s | 0 / 0 / 0 ms | 32 | PASS |
+| 2 | jumps 400, 120, 599 | 49.2 / 55 / 55 ms | 3 | PASS |
 
 - **Fixture.** `scripts/make-scan-fixture.mjs` writes `scan-600.pdf`: 600 pages, 178,081,727 bytes, about 4 minutes on 4 cores.
   - Grinstead and Snell (GNU FDL, 518 pages, cycled) is rendered by PDFium in Node at 200 dpi and turned to greyscale.
@@ -102,9 +102,10 @@ All numbers so far come from Chrome for Testing 153.0.8010.12 on Linux, launched
   - Rendering is pulled rather than queued, with one call in flight per worker. Order: previews of the visible pages, then previews of the next 10 pages in the scroll direction (LRU of 300), then full renders of the visible pages. Out-of-range work is therefore never started.
   - "Blank" runs from a page entering the viewport (the scroll position is set in `requestAnimationFrame`) to the first paint of its canvas. A page that leaves the viewport, or is still visible at the end, without a paint counts until then.
   - Each jump starts from a settled screen, with the render queue empty.
-- **Why `pagesEntered > 40` cannot pass.** The pitch at fit width is 1726 + 16 = 1742 px, and 20 s × 3000 px/s = 60,000 px. Only 60,768 / 1742 ≈ 35 pages can enter, even at a perfect 60 fps.
-  - The bound would hold for pages up to about 1500 px tall: about 1160 px wide, or a viewport of about 1190 px.
-  - Possible rulings: `toBeGreaterThan(30)` (86% of the reachable distance); 25 s instead of 20; or 4000 px/s.
+- **Why the bound is `> 30` and not the plan's `> 40` (ruling R23).** The pitch at fit width is 1726 + 16 = 1742 px, and 20 s × 3000 px/s = 60,000 px. Only 60,768 / 1742 ≈ 35 pages can enter, even at a perfect 60 fps.
+  - `> 40` would hold only for pages up to about 1500 px tall: about 1160 px wide, or a viewport of about 1190 px.
+  - With `> 40`, the steady tests failed at 34 and 32 pages while every blank was 0 ms.
+  - R23 keeps 20 s at 3000 px/s and sets the bound to `> 30`, which needs about 86% of that distance.
 - **What makes the budget: the preview lookahead.**
   - A preview costs about 50 ms of worker time (p50 53, p95 73 ms with one worker), mostly decoding the 200 dpi JPEG. It is ready long before a page arrives.
   - Positive control, with the lookahead set to 0 for one run: steady-scroll blanks become p50 54 ms and max 72–79 ms. So the measure sees blanks, and previews of visible pages alone would still be within budget.
