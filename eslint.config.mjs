@@ -21,6 +21,15 @@ const needTask28 = existsSync(new URL('./apps/extension/src/store/store-api.ts',
       'apps/extension/src/viewer/annotations/{no-lost-text,edit-draft}.spec-blind.test.ts',
     ];
 
+const LOCAL_ONLY_MESSAGE = 'The local-only store holds secrets. Only viewer and settings code may import it (ruling R14).';
+const LOCAL_ONLY_IMPORT_PATTERN = { group: ['**/local-only', '**/local-only/**'], message: LOCAL_ONLY_MESSAGE };
+const LOCAL_ONLY_SYNTAX = [
+  { selector: "ImportExpression[source.type='Literal'][source.value=/local-only/]", message: LOCAL_ONLY_MESSAGE },
+  { selector: "ImportExpression[source.type='TemplateLiteral']:has(TemplateElement[value.raw=/local-only/])", message: LOCAL_ONLY_MESSAGE },
+  { selector: "CallExpression[callee.name='require'][arguments.0.value=/local-only/]", message: LOCAL_ONLY_MESSAGE },
+  { selector: "TSImportType[argument.literal.value=/local-only/]", message: LOCAL_ONLY_MESSAGE },
+];
+
 export default defineConfig(
   globalIgnores([
     ...needTask28,
@@ -84,6 +93,35 @@ export default defineConfig(
       // var(--token) file by file. packages/ui/src/tokens/tokens.test.ts checks that every var(--x) is declared.
       'css/no-invalid-properties': ['error', { allowUnknownVariables: true }],
     },
+  },
+
+  // The secrets boundary (ruling R14). `apps/extension/src/local-only/` holds the API key and the sign-in token in their own
+  // IndexedDB ("sop-local"). Only viewer and settings code may import it. Everything else under apps/extension/src and
+  // packages/ is barred by default, so a new folder (backup, export, sync, a worker, a content script) is covered the
+  // moment it exists. That covers the store worker, the offscreen document, the service worker, content scripts and the
+  // test hooks. A folder that needs the key is added to the allowed list below on purpose, never the other way round.
+  //
+  // Both rules below REPLACE any other `no-restricted-imports` or `no-restricted-syntax` setting that a later block gives
+  // the same files, so a later block that bars something else (the Anthropic SDK, in Phase 4) must repeat these entries
+  // (LOCAL_ONLY_IMPORT_PATTERN and LOCAL_ONLY_SYNTAX).
+  {
+    files: ['apps/extension/src/**/*.{ts,tsx,js,mjs}', 'packages/**/*.{ts,tsx,js,mjs}'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [LOCAL_ONLY_IMPORT_PATTERN] }],
+      // import(), require() and import('...') in a type are not covered by no-restricted-imports.
+      'no-restricted-syntax': ['error', ...LOCAL_ONLY_SYNTAX],
+    },
+  },
+  {
+    files: [
+      'apps/extension/src/local-only/**',
+      'apps/extension/src/viewer/**',
+      'apps/extension/src/entrypoints/viewer/**',
+      // Settings pages (Phase 3 library settings, Phase 4 Claude section)
+      'apps/extension/src/library/settings/**',
+      'apps/extension/src/claude-settings/**',
+    ],
+    rules: { 'no-restricted-imports': 'off', 'no-restricted-syntax': 'off' },
   },
 
   // Design tokens: colours, lengths, fonts and shadows come from packages/ui/src/tokens (see the rule for the details)

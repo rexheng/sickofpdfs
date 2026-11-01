@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { expect, test as base, type BrowserContext, type Page, type Worker } from '@playwright/test';
 import { EXTENSION_ID } from '../../apps/extension/scripts/extension-id.mjs';
 import { buildViewerUrl, VIEWER_PATH } from '../../apps/extension/src/shared/viewer-url';
+import { LOCAL_ONLY_DB, LOCAL_ONLY_STORES } from '../../apps/extension/src/local-only/secrets-store';
 import type { SopTestHooks } from '../../apps/extension/src/testing/test-hooks';
 import { launchExtension, waitForExtensionWorker } from './launch';
 import { netlogBrowserServiceHosts, netlogExternalUrls, readNetlogRequests } from './netlog';
@@ -291,4 +292,152 @@ export async function clickMenu(page: Page, menu: string, item: string): Promise
 /** A file's SHA-256, as lower-case hex. */
 export async function sha256File(path: string): Promise<string> {
   return createHash('sha256').update(await readFile(path)).digest('hex');
+}
+
+// ---- Task 29: where a secret may and may not be found ----
+
+/**
+ * True when some file under the OPFS folder `dir` (from the origin's OPFS root, searched recursively) contains `needle`
+ * as UTF-8 or UTF-16 text. Runs in `page`, so it sees that page's origin. It reads files in slices, so a large database
+ * does not fill memory. Throws when the folder does not exist or a file cannot be read (for the SQLite files, close the
+ * offscreen document first so it lets go of them): a search that could not look must not pass as "not found".
+ */
+export async function grepOpfs(page: Page, dir: string, needle: string): Promise<boolean> {
+  return page.evaluate(
+    async ({ dir, needle }) => {
+      let folder = await navigator.storage.getDirectory();
+      for (const part of dir.split('/').filter(Boolean)) {
+        folder = await folder.getDirectoryHandle(part).catch(() => {
+          throw new Error(`grepOpfs: there is no OPFS folder "${dir}"`);
+        });
+      }
+      const patterns = [new TextEncoder().encode(needle), new Uint8Array(new Uint16Array(Array.from(needle, (c) => c.charCodeAt(0))).buffer)];
+      const SLICE = 4 << 20;
+      const find = (hay: Uint8Array, pattern: Uint8Array): boolean => {
+        outer: for (let i = 0; i + pattern.length <= hay.length; i++) {
+          if (hay[i] !== pattern[0]) continue;
+          for (let j = 1; j < pattern.length; j++) if (hay[i + j] !== pattern[j]) continue outer;
+          return true;
+        }
+        return false;
+      };
+      const overlap = Math.max(...patterns.map((p) => p.length)) - 1;
+      const scan = async (file: File): Promise<boolean> => {
+        for (let at = 0; at < file.size; at += SLICE) {
+          const from = Math.max(0, at - overlap);
+          const bytes = new Uint8Array(await file.slice(from, Math.min(file.size, at + SLICE)).arrayBuffer());
+          if (patterns.some((p) => find(bytes, p))) return true;
+        }
+        return false;
+      };
+      const walk = async (d: FileSystemDirectoryHandle): Promise<boolean> => {
+        for await (const handle of d.values()) {
+          if (handle.kind === 'directory' ? await walk(handle) : await scan(await handle.getFile())) return true;
+        }
+        return false;
+      };
+      return walk(folder);
+    },
+    { dir, needle },
+  );
+}
+
+/** What `probeIdb` found. */
+export interface IdbProbe {
+  existed: boolean;
+  stores: string[];
+  containsNeedle: boolean;
+}
+
+/**
+ * Looks at the IndexedDB database `name` of `page`'s origin without creating it: it opens the database with no version,
+ * and if that would create it, aborts, so the database stays absent (`existed: false`). Otherwise it lists the object
+ * stores and scans every key and value (strings, bytes, nested objects) for `needle`.
+ */
+export async function probeIdb(page: Page, name: string, needle: string): Promise<IdbProbe> {
+  return page.evaluate(
+    ({ name, needle }) =>
+      new Promise<IdbProbe>((resolve, reject) => {
+        const bytesOf = (v: ArrayBufferView | ArrayBuffer) => new Uint8Array(v instanceof ArrayBuffer ? v : v.buffer, v instanceof ArrayBuffer ? 0 : v.byteOffset, v instanceof ArrayBuffer ? undefined : v.byteLength);
+        const contains = (value: unknown, depth = 0): boolean => {
+          if (typeof value === 'string') return value.includes(needle);
+          if (value === null || typeof value !== 'object' || depth > 8) return false;
+          if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+            const text = new TextDecoder('utf-8').decode(bytesOf(value));
+            return text.includes(needle);
+          }
+          const entries = value instanceof Map ? [...value.entries()].flat() : value instanceof Set ? [...value] : Object.entries(value).flat();
+          return entries.some((v) => contains(v, depth + 1));
+        };
+        const request = indexedDB.open(name);
+        let created = false;
+        request.onupgradeneeded = (event) => {
+          if (event.oldVersion === 0) {
+            created = true;
+            request.transaction?.abort(); // nothing is created
+          }
+        };
+        request.onerror = () => {
+          if (created) resolve({ existed: false, stores: [], containsNeedle: false });
+          else reject(request.error ?? new Error('probeIdb: the database did not open'));
+        };
+        request.onsuccess = () => {
+          const db = request.result;
+          const stores = Array.from(db.objectStoreNames).sort();
+          if (stores.length === 0) {
+            db.close();
+            return resolve({ existed: true, stores, containsNeedle: false });
+          }
+          let found = false;
+          const tx = db.transaction(stores, 'readonly');
+          for (const store of stores) {
+            const cursor = tx.objectStore(store).openCursor();
+            cursor.onsuccess = () => {
+              const c = cursor.result;
+              if (!c) return;
+              if (contains(c.key) || contains(c.value)) found = true;
+              c.continue();
+            };
+          }
+          tx.oncomplete = () => {
+            db.close();
+            resolve({ existed: true, stores, containsNeedle: found });
+          };
+          tx.onerror = () => {
+            db.close();
+            reject(tx.error ?? new Error('probeIdb: could not read the database'));
+          };
+        };
+      }),
+    { name, needle },
+  );
+}
+
+/**
+ * Writes `{ name: 'anthropic_api_key', value }` into the `secrets` store of `sop-local` in `page`'s origin, creating the
+ * database as the secrets store does (the same object stores, from LOCAL_ONLY_STORES). It is test code: the viewer's
+ * test hooks never touch the store. Never log `value`.
+ */
+export async function seedSecret(page: Page, value: string): Promise<void> {
+  await page.evaluate(
+    ({ db: dbName, stores, value }) =>
+      new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open(dbName, 1);
+        request.onupgradeneeded = () => {
+          for (const { name, options } of stores) if (!request.result.objectStoreNames.contains(name)) request.result.createObjectStore(name, options);
+        };
+        request.onerror = () => reject(request.error ?? new Error('seedSecret: the database did not open'));
+        request.onsuccess = () => {
+          const db = request.result;
+          const tx = db.transaction('secrets', 'readwrite');
+          tx.objectStore('secrets').put({ name: 'anthropic_api_key', value });
+          tx.oncomplete = () => {
+            db.close();
+            resolve();
+          };
+          tx.onerror = () => reject(tx.error ?? new Error('seedSecret: the write failed'));
+        };
+      }),
+    { db: LOCAL_ONLY_DB, stores: LOCAL_ONLY_STORES, value },
+  );
 }

@@ -45,7 +45,8 @@ export default defineConfig({
           globalSetup: ['./apps/extension/scripts/copy-engine-assets.mjs', 'e2e/support/vitest-global-setup.ts'],
           browser: {
             enabled: true,
-            provider: playwright(),
+            // Chromium reports exact heap sizes (performance.memory), which the blob store's memory test reads.
+            provider: playwright({ launchOptions: { args: ['--enable-precise-memory-info'] } }),
             headless: true,
             instances: [{ browser: 'chromium' }],
           },

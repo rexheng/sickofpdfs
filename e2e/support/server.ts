@@ -44,6 +44,8 @@ const HTML_PAGES: Record<string, string> = {
   '/h/post-form': '<h1>Form</h1><form method="post" action="/h/post"><button type="submit">Open the PDF</button></form>',
   // A link to a PDF that the server serves only when the request carries this page as its Referer.
   '/h/referer-page': '<h1>Reading list</h1><p><a id="pdf" href="/h/needs-referer.pdf">The paper</a></p>',
+  // An ordinary page with no PDF: what a web page (and any content script running in it) sees of the browser's storage.
+  '/h/plain-page': '<h1>A plain page</h1><p>No PDF here.</p>',
   '/h/embed-page': '<h1>A page with an embedded PDF</h1><p>Above the PDF.</p><embed type="application/pdf" src="/h/plain.pdf" width="600" height="400"><p>Below the PDF.</p>',
   '/h/object-page': '<h1>A page with an embedded PDF</h1><p>Above the PDF.</p><object type="application/pdf" data="/h/plain.pdf" width="600" height="400"></object><p>Below the PDF.</p>',
   '/h/iframe-page': '<h1>A page with an embedded PDF</h1><p>Above the PDF.</p><iframe src="/h/plain.pdf" width="600" height="400"></iframe><p>Below the PDF.</p>',
