@@ -20,12 +20,13 @@ The owner has learning disabilities and is highly intelligent. Write to them pla
    - The automatic worktree option fails here, because it bases on `origin/main`.
    - Each task writes its own results file, so no two tasks edit the same document.
    - The controller cherry-picks finished work in task order.
-4. **Match review effort to risk.**
+4. **Match review effort to risk. Visual quality ranks as high as data safety (owner, 2026-11-01: "visual more important").**
    - **Data, privacy, security and engine work:** the store, takeover, network, the PDF engine and the loader. These get a real review (sonnet) and fix rounds.
-   - **UI-only changes:** a quick review (haiku).
+   - **Visual work:** tokens, components, viewer chrome, menus, toolbars, and anything the owner sees. It gets a screenshot review: the reviewer looks at real screenshots next to the Drive and Chrome reference captures in `docs/research/drive-refs/` and the spec in `docs/research/02-drive-visual-spec.md`. That review uses a strong model with fix rounds. The aim is Drive's aesthetic, not pixel-perfect copying.
+   - **Non-visual UI plumbing:** a quick review (haiku).
    - **Throwaway spike code:** no review.
 5. **Fix it or drop it.** Fix cheap, small issues right away. Delete the rest; don't keep a "deferred" pile. Only requirements that a later task needs are carried, and they are written into that task's brief.
-6. **Use the right-sized model.** Small and medium tasks are implemented on haiku or sonnet. Use opus only for hard ones, such as the engine port, render scheduling and the text layer.
+6. **Use the right-sized model.** Small and medium tasks are implemented on haiku or sonnet. Use opus only for hard ones: the engine port, render scheduling, the text layer, and visual-fidelity work (Drive components and the viewer chrome).
 7. **Keep plans short.** A plan gives goals and interfaces, not exact test code.
    - The interfaces and names in a brief are binding.
    - Test code in a brief is guidance.
