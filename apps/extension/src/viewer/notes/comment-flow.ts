@@ -1,7 +1,8 @@
 // What Ctrl+Alt+M (and the toolbar's Comment button) does, before anything is drawn (spec "The Ctrl+Alt+M flow").
 //
-// - Text selected: a new note on it, with a highlight in the last colour used. A selection over an existing note opens
-//   that note instead (the most recent, if several overlap), so notes never stack up as duplicates.
+// - Text selected: a new note on it. A note adds no style and never changes a mark's colour (ruling R68): on words with
+//   no style it shows a dotted underline, and on marked words it keeps their mark. A selection over an existing note
+//   opens that note instead (the most recent, if several overlap), so notes never stack up as duplicates.
 // - Nothing selected, pointer over a page: a note at that point.
 // - Otherwise: a note on the page in view.
 // - Ctrl+Alt+Shift+M: a note on the whole document.
@@ -74,11 +75,11 @@ export function createCommentFlow(d: CommentFlowDeps): CommentFlow {
     return best;
   }
 
-  function start(anchor: Anchor, highlight: boolean, steps?: OpenSteps): NoteTarget | null {
+  function start(anchor: Anchor, steps?: OpenSteps): NoteTarget | null {
     const s = session();
     if (s.state().mode === 'view-only') return null;
     steps?.before();
-    const { threadId, commentId } = s.startThread(anchor, { highlight: highlight ? d.wiring.highlightColor() : null });
+    const { threadId, commentId } = s.startThread(anchor, { highlight: null });
     const target: NoteTarget = { kind: 'new', threadId, commentId, anchor };
     steps?.after(target);
     return target;
@@ -100,8 +101,8 @@ export function createCommentFlow(d: CommentFlowDeps): CommentFlow {
         busy = true;
         try {
           const anchor = await d.wiring.makeTextAnchor(ranges);
-          d.clearSelection(); // the note's highlight takes the selection's place
-          return start(anchor, true, steps);
+          d.clearSelection(); // the note's passage shows where the selection was
+          return start(anchor, steps);
         } finally {
           busy = false;
         }
@@ -111,14 +112,14 @@ export function createCommentFlow(d: CommentFlowDeps): CommentFlow {
       if (at && size && size.width > 0 && size.height > 0) {
         const u = Math.min(1, Math.max(0, at.x / size.width));
         const v = Math.min(1, Math.max(0, at.y / size.height));
-        return start({ kind: 'point', page: at.pageIndex, point: [u, v] }, false, steps);
+        return start({ kind: 'point', page: at.pageIndex, point: [u, v] }, steps);
       }
-      return start({ kind: 'page', page: d.currentPage() }, false, steps);
+      return start({ kind: 'page', page: d.currentPage() }, steps);
     },
 
     documentNote(steps) {
       if (busy) return null;
-      return start({ kind: 'document' }, false, steps);
+      return start({ kind: 'document' }, steps);
     },
   };
 }

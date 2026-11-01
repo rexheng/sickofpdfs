@@ -10,7 +10,8 @@
 //   with multiply (--sop-mark-blend): the page's layer slot blends with the page render (PageList.module.css), so black
 //   text stays black under every colour.
 // - The active comment's highlight uses the darker --sop-mark-N-active fill (Docs darkens the anchor of the open card).
-//   A focused mark gets a 2 px ring just outside its shape.
+//   An open comment on words with no highlight gets a neutral wash instead (--sop-thread-active): a comment never shows
+//   in a mark colour (R68). A focused mark gets a 2 px ring just outside its shape.
 // The layer only draws. What is on a page comes from a MarkLayerSource (the extension's annotation wiring).
 import type { MarkColor, NormRect } from '@sop/core';
 import { type CSSProperties, memo, useId, useLayoutEffect, useSyncExternalStore, type JSX } from 'react';
@@ -22,14 +23,15 @@ import { BoldLayer, type BoldLayerProps, type BoldRange } from '../marks/BoldLay
 import { type Box, dottedUnderlinePath, highlightPath, normToCss, type PathOptions, strikePath, underlinePath } from '../marks/geometry';
 import type { PageLayerContext } from './PageView';
 
-export type MarkLayerStyle = 'highlight' | 'underline' | 'strike' | 'dotted' | 'area';
+/** 'passage': the open comment's words when no highlight is under them (a neutral wash). */
+export type MarkLayerStyle = 'highlight' | 'underline' | 'strike' | 'dotted' | 'area' | 'passage';
 
 /** One thing drawn on the page. */
 export interface MarkLayerItem {
-  /** The mark's (or, for a dotted underline, the thread's) id. */
+  /** The mark's (or, for a dotted underline and a passage, the thread's) id. */
   id: string;
   style: MarkLayerStyle;
-  /** The colour slot (--sop-mark-1 … 5). Null for a dotted underline and an area. */
+  /** The colour slot (--sop-mark-1 … 5). Null for a dotted underline, a passage and an area. */
   color: MarkColor | null;
   /** On this page, 0–1 of the unrotated crop box. */
   rects: readonly NormRect[];
@@ -88,7 +90,7 @@ function fillOf(color: MarkColor | null, active: boolean): string {
   return active ? `var(--sop-mark-${slot}-active)` : `var(--sop-mark-${slot})`;
 }
 
-/** The paths of a page: highlights (inactive, then active), areas, underlines, strikes, dotted underlines. */
+/** The paths of a page: the open comment's passage, highlights (inactive, then active), areas, underlines, strikes, dotted underlines. */
 function groupsOf(items: readonly MarkLayerItem[], toCss: (n: NormRect) => Box, o: PathOptions, line: number, dot: number): Group[] {
   const buckets = new Map<string, { style: MarkLayerStyle; color: MarkColor | null; active: boolean; boxes: Box[] }>();
   for (const it of items) {
@@ -98,7 +100,7 @@ function groupsOf(items: readonly MarkLayerItem[], toCss: (n: NormRect) => Box, 
     if (!b) buckets.set(key, (b = { style: it.style, color: it.color, active, boxes: [] }));
     for (const r of it.rects) b.boxes.push(toCss(r));
   }
-  const order: Record<MarkLayerStyle, number> = { highlight: 0, area: 2, underline: 3, strike: 4, dotted: 5 };
+  const order: Record<MarkLayerStyle, number> = { passage: -1, highlight: 0, area: 2, underline: 3, strike: 4, dotted: 5 };
   return [...buckets.entries()]
     .sort(([, a], [, b]) => order[a.style] + (a.active ? 1 : 0) - (order[b.style] + (b.active ? 1 : 0)) || (a.color ?? 0) - (b.color ?? 0))
     .map(([key, b]): Group => {
@@ -109,6 +111,8 @@ function groupsOf(items: readonly MarkLayerItem[], toCss: (n: NormRect) => Box, 
           return { key, d: underlinePath(b.boxes, { ...o, thickness: line }), style: { fill: `var(--sop-mark-${b.color ?? 1}-line)` } };
         case 'strike':
           return { key, d: strikePath(b.boxes, { ...o, thickness: line }), style: { fill: `var(--sop-mark-${b.color ?? 1}-line)` } };
+        case 'passage':
+          return { key, d: highlightPath(b.boxes, o), style: { fill: 'var(--sop-thread-active)', mixBlendMode: 'var(--sop-mark-blend)' as CSSProperties['mixBlendMode'] } };
         case 'dotted':
           return { key, d: dottedUnderlinePath(b.boxes, { ...o, thickness: dot }), style: { fill: 'var(--sop-thread-underline)' } };
         case 'area':

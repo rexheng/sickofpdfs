@@ -6,7 +6,7 @@
 // - `notesSaveGate`: the one place that answers "is this PDF saved, and may notes be written?" (Task 30 replaces it).
 // - `registerViewerFeature`: how the comments (S14), the notes panel (S15) and later the figures (S16) mount, with one
 //   line each in App.tsx. A feature gets a NotesHost: the session and everything it needs to draw and act on the pages.
-// - `marks.lastColor`: the colour H, the menu and a new comment's highlight use next.
+// - `marks.lastColor`: the colour H and the menu use next. A comment adds no highlight (ruling R68).
 //
 // Incognito: no notes at all. `createNotes` returns null, so there are no marks, no menu and no features (spec).
 import { type Anchor, type CharPos, type DocumentId, type MarkColor, type NormRect, planStyle, resolveAnchor } from '@sop/core';
@@ -64,7 +64,7 @@ export function notesSaveGate(save: SaveController): NotesSaveGate {
  */
 const LAST_COLOR_KEY = 'sop:marks.lastColor';
 
-/** The colour H, the menu and a new comment's highlight use next. Yellow (1) until another is picked. */
+/** The colour H and the menu use next. Yellow (1) until another is picked. */
 export function readLastColor(): MarkColor {
   try {
     const v = Number(localStorage.getItem(LAST_COLOR_KEY));
@@ -117,7 +117,7 @@ export interface NotesHost {
   showNote(text: string): void;
   /** A text anchor for char ranges: the quote with its context, the positions, and the rects the selection had. */
   textAnchor(ranges: CharRange[]): Promise<TextAnchor>;
-  /** The colour H, the menu and a new comment's highlight use (marks.lastColor). */
+  /** The colour H and the menu use (marks.lastColor). */
   lastColor(): MarkColor;
   /** Where the pointer last was over the pages, in client px; null while it is elsewhere. */
   pointer(): { x: number; y: number } | null;
@@ -343,6 +343,7 @@ function createLayerSource(session: AnnotationSession, text: DocumentText, onDra
     const activeRange = activeAnchor?.kind === 'text' ? activeAnchor : null;
 
     const styled: TextAnchor[] = [];
+    const highlights: TextAnchor[] = [];
     for (const m of state.marks) {
       const a = placedAnchor(state, m.id);
       if (a === null) continue;
@@ -352,6 +353,7 @@ function createLayerSource(session: AnnotationSession, text: DocumentText, onDra
       }
       if (a.kind !== 'text' || m.style === 'area') continue; // figure marks are drawn by the figure layer (S16)
       styled.push(a);
+      if (m.style === 'highlight') highlights.push(a);
       for (let p = a.start.page; p <= a.end.page; p++) {
         if (m.style === 'bold') {
           const r = rangeOn(a, p);
@@ -375,14 +377,20 @@ function createLayerSource(session: AnnotationSession, text: DocumentText, onDra
       }
     }
 
-    // A comment whose passage has no style left shows a dotted underline (spec "What a note is made of").
+    // A comment adds no style and never changes a mark's colour (ruling R68). Its passage shows a dotted underline while
+    // no style covers it (spec "What a note is made of"); on marked words, the marks are what show. While its card is
+    // open, the passage is picked out: the highlights over it take the darker active fill (above), and words with no
+    // highlight get a neutral wash, never one of the five colours.
+    const overlaps = (s: TextAnchor, a: TextAnchor) => cmpPos(s.start, a.end) < 0 && cmpPos(a.start, s.end) < 0;
     for (const t of state.threads) {
       const a = placedAnchor(state, t.id);
       if (a?.kind !== 'text') continue;
-      const covered = styled.some((s) => cmpPos(s.start, a.end) < 0 && cmpPos(a.start, s.end) < 0);
+      const covered = styled.some((s) => overlaps(s, a));
+      const wash = t.id === state.active && !highlights.some((s) => overlaps(s, a));
       for (let p = a.start.page; p <= a.end.page; p++) {
         const rects = rectsOn(a, p);
         if (rects === null || rects.length === 0) continue;
+        if (wash) push(p, { id: t.id, style: 'passage', color: null, rects });
         if (covered) {
           let byPage = nextIndex.get(t.id);
           if (!byPage) nextIndex.set(t.id, (byPage = new Map<number, readonly NormRect[]>()));

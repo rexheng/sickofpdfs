@@ -329,6 +329,7 @@
   --sop-mark-line-w: 2px;          /* underline and strikethrough at 100% zoom; the mark layer scales it with the zoom */
   --sop-mark-focus: #0b57d0;       /* ring on a keyboard-focused mark: the light primary, because the page is white even in the dark viewer */
   --sop-thread-underline: #747775; /* dotted underline of a thread whose text has no style left: a quiet grey, not a mark colour */
+  --sop-thread-active: #dadce0;    /* the open note's passage when no highlight is under it: a neutral wash (multiplied), never one of the five colours (R68) */
 
   /* Swatches in the dark right-click menu: a 20 px dot (an icon's size) in a 36 px slot (a dark menu row). The current
      colour shows a dark check; the hovered or keyboard-focused swatch gets a 2 px on-surface ring, 2 px out. */

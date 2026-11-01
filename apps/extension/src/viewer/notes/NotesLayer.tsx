@@ -41,7 +41,6 @@ export function NotesLayer({ host }: NotesLayerProps) {
       session: host.session,
       flushDrafts: () => host.flushDrafts(),
       makeTextAnchor: (ranges) => host.textAnchor(ranges),
-      highlightColor: () => host.lastColor(),
     }),
     [host],
   );
