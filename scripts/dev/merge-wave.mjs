@@ -28,9 +28,9 @@ const dryRun = argv.includes('--dry-run');
 const noGates = argv.includes('--no-gates');
 const engine = argv.includes('--engine');
 
+const gitEnv = { ...process.env, GIT_EDITOR: 'true' }; // never open an editor (cherry-pick --continue could hang)
 const git = (...a) => {
-  const env = { ...process.env, GIT_EDITOR: 'true' }; // never open an editor (cherry-pick --continue could hang)
-  const r = spawnSync('git', a, { encoding: 'utf8', maxBuffer: 1 << 28, env });
+  const r = spawnSync('git', a, { encoding: 'utf8', maxBuffer: 1 << 28, env: gitEnv });
   return { code: r.status ?? 1, out: (r.stdout ?? '').trim(), err: `${r.stdout ?? ''}${r.stderr ?? ''}`.trim() };
 };
 const gitOrDie = (...a) => {
@@ -55,13 +55,29 @@ for (const b of branches) {
   if (git('rev-parse', '--verify', '--quiet', `refs/heads/${b}`).code) die(`no local branch named ${b}`);
 }
 
-// Commits on a branch that HEAD does not have yet (patch-equivalent ones are excluded), oldest first.
+// Patch-id of a commit with pnpm-lock.yaml left out ('' when it changes only the lockfile). Cached per sha.
+const patchIds = new Map();
+function patchIdOf(sha) {
+  if (!patchIds.has(sha)) {
+    const diff = spawnSync('git', ['diff-tree', '-p', '--no-commit-id', sha, '--', '.', ':(exclude)pnpm-lock.yaml'], { encoding: 'utf8', maxBuffer: 1 << 28, env: gitEnv });
+    const pid = spawnSync('git', ['patch-id', '--stable'], { encoding: 'utf8', input: diff.stdout ?? '', env: gitEnv });
+    if (diff.status || pid.status) die(`could not compute the patch-id of ${sha}`);
+    patchIds.set(sha, pid.stdout.split(' ')[0]);
+  }
+  return patchIds.get(sha);
+}
+
+// Commits on a branch that HEAD does not have yet, oldest first. A commit is already applied when HEAD has one with
+// the same patch-id. The patch-id leaves out the lockfile: a lockfile conflict resolved with HEAD's copy changes the
+// full patch, so `git cherry` would offer the commit again. A commit that changes only the lockfile counts as applied.
 function pendingPicks(branch) {
-  const missing = lines(gitOrDie('cherry', '-v', 'HEAD', branch))
-    .filter((l) => l.startsWith('+'))
-    .map((l) => l.split(' ')[1]);
-  return lines(gitOrDie('rev-list', '--reverse', `HEAD..${branch}`))
-    .filter((sha) => missing.some((abbr) => sha.startsWith(abbr)))
+  const candidates = lines(gitOrDie('rev-list', '--reverse', '--no-merges', `HEAD..${branch}`))
+    .filter((sha) => patchIdOf(sha) !== '');
+  if (!candidates.length) return [];
+  const base = gitOrDie('merge-base', 'HEAD', branch);
+  const onHead = new Set(lines(gitOrDie('rev-list', '--no-merges', `${base}..HEAD`)).map((sha) => patchIdOf(sha)));
+  return candidates
+    .filter((sha) => !onHead.has(patchIdOf(sha)))
     .map((sha) => ({
       branch,
       sha,
@@ -167,14 +183,7 @@ console.log(`\nLockfile regenerated: ${lockRegenerated ? 'yes' : 'no'}`);
 for (const g of gates.filter((x) => x.status === 'FAIL')) {
   console.log(`\n--- ${g.name} failed (exit ${g.exitCode}), last 40 lines ---\n${g.tail}`);
 }
-const summary = {
-  at: new Date().toISOString(),
-  startHead,
-  head: gitOrDie('rev-parse', 'HEAD'),
-  branches: counts,
-  lockfileRegenerated: lockRegenerated,
-  gates,
-};
 mkdirSync('.superpowers', { recursive: true });
+const summary = { at: new Date().toISOString(), startHead, head: gitOrDie('rev-parse', 'HEAD'), branches: counts, lockfileRegenerated: lockRegenerated, gates };
 writeFileSync(join('.superpowers', 'merge-wave-last.json'), `${JSON.stringify(summary, null, 2)}\n`);
 process.exit(gates.some((g) => g.status === 'FAIL') ? 1 : 0);
