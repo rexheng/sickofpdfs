@@ -1,0 +1,122 @@
+/*
+ * The text layer: pdf.js's web/text_layer_builder.css (plus pdf_viewer.css's rotation rules), Apache-2.0, adapted for
+ * sickofpdfs (see text-layer.ts and LICENSE.pdfjs). The layer's own font is set on .sop-text-layer by text-layer.ts.
+ *
+ * Text is transparent and so is the browser's selection highlight: the viewer paints the selection itself from PDFium's
+ * line rectangles, one even band per line (.sop-selection, R44). The DOM selection is kept for copy, find and screen
+ * readers.
+ */
+.sop-text-layer {
+  position: absolute;
+  inset: 0 auto auto 0;
+  z-index: 1;
+  overflow: clip;
+  color-scheme: only light;
+  text-align: initial;
+  opacity: 1;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  /* eslint-disable-next-line css/use-baseline -- a Chrome-only extension (minimum Chrome 128 has it) */
+  text-size-adjust: none;
+  /* eslint-disable-next-line css/use-baseline -- a Chrome-only extension (minimum Chrome 128 has it) */
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: transparent;
+
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.sop-text-layer[data-main-rotation="90"] {
+  transform: rotate(90deg) translateY(-100%);
+}
+
+.sop-text-layer[data-main-rotation="180"] {
+  transform: rotate(180deg) translate(-100%, -100%);
+}
+
+.sop-text-layer[data-main-rotation="270"] {
+  transform: rotate(270deg) translateX(-100%);
+}
+
+.sop-text-layer :is(span, br) {
+  position: absolute;
+  color: transparent;
+  font-family: inherit;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  /* eslint-disable-next-line css/use-baseline -- a Chrome-only extension (minimum Chrome 128 has it) */
+  user-select: text;
+  font-kerning: none;
+  font-variant-ligatures: none;
+}
+
+.sop-text-layer > :not(.endOfContent) {
+  z-index: 1;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  /* eslint-disable-next-line css/no-invalid-properties -- var() inside scale(), which the linter's grammar cannot read */
+  transform: rotate(var(--rotate)) scale(var(--scale-x), var(--scale-y)) scale(var(--min-font-size-inv));
+
+  --font-height: 0;
+  --scale-x: 1;
+  --scale-y: 1;
+  --rotate: 0deg;
+}
+
+.sop-text-layer .sop-unselectable {
+  /* eslint-disable-next-line css/use-baseline -- a Chrome-only extension (minimum Chrome 128 has it) */
+  user-select: none;
+}
+
+/* A line's text for screen readers, as generated content: not selectable, not found by find-in-page, never hit. */
+.sop-text-layer .sop-a11y-line {
+  pointer-events: none;
+  /* eslint-disable-next-line css/use-baseline -- a Chrome-only extension (minimum Chrome 128 has it) */
+  user-select: none;
+}
+
+.sop-text-layer .sop-a11y-line::before {
+  content: attr(data-text);
+}
+
+/* eslint-disable-next-line css/use-baseline -- a Chrome-only extension (minimum Chrome 128 has it) */
+.sop-text-layer ::selection {
+  background: transparent;
+  color: transparent;
+}
+
+.sop-text-layer .endOfContent {
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  display: block;
+  cursor: default;
+  /* eslint-disable-next-line css/use-baseline -- a Chrome-only extension (minimum Chrome 128 has it) */
+  user-select: none;
+}
+
+.sop-text-layer.selecting .endOfContent {
+  top: 0;
+}
+
+/* The selection, painted under the text layer: one path a page, one colour, so lines that touch never draw darker. */
+.sop-selection {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.sop-selection path {
+  fill: var(--text-selection);
+}
+
+/* Where TextLayer puts a page's text layer: the whole page box, above the selection. */
+.sop-text-layer-host {
+  position: absolute;
+  inset: 0;
+}

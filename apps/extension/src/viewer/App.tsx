@@ -11,6 +11,7 @@ import {
   displayNameFor,
   ENGINE_WORKERS,
   engineAssets,
+  type PageBox,
   PdfLoadError,
   RenderScheduler,
   ScanDetector,
@@ -18,7 +19,7 @@ import {
   type ViewerStore,
   type ZoomMode,
 } from '@sop/viewer';
-import { PageList, type PageListApi } from '@sop/viewer/react';
+import { type PageLayerContext, PageList, type PageListApi, TextLayer, TextLayerController } from '@sop/viewer/react';
 import { memo, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { sendRuntimeMessage } from '../shared/send-message';
 import { parseViewerUrl, type ViewerParams } from '../shared/viewer-url';
@@ -251,6 +252,7 @@ const Reader = memo(function Reader({ doc, params, rootRef, pageFieldRef, ui, on
     () => new RenderScheduler(backend, doc.open.doc, { concurrency: ENGINE_WORKERS, previewWidthPx: 160, previewCache: 300 }),
   );
   const [scans] = useState(() => new ScanDetector(backend, doc.open.doc, doc.open.pages));
+  const [textLayers] = useState(() => new TextLayerController({ source: textSource(doc), pages: doc.open.pages, fontUrl: chrome.runtime.getURL(TEXT_LAYER_FONT) }));
   const api = useRef<PageListApi | null>(null);
   const commands = useMemo(() => {
     const ctx: ViewerContext = {
@@ -273,7 +275,17 @@ const Reader = memo(function Reader({ doc, params, rootRef, pageFieldRef, ui, on
     return () => onChrome(null);
   }, [commands, store, onChrome]);
   useEffect(() => installShortcuts(readerShortcuts(api)), []);
-  useEffect(() => publishRuntime({ viewer: viewerHooks(api, store, scans) }), [store, scans]);
+  useEffect(() => () => textLayers.dispose(), [textLayers]);
+  useEffect(
+    () =>
+      publishRuntime({
+        viewer: viewerHooks(api, store, scans, textLayers),
+        selectionRanges: () => textLayers.selectionRanges(),
+        glyphCenter: (pageIndex, charIndex) => textLayers.glyphCenter(pageIndex, charIndex),
+      }),
+    [store, scans, textLayers],
+  );
+  const renderPage = useCallback((box: PageBox, ctx: PageLayerContext) => <TextLayer controller={textLayers} box={box} ctx={ctx} />, [textLayers]);
   const goToPage = useCallback((index: number) => void api.current?.goToPage(index), []);
   const zoom = useCallback((mode: ZoomMode) => api.current?.zoomTo(mode), []);
   return (
@@ -288,11 +300,26 @@ const Reader = memo(function Reader({ doc, params, rootRef, pageFieldRef, ui, on
         end={<CurrentPageExtras store={store} scans={scans} source={doc.loaded.sourceUrl} onOpenInChrome={(url) => ui.openInChrome(url)} />}
       />
       <div className={styles.pages}>
-        <PageList backend={backend} doc={doc} store={store} scheduler={scheduler} apiRef={api} />
+        <PageList backend={backend} doc={doc} store={store} scheduler={scheduler} apiRef={api} renderPage={renderPage} />
       </div>
     </>
   );
 });
+
+/** The text layer's font: the engine's bundled Noto Sans (the spike measured canvas and DOM widths within 0.02 px with it). */
+const TEXT_LAYER_FONT = 'pdf/NotoSans-Regular.ttf';
+
+/**
+ * Where the text layer reads glyphs and selection rects. (Once PageTextProvider is in, it is passed here instead, so
+ * marks, find and the text layer share one glyph cache.)
+ */
+function textSource(doc: OpenedDocument) {
+  const d = doc.open.doc;
+  return {
+    glyphs: (pageIndex: number) => backend.getPageGlyphs(d, pageIndex),
+    rects: (pageIndex: number, start: number, count: number) => backend.getTextRangeRects(d, pageIndex, start, count),
+  };
+}
 
 /** What follows the page in view: `#page=N` in the address, and the scan hint. Kept apart so the page list does not re-render. */
 function CurrentPageExtras(p: { store: ViewerStore; scans: ScanDetector; source: string | null; onOpenInChrome: (url: string) => void }) {
@@ -389,14 +416,17 @@ function readerShortcuts(api: RefObject<PageListApi | null>): ShortcutDef[] {
 /** How long viewer.scrollTo waits for the page's full render before giving up. */
 const SCROLL_TO_TIMEOUT_MS = 10_000;
 
-function viewerHooks(api: RefObject<PageListApi | null>, store: ViewerStore, scans: ScanDetector): ViewerHooks {
+function viewerHooks(api: RefObject<PageListApi | null>, store: ViewerStore, scans: ScanDetector, textLayers: TextLayerController): ViewerHooks {
   const a = () => api.current;
   return {
     scale: () => store.get().scale,
     setScale: (s) => a()?.zoomTo({ kind: 'scale', scale: s }),
     currentPage: () => store.get().currentPage,
     scrollTo: (i) =>
-      Promise.race([a()?.goToPage(i) ?? Promise.resolve(), new Promise<void>((resolve) => setTimeout(resolve, SCROLL_TO_TIMEOUT_MS))]),
+      Promise.race([
+        (a()?.goToPage(i) ?? Promise.resolve()).then(() => textLayers.whenReady(i)),
+        new Promise<void>((resolve) => setTimeout(resolve, SCROLL_TO_TIMEOUT_MS)),
+      ]),
     snapshot: () => ({ ...store.get() }),
     scrollTop: () => a()?.scrollTop() ?? 0,
     maxScrollTop: () => a()?.maxScrollTop() ?? 0,

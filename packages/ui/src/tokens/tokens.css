@@ -195,6 +195,8 @@
   --viewer-page-placeholder: rgba(68,71,70,.2);
   --viewer-icon-hover: #3e4041; /* 8% #c4c7c5 over #333537 */
   --viewer-focus: #a8c7fa;
+  /* The text selection on a PDF page: Drive's blue (#0b57d0) at 30%, painted as one band a line (Task 22, R44) */
+  --text-selection: rgba(11,87,208,.3);
 
   /* Icons: Material Symbols Outlined at wght 400, drawn at opsz 20 or 24 (02 section 6.1) */
   --font-icons: "Material Symbols Outlined";

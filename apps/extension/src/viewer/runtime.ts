@@ -2,7 +2,7 @@
  * What the viewer publishes about itself for tests to read. Production code writes here with `publishRuntime`;
  * nothing in this file is global, and nothing in production reads it. Later tasks add fields.
  */
-import type { PageBox, PagePoint, PdfBackend, ViewerSnapshot } from '@sop/viewer';
+import type { CharRange, PageBox, PagePoint, PdfBackend, ViewerSnapshot } from '@sop/viewer';
 import type { StoreClient } from '../store/client';
 import type { OpenedDocument } from './open-document';
 
@@ -14,7 +14,7 @@ export interface ViewerHooks {
   scale(): number;
   setScale(s: number): void;
   currentPage(): number;
-  /** Scrolls page `pageIndex` to the top; resolves once its full render is on screen. */
+  /** Scrolls page `pageIndex` to the top; resolves once its full render and its text layer are on screen. */
   scrollTo(pageIndex: number): Promise<void>;
   snapshot(): ViewerSnapshot;
   scrollTop(): number;
@@ -36,6 +36,10 @@ export interface ViewerRuntime {
   viewer: ViewerHooks;
   /** The library store, once connected after the PDF opened. Null in Incognito or when the library cannot be reached. */
   store: StoreClient | null;
+  /** The chars the selection covers, by page (PDFium char indices; `end` exclusive). */
+  selectionRanges(): CharRange[];
+  /** The centre of char `charIndex`'s PDFium box on page `pageIndex`, in client px (NaN while its text layer is not built). */
+  glyphCenter(pageIndex: number, charIndex: number): { x: number; y: number };
 }
 
 let registry: Partial<ViewerRuntime> = {};

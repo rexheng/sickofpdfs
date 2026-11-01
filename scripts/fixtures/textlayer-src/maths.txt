@@ -1,0 +1,5 @@
+A square with side x has an area of x2 square units.
+
+Every point on a circle of radius r satisfies x2 + y2 = r2 in plane coordinates.
+
+The sequence grows like 2n while the first term a0 stays fixed.

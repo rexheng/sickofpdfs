@@ -22,6 +22,7 @@ const STEPS = [
   { script: 'make-objects.mjs' },
   { script: 'make-tagged.mjs' },
   { script: 'make-mixed.mjs' },
+  { script: 'make-textlayer.mjs' },
   scan(120),
   ...(process.env.SOP_GATE === '1' ? [scan(600)] : []),
 ];

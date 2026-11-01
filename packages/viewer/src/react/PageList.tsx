@@ -11,7 +11,7 @@ import { PAGE_GAP, pageDeviceSize, resolveScale, rowsOf, type Spread, stepZoom, 
 import type { RenderScheduler } from '../render/scheduler';
 import { PageDriver } from './page-driver';
 import styles from './PageList.module.css';
-import { PageView } from './PageView';
+import { type PageLayerContext, PageView } from './PageView';
 import { useViewerState, type ViewerStore } from './viewer-state';
 
 /** What the page list needs of an opened document (the extension's OpenedDocument has it). */
@@ -54,7 +54,7 @@ export interface PageListProps {
   store: ViewerStore;
   scheduler: RenderScheduler;
   /** The text and link layers for a page (Task 22). */
-  renderPage?: (box: PageBox) => ReactNode;
+  renderPage?: (box: PageBox, ctx: PageLayerContext) => ReactNode;
   /** Receives the page list's API while it is mounted. */
   apiRef?: RefObject<PageListApi | null>;
 }

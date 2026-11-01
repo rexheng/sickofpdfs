@@ -49,3 +49,21 @@ export { ScanDetector } from './render/scan-detect';
 export { createViewerStore, INITIAL_VIEWER_SNAPSHOT, useViewerState, type ViewerSnapshot, type ViewerStore } from './react/viewer-state';
 export type { PagePoint } from './layout/page-space';
 export type { FindController, FindState, JumpHistory, SaveController, SaveState, ViewPosition } from './contracts';
+
+// The text layer (Task 22): items from PDFium glyphs, the layer, and the DOM selection ↔ char ranges.
+export {
+  buildTextItems,
+  DRIFT_PX,
+  glyphUnits,
+  lineAt,
+  lineBreakJoins,
+  normalizeCopiedText,
+  PDFIUM_HYPHEN,
+  TEXT_LAYER_FONT_FAMILY,
+  textModelRange,
+  wordAt,
+  type GlyphUnit,
+  type TextItem,
+} from './text-layer/items';
+export { loadTextLayerFont, measureTextLayerText, renderTextLayer, TEXT_LAYER_CLASS, type TextLayerHandle } from './text-layer/text-layer';
+export { charAtPoint, charRangeFromDomRange, domPositionOfChar, getSelectionRanges, selectCharRanges, type CharRange } from './text-layer/char-map';
