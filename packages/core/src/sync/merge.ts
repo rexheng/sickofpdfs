@@ -70,6 +70,11 @@ export interface MergeContext {
    * With it, a retry or a replayed log is recognised and does nothing: it makes no second conflict copy and cannot bring back
    * a note that was deleted since. Without it the merge is still correct and loses nothing, but an old entry replayed after
    * the row moved on can be judged as a concurrent edit again.
+   *
+   * It trusts that a device's stamps only grow (the clock takes the largest stamp it has seen, and a device's stored data and
+   * its id go together). A device that kept its id but lost its clock state, with a wall clock that is also behind its old
+   * stamps, would have a genuinely new edit mistaken for a replay until its clock passed the old stamps. A fresh install
+   * gets a new device id, so this needs an unusual partial reset.
    */
   processedUpTo?(table: SyncedTable, id: string): HlcStamp | null;
 }
