@@ -69,6 +69,15 @@ export interface TextlayerPage {
   runDirs(): Promise<string[]>;
 }
 
+export interface ObjectsPageOptions {
+  detect?: boolean;
+  textRuns?: boolean;
+  /** Paper names (file names without .pdf in fixtures/out/classifier/learning/) to time detection on. */
+  timing?: string[];
+  /** With `timing`: how many pages of each paper, from the first. */
+  pages?: number;
+}
+
 interface Fixtures {
   server: SpikeServer;
   /** Opens spike.html?<q> in the test's browser (launched on first use) and resolves window.__result. */
@@ -81,6 +90,14 @@ interface Fixtures {
   launchSpike(o: LaunchOptions): Promise<SpikeSession>;
   /** Opens `f`'s page at `zoom` (1 = 100% = 96/72 CSS px per pt) in the textlayer check; the viewport is resized to fit it. */
   textlayerPage(f: TextlayerFixture, zoom: number): Promise<TextlayerPage>;
+  /**
+   * The objects check (src/checks/objects.ts, P0-10) on page `pageIndex` of fixtures/out/<file>: the page is drawn
+   * first, then its page objects (`objects`, `truncated`, `elapsedMs`) and structure tree (`struct`) are read;
+   * `textRuns` adds `runs` (getPageTextRuns) and `detect` adds `figures` (detectFigures). With file 'papers' and
+   * `timing` (names in fixtures/out/classifier/learning/), it times detection on the first `pages` pages of each
+   * paper instead: `pages` (one row per page), `p50Ms`, `p95Ms`, `maxMs`, and `resnetPage0Labels`.
+   */
+  objectsPage(file: string, pageIndex: number, opts?: ObjectsPageOptions): Promise<any>;
   /** The browser that spikePage and spikeScreenshot share, launched on first use. */
   _spikeSession: () => Promise<SpikeSession>;
   /** Results of every spike page opened in this test, for the failure record. */
@@ -272,6 +289,20 @@ export const test = base.extend<Fixtures>({
         },
         runDirs: () => page.evaluate((k) => (window as any)[k].runDirs(), tl),
       };
+    });
+  },
+
+  objectsPage: async ({ spikePage, server }, use) => {
+    await use(async (file, pageIndex, opts = {}) => {
+      if (file === 'papers') {
+        const names = opts.timing ?? [];
+        if (names.length === 0) throw new Error("objectsPage('papers') needs `timing`: the paper names");
+        const urls = names.map((n) => server.url(`classifier/learning/${n}.pdf`));
+        const r = await spikePage({ check: 'objects', papers: urls.join(','), names: names.join(','), pages: opts.pages ?? 10 }, { timeout: 110_000 });
+        const resnet = r.pages.find((p: { name: string; pageIndex: number }) => p.name.includes('resnet') && p.pageIndex === 0);
+        return { ...r, resnetPage0Labels: resnet ? resnet.figures.map((f: { label: string | null }) => f.label) : [] };
+      }
+      return spikePage({ check: 'objects', file: server.url(file), page: pageIndex, detect: opts.detect ? 1 : 0, textRuns: opts.textRuns ? 1 : 0 });
     });
   },
 });
