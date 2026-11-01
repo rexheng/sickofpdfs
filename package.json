@@ -13,7 +13,8 @@
     "lint": "eslint .",
     "test": "vitest run --project unit",
     "test:browser": "vitest run --project browser",
-    "fixtures": "node scripts/fixtures/build.mjs"
+    "fixtures": "node scripts/fixtures/build.mjs",
+    "merge:wave": "node scripts/dev/merge-wave.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
