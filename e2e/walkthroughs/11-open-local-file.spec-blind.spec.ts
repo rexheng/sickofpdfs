@@ -19,7 +19,8 @@ import { expect, rt, snap, test, waitForFirstPage } from './support/viewer.spec-
 async function openLocalFile(context: BrowserContext, url: string): Promise<Page> {
   const page = await context.newPage();
   await page.goto(url).catch(() => {}); // the takeover replaces the navigation Playwright started
-  await page.waitForURL(/^chrome-extension:\/\//, { timeout: 15_000 });
+  // Polled, not page.waitForURL: that rejects when the navigation it follows is aborted, and the takeover aborts it.
+  await expect.poll(() => page.url(), { message: 'the tab should be showing our viewer', timeout: 15_000 }).toMatch(/^chrome-extension:\/\//);
   await page.waitForSelector(VIEWER_ROOT, { state: 'attached' });
   return page;
 }
