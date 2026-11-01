@@ -26,39 +26,27 @@ The owner has learning disabilities and is highly intelligent. Write to them pla
    - Test build 1 is the viewer: takeover, scroll, zoom, select and copy, toolbar, "Back to page".
    - Test build 2 adds highlights and comments.
    - Polish comes after that.
-2. **Only spike what blocks a decision.** Every other check goes inside the feature task that needs it.
-3. **Run tasks in parallel by default**, each in its own git worktree. Name it `/home/user/wt-taskN` on branch `wt/taskN`, cut from the current branch head.
-   - The automatic worktree option fails here, because it bases on `origin/main`.
-   - Each task writes its own results file, so no two tasks edit the same document.
-   - The controller cherry-picks finished work in task order.
-4. **Match review effort to risk. Visual quality ranks as high as data safety (owner, 2026-11-01: "visual more important").**
-   - **Data, privacy, security and engine work:** the store, takeover, network, the PDF engine and the loader. These get spec-blind tests (rule 10), a short security read of the diff, and fix rounds.
-   - **Visual work:** tokens, components, viewer chrome, menus, toolbars, and anything the owner sees. It gets a screenshot review: the reviewer looks at real screenshots next to the Drive and Chrome reference captures in `docs/research/drive-refs/` and the spec in `docs/research/02-drive-visual-spec.md`. That review uses a strong model with fix rounds. The aim is Drive's aesthetic, not pixel-perfect copying.
-   - **Non-visual UI plumbing:** spec-blind tests only.
-   - **Throwaway spike code:** no review.
-5. **Fix it or drop it.** Fix cheap, small issues right away. Delete the rest; don't keep a "deferred" pile. Only requirements that a later task needs are carried, and they are written into that task's brief.
-6. **Use the right-sized model.** Small and medium tasks are implemented on haiku or sonnet. Use opus only for hard ones: the engine port, render scheduling, the text layer, and visual-fidelity work (Drive components and the viewer chrome).
-7. **Keep plans short.** A plan gives goals and interfaces, not exact test code.
-   - The interfaces and names in a brief are binding.
-   - Test code in a brief is guidance.
-   - Small differences go in the task report and need no formal ruling.
-8. **The owner's hands-on testing is the main critic.** The four critics (visual, experience, code/security, student) run once per test build, on the real extension, with screenshots.
-9. **Fewer unit tests, more user tests** (owner, 2026-11-01).
-   - **Default test: a user test.** Playwright drives the real built extension in Chromium the way the owner would: open a PDF, scroll, select, right-click, mark, comment, reload, check the note is still there. It takes a screenshot at the key moments.
-   - **Where the scenarios come from.** They are the spec's walkthroughs ("How it feels to use"), and each feature adds or extends one.
-   - **When unit tests are allowed.** Only for logic that is tricky and cheap to test in isolation: anchoring, canonical links, the learning filter, sync merge, export mapping. Use table-driven cases with no trivial tests.
-   - **What not to test.** Don't test getters, renders or wiring at unit level. The user test covers those.
-10. **Tests come from a separate, spec-blind author** (owner, 2026-11-01). Tests written by the session that wrote the code assert what the code already does. They pass by construction and prove nothing.
-    - **The implementer writes no committed tests.** It builds the feature and checks it works by hand: run it, take screenshots.
-    - **A separate test author writes the tests.** It works in parallel with the implementer, from the spec, the contracts and the brief's goals and interfaces only. It never sees the implementation, the diff or the brief's example tests. It has to guess the details, the way a reader six months later would.
-    - **The test author works in its own worktree** (`/home/user/wt-testsN`, branch `wt/testsN`), cut from the task's base commit.
-    - **The controller merges both and runs the tests.** First-run failures are the useful part. Each one is triaged as one of three things:
-      - **code bug:** the implementer fixes the code;
-      - **spec gap:** the controller decides, and records the decision in the spec;
-      - **wrong guess on something the spec leaves open:** the test is adjusted, with a one-line note.
-    - **This replaces the per-task code review.** Two kinds of review stay on top of it:
-      - a short security read of the diff for privacy, network and data-loss risk;
-      - the screenshot review for visual work.
+2. **Run work in parallel by default, but don't split tightly coupled work.**
+   - Independent pieces run side by side, each in its own git worktree: `/home/user/wt-taskN` on branch `wt/taskN`, cut from the current branch head. The automatic worktree option fails here because it bases on `origin/main`.
+   - Coupled work goes to one agent as one slice. Loading plus scrolling is one slice. The text layer plus selection painting is another.
+   - Each task writes its own results file.
+   - Merging happens once per round with `scripts/dev/merge-wave.mjs`, which cherry-picks in order, regenerates the lockfile and runs the gates.
+3. **Fix it or drop it.** Fix cheap, small issues right away. Delete the rest; don't keep a "deferred" pile. Only requirements a later task needs are carried, written into that task's brief.
+4. **Use the right-sized model.** Small and medium work runs on haiku or sonnet. Opus is only for hard work: the engine port, render scheduling, the text layer, and visual-fidelity work (Drive components and the viewer chrome).
+5. **Keep plans short.** A plan gives goals and interfaces, not test code. Interfaces and names are binding. Small differences go in the task report and need no formal ruling.
+6. **Three quality gates instead of many tests** (owner, 2026-11-01). Typecheck and lint run everywhere because they are nearly free. Beyond those, quality comes from:
+   - **Gate 1: the walkthrough user tests.** There are about 10, one per walkthrough in the spec's "How it feels to use". Playwright drives the real built extension the way the owner would (open a paper, scroll, select, mark, comment, reload, find it in the library), taking screenshots at the key moments. They live in `e2e/walkthroughs/` and run once per round, after the merge.
+   - **Gate 2: the engine reference set.** It covers about 20 real PDFs: papers, a scan, forms and a 600-page file. For each one it records the expected output: page count, per-page text hash, selection rects, and a perceptual hash of each page render. Images stay out of the repo; only the hashes are committed. It runs only when engine or text-layer code changes. A difference is shown as a before/after picture and is approved or rejected, never silently re-recorded.
+   - **Gate 3: the screenshot gallery.** Key screens are captured after every round and published to a private Artifact page the owner can open on a phone. Each one sits next to the Drive and Chrome references (`docs/research/drive-refs/`, `docs/research/02-drive-visual-spec.md`). The visual critic checks what changed since the last round. The aim is Drive's aesthetic, not a pixel-perfect copy. Visual quality ranks as high as data safety.
+7. **Tests come from a spec-blind author, and only where the risk is real** (owner, 2026-11-01). Tests written by the session that wrote the code pass by construction and prove nothing.
+   - **Implementers commit no tests.** They prove their work by running it and taking screenshots.
+   - **Who writes the gate-1 tests.** A separate author writes them from the spec, the contracts and the interfaces only. It never sees the code, the diff or the brief's example tests. It writes them once per feature, not once per task.
+   - **Unit tests: only for tricky, isolated logic,** and only from a spec-blind author. Examples are anchoring, canonical links, the learning filter, sync merge and export mapping. They are table-driven.
+   - **When spec-blind authors are used.** Only for the engine, the owner's data, privacy, the network, and comments. Low-risk work (colours, scaffolding, plumbing) relies on gates 1 and 3.
+   - **Triage of first-run failures.** Each one is a code bug (the implementer fixes it), a spec gap (the controller decides and records it in the spec), or a wrong guess on something the spec leaves open (the test is adjusted, with a note).
+   - **Security read.** Privacy, network and data-loss work also gets a short security read of the diff.
+8. **The owner's hands-on testing is the main critic.** A test build zip goes to the owner after every round, once a PDF opens. The four critics (visual, experience, code/security, student) run once per test build, on the real extension.
+9. **Only spike what blocks a decision.** Every other check goes inside the feature that needs it.
 
 ## Standing constraints
 
