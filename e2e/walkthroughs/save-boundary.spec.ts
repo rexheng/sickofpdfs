@@ -374,6 +374,8 @@ test.describe('R67 tightened: a second download still being identified (secread3
     const first = await openNotSure(openViewer, server, BOOK);
     await notSureChip(first).click(); // the owner saves the book
     const id = await waitSaved(first, 60_000);
+    // The chip says "Saved" once all 714 pages of text are stored too; the copy is matched against that text.
+    await expect(savedChip(first), 'the save is complete').toBeVisible({ timeout: 60_000 });
     await first.close();
 
     const b = await openAt(openViewer, copyUrl);
