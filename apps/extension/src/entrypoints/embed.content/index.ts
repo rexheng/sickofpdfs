@@ -90,7 +90,8 @@ function watchObjectOrEmbed(elem: HTMLEmbedElement | HTMLObjectElement): void {
     const source = pdfSourceOf(elem);
     if (source === null || source === last) return;
     last = source;
-    void sendRuntimeMessage({ type: 'takeover:embedded', url: source }).catch(() => {});
+    // Read again now: the service worker cannot see a frame's sandbox, so it relies on this report (messages.ts).
+    void sendRuntimeMessage({ type: 'takeover:embedded', url: source, mayNavigatePage: mayAskForTheTab() }).catch(() => {});
   };
   check();
   new MutationObserver(check).observe(elem, { attributes: true, attributeFilter: [elem instanceof HTMLEmbedElement ? 'src' : 'data'] });

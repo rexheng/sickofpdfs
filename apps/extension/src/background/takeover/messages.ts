@@ -82,12 +82,15 @@ function sameSite(origin: string | undefined, pageUrl: string): boolean {
  * click, and a sandboxed frame not at all; the takeover asks for no click, so it listens only to the page and to the
  * frames the page holds directly:
  * - the content script: in the page itself, or in a direct child frame of the page's site (an ad from another site
- *   is not; a sandboxed frame's origin is "null", which is no site);
+ *   is not; a sandboxed frame's origin is "null", which is no site) that may navigate the page. A frame sandboxed with
+ *   allow-same-origin keeps its origin, and the worker cannot read a frame's sandbox (webNavigation.getFrame has no
+ *   such field; reading the parent's DOM would need the scripting permission), so it relies on the content script's
+ *   own report, `mayNavigatePage`. A web page cannot forge that report: it cannot message the worker;
  * - a viewer in a frame: only where the takeover itself put this PDF (a page can write any address into a frame of
  *   its own), in a frame the page holds directly. webNavigation does not list frames that hold an extension page,
  *   so the redirect's own record (grants.ts) says where that frame is.
  */
-async function mayMoveTheTab(sender: Sender, tabId: number, pageUrl: string, url: string): Promise<boolean> {
+async function mayMoveTheTab(sender: Sender, tabId: number, pageUrl: string, url: string, mayNavigatePage: boolean): Promise<boolean> {
   if (sender.frameId === undefined) return false;
   if (fromExtensionPage(sender)) {
     const opened = await findGrant(tabId, url);
@@ -95,7 +98,7 @@ async function mayMoveTheTab(sender: Sender, tabId: number, pageUrl: string, url
   }
   if (!fromContentScript(sender)) return false;
   if (sender.frameId === 0) return true;
-  if (!sameSite(sender.origin, pageUrl)) return false;
+  if (!mayNavigatePage || !sameSite(sender.origin, pageUrl)) return false;
   const frame = await chrome.webNavigation.getFrame({ tabId, frameId: sender.frameId }).catch(() => null);
   return frame?.parentFrameId === 0;
 }
@@ -161,7 +164,7 @@ async function handle(message: RuntimeMessage, sender: Sender, afterReply: (work
     case 'takeover:embedded': {
       const pageUrl = tab?.url;
       if (tabId === undefined || pageUrl === undefined || pageUrl.startsWith(chrome.runtime.getURL(''))) return { opened: false };
-      if (!mayEmbed(message.url, pageUrl) || !(await mayMoveTheTab(sender, tabId, pageUrl, message.url))) return { opened: false };
+      if (!mayEmbed(message.url, pageUrl) || !(await mayMoveTheTab(sender, tabId, pageUrl, message.url, message.mayNavigatePage === true))) return { opened: false };
       if (await areEmbedsSuppressed(tabId, pageUrl)) return { opened: false };
       afterReply(() => openEmbeddedInTab(tabId, message.url, pageUrl));
       return { opened: true };

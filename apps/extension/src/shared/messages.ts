@@ -18,7 +18,11 @@ export type RuntimeMessage =
   /** The viewer: show `url` in Chrome's own viewer, once. */
   | { type: 'takeover:open-in-chrome'; url: string }
   /** A PDF is embedded in a page (content script) or the viewer sits in a frame: open `url` in the whole tab. */
-  | { type: 'takeover:embedded'; url: string }
+  /**
+   * `mayNavigatePage` (content script only): what the content script read of its own frame. True in the page itself,
+   * or in a frame that is not sandboxed or is sandboxed with allow-top-navigation.
+   */
+  | { type: 'takeover:embedded'; url: string; mayNavigatePage?: boolean }
   /** A viewer in a frame, after the owner's click: open `url`, the PDF's own address, in a new tab beside this one. */
   | { type: 'takeover:open-in-new-tab'; url: string }
   /** The viewer's "Back to page": do not take over the embedded PDFs of `pageUrl` again in this tab. */
