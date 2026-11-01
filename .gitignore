@@ -22,6 +22,7 @@ apps/extension/.output/
 apps/extension/public/pdf/
 apps/extension/public/ort/
 apps/extension/public/models/
+apps/extension/public/THIRD_PARTY_NOTICES.txt
 .venv-fixtures/
 # the web library is built into the Worker's static assets (CL13); only the placeholder is committed
 apps/cloud/public/*

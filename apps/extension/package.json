@@ -6,9 +6,9 @@
   "description": "The sickofpdfs Chrome extension (Manifest V3, built with WXT).",
   "scripts": {
     "postinstall": "wxt prepare",
-    "assets": "node scripts/copy-engine-assets.mjs && node scripts/copy-ort-assets.mjs && node scripts/fetch-minilm.mjs",
-    "build": "pnpm assets && node scripts/minilm-prototypes.mjs --check && wxt build && node scripts/check-no-cdn.mjs .output/chrome-mv3",
-    "build:e2e": "pnpm assets && node scripts/minilm-prototypes.mjs --check && wxt build --mode test && node scripts/check-no-cdn.mjs .output/chrome-mv3-test",
+    "assets": "node scripts/copy-engine-assets.mjs && node scripts/copy-ort-assets.mjs && node scripts/fetch-minilm.mjs && node scripts/third-party-notices.mjs",
+    "build": "pnpm assets && node scripts/minilm-prototypes.mjs --check && wxt build && node scripts/check-no-cdn.mjs .output/chrome-mv3 && node scripts/third-party-notices.mjs --check .output/chrome-mv3",
+    "build:e2e": "pnpm assets && node scripts/minilm-prototypes.mjs --check && wxt build --mode test && node scripts/check-no-cdn.mjs .output/chrome-mv3-test && node scripts/third-party-notices.mjs --check .output/chrome-mv3-test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

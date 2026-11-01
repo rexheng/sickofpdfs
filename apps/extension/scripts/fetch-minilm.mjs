@@ -19,6 +19,10 @@ import { fileURLToPath } from 'node:url';
 
 const repo = 'Xenova/all-MiniLM-L6-v2';
 const commit = '751bff37182d3f1213fa05d7196b954e230abad9';
+// Read by third-party-notices.mjs, which names the model and its revision in THIRD_PARTY_NOTICES.txt. When the commit
+// changes, check the model card's licence again and that file's notes about the model.
+export const MINILM_REPO = repo;
+export const MINILM_COMMIT = commit;
 
 /** The files the tie-breaker reads. `bytes` and `sha256` are of the file at `commit`. */
 export const MINILM_FILES = [

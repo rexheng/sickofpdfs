@@ -5,3 +5,15 @@
 .line:last-child {
   margin-block-end: 0;
 }
+
+/* A plain link, as in the notes (MarkdownBody): the primary colour, underlined. */
+.link {
+  color: var(--gm3-sys-color-primary);
+  text-decoration: underline;
+}
+
+.link:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 1px;
+  border-radius: var(--shape-menu);
+}
