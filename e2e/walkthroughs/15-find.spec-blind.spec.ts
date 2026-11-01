@@ -497,8 +497,9 @@ test('a 700-page book: hits stream in from the current page and scrolling and ty
 
   // Probes that live in the page: frame gaps, key-to-handler delay, and when the first count appears after the last key.
   await page.evaluate(() => {
-    const w = window as unknown as { __find: { maxGap: number; last: number; inputMax: number; lastKeyAt: number; firstCountAt: number | null; stop: boolean } };
-    const s = { maxGap: 0, last: performance.now(), inputMax: 0, lastKeyAt: 0, firstCountAt: null as number | null, stop: false };
+    type Count = { current: number; total: number };
+    const w = window as unknown as { __find: { maxGap: number; last: number; inputMax: number; lastKeyAt: number; firstCountAt: number | null; firstCount: Count | null; stop: boolean } };
+    const s = { maxGap: 0, last: performance.now(), inputMax: 0, lastKeyAt: 0, firstCountAt: null as number | null, firstCount: null as Count | null, stop: false };
     w.__find = s;
     const tick = (t: number) => {
       s.maxGap = Math.max(s.maxGap, t - s.last);
@@ -515,24 +516,33 @@ test('a 700-page book: hits stream in from the current page and scrolling and ty
         s.inputMax = Math.max(s.inputMax, performance.now() - e.timeStamp);
         s.lastKeyAt = performance.now();
         s.firstCountAt = null;
+        s.firstCount = null;
       },
       true,
     );
-    const total = () => {
+    const count = (): Count => {
       const box = Array.from(document.querySelectorAll<HTMLInputElement>('input[type="search"]'))[0];
       let node: HTMLElement | null = box ?? null;
       while (node && node.querySelectorAll('button').length < 3) node = node.parentElement;
       const m = node ? /(\d[\d,.]*)\s+of\s+(\d[\d,.]*)/i.exec(node.innerText) : null;
-      return m ? Number(m[2].replace(/[^\d]/g, '')) : 0;
+      return m ? { current: Number(m[1].replace(/[^\d]/g, '')), total: Number(m[2].replace(/[^\d]/g, '')) } : { current: 0, total: 0 };
     };
+    // Triage (R65 round): the count is kept as it was the moment it first showed. Read later, the stream has moved on (on a
+    // loaded box the bar already said "60 of …" because hits before page 300 had come in), so the test waits on the stream's
+    // own first count instead of reading the bar some time after it.
     new MutationObserver(() => {
-      if (s.firstCountAt === null && s.lastKeyAt > 0 && total() >= 1) s.firstCountAt = performance.now();
+      if (s.firstCountAt !== null || s.lastKeyAt === 0) return;
+      const c = count();
+      if (c.total >= 1) {
+        s.firstCountAt = performance.now();
+        s.firstCount = c;
+      }
     }).observe(document.body, { subtree: true, childList: true, characterData: true });
   });
   const probes = () =>
     page.evaluate(() => {
-      const s = (window as unknown as { __find: { inputMax: number; lastKeyAt: number; firstCountAt: number | null } }).__find;
-      return { inputMax: s.inputMax, firstHitMs: s.firstCountAt === null ? null : s.firstCountAt - s.lastKeyAt };
+      const s = (window as unknown as { __find: { inputMax: number; lastKeyAt: number; firstCountAt: number | null; firstCount: { current: number; total: number } | null } }).__find;
+      return { inputMax: s.inputMax, firstHitMs: s.firstCountAt === null ? null : s.firstCountAt - s.lastKeyAt, firstCount: s.firstCount };
     });
   // The longest gap between frames since the last call, which starts the next window. Screenshots stall the page's frames by
   // themselves, so each one is taken between two windows and its own window is thrown away.
@@ -551,8 +561,7 @@ test('a 700-page book: hits stream in from the current page and scrolling and ty
   await expect.poll(async () => (await probes()).firstHitMs, { message: 'a first hit shows', timeout: 20_000, intervals: [25, 50, 100] }).not.toBeNull();
   const first = await probes();
   expect(first.firstHitMs!, `the first hit shows within the debounce plus about 100 ms of the last key (${budgetNote(100)}; the debounce is ${DEBOUNCE_MS} ms)`).toBeLessThanOrEqual(FIRST_HIT_MS);
-  const early = await readBar(page);
-  expect(early.count!.current, 'the search starts from the page being read, so the first hit is the first one there').toBe(1);
+  expect(first.firstCount?.current, 'the search starts from the page being read, so the first hit is the first one there').toBe(1);
   await expect
     .poll(async () => (await paint(page)).current[0]?.pageIndex ?? -1, { message: 'the first hit is painted on or just after the page being read (page 300)', timeout: 10_000 })
     .toBeGreaterThanOrEqual(START);
@@ -562,7 +571,7 @@ test('a 700-page book: hits stream in from the current page and scrolling and ty
   await takeGap();
 
   // While the rest of the book is still being searched, scroll: the page moves at once, every time.
-  const totalThen = early.count!.total;
+  const totalThen = (await readBar(page)).count!.total;
   const wheel: number[] = [];
   for (let i = 0; i < 6; i++) {
     wheel.push(await wheelTurn(`wheel turn ${i + 1} while results stream`));

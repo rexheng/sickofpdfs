@@ -183,7 +183,9 @@ test.describe('a scan (scan-120.pdf)', () => {
     await page.keyboard.type('A point note on the scan', { delay: 8 });
     await page.keyboard.press('Enter');
     await expect(cardWith(page, 'A point note on the scan'), 'a point note works on a scan').toBeVisible({ timeout: 5000 });
-    expect(await noteBox(page).count()).toBe(0);
+    // Triage (R65 round): the box closes a moment after the card shows (1 in 6 runs counted it while it was still closing,
+    // on the old base too), so the test waits for it to go instead of counting once.
+    await expect(noteBox(page), 'the note box closes once the note is sent').toHaveCount(0);
 
     await noteAt(page, GUTTER, 'A page note on the scan');
     await expect(cardWith(page, 'A page note on the scan'), 'a page note works on a scan').toContainText(/page\s*1(?!\d)/i);
