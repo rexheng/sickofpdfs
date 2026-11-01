@@ -72,3 +72,9 @@
     animation: none;
   }
 }
+
+/* The header, the toolbar pill and the rail's buttons are never selected: a drag or Ctrl+A selects the pages' text only. */
+.app [data-viewer-chrome] {
+  /* eslint-disable-next-line css/use-baseline -- a Chrome-only extension (minimum Chrome 128 has it) */
+  user-select: none;
+}

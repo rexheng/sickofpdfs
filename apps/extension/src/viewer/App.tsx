@@ -502,7 +502,9 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   const [scans] = useState(() => new ScanDetector(backend, doc.open.doc, doc.open.pages));
   // The page text everything reads (the text layer now; marks and find later): one glyph cache for the document.
   const [pageText] = useState(() => createPageTextProvider(backend, doc.open.doc));
-  const [textLayers] = useState(() => new TextLayerController({ source: pageText, pages: doc.open.pages, fontUrl: chrome.runtime.getURL(TEXT_LAYER_FONT) }));
+  const [textLayers] = useState(
+    () => new TextLayerController({ source: pageText, pages: doc.open.pages, fontUrl: chrome.runtime.getURL(TEXT_LAYER_FONT), onNote: (text) => ui.showNote(text) }),
+  );
   const api = useRef<PageListApi | null>(null);
   const nav = useReaderNavigation({ backend, doc, store, api });
   const outline = useOutline(backend, doc);

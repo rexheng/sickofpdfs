@@ -21,13 +21,21 @@ const LAYER_SELECTOR = `.${TEXT_LAYER_CLASS}[${TEXT_LAYER_PAGE_ATTR}]`;
 const layersIn = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>(LAYER_SELECTOR)];
 const pageOf = (layer: HTMLElement) => Number(layer.getAttribute(TEXT_LAYER_PAGE_ATTR));
 
-/** The text nodes a selection can hold, in order (the unselectable hyphen spans are left out). */
+const textsOf = new WeakMap<HTMLElement, SpanText[]>();
+
+/**
+ * The text nodes a selection can hold, in order (the unselectable hyphen spans are left out). A layer's spans never
+ * change once it is built (a zoom past its scale builds a new layer), so they are read once per layer.
+ */
 function selectableTexts(layer: HTMLElement): SpanText[] {
+  const hit = textsOf.get(layer);
+  if (hit) return hit;
   const out: SpanText[] = [];
   for (const span of layer.querySelectorAll<HTMLElement>('span[data-start]:not(.sop-unselectable)')) {
     const node = span.firstChild;
     if (node instanceof Text) out.push({ node, start: Number(span.dataset.start) });
   }
+  textsOf.set(layer, out);
   return out;
 }
 
@@ -110,17 +118,30 @@ function endPosition(layer: HTMLElement, charIndex: number): { node: Text; offse
 export function selectCharRanges(viewerRoot: HTMLElement, ranges: CharRange[]): void {
   const sel = document.getSelection();
   if (!sel) return;
+  const ends = domEndsOf(viewerRoot, ranges);
+  if (!ends) {
+    sel.removeAllRanges();
+    return;
+  }
+  sel.setBaseAndExtent(ends.start.node, ends.start.offset, ends.end.node, ends.end.offset);
+}
+
+/**
+ * Where selectCharRanges puts the selection for `ranges`: from the start of the first range to the end of the last, in
+ * page order, over the pages that have a text layer. Null when no range has a layer, or nothing selectable is in them.
+ * (`end` may be Number.MAX_SAFE_INTEGER: the end of the page.)
+ */
+export function domEndsOf(viewerRoot: HTMLElement, ranges: CharRange[]): { start: { node: Text; offset: number }; end: { node: Text; offset: number } } | null {
   const layers = new Map(layersIn(viewerRoot).map((l) => [pageOf(l), l]));
   const shown = mergeRanges(ranges.filter((r) => r.end > r.start && layers.has(r.pageIndex)));
   const first = shown[0];
   const last = shown[shown.length - 1];
-  const from = first && startPosition(layers.get(first.pageIndex)!, first.start);
-  const to = last && endPosition(layers.get(last.pageIndex)!, last.end);
-  if (!from || !to) {
-    sel.removeAllRanges();
-    return;
-  }
-  sel.setBaseAndExtent(from.node, from.offset, to.node, to.offset);
+  const start = first && startPosition(layers.get(first.pageIndex)!, first.start);
+  const end = last && endPosition(layers.get(last.pageIndex)!, last.end);
+  if (!start || !end) return null;
+  const r = document.createRange();
+  r.setStart(start.node, start.offset);
+  return r.comparePoint(end.node, end.offset) > 0 ? { start, end } : null;
 }
 
 /**
@@ -159,52 +180,4 @@ export function domPositionOfChar(root: HTMLElement, pageIndex: number, charInde
     return { node: t.node, offset: side === 'before' ? k : k + len };
   }
   return null;
-}
-
-/** A selection end: a DOM position, and the char it was taken from (glyph-inclusive ends) or none (a caret position). */
-export interface GlyphHit {
-  pageIndex: number;
-  charIndex: number;
-}
-
-/**
- * The selection a drag from glyph `from` makes, as Chrome's PDF viewer makes it (R27): from the start of the glyph under
- * the mouse-down point to the end of the glyph under the pointer (or the other way round for a backward drag), so both
- * end glyphs are inside. With no glyph under the pointer, `focus` (the browser's caret position) is the far end.
- * Returns the anchor and focus positions, or null when a char is not in the layers.
- */
-export function glyphSelection(
-  root: HTMLElement,
-  from: GlyphHit,
-  to: GlyphHit | null,
-  focus: { node: Node; offset: number } | null,
-): { anchor: { node: Node; offset: number }; focus: { node: Node; offset: number } } | null {
-  const before = domPositionOfChar(root, from.pageIndex, from.charIndex, 'before');
-  const after = domPositionOfChar(root, from.pageIndex, from.charIndex, 'after');
-  if (!before || !after) return null;
-  const at = document.createRange();
-  at.setStart(before.node, before.offset);
-  if (to) {
-    const toBefore = domPositionOfChar(root, to.pageIndex, to.charIndex, 'before');
-    const toAfter = domPositionOfChar(root, to.pageIndex, to.charIndex, 'after');
-    if (!toBefore || !toAfter) return null;
-    const forward = at.comparePoint(toBefore.node, toBefore.offset) >= 0;
-    return { anchor: forward ? before : after, focus: forward ? toAfter : toBefore };
-  }
-  if (!focus) return null;
-  const forward = at.comparePoint(focus.node, focus.offset) >= 0;
-  return { anchor: forward ? before : after, focus };
-}
-
-/** A DOM range from two selection ends, in document order. */
-export function rangeBetween(a: { node: Node; offset: number }, b: { node: Node; offset: number }): Range {
-  const r = document.createRange();
-  r.setStart(a.node, a.offset);
-  if (r.comparePoint(b.node, b.offset) >= 0) {
-    r.setEnd(b.node, b.offset);
-  } else {
-    r.setStart(b.node, b.offset);
-    r.setEnd(a.node, a.offset);
-  }
-  return r;
 }
