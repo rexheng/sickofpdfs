@@ -19,6 +19,7 @@ import { isIncognito } from '../incognito';
 import type { OpenedDocument } from '../open-document';
 import { libraryStore } from '../use-store';
 import { createAnchorContext, createDocumentFigures, createTextAnchorMaker, type DocumentText, markNormRects } from './anchor-context';
+import { localDraftJournal } from './draft-journal';
 import { createDraftKeeper } from './drafts';
 import { createMarkInput, type MarkInput } from './mark-input';
 import { type AnnotationSession, type AnnotationState, createAnnotationSession } from './session';
@@ -519,6 +520,8 @@ export function createNotes(d: NotesDeps): Notes | null {
     presence,
     memoryOnly: () => gate.save?.state.kind !== 'saved',
     onError: (_id, e) => logNotesError(e, 'drafts'),
+    // A renderer crash takes the store down with the tab; the journal in localStorage survives it (draft-journal.ts).
+    journal: localDraftJournal(),
   });
   const text: DocumentText = { pageText: d.pageText, pages };
   const figures = createDocumentFigures({ backend: d.backend, doc, pages });

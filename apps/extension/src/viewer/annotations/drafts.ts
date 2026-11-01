@@ -10,9 +10,16 @@
 //
 // A write that fails stays in memory and is tried again. Nothing the person typed is ever dropped by a failed write.
 // On a memory-only PDF nothing is written; the drafts live here until the save decision, then `flush()` writes them.
+//
+// The journal (draft-journal.ts). The store lives in the offscreen document, which shares the viewer tabs' renderer process,
+// so a renderer crash kills the store too and a store write that was on its way is lost. So every change is also written,
+// synchronously, to the journal in the extension's localStorage, which the browser process keeps. `restore` reads both: a
+// journal text the store has not confirmed is newer and wins. The journal follows the store's rules: nothing for a PDF that
+// is not saved, an entry per draft, gone once the draft is sent or discarded and the store has confirmed it.
 
 import type { CommentId, CommentRow, DocumentId, TabId, ThreadId, ThreadRow } from '@sop/core';
 import type { AnnotationErrorCode, AnnotationsApi, EditDraft } from '../../store/annotations';
+import type { DraftJournal, JournalCommentEntry, JournalEditEntry } from './draft-journal';
 import type { TabPresence } from './tab-presence';
 
 /**
@@ -40,6 +47,11 @@ export interface DraftKeeper {
   flush(): Promise<void>;
   /** Forget a draft and delete it from the store. A comment that was already sent is never touched. */
   drop(id: CommentId): void;
+  /**
+   * The store has confirmed comment `id` as a sent row (or deleted it): its draft is over. Forgets the draft here and its
+   * journal entry, and never touches the store. Optional, so a keeper without a journal need not have it.
+   */
+  sent?(id: CommentId): void;
   /**
    * Adopt the drafts (and unsent edits) of tabs that are gone. Returns every new-note draft of this document that this tab
    * now owns; the unsent edits are read with `editDrafts` afterwards.
@@ -96,6 +108,12 @@ interface Slot {
   inflight: Promise<void> | null;
   /** The error of the newest write, while that write has not succeeded. */
   failed: Error | undefined;
+  /** For the journal: the `seq` the store last confirmed (0 when nothing typed here was confirmed yet). */
+  confirmedSeq: number;
+  /** For the journal: true once the store has confirmed any write of this draft, or the draft came from the store. */
+  confirmed: boolean;
+  /** For the journal: the `seq` last written to it (-1: never). */
+  journaledSeq: number;
 }
 
 interface Entry extends Slot {
@@ -122,9 +140,11 @@ interface Discard {
   running: boolean;
   skip(): boolean;
   run(store: DraftStore): Promise<void> | undefined;
+  /** After the store confirmed the delete (or it was skipped): the journal entry can go. */
+  done?(): void;
 }
 
-const newSlot = (): Slot => ({ seq: 0, dirty: false, firstDirtyAt: null, inflight: null, failed: undefined });
+const newSlot = (): Slot => ({ seq: 0, dirty: false, firstDirtyAt: null, inflight: null, failed: undefined, confirmedSeq: 0, confirmed: false, journaledSeq: -1 });
 
 export function createDraftKeeper(d: {
   store: DraftStore | null;
@@ -132,9 +152,12 @@ export function createDraftKeeper(d: {
   memoryOnly(): boolean;
   /** Told about every failed write or delete. `id` is null when a restore step failed. */
   onError?(id: CommentId | null, error: unknown): void;
+  /** The crash-safe copy of every draft (draft-journal.ts). The viewer passes `localDraftJournal()`; none in tests. */
+  journal?: DraftJournal | null;
 }): DraftKeeper {
   const entries = new Map<CommentId, Entry>();
   const edits = new Map<CommentId, EditEntry>();
+  const journal = d.journal ?? null;
   const threads = new Map<ThreadId, ThreadRow>();
   const discards = new Map<string, Discard>();
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -155,6 +178,54 @@ export function createDraftKeeper(d: {
     return null;
   };
   const slots = (): Slot[] => [...entries.values(), ...edits.values()];
+
+  // ---- the journal (draft-journal.ts). It is written whenever the store would take the draft, and only then.
+
+  /** Writes a draft's newest text to the journal. The whole row goes too until the store has confirmed it. */
+  function journalDraft(e: Entry): void {
+    if (!journal || !usable()) return;
+    const unsavedThread = e.thread !== undefined && !e.threadSaved ? e.thread : undefined;
+    const whole = !e.confirmed || unsavedThread !== undefined;
+    const entry: JournalCommentEntry = {
+      v: 1,
+      kind: 'comment',
+      documentId: e.row.documentId,
+      commentId: e.row.id,
+      threadId: e.row.threadId,
+      tab: d.presence.tabId,
+      body: e.row.body,
+      at: Date.now(),
+      pending: e.confirmedSeq !== e.seq,
+      ...(whole ? { row: e.row } : {}),
+      ...(whole && unsavedThread ? { thread: unsavedThread } : {}),
+    };
+    journal.put(entry);
+    e.journaledSeq = e.seq;
+  }
+
+  function journalEdit(x: EditEntry): void {
+    if (!journal || !usable()) return;
+    const entry: JournalEditEntry = {
+      v: 1,
+      kind: 'edit',
+      documentId: x.documentId,
+      commentId: x.commentId,
+      threadId: x.threadId,
+      editId: x.editId,
+      tab: d.presence.tabId,
+      body: x.body,
+      at: x.updatedAt,
+      pending: x.confirmedSeq !== x.seq,
+    };
+    journal.put(entry);
+    x.journaledSeq = x.seq;
+  }
+
+  /** The draft is over: the entry says so at once, and goes once the store has confirmed the delete. */
+  function closeInJournal(kind: 'comment' | 'edit', id: CommentId): void {
+    const j = journal?.get(kind, id);
+    if (j && j.tab === d.presence.tabId) journal!.put({ ...j, closing: true });
+  }
 
   function scheduleRetry(): void {
     if (disposed || retryTimer !== null || retries >= RETRY_MS.length) return;
@@ -187,7 +258,7 @@ export function createDraftKeeper(d: {
     slot: Slot,
     id: CommentId,
     send: () => Promise<void>,
-    o: { gone: AnnotationErrorCode; forget(): void; saved?(): void },
+    o: { gone: AnnotationErrorCode; forget(): void; saved?(seq: number): void; lost?(): void },
   ): Promise<void> {
     const seq = slot.seq;
     slot.dirty = false;
@@ -202,7 +273,7 @@ export function createDraftKeeper(d: {
       .then(
         () => {
           retries = 0;
-          o.saved?.();
+          o.saved?.(seq);
           if (slot.seq === seq) slot.failed = undefined;
         },
         (err: unknown) => {
@@ -214,6 +285,8 @@ export function createDraftKeeper(d: {
             o.forget();
             return;
           }
+          // The store has no such document any more (it was forgotten): the text stays in memory, but not in the journal.
+          if (errorText(err).includes('document-missing: ')) o.lost?.();
           slot.dirty = true;
           slot.failed = err instanceof Error ? err : new Error(typeof err === 'string' ? err : 'the draft could not be saved');
           slot.firstDirtyAt ??= Date.now();
@@ -234,11 +307,17 @@ export function createDraftKeeper(d: {
     return launchSlot(e, e.row.id, () => (thread ? store.saveDraft(e.row, thread) : store.saveDraft(e.row)), {
       gone: 'not-a-draft',
       forget: () => {
-        if (entries.get(e.row.id) === e) entries.delete(e.row.id);
+        if (entries.get(e.row.id) !== e) return;
+        entries.delete(e.row.id);
+        journal?.remove('comment', e.row.id);
       },
-      saved: () => {
+      saved: (seq) => {
         if (thread && e.thread === thread) e.threadSaved = true;
+        e.confirmed = true;
+        e.confirmedSeq = Math.max(e.confirmedSeq, seq);
+        if (entries.get(e.row.id) === e) journalDraft(e);
       },
+      lost: () => journal?.remove('comment', e.row.id),
     });
   }
 
@@ -246,8 +325,16 @@ export function createDraftKeeper(d: {
     return launchSlot(x, x.commentId, () => store.saveEditDraft({ commentId: x.commentId, editId: x.editId, draftOfTab: d.presence.tabId, body: x.body }), {
       gone: 'edit-closed',
       forget: () => {
-        if (edits.get(x.commentId) === x) edits.delete(x.commentId);
+        if (edits.get(x.commentId) !== x) return;
+        edits.delete(x.commentId);
+        journal?.remove('edit', x.commentId);
       },
+      saved: (seq) => {
+        x.confirmed = true;
+        x.confirmedSeq = Math.max(x.confirmedSeq, seq);
+        if (edits.get(x.commentId) === x) journalEdit(x);
+      },
+      lost: () => journal?.remove('edit', x.commentId),
     });
   }
 
@@ -261,6 +348,7 @@ export function createDraftKeeper(d: {
         .then(
           () => {
             discards.delete(key);
+            rec.done?.();
           },
           (err: unknown) => {
             rec.running = false;
@@ -279,10 +367,12 @@ export function createDraftKeeper(d: {
     if (!store) return Promise.resolve();
     const waits: Promise<void>[] = [];
     for (const e of entries.values()) {
+      if (e.dirty && e.journaledSeq !== e.seq) journalDraft(e);
       if (e.dirty && (urgent || !e.inflight)) waits.push(launch(store, e));
       else if (e.inflight) waits.push(e.inflight);
     }
     for (const x of edits.values()) {
+      if (x.dirty && x.journaledSeq !== x.seq) journalEdit(x);
       if (x.dirty && (urgent || !x.inflight)) waits.push(launchEdit(store, x));
       else if (x.inflight) waits.push(x.inflight);
     }
@@ -309,6 +399,104 @@ export function createDraftKeeper(d: {
     document.addEventListener('freeze', flushQuietly);
   }
   if (typeof window !== 'undefined') window.addEventListener('pagehide', flushQuietly);
+
+  /** Marks a slot as changed here, so the keeper writes it to the store (and the journal) soon. */
+  function touch(slot: Slot): void {
+    slot.seq += 1;
+    slot.dirty = true;
+    slot.firstDirtyAt ??= Date.now();
+  }
+
+  /**
+   * The second half of `restore`: what the journal holds that the store does not. Runs after the store's own drafts (and
+   * edits) of tabs that are gone were claimed and loaded. For each journal entry of this document:
+   * - a draft of a tab that is alive is not ours: left alone;
+   * - a draft that was being sent or cancelled when its tab went is finished: the store's delete is asked for again;
+   * - a text the store has not confirmed (`pending`) is newer than the store's: it wins, and is written to the store;
+   * - a text the store confirmed is already there (or was sent or deleted since): the store's row stands;
+   * - every entry this tab adopts names this tab as its owner from now on.
+   */
+  function fromJournal(
+    documentId: DocumentId,
+    live: Set<TabId>,
+    storeDrafts: Set<CommentId>,
+    storeEdits: EditDraft[] | null,
+    typedHere: Set<CommentId>,
+    editedHere: Set<CommentId>,
+  ): void {
+    if (!journal) return;
+    const tabId = d.presence.tabId;
+    const store = usable();
+    let any = false;
+    for (const j of journal.list(documentId)) {
+      if (j.tab !== tabId && live.has(j.tab)) continue; // another tab is alive and owns it
+      if (j.closing) {
+        // The draft was over when its tab went. It must not come back: forget what the store gave us of it above, and ask
+        // for the delete again (it changes nothing if it already happened, and never touches a sent comment).
+        if (j.kind === 'comment' && !typedHere.has(j.commentId)) {
+          const e = entries.get(j.commentId);
+          entries.delete(j.commentId);
+          if (e?.thread) threads.delete(e.thread.id);
+        }
+        if (j.kind === 'edit' && !editedHere.has(j.commentId)) edits.delete(j.commentId);
+        const done = (): void => journal.remove(j.kind, j.commentId);
+        const asked = j.kind === 'comment' ? store?.discardDraft?.(j.commentId) : store?.discardEditDraft?.(j.commentId, j.editId);
+        if (asked) asked.then(done, (err: unknown) => report(j.commentId, err));
+        else done();
+        continue;
+      }
+      if (j.kind === 'comment') {
+        if (typedHere.has(j.commentId)) continue;
+        const e = entries.get(j.commentId);
+        if (e && storeDrafts.has(j.commentId)) {
+          if (j.pending && j.body !== e.row.body) {
+            e.row = { ...e.row, body: j.body };
+            touch(e);
+            any = true;
+          }
+          journalDraft(e); // this tab owns it now
+        } else if (j.pending && j.row) {
+          // The store never had this draft (the tab went before its first write landed): it comes back from the journal.
+          const thread = j.thread ? { ...j.thread, draftOfTab: tabId } : undefined;
+          if (thread) threads.set(thread.id, thread);
+          const row: Draft = { ...j.row, body: j.body, draftOfTab: tabId };
+          const x: Entry = { ...newSlot(), row, thread: thread ?? threads.get(row.threadId), threadSaved: thread === undefined };
+          entries.set(row.id, x);
+          touch(x);
+          journalDraft(x);
+          any = true;
+        } else {
+          journal.remove('comment', j.commentId); // the store has it sent, deleted or forgotten
+        }
+      } else {
+        if (editedHere.has(j.commentId) || storeEdits === null) continue;
+        const s = storeEdits.find((e) => e.commentId === j.commentId);
+        const x = edits.get(j.commentId);
+        if (s && x) {
+          // The newer edit session wins; within one session, a text the store has not confirmed is newer.
+          const newer = j.editId > s.editId || (j.editId === s.editId && j.body !== s.body);
+          if (j.pending && newer) {
+            x.editId = j.editId;
+            x.body = j.body;
+            x.updatedAt = j.at;
+            touch(x);
+            any = true;
+          }
+          journalEdit(x);
+        } else if (j.pending) {
+          // Never reached the store. If it was sent or cancelled after all, the store refuses it (edit-closed) and it goes.
+          const y: EditEntry = { ...newSlot(), commentId: j.commentId, threadId: j.threadId, documentId: j.documentId, editId: j.editId, body: j.body, updatedAt: j.at };
+          edits.set(j.commentId, y);
+          touch(y);
+          journalEdit(y);
+          any = true;
+        } else {
+          journal.remove('edit', j.commentId);
+        }
+      }
+    }
+    if (any) schedule();
+  }
 
   const byCreated = (a: CommentRow, b: CommentRow): number => a.createdAt - b.createdAt;
   // Sorts by when the session began, so the store can tell a newer session of this tab from an older one.
@@ -342,6 +530,7 @@ export function createDraftKeeper(d: {
       e.seq += 1;
       e.dirty = true;
       e.firstDirtyAt ??= Date.now();
+      journalDraft(e); // in the same call: the renderer may be gone before the store write lands
       schedule();
     },
 
@@ -351,7 +540,11 @@ export function createDraftKeeper(d: {
       const e = entries.get(id);
       entries.delete(id);
       if (e?.thread) threads.delete(e.thread.id);
-      if (d.store === null || d.memoryOnly()) return; // never stored, so there is nothing to delete
+      if (d.store === null || d.memoryOnly()) {
+        journal?.remove('comment', id);
+        return; // never stored, so there is nothing to delete
+      }
+      closeInJournal('comment', id);
       // The delete waits for a write that is already on its way, so the draft cannot come back after it.
       discards.set(`c:${id}`, {
         id,
@@ -359,9 +552,21 @@ export function createDraftKeeper(d: {
         running: false,
         skip: () => entries.has(id),
         run: (store) => store.discardDraft?.(id),
+        done: () => {
+          if (!entries.has(id)) journal?.remove('comment', id); // a draft started again with this id keeps its entry
+        },
       });
       const store = usable();
       if (store) runDiscards(store);
+    },
+
+    sent(id) {
+      const e = entries.get(id);
+      if (e && !e.dirty && !e.inflight) {
+        entries.delete(id);
+        if (e.thread) threads.delete(e.thread.id);
+      }
+      journal?.remove('comment', id);
     },
 
     changeEdit(comment, body) {
@@ -376,6 +581,7 @@ export function createDraftKeeper(d: {
       x.seq += 1;
       x.dirty = true;
       x.firstDirtyAt ??= Date.now();
+      journalEdit(x);
       schedule();
     },
 
@@ -383,7 +589,11 @@ export function createDraftKeeper(d: {
       const x = edits.get(commentId);
       if (!x) return;
       edits.delete(commentId);
-      if (d.store === null || d.memoryOnly()) return;
+      if (d.store === null || d.memoryOnly()) {
+        journal?.remove('edit', commentId);
+        return;
+      }
+      closeInJournal('edit', commentId);
       // Closes this edit session in the store, after any save of it that is already on its way. A newer session of the same
       // comment has another edit id and is left alone by the store.
       discards.set(`e:${commentId}:${x.editId}`, {
@@ -392,6 +602,9 @@ export function createDraftKeeper(d: {
         running: false,
         skip: () => false,
         run: (store) => store.discardEditDraft?.(commentId, x.editId),
+        done: () => {
+          if (!edits.has(commentId)) journal?.remove('edit', commentId); // a newer edit of this comment keeps its entry
+        },
       });
       const store = usable();
       if (store) runDiscards(store);
@@ -412,33 +625,52 @@ export function createDraftKeeper(d: {
       const store = usable();
       if (!store) return own();
 
-      const live = await d.presence.liveTabs();
-      const tabId = d.presence.tabId;
-      try {
-        await store.claimDrafts(documentId, tabId, live);
-      } catch (err) {
-        report(null, err); // the drafts that are already ours are still listed below
-      }
-      const rows = await store.listDrafts(documentId, tabId);
-      const stored = typeof store.listDraftThreads === 'function' ? await store.listDraftThreads(documentId, tabId) : [];
-      for (const t of stored) if (!threads.has(t.id)) threads.set(t.id, t);
-      for (const r of rows) {
-        if (entries.has(r.id) || r.draftOfTab === null) continue; // text typed in this tab is newer than what is stored
-        entries.set(r.id, { ...newSlot(), row: r as Draft, thread: threads.get(r.threadId), threadSaved: true });
-      }
-
-      // R54: the unsent edits of sent notes come back the same way. A failure here must not hide the new-note drafts above.
-      try {
-        if (typeof store.claimEditDrafts === 'function' && typeof store.listEditDrafts === 'function') {
-          await store.claimEditDrafts(documentId, tabId, live);
-          for (const e of await store.listEditDrafts(documentId, tabId)) {
-            if (edits.has(e.commentId)) continue; // text typed in this tab is newer than what is stored
-            edits.set(e.commentId, { ...newSlot(), commentId: e.commentId, threadId: e.threadId, documentId: e.documentId, editId: e.editId, body: e.body, updatedAt: e.updatedAt });
-          }
+      // Under the journal's lock, so that two tabs opening at once never both adopt one draft from the journal.
+      const adopt = async (): Promise<void> => {
+        // Text typed in this tab is newer than anything stored, so these are left as they are.
+        const typedHere = new Set(entries.keys());
+        const editedHere = new Set(edits.keys());
+        const live = await d.presence.liveTabs();
+        const tabId = d.presence.tabId;
+        try {
+          await store.claimDrafts(documentId, tabId, live);
+        } catch (err) {
+          report(null, err); // the drafts that are already ours are still listed below
         }
-      } catch (err) {
-        report(null, err);
-      }
+        const rows = await store.listDrafts(documentId, tabId);
+        const stored = typeof store.listDraftThreads === 'function' ? await store.listDraftThreads(documentId, tabId) : [];
+        for (const t of stored) if (!threads.has(t.id)) threads.set(t.id, t);
+        for (const r of rows) {
+          if (entries.has(r.id) || r.draftOfTab === null) continue;
+          entries.set(r.id, { ...newSlot(), confirmed: true, row: r as Draft, thread: threads.get(r.threadId), threadSaved: true });
+        }
+
+        // R54: the unsent edits of sent notes come back the same way. A failure here must not hide the new-note drafts above.
+        let storeEdits: EditDraft[] | null = null;
+        try {
+          if (typeof store.claimEditDrafts === 'function' && typeof store.listEditDrafts === 'function') {
+            await store.claimEditDrafts(documentId, tabId, live);
+            storeEdits = await store.listEditDrafts(documentId, tabId);
+            for (const e of storeEdits) {
+              if (edits.has(e.commentId)) continue;
+              edits.set(e.commentId, {
+                ...newSlot(),
+                confirmed: true,
+                commentId: e.commentId,
+                threadId: e.threadId,
+                documentId: e.documentId,
+                editId: e.editId,
+                body: e.body,
+                updatedAt: e.updatedAt,
+              });
+            }
+          }
+        } catch (err) {
+          report(null, err);
+        }
+        if (journal) fromJournal(documentId, new Set(live), new Set(rows.map((r) => r.id)), storeEdits, typedHere, editedHere);
+      };
+      await (journal ? journal.locked(documentId, adopt) : adopt());
       return own();
     },
 

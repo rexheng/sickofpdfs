@@ -824,7 +824,15 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
           if (queue[0] === b) queue.shift();
           for (const op of ops) {
             persisted.add(rowKey(op.table, op.row.id));
-            if (op.table === 'comments') safeCopied.delete(op.row.id as CommentId); // it is live now, no longer a draft
+            if (op.table === 'comments') {
+              safeCopied.delete(op.row.id as CommentId); // it is live now, no longer a draft
+              // The store has the comment as a sent row now (or deleted it): the keeper lets go of its draft and journal copy.
+              try {
+                d.drafts.sent?.(op.row.id as CommentId);
+              } catch (e) {
+                report(e, 'drafts.sent');
+              }
+            }
           }
           failures = 0;
           b.attempts = 0;

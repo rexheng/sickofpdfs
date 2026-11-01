@@ -26,6 +26,7 @@ import {
 import type { PdfBackend, SaveController } from '@sop/viewer';
 import type { BlobStore } from '../../store/blob-store';
 import type { StoreChange } from '../../store/change-bus';
+import { forgetDraftJournal } from '../annotations/draft-journal';
 import type { StoreClient } from '../../store/client';
 import { type IdentityResult, resolveIdentity } from '../identity/resolve-identity';
 import type { OpenedDocument } from '../open-document';
@@ -225,6 +226,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     if (store === null || state.kind !== 'saved') return;
     const id = state.documentId;
     await store.forgetDocument(id);
+    forgetDraftJournal(id); // the drafts' crash-safe copies go with the document
     await blobs?.delete(id);
     const step = reduceSave(state, { type: 'undone' });
     // The reducer goes back to the stand-in's "not sure"; the filter's own reasons are the right tooltip.
