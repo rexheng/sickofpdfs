@@ -27,7 +27,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export interface TrashDeps {
   hlc: { tick(): HlcStamp };
   publish(c: StoreChange): void;
-  /** Removes every file kept for a document (its saved PDF). Absent where there is no file storage, as in Node tests. */
+  /** Removes every file kept for a document (its saved PDF and thumbnail). Absent where there is no file storage, as in Node tests. */
   deleteBlob?(id: DocumentId): Promise<void>;
 }
 

@@ -55,6 +55,7 @@ import {
   openDocument,
   type OpenOutcome,
   openPickedFile,
+  pickedFileName,
   reopenDocument,
 } from './open-document';
 import { notesPanelFeature } from './notes-panel/feature';
@@ -200,7 +201,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
   }, [params, deps, show]);
 
   useEffect(() => {
-    document.title = view.kind === 'ready' ? tabTitle(view.doc) : displayNameFor(params.source, null);
+    document.title = view.kind === 'ready' ? tabTitle(view.doc) : (pickedFileName(params) ?? displayNameFor(params.source, null));
   }, [view, params]);
 
   /**
@@ -247,7 +248,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
   const fileAccess = view.kind === 'error' && view.error instanceof PdfLoadError && view.error.code === 'file-access';
   const back = backTarget(backPage);
   const source = params.source;
-  const name = view.kind === 'ready' ? view.doc.loaded.displayName : displayNameFor(source, null);
+  const name = view.kind === 'ready' ? view.doc.loaded.displayName : (pickedFileName(params) ?? displayNameFor(source, null));
 
   // The chrome: dialogs, the page box (Ctrl+G), the copy-link note, and the commands everything runs.
   const root = useRef<HTMLDivElement>(null);

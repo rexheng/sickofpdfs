@@ -10,6 +10,7 @@ import { ensureDeviceId } from './device-id';
 import { migrate } from './migrate';
 import { createStoreServer } from './protocol';
 import { createStoreApi, type StoreApi } from './store-api';
+import { deleteThumbnailFile } from './thumbnail-files';
 import { startDailyPurge } from './trash-purge';
 import { DB_DIRECTORY, DB_FILE, isMessageOf, STORE_OWNER_LOCK, STORE_PORT, type StorePortMessage } from './transport';
 
@@ -72,13 +73,17 @@ async function openPool(sqlite3: Sqlite3) {
 
 let blobs: Promise<BlobStore> | null = null;
 
-/** Removes a document's saved PDF. The blob store is opened the first time a purge needs it. */
+/**
+ * Removes every file kept for a document: its saved PDF and its library thumbnail (ruling R76). The blob store is opened
+ * the first time a purge needs it.
+ */
 async function deleteBlob(id: DocumentId): Promise<void> {
   blobs ??= openBlobStore().catch((e: unknown) => {
     blobs = null; // tried again at the next purge
     throw e;
   });
   await (await blobs).delete(id);
+  await deleteThumbnailFile(id);
 }
 
 async function openStore(): Promise<StoreApi> {
@@ -94,7 +99,7 @@ async function openStore(): Promise<StoreApi> {
   const newest = db.selectValue(newestStampSql());
   if (typeof newest === 'string') hlc.receive(newest);
   const changes = createChangePublisher();
-  return createStoreApi(db, { now: () => Date.now(), hlc, publish: (c) => changes.publish(c), deleteBlob });
+  return createStoreApi(db, { now: () => Date.now(), hlc, publish: (c) => changes.publish(c), deleteBlob, deleteThumbnail: deleteThumbnailFile });
 }
 
 let opening: Promise<StoreApi> | null = null;

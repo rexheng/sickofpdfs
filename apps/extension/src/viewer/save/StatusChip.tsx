@@ -2,7 +2,7 @@
 // Ctrl+Alt+S does). After a first mark saved the PDF, "Undo" stands next to it for 10 s.
 import type { SaveState } from '@sop/core';
 import { Chip, type ChipProps, TextButton } from '@sop/ui';
-import { useCallback, useSyncExternalStore } from 'react';
+import { useCallback, useState, useSyncExternalStore } from 'react';
 import type { SaveControllerImpl } from './save-controller';
 import styles from './StatusChip.module.css';
 
@@ -17,9 +17,28 @@ type ChipLook = Pick<ChipProps, 'label' | 'icon' | 'tone' | 'tooltip' | 'disable
 export const SAVE_FAILED = 'Couldn’t save. Try again';
 const SAVE_FAILED_HINT = 'Your notes are kept on this computer. Click to try again.';
 
-/** What the chip shows for a state; null for none (while the PDF is being checked). */
-export function chipFor(state: SaveState, busy: SaveControllerImpl['busy'], savedReasons: readonly string[] | null, failed = false): ChipLook | null {
+/** The tooltip of the "In Trash" chip (ruling R76). */
+export const IN_TRASH_HINT = 'This PDF is in your library’s Trash. Restore it to keep it and its notes.';
+
+/** What else the chip must know besides the state: an earlier save failed (R67 a), or the saved PDF is in the Trash (R76 d). */
+export interface ChipFlags {
+  failed?: boolean;
+  trashed?: boolean;
+}
+
+/**
+ * What the chip shows for a state; null for none (while the PDF is being checked). One look at a time, in this order:
+ * 1. "Saving…": a save running now is the newest fact, and it settles the other two (it ends in "Saved" or "Couldn't save").
+ * 2. "In Trash": the PDF is in the library, so nothing failed to save; the owner must see that it is on its way out.
+ * 3. "Couldn't save. Try again": an earlier attempt failed, and the notes are only on this computer until a save works.
+ * 4. The state itself.
+ * "In Trash" only comes with `saved`, and "Couldn't save" and "Saving…" never do, so the order decides nothing in practice;
+ * it is written down so a later change keeps it.
+ */
+export function chipFor(state: SaveState, busy: SaveControllerImpl['busy'], savedReasons: readonly string[] | null, flags: ChipFlags = {}): ChipLook | null {
+  const { failed = false, trashed = false } = flags;
   if (busy === 'save' && state.kind !== 'saved') return { label: 'Saving…', icon: 'library_add', tone: 'attention', saves: false };
+  if (trashed && state.kind === 'saved') return { label: 'In Trash', icon: 'delete', tone: 'neutral', tooltip: IN_TRASH_HINT, saves: false };
   if (failed && busy === null && state.kind !== 'saved' && state.kind !== 'asking' && state.kind !== 'incognito') {
     return { label: SAVE_FAILED, icon: 'error', tone: 'attention', tooltip: SAVE_FAILED_HINT, saves: true };
   }
@@ -55,12 +74,13 @@ function tooltipOf(reasons: readonly string[]): string | undefined {
 }
 
 /** The controller's state and running effect, re-read whenever it announces a change. */
-export function useSaveView(save: SaveControllerImpl | null): { state: SaveState | null; busy: SaveControllerImpl['busy']; failed: boolean } {
+export function useSaveView(save: SaveControllerImpl | null): { state: SaveState | null; busy: SaveControllerImpl['busy']; failed: boolean; trashed: boolean } {
   const subscribe = useCallback((cb: () => void) => save?.subscribe(cb) ?? (() => {}), [save]);
   const state = useSyncExternalStore(subscribe, () => save?.state ?? null);
   const busy = useSyncExternalStore(subscribe, () => save?.busy ?? null);
   const failed = useSyncExternalStore(subscribe, () => save?.failed ?? false);
-  return { state, busy, failed };
+  const trashed = useSyncExternalStore(subscribe, () => save?.trashed ?? false);
+  return { state, busy, failed, trashed };
 }
 
 export interface StatusChipProps {
@@ -71,14 +91,25 @@ export interface StatusChipProps {
 const quietly = (p: Promise<void>): void => void p.catch(() => {});
 
 export function StatusChip({ save }: StatusChipProps) {
-  const { state, busy, failed } = useSaveView(save);
+  const { state, busy, failed, trashed } = useSaveView(save);
+  const [restoring, setRestoring] = useState(false);
   if (state === null) return null;
-  const look = chipFor(state, busy, save.savedReasons, failed);
+  const look = chipFor(state, busy, save.savedReasons, { failed, trashed });
   if (look === null) return null;
   const { saves, ...chip } = look;
   return (
     <div className={styles.status}>
       <Chip {...chip} className={styles.chip} onClick={saves ? () => quietly(save.requestSave()) : undefined} />
+      {state.kind === 'saved' && trashed && (
+        <TextButton
+          label="Restore"
+          disabled={restoring}
+          onClick={() => {
+            setRestoring(true);
+            quietly(save.restoreFromTrash().finally(() => setRestoring(false)));
+          }}
+        />
+      )}
       {state.kind === 'saved' && state.undoable && (
         <TextButton label="Undo" disabled={busy === 'forget'} onClick={() => quietly(save.undo())} />
       )}

@@ -112,6 +112,8 @@ export interface StoreDeps {
   publish(c: StoreChange): void;
   /** Removes the saved PDF of a document. Only the store worker has file storage, so Node tests leave this out. */
   deleteBlob?(id: DocumentId): Promise<void>;
+  /** Removes a document's library thumbnail (OPFS `thumbs/<id>.webp`, ruling R76). Absent in Node tests too. */
+  deleteThumbnail?(id: DocumentId): Promise<void>;
 }
 
 /** The method names of this file's part of the API (the annotation and figure parts list their own). */
@@ -606,33 +608,7 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
       }),
 
     forgetDocument: (documentId) =>
-      attempt(() => {
-        assertWritable();
-        checkHex(documentId, 'the document id');
-        let existed = false;
-        db.savepoint(() => {
-          existed = documentExists(documentId);
-          // 1. Every id that names this document or something hanging off it. The history row's id is the document id.
-          const ids = new Set<string>([documentId]);
-          for (const sql of [
-            'SELECT sha256 AS id FROM aliases WHERE document_id = ?',
-            'SELECT id FROM locations WHERE document_id = ?',
-            'SELECT id FROM marks WHERE document_id = ?',
-            'SELECT id FROM threads WHERE document_id = ?',
-            'SELECT id FROM comments WHERE document_id = ?',
-          ]) {
-            for (const r of db.selectObjects(sql, [documentId])) ids.add(text(r, 'id'));
-          }
-          // 2. The cascade removes aliases, locations, page text, marks, threads, comments, history and the figure cache;
-          // the index triggers remove their words from page_text_fts, documents_fts and comments_fts.
-          run('DELETE FROM documents WHERE id = ?', [documentId]);
-          // 3. Every outbox row naming any of them, including the delete rows the cascade itself just queued.
-          run('DELETE FROM outbox WHERE row_id IN (SELECT value FROM json_each(?))', [JSON.stringify([...ids])]);
-          // 4. Merge each index into one fresh segment, so the deleted words are gone from the index files too (R13).
-          if (existed) for (const t of FTS_TABLES) db.exec(`INSERT INTO ${t} (${t}) VALUES ('optimize')`);
-        });
-        if (existed) publish([{ table: 'documents', ids: [documentId], op: 'delete', documentId }]);
-      }),
+      forgetRows(documentId).then(() => forgetThumbnail(documentId)),
 
     searchPages: (query, limit) =>
       attempt(() => {
@@ -659,6 +635,43 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
           }));
       }),
   };
+
+  function forgetRows(documentId: DocumentId): Promise<void> {
+    return attempt(() => {
+      assertWritable();
+      checkHex(documentId, 'the document id');
+      let existed = false;
+      db.savepoint(() => {
+        existed = documentExists(documentId);
+        // 1. Every id that names this document or something hanging off it. The history row's id is the document id.
+        const ids = new Set<string>([documentId]);
+        for (const sql of [
+          'SELECT sha256 AS id FROM aliases WHERE document_id = ?',
+          'SELECT id FROM locations WHERE document_id = ?',
+          'SELECT id FROM marks WHERE document_id = ?',
+          'SELECT id FROM threads WHERE document_id = ?',
+          'SELECT id FROM comments WHERE document_id = ?',
+        ]) {
+          for (const r of db.selectObjects(sql, [documentId])) ids.add(text(r, 'id'));
+        }
+        // 2. The cascade removes aliases, locations, page text, marks, threads, comments, history and the figure cache;
+        // the index triggers remove their words from page_text_fts, documents_fts and comments_fts.
+        run('DELETE FROM documents WHERE id = ?', [documentId]);
+        // 3. Every outbox row naming any of them, including the delete rows the cascade itself just queued.
+        run('DELETE FROM outbox WHERE row_id IN (SELECT value FROM json_each(?))', [JSON.stringify([...ids])]);
+        // 4. Merge each index into one fresh segment, so the deleted words are gone from the index files too (R13).
+        if (existed) for (const t of FTS_TABLES) db.exec(`INSERT INTO ${t} (${t}) VALUES ('optimize')`);
+      });
+      if (existed) publish([{ table: 'documents', ids: [documentId], op: 'delete', documentId }]);
+    });
+  }
+
+  /** The thumbnail is a copy of a page, so it goes too. A failure is left to the library's sweep at its next start. */
+  async function forgetThumbnail(documentId: DocumentId): Promise<void> {
+    await deps.deleteThumbnail?.(documentId).catch(() => {
+      console.warn('sickofpdfs: a forgotten reading\'s thumbnail could not be removed yet');
+    });
+  }
 
   return {
     ...base,

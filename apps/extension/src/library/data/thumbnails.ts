@@ -6,9 +6,8 @@
 // of it, and otherwise on the next start, which removes every thumbnail whose document is gone.
 import type { DocumentId } from '@sop/core';
 import { createEmbedPdfBackend, ENGINE_WORKERS, engineAssets, type PdfBackend } from '@sop/viewer';
+import { THUMBS_DIR as DIR, thumbnailFileName } from '../../store/thumbnail-files';
 
-/** The folder at the root of OPFS. The blob store has `pdf/` and `tmp/`; this is its own. */
-const DIR = 'thumbs';
 /** Drawn this many device px wide: sharp in a stretched grid card at 2× and still small (about 20–60 KB). */
 const WIDTH_PX = 480;
 /** Larger copies are not opened just for a picture; their card keeps the PDF tile. */
@@ -32,7 +31,7 @@ export interface ThumbnailDeps {
 }
 
 const ID = /^[0-9a-f]{64}$/;
-const fileName = (id: DocumentId) => `${id}.webp`;
+const fileName = (id: DocumentId) => thumbnailFileName(id);
 
 async function folder(create: boolean): Promise<FileSystemDirectoryHandle | null> {
   try {

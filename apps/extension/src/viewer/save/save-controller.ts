@@ -34,6 +34,9 @@ import type { StoreClient } from '../../store/client';
 import { type IdentityResult, resolveIdentity } from '../identity/resolve-identity';
 import type { OpenedDocument } from '../open-document';
 
+/** What the viewer calls a PDF whose address gives no name (displayNameFor's fallback). Never a title. */
+const GENERIC_NAME = 'document.pdf';
+
 /** How long "Undo" stays next to the chip after a first mark saved the PDF. */
 export const UNDO_MS = 10_000;
 /** Pages of text per `putPageText` call. */
@@ -87,6 +90,13 @@ export interface SaveControllerImpl extends SaveController {
   readonly failed: boolean;
   /** The library document, while the state is `saved`. */
   documentId(): DocumentId | null;
+  /**
+   * The saved document is in the library's Trash (ruling R76): the chip says "In Trash" and offers Restore. Opening it
+   * never restores it by itself. Changes are announced through `subscribe`.
+   */
+  readonly trashed: boolean;
+  /** Takes the saved document out of the Trash. Rejects when the library could not do it. */
+  restoreFromTrash(): Promise<void>;
   /** `cb` hears of a save or forget that failed. The state is then what it was before; the call also rejects. */
   onFailure(cb: (what: 'save' | 'forget') => void): () => void;
   /** Stops the Undo timer and the listeners. */
@@ -107,6 +117,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
   let started: Promise<void> | null = null;
   let undoTimer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
+  let trashed = false;
   /** The store and blob store, once `start()` has them. Effects only run after that. */
   let store: StoreClient | null = null;
   let blobs: BlobStore | null = null;
@@ -156,7 +167,10 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     if (next.kind === 'saved') failed = false;
     if (undoable && !wasUndoable) startUndoTimer();
     if (!undoable) stopUndoTimer();
-    if (next.kind !== 'saved') savedReasons = null;
+    if (next.kind !== 'saved') {
+      savedReasons = null;
+      trashed = false; // a PDF that is not in the library is not in its Trash either
+    }
     notify();
   }
 
@@ -198,6 +212,18 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     };
   }
 
+  /**
+   * The PDF's own title. A file picked from disk with none is saved under its file name (ruling R76), since it has no
+   * link the library could name it by; a PDF from the web without one is named by its link.
+   */
+  function titleToSave(): string | null {
+    const own = open.metadata.title?.trim() ?? '';
+    if (/[\p{L}\p{N}]/u.test(own)) return own;
+    if (d.location !== null || loaded.displayName === GENERIC_NAME) return open.metadata.title;
+    const name = loaded.displayName.replace(/\.pdf$/i, '').trim();
+    return /[\p{L}\p{N}]/u.test(name) ? name : open.metadata.title;
+  }
+
   // ---- effects ----
   async function saveEffect(undoable: boolean, cause: SaveCause): Promise<void> {
     if (store === null) throw new Error('library-unavailable: the library could not be opened in this tab');
@@ -212,7 +238,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
         id,
         byteSize: loaded.size,
         pageCount: open.pageCount,
-        title: open.metadata.title,
+        title: titleToSave(),
         authors: [],
         pdfId: open.metadata.pdfId,
         hasText: pages.some((t) => /\S/u.test(t)),
@@ -364,6 +390,15 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
    */
   let following: Promise<void> | null = null;
   let lookAgain = false;
+  /** Reads whether the saved document is in the Trash now, and tells the chip when that changed. */
+  async function readTrashed(lib: StoreClient, documentId: DocumentId): Promise<void> {
+    const row = await lib.getDocument(documentId).catch(() => null);
+    const now = row !== null && row.deletedAt !== null;
+    if (disposed || now === trashed || state.kind !== 'saved' || state.documentId !== documentId) return;
+    trashed = now;
+    notify();
+  }
+
   function onLibraryChange(c: StoreChange): void {
     if (disposed) return;
     if (c.table === 'documents' && c.op === 'delete') {
@@ -372,6 +407,11 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       const mine = c.ids.includes(loaded.sha256) || (state.kind === 'saved' && c.ids.includes(state.documentId));
       if (mine) othersAdded = false;
       if (mine && state.kind === 'saved' && busy === null) backToNotSure();
+      return;
+    }
+    // R76 (d): the saved document went to the Trash, or came back (the library tab, another tab): the chip follows.
+    if (c.table === 'documents' && c.op === 'upsert' && store !== null && state.kind === 'saved' && c.ids.includes(state.documentId)) {
+      void readTrashed(store, state.documentId);
       return;
     }
     if (c.op !== 'upsert' || (c.table !== 'documents' && c.table !== 'aliases')) return;
@@ -422,7 +462,9 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     if (identity.kind === 'known') {
       const documentId = identity.documentId;
       await recordKnownOpen(store, documentId);
-      return dispatch({ type: 'identified', documentId });
+      await dispatch({ type: 'identified', documentId });
+      await readTrashed(store, documentId);
+      return;
     }
     const input = await filterInput();
     try {
@@ -457,6 +499,15 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       return failed && state.kind !== 'saved';
     },
     documentId: () => (state.kind === 'saved' ? state.documentId : null),
+    get trashed() {
+      return state.kind === 'saved' && trashed;
+    },
+    async restoreFromTrash() {
+      if (store === null || state.kind !== 'saved') return;
+      const id = state.documentId;
+      await store.restoreDocument(id);
+      await readTrashed(store, id);
+    },
     subscribe(cb) {
       listeners.add(cb);
       return () => void listeners.delete(cb);

@@ -1,8 +1,10 @@
 // Connects the viewer to the library store once its PDF is open, and publishes it as the runtime's `store`. The save
 // flow (Task 30) waits for it through `libraryStore()`. In Incognito there is no library: `store` is null and nothing
 // connects.
+import type { DocumentId } from '@sop/core';
 import { useEffect } from 'react';
 import { connectStore, type StoreClient } from '../store/client';
+import { forgetDraftJournal } from './annotations/draft-journal';
 import { isIncognito } from './incognito';
 import { publishRuntime } from './runtime';
 
@@ -49,6 +51,17 @@ function afterFirstPage(maxMs: number): Promise<void> {
   });
 }
 
+/**
+ * R76: a reading forgotten anywhere (Forget in another tab, or the Trash purge in the store worker, which cannot reach
+ * this page's storage) takes its drafts' crash-safe copies from the journal with it.
+ */
+function forgetJournalOfDeleted(store: StoreClient): void {
+  store.onChange((c) => {
+    if (c.table !== 'documents' || c.op !== 'delete') return;
+    for (const id of c.ids) forgetDraftJournal(id as DocumentId);
+  });
+}
+
 /** Call it on every render; the first time `documentReady` is true, the store connects (once per page). */
 export function useStore(documentReady: boolean): void {
   useEffect(() => {
@@ -61,7 +74,10 @@ export function useStore(documentReady: boolean): void {
     afterFirstPage(FIRST_PAGE_WAIT_MS)
       .then(() => connectStore())
       .then(
-        (store) => settle(store),
+        (store) => {
+          forgetJournalOfDeleted(store);
+          settle(store);
+        },
         (error: unknown) => {
           // The PDF stays readable; only the library is missing. Nothing about the document is in this message.
           console.warn('sickofpdfs: the library is not available', error instanceof Error ? error.message : String(error));

@@ -59,6 +59,18 @@ export interface OpenDocumentDeps {
   signal?: AbortSignal;
 }
 
+/**
+ * The name of a file the library opened from the owner's disk (R76): `p.name`, but only for a `blob:` link of this
+ * extension, which only the extension's own pages can make. Any other page could write `name=` into a viewer address, so
+ * for anything else the PDF keeps the name its address gives it. Folders and control characters are dropped.
+ */
+export function pickedFileName(p: ViewerParams, origin: string = location.origin): string | null {
+  if (typeof p.name !== 'string' || p.source === null || !p.source.startsWith(`blob:${origin}/`)) return null;
+  // eslint-disable-next-line no-control-regex -- removing control characters is the point
+  const base = (p.name.split(/[/\\]/).pop() ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 255);
+  return base === '' ? null : base;
+}
+
 /** How long the large-file note shows before the tab moves to Chrome's viewer. */
 export const BOUNCE_DELAY_MS = 2000;
 
@@ -92,6 +104,8 @@ export async function openDocument(p: ViewerParams, deps: OpenDocumentDeps): Pro
     if (err.code === 'file-access' && (await fileAccessAllowed())) return { kind: 'error', error: new PdfLoadError('network') };
     return { kind: 'error', error: err, ...signedOut };
   }
+  const picked = pickedFileName(p);
+  if (picked !== null) loaded = { ...loaded, displayName: picked };
   return openLoaded(loaded, deps, url, { ...(referrer !== undefined ? { referrer } : {}), ...(back !== null ? { back } : {}) });
 }
 
