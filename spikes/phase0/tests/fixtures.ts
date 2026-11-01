@@ -130,6 +130,7 @@ export const test = base.extend<Fixtures>({
         pass: false,
         measured: own?.measured ?? (last === undefined ? 'no spike result' : summarise(last)),
         note: [own?.note, error.slice(0, 3).join(' ').slice(0, 300)].filter(Boolean).join('; '),
+        ...(own?.deferred ? { deferred: own.deferred } : {}),
       });
     },
     { auto: true },
