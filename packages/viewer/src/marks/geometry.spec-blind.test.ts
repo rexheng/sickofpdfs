@@ -136,24 +136,30 @@ describe('NormRect to CSS px, at any rotation', () => {
 });
 
 describe('sortKey', () => {
-  it('grows with reading order: page first, then char index', () => {
-    const positions = [
-      { page: 0, index: 0 },
-      { page: 0, index: 1 },
-      { page: 0, index: 4_321 },
-      { page: 0, index: 999_999 },
-      { page: 1, index: 0 },
-      { page: 1, index: 17 },
-      { page: 2, index: 0 },
-      { page: 600, index: 999_999 },
-      { page: 601, index: 0 },
-      { page: 5_000, index: 0 },
-    ];
-    const keys = positions.map(sortKey);
+  // The schema (Phase 1 plan, marks table): `page_index` is the first page and `sort_key` is "top of the first rect (0-1)";
+  // rows come out ordered by (page_index, sort_key). So sortKey is the top of the first rect, and a document note has none.
+  const text = (top: number) => ({
+    kind: 'text' as const,
+    quote: { quote: 'x', prefix: '', suffix: '' },
+    start: { page: 3, index: 40 },
+    end: { page: 3, index: 60 },
+    rects: [{ page: 3, rects: [[0.1, top, 0.9, top + 0.02] as NormRect, [0.1, top + 0.03, 0.5, top + 0.05] as NormRect] }],
+  });
+
+  it('a text anchor sorts by the top of its first rect, so lines come out top to bottom', () => {
+    const tops = [0, 0.05, 0.31, 0.5, 0.999];
+    const keys = tops.map((t) => sortKey(text(t)));
     keys.forEach((k, i) => {
-      expect(Number.isFinite(k)).toBe(true);
-      if (i > 0) expect(k, `${JSON.stringify(positions[i - 1])} before ${JSON.stringify(positions[i])}`).toBeGreaterThan(keys[i - 1]);
+      expect(k).toBeCloseTo(tops[i], 9);
+      if (i > 0) expect(k as number).toBeGreaterThan(keys[i - 1] as number);
     });
+  });
+
+  it('an area, a point and a page note sort by their top; a document note has no key', () => {
+    expect(sortKey({ kind: 'area', page: 1, rect: [0.1, 0.4, 0.5, 0.6], dHash: '0'.repeat(16) })).toBeCloseTo(0.4, 9);
+    expect(sortKey({ kind: 'point', page: 1, point: [0.5, 0.25] })).toBeCloseTo(0.25, 9);
+    expect(sortKey({ kind: 'page', page: 1 })).toBe(0);
+    expect(sortKey({ kind: 'document' })).toBeNull();
   });
 });
 

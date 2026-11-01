@@ -215,14 +215,14 @@ const ROWS: Row[] = [
     want: (t) => ({ placed: true, by: ['same-page'], ...find(t, 0, 'all values are in millions of dollars', 1) }),
   },
 
-  // ---- reflow, edits and moves: fuzzy, with "Moved" ---------------------------------------------------------------
+  // ---- reflow (quiet), edits and moves (fuzzy, with "Moved") ---------------------------------------------------------------
   {
-    name: 'reflowed text (line breaks fall elsewhere): fuzzy',
+    name: 'reflowed text (line breaks fall elsewhere, same words): placed quietly, no "Moved"',
     before: paper,
     after: paper.map((t, i) => (i === 1 ? pageText(PAPER_PARAGRAPHS[1], 2, 85) : t)),
     anchor: loose(1, 'The attention heads specialise: some', 'across a long sentence.'),
-    want: placedAt(1, 'The attention heads specialise: some', 'across a long sentence.', ['fuzzy'], { tol: 4 }),
-    why: 'the card must show "Moved"',
+    want: placedAt(1, 'The attention heads specialise: some', 'across a long sentence.', NO_MOVED, { tol: 4 }),
+    why: 'ruling R52: line breaks are white space, not content. The words are the same, so nothing moved',
   },
   {
     name: 'reflow pushes the passage onto the next page',

@@ -223,7 +223,7 @@ describe('reflowed and edited text, set line by line at two widths', () => {
   const sets = PAPER_PARAGRAPHS[1];
   const typeset = (paragraphs: string[], o: { wrapAt: number; fontSize?: number }) => typesetPdf(paragraphs, { ...o, leading: (o.fontSize ?? 11) + 3 }).then((t) => t.bytes);
 
-  it('the same sentences wrapped at another width: found by the fuzzy step, and the card says "Moved"', async () => {
+  it('the same sentences wrapped at another width: the same words, so placed quietly (no "Moved"; ruling R52)', async () => {
     const narrow = await open(await typeset(sets, { wrapAt: 48 }));
     const wide = await open(await typeset(sets, { wrapAt: 84 }));
     const from = 'The attention heads specialise: some';
@@ -233,8 +233,7 @@ describe('reflowed and edited text, set line by line at two widths', () => {
     expect(stored.quote.quote, 'precondition: the passage runs over a line break').toMatch(/\r\n/);
 
     const res = await resolve(stored, wide);
-    expectPlacedAt(res, ['fuzzy'], findLoose(wide.texts, 0, from, to), 4);
-    if (res.placed) expect(res.score).toBeLessThan(1);
+    expectPlacedAt(res, QUIET, findLoose(wide.texts, 0, from, to), 4);
   }, SLOW);
 
   it('and back again, at the same width: stored', async () => {

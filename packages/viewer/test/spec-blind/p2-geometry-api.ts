@@ -11,12 +11,14 @@
 // test fails with the list of what was tried and what the module exports, and this file is the only thing to adjust.
 //
 // What the guesses mean, in one place:
+// The shapes the code publishes (implementer's signature list), which the probes below settle on:
 //   pdfRectToNorm(rect: PdfRect, page: { width, height }): NormRect                      points -> 0..1 of the crop box
-//   normToCss(norm: NormRect, page: { width, height, rotation }, scale, viewRotation)     0..1 -> CSS px on the turned page
-//     (page.rotation is the page's /Rotate, viewRotation the viewer's own turn; both clockwise; scale is CSS px per point)
-//   markPaths(marks: { id, style, color, rects: NormRect[] }[], view)                    -> { style, color, d }[], d in CSS px
-//   hitTest(marks, view, point: { x, y } in CSS px)                                       -> the id of the mark under the point, or null
-//   sortKey(position: { page, index })                                                    -> a number that grows with reading order
+//   normToCss(norm: NormRect, { width, height }, scale, rotation)                         0..1 -> CSS px on the turned page
+//     (rotation is the TOTAL turn: the page's /Rotate plus the viewer's own turn, clockwise; scale is CSS px per point)
+//   markPaths(shapes: { style, color, rects: Box[] }[], { rotation })                    -> { style, color, d }[]; rects are CSS-px boxes
+//   hitTest(items: { id, rects: Box[] }[], point: { x, y })                               -> the ids hit, the last drawn first; rects are CSS-px boxes
+//   sortKey(anchor)                                                                       -> the top of the anchor's first rect (0..1), the sort_key column;
+//                                                                                            rows are ordered by (page_index, sort_key); null for a document note
 import * as geometry from '../../src/marks/geometry';
 import type { PdfRect, Rotation } from '../../src/backend/types';
 
@@ -168,6 +170,9 @@ export function normToCss(n: NormRect, view: View): Box {
     const probes: View[] = [
       { width: 200, height: 100, rotation: 0, scale: 2, viewRotation: 0 },
       { width: 200, height: 100, rotation: 0, scale: 2, viewRotation: 90 },
+      // a page with its own /Rotate: tells a call that takes the total turn from one that takes the two parts
+      { width: 200, height: 100, rotation: 90, scale: 2, viewRotation: 0 },
+      { width: 200, height: 100, rotation: 270, scale: 2, viewRotation: 180 },
     ];
     const works = (shape: (typeof CSS_SHAPES)[number]) =>
       probes.every((p) => {
@@ -200,21 +205,12 @@ export function normToCss(n: NormRect, view: View): Box {
 // ---------------------------------------------------------------------------------------------------------------
 // sortKey
 
-export function sortKey(position: { page: number; index: number }): number {
+export function sortKey(anchor: unknown): number | null {
   const f = find(['sortKey', 'markSortKey', 'sortKeyOf']);
   if (!f) throw new Unbound('sortKey', ['sortKey', 'markSortKey', 'sortKeyOf']);
-  const tries: (() => unknown)[] = [() => f.fn(position), () => f.fn(position.page, position.index), () => f.fn({ kind: 'text', start: position, end: position, quote: { quote: '', prefix: '', suffix: '' }, rects: [] })];
-  const errors: string[] = [];
-  for (const t of tries) {
-    try {
-      const out = t();
-      if (typeof out === 'number' && Number.isFinite(out)) return out;
-      errors.push(`returned ${JSON.stringify(out)}`);
-    } catch (e) {
-      errors.push((e as Error).message);
-    }
-  }
-  throw new Unbound('call shape for sortKey', ['(position)', '(page, index)', '(anchor)'], errors.join(' | '));
+  const out = f.fn(anchor);
+  if (out === null || (typeof out === 'number' && Number.isFinite(out))) return out;
+  throw new Error(`sortKey returned ${JSON.stringify(out)}`);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -283,6 +279,8 @@ const PATH_SHAPES: { id: string; call: PathsCall }[] = [
   { id: '(marks, page, scale, viewRotation)', call: (f, m, v) => f(m, { width: v.width, height: v.height, rotation: v.rotation }, v.scale, v.viewRotation) },
   { id: '(marks, page, { scale, viewRotation })', call: (f, m, v) => f(m, { width: v.width, height: v.height, rotation: v.rotation }, { scale: v.scale, viewRotation: v.viewRotation }) },
   { id: '(marks, (norm) => css box)', call: (f, m, v) => f(m, (n: NormRect) => normToCss(n, v)) },
+  // geometry.ts as written: shapes whose rects are CSS-px boxes, then options. The turn goes in the options.
+  { id: '(shapes in css px, { rotation })', call: (f, m, v) => f(m.map((k) => ({ style: k.style, color: k.color, rects: k.rects.map((r) => normToCss(r, v)) })), { rotation: total(v) }) },
 ];
 
 function readPaths(out: unknown): PaintedPath[] | null {
@@ -336,18 +334,20 @@ const HIT_SHAPES: { id: string; call: HitCall }[] = [
   { id: '(marks, point, view)', call: (f, m, v, p) => f(m, p, v) },
   { id: '(marks, page, scale, viewRotation, point)', call: (f, m, v, p) => f(m, { width: v.width, height: v.height, rotation: v.rotation }, v.scale, v.viewRotation, p) },
   { id: '(marks, point.x, point.y, view)', call: (f, m, v, p) => f(m, p.x, p.y, v) },
+  // geometry.ts as written: items whose rects are CSS-px boxes, then the point. Ids come back last drawn first.
+  { id: '(items in css px, point)', call: (f, m, v, p) => f(m.map((k) => ({ id: k.id, rects: k.rects.map((r) => normToCss(r, v)) })), p) },
 ];
 
 function readHit(out: unknown): string | null | undefined {
   if (out === null || out === undefined) return null;
   if (typeof out === 'string') return out;
-  if (Array.isArray(out)) return out.length ? readHit(out[out.length - 1]) : null;
+  if (Array.isArray(out)) return out.length ? readHit(out[0]) : null; // the code lists the last drawn first
   if (typeof out === 'object' && typeof (out as { id?: unknown }).id === 'string') return (out as { id: string }).id;
   return undefined;
 }
 
 let hitBound: ((m: PaintMark[], v: View, p: { x: number; y: number }) => string | null) | null = null;
-/** The id of the mark under a point in CSS px (the topmost when several are), or null. */
+/** The id of the mark under a point in CSS px (the topmost when several are, which is the first the code lists), or null. */
 export function hitTest(marks: PaintMark[], view: View, point: { x: number; y: number }): string | null {
   if (!hitBound) {
     const names = ['hitTest', 'hitTestMarks', 'markAt', 'markAtPoint', 'hitMark', 'pickMark'];

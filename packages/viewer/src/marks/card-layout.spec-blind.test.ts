@@ -3,13 +3,13 @@
 // Sources: the plan's S7 ("layoutCards: each card sits at its anchor's top, collisions are pushed down, and the active
 // card stays level with its mark"), the spec's Ctrl+Alt+M flow point 5 ("Cards line up with their marks down the margin,
 // like Google Docs. The active card moves left and its mark darkens"), the plan's done-when 4 ("A clicked card turns light,
-// moves 12 px left") and S4 (cards: "10 px gaps, and a 12 px shift for the active card").
+// moves 12 px left") and S4 (cards: "10 px gaps, and a 12 px shift for the active card"). The 12 px shift is not tested here:
+// it belongs to the card (ThreadCard's CSS, token --sop-card-shift), not to the vertical layout.
 //
 // The plan gives the name layoutCards and nothing else: not the argument or the result. The adapter below is the one place
 // that says what is GUESSED, and tolerates the obvious variants:
 //   layoutCards(cards: { id, anchorTop, height }[], options?: { activeId?, gap? })
-//   returns, for each card, its top in px (an array of { id, top }, a Map or a plain object), and for the active card a
-//   sideways shift in px (shiftX, dx, x, left or offsetX), negative meaning left.
+//   returns, for each card, its top in px (an array of { id, top }, a Map or a plain object).
 // "Collisions are pushed down" is read the Google Docs way: each card goes to its anchor, a card that would overlap the
 // one above moves down just far enough, and the active card keeps its anchor while its neighbours make room.
 import { describe, expect, it } from 'vitest';
@@ -22,12 +22,9 @@ interface Card {
 }
 interface Placed {
   top: number;
-  /** Sideways shift relative to the other cards, in px; undefined when the result has no such number. */
-  shift: number | undefined;
 }
 
 const GAP = 10; // S4: "10 px gaps"
-const SHIFT = 12; // S4 / done-when 4: "moves 12 px left"
 
 const exported = cardLayout as unknown as Record<string, unknown>;
 const layoutFn = (typeof exported.layoutCards === 'function' ? exported.layoutCards : null) as ((...a: unknown[]) => unknown) | null;
@@ -49,12 +46,12 @@ function numberFrom(o: Record<string, unknown>, names: string[]): number | undef
 function read(out: unknown): Map<string, Placed> {
   const result = new Map<string, Placed>();
   const place = (id: string, v: unknown) => {
-    if (typeof v === 'number') result.set(id, { top: v, shift: undefined });
+    if (typeof v === 'number') result.set(id, { top: v });
     else if (v && typeof v === 'object') {
       const o = v as Record<string, unknown>;
       const top = numberFrom(o, ['top', 'y']);
       if (top === undefined) throw new Error(`layoutCards gave no top for card ${id}: ${JSON.stringify(v)}`);
-      result.set(id, { top, shift: numberFrom(o, ['shiftX', 'dx', 'offsetX', 'x', 'left', 'translateX']) });
+      result.set(id, { top });
     } else throw new Error(`layoutCards gave an unreadable result for card ${id}: ${JSON.stringify(v)}`);
   };
   if (out instanceof Map) for (const [k, v] of out as Map<unknown, unknown>) place(String(k), v);
@@ -183,21 +180,5 @@ describe('layoutCards: the active card', () => {
     const cards = [card('a', 0, 80), card('b', 400, 80), card('c', 900, 80)];
     const p = layout(cards, { activeId: 'b' });
     expect(tops(cards, p)).toEqual([0, 400, 900]);
-  });
-
-  it('the active card moves 12 px left; the others do not move', () => {
-    const p = layout(trio, { activeId: 'b' });
-    const active = p.get('b')!;
-    const others = ['a', 'c'].map((id) => p.get(id)!);
-    expect(active.shift, 'the result carries a sideways shift for the active card').toBeDefined();
-    const base = others[0].shift ?? 0;
-    expect(others[1].shift ?? 0, 'the other cards share one position').toBe(base);
-    expect((active.shift as number) - base, 'the active card is 12 px to the left of the others').toBe(-SHIFT);
-  });
-
-  it('with no active card nothing is shifted', () => {
-    const p = layout(trio, { activeId: null });
-    const shifts = new Set(trio.map((c) => p.get(c.id)!.shift ?? 0));
-    expect(shifts.size).toBe(1);
   });
 });
