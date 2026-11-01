@@ -16,6 +16,7 @@ import {
   cardWith,
   clearSelection,
   describe,
+  hasDottedUnderline,
   highlightFromMenu,
   isPlain,
   markTokens,
@@ -25,6 +26,7 @@ import {
   replyBox,
   selectPassage,
   saveFirst,
+  threadUnderlineColour,
   waitSaved,
 } from './support/marks.spec-blind';
 import { shot } from './support/takeover';
@@ -33,7 +35,6 @@ test.setTimeout(150_000);
 test.skip(!SAVING_AVAILABLE, NO_SAVING);
 
 const GREEN = 1;
-const YELLOW = 0;
 
 test('a highlight, a sent comment, a reply and a removed highlight made in tab A appear in tab B without a reload', async ({ openViewer, server }, testInfo) => {
   // Triage (TB2): the paper is saved in A with the chip's "Save?" (the stand-in filter calls it "Not sure"); tab B, open
@@ -62,8 +63,8 @@ test('a highlight, a sent comment, a reply and a removed highlight made in tab A
   await b.bringToFront();
   await expect(cardWith(b, 'Written in tab A'), 'the comment appears in tab B by itself').toBeVisible({ timeout: 10_000 });
   const lit = await paintOfSelection(b, noted);
-  // Triage (TB2): a new note's highlight is in the last colour picked (marks.lastColor), green after step 1.
-  expect(lit.paint.share(tokens.fill[YELLOW]) + lit.paint.share(tokens.fill[GREEN]), `and so does its highlight: ${describe(lit.paint)}`).toBeGreaterThanOrEqual(0.6);
+  // Triage (tb2marks), ruling R68: a note makes no highlight; its words show its dotted underline.
+  expect(hasDottedUnderline(lit.shot, lit.boxes[0], await threadUnderlineColour(b)), `and so does its dotted underline: ${describe(lit.paint)}`).toBe(true);
   await shot(b, testInfo, 'b-sees-the-comment');
 
   // 3. a reply in B shows up in A

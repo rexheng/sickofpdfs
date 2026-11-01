@@ -317,6 +317,32 @@ export function strokesOf(shot: Shot, box: Box, colours: RGB[], o: { tol?: numbe
 /** The colours a line of colour `line` can have over a highlight `fill`: itself (drawn on top) and the two multiplied. */
 export const lineColours = (line: RGB, fill?: RGB): RGB[] => (fill === undefined ? [line] : [line, [line[0] * fill[0] / 255, line[1] * fill[1] / 255, line[2] * fill[2] / 255].map(Math.round) as RGB]);
 
+// Triage (tb2marks), ruling R68: a note adds no style and never changes a mark's colour. Words with no style show the
+// thread's dotted underline (--sop-thread-underline), and while the note's card is open, a neutral wash
+// (--sop-thread-active) instead of a mark colour. These read the two.
+
+/** The colour of a note's dotted underline. */
+export async function threadUnderlineColour(page: Page): Promise<RGB> {
+  const raw = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--sop-thread-underline').trim());
+  const c = parseCssColor(raw || '#747775') ?? parseCssColor('#747775')!;
+  return [c.r, c.g, c.b];
+}
+
+/**
+ * Whether a row of dots in `colour` runs along the bottom of the line box: dots half the row wide, so a quarter will do.
+ * The dots are drawn whole-pixel and opaque, so they are exactly `colour`; anti-aliased black text is neutral grey, which
+ * is never within 1 of the tinted token grey, so it is not counted.
+ */
+export function hasDottedUnderline(shot: Shot, box: Box, colour: RGB): boolean {
+  return strokesOf(shot, box, [colour], { tol: 1, cover: 0.25, above: 0, below: 0.4 }).rows.length > 0;
+}
+
+/** The open note's passage with no highlight under it: grey paper (not white, not one of the five colours). */
+export function isWashed(p: Paint, tokens: MarkTokens): boolean {
+  const coloured = [...tokens.fill, ...tokens.active].some((c) => p.share(c, 8) >= 0.1);
+  return p.paper > 0 && p.neutral >= 0.9 && Math.max(...p.dominant) <= 236 && !coloured;
+}
+
 /** True when the lines are plain paper: white between the ink. */
 export function isPlain(p: Paint): boolean {
   return p.paper > 0 && p.neutral >= 0.97;

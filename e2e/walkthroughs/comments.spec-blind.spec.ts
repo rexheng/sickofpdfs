@@ -15,6 +15,10 @@
 // card has aria-current; the box for a new note is a text box named "Note", the box for a reply "Reply", and for an edit "Edit note".
 // GUESSES: Esc and a click away on a note WITH text send it (plan section 7: "Esc with text sends the note"); the highlight a
 // comment makes is in the colour H would use (the last colour, yellow on a fresh profile).
+// Triage (tb2marks), ruling R68: commenting never changes a mark's colour, so a note makes no highlight. Words with no
+// style show the dotted underline (plan S13), and while the note's card is open a neutral wash; marked words keep their
+// marks, and an open card darkens its highlight. Where a test is about a note's highlight, the words are highlighted
+// with H first, as the owner would.
 import { expect, test } from '../support/test';
 import {
   ATTENTION,
@@ -24,6 +28,7 @@ import {
   SENTENCE_1,
   activeCards,
   allCards,
+  hasDottedUnderline,
   boxOf,
   cardWith,
   clearSelection,
@@ -31,6 +36,7 @@ import {
   editBox,
   hex,
   isPlain,
+  isWashed,
   lineBoxes,
   markTokens,
   noteBox,
@@ -45,6 +51,7 @@ import {
   replyBox,
   selectPassage,
   startNote,
+  threadUnderlineColour,
   typeLines,
   waitSaved,
   waitStored,
@@ -61,7 +68,7 @@ const luminance = (css: string): number => {
   return 0.299 * r + 0.587 * g + 0.114 * b;
 };
 
-test('Ctrl+Alt+M shows the highlight at once and opens a note box in the right margin, level with the line and not over it', async ({ openViewer, server }, testInfo) => {
+test('Ctrl+Alt+M shows the passage at once and opens a note box in the right margin, level with the line and not over it', async ({ openViewer, server }, testInfo) => {
   const page = await openPaper(openViewer, server, ATTENTION);
   const tokens = await markTokens(page);
   const sel = await selectPassage(page, ATTENTION, SENTENCE_1);
@@ -74,12 +81,10 @@ test('Ctrl+Alt+M shows the highlight at once and opens a note box in the right m
   await page.waitForTimeout(400); // the margin column and the page settle
   await shot(page, testInfo, 'note-box-open');
 
-  // The comment makes a highlight at once (before a word is typed).
-  const lit = await paintOfSelection(page, sel, { name: 'highlight-while-the-box-is-open', testInfo });
-  // Triage (TB2): the new note's card is the active one while its box is open, so its highlight shows in the active
-  // (darker) fill, as Docs shows a new comment's anchor; either fill counts as highlighted.
-  const litShare = lit.paint.share(tokens.fill[YELLOW]) + lit.paint.share(tokens.active[YELLOW]);
-  expect(litShare, `the commented words are highlighted already (${hex(tokens.fill[YELLOW])} or active ${hex(tokens.active[YELLOW])}): ${describe(lit.paint)}`).toBeGreaterThanOrEqual(0.6);
+  // The comment shows its words at once (before a word is typed).
+  const lit = await paintOfSelection(page, sel, { name: 'passage-while-the-box-is-open', testInfo });
+  // Triage (tb2marks), R68: the open note's words get a neutral wash, never a mark colour (before R68: the active yellow).
+  expect(isWashed(lit.paint, tokens), `the commented words are picked out already, in a neutral wash and in no mark colour: ${describe(lit.paint)}`).toBe(true);
   expect(lit.paint.ink, 'the words are still readable').toBeGreaterThanOrEqual(plain.paint.ink * 0.95);
 
   // Beside the line, in the right margin, level with it, never over it.
@@ -130,14 +135,15 @@ test('Shift+Enter adds a new line and Enter saves: the note becomes a card with 
     expect(cm.body, 'the stored text keeps the new line').toBe('Why does the encoder matter?\nCheck this against section 3.');
     expect(cm.author).toBe('me');
     expect(a.threads.filter((t) => t.deletedAt === null && t.anchor.kind === 'text'), 'one thread, on the selected words').toHaveLength(1);
-    expect(a.marks.filter((m) => m.style === 'highlight' && m.deletedAt === null), 'and one highlight under it').toHaveLength(1);
+    // Triage (tb2marks), R68: a note makes no highlight.
+    expect(a.marks.filter((m) => m.deletedAt === null), 'and no mark: a note adds no style (R68)').toHaveLength(0);
   }
 });
 
-test('the card survives a reload, with its highlight, on the same words', async ({ openViewer, server }, testInfo) => {
+test('the card survives a reload, with its dotted underline, on the same words', async ({ openViewer, server }, testInfo) => {
   test.skip(!SAVING_AVAILABLE, NO_SAVING);
   const page = await openPaper(openViewer, server, ATTENTION);
-  const tokens = await markTokens(page);
+  const dots = await threadUnderlineColour(page);
   const sel = await postNote(page, ATTENTION, LINES.l5, 'Survives a reload');
   // Triage (TB2): Task 30's stand-in filter calls every PDF "Not sure" until Phase 3, so the first mark is what saves it.
   await waitSaved(page);
@@ -146,13 +152,15 @@ test('the card survives a reload, with its highlight, on the same words', async 
   const card = cardWith(page, 'Survives a reload');
   await expect(card, 'the card is back after a reload').toBeVisible({ timeout: 10_000 });
   const p = await paintOfSelection(page, sel, { name: 'reloaded', testInfo });
-  expect(p.paint.share(tokens.fill[YELLOW]), `and so is the highlight on the same words: ${describe(p.paint)}`).toBeGreaterThanOrEqual(0.6);
+  // Triage (tb2marks), R68: the words of a note show its dotted underline, not a highlight.
+  expect(hasDottedUnderline(p.shot, p.boxes[0], dots), 'and so is its dotted underline, under the same words').toBe(true);
+  expect(isPlain(p.paint), `with no highlight (R68): ${describe(p.paint)}`).toBe(true);
   await shot(page, testInfo, 'card-after-reload');
 });
 
-test('Esc with text keeps the note: it is sent, the box closes, and the highlight stays', async ({ openViewer, server }, testInfo) => {
+test('Esc with text keeps the note: it is sent, the box closes, and its words stay marked as a note', async ({ openViewer, server }, testInfo) => {
   const page = await openPaper(openViewer, server, ATTENTION);
-  const tokens = await markTokens(page);
+  const dots = await threadUnderlineColour(page);
   const sel = await selectPassage(page, ATTENTION, LINES.l1);
   await startNote(page);
   await page.keyboard.type('Kept by Escape', { delay: 8 });
@@ -160,27 +168,30 @@ test('Esc with text keeps the note: it is sent, the box closes, and the highligh
   await expect(noteBox(page), 'Esc closes the box').toHaveCount(0);
   await expect(cardWith(page, 'Kept by Escape'), 'and the note is still there as a card').toBeVisible();
   const p = await paintOfSelection(page, sel, { name: 'esc-with-text', testInfo });
-  expect(p.paint.share(tokens.fill[YELLOW]), `the highlight stays: ${describe(p.paint)}`).toBeGreaterThanOrEqual(0.6);
+  // Triage (tb2marks), R68: the note's words show its dotted underline (no highlight).
+  expect(hasDottedUnderline(p.shot, p.boxes[0], dots), `the note's dotted underline stays: ${describe(p.paint)}`).toBe(true);
 });
 
-test('Esc on an empty new note drops its highlight and leaves no card', async ({ openViewer, server }, testInfo) => {
+test('Esc on an empty new note leaves its words as they were and no card', async ({ openViewer, server }, testInfo) => {
   const page = await openPaper(openViewer, server, ATTENTION);
   const tokens = await markTokens(page);
+  const dots = await threadUnderlineColour(page);
   const sel = await selectPassage(page, ATTENTION, LINES.l3);
   await startNote(page);
   const lit = await paintOfSelection(page, sel);
-  // Triage (TB2): the open box's card is active, so its highlight is in the active fill (either fill counts).
-  expect(lit.paint.share(tokens.fill[YELLOW]) + lit.paint.share(tokens.active[YELLOW]), 'while the empty box is open the words are highlighted').toBeGreaterThanOrEqual(0.6);
+  // Triage (tb2marks), R68: the open note's words are washed, not highlighted.
+  expect(isWashed(lit.paint, tokens), `while the empty box is open the words are picked out: ${describe(lit.paint)}`).toBe(true);
   await page.keyboard.press('Escape');
   await expect(noteBox(page), 'Esc closes the empty box').toHaveCount(0);
   await expect(allCards(page), 'and no card is left').toHaveCount(0);
   const gone = await paintOfSelection(page, sel, { name: 'esc-on-empty', testInfo });
-  expect(isPlain(gone.paint), `the highlight the empty note made is gone: ${describe(gone.paint)}`).toBe(true);
+  expect(isPlain(gone.paint), `the words are plain again: ${describe(gone.paint)}`).toBe(true);
+  expect(hasDottedUnderline(gone.shot, gone.boxes[0], dots), 'with no dotted underline').toBe(false);
 });
 
-test('clicking away: an empty new note is dropped with its highlight, a note with text is kept', async ({ openViewer, server }, testInfo) => {
+test('clicking away: an empty new note is dropped, a note with text is kept', async ({ openViewer, server }, testInfo) => {
   const page = await openPaper(openViewer, server, ATTENTION);
-  const tokens = await markTokens(page);
+  const dots = await threadUnderlineColour(page);
   const away = async () => {
     await page.mouse.click(8, (page.viewportSize()?.height ?? 800) / 2);
     await page.waitForTimeout(300);
@@ -198,12 +209,16 @@ test('clicking away: an empty new note is dropped with its highlight, a note wit
   await away();
   await expect(cardWith(page, 'Kept by a click away'), 'a click away on a note with text keeps it').toBeVisible();
   const p = await paintOfSelection(page, withText, { name: 'click-away-with-text', testInfo });
-  expect(p.paint.share(tokens.fill[YELLOW]), 'and keeps its highlight').toBeGreaterThanOrEqual(0.6);
+  // Triage (tb2marks), R68: a kept note shows its dotted underline (no highlight).
+  expect(hasDottedUnderline(p.shot, p.boxes[0], dots), 'and its words keep its dotted underline').toBe(true);
 });
 
 test('emptying an existing note keeps its highlight', async ({ openViewer, server }, testInfo) => {
   const page = await openPaper(openViewer, server, ATTENTION);
   const tokens = await markTokens(page);
+  // Triage (tb2marks), R68: a note makes no highlight, so the words are highlighted first, then the note is written on them.
+  await selectPassage(page, ATTENTION, LINES.l9);
+  await page.keyboard.press('h');
   const sel = await postNote(page, ATTENTION, LINES.l9, 'A note I will empty');
   const card = cardWith(page, 'A note I will empty');
   await card.click(); // make it the active card: its menu and reply box show
@@ -228,11 +243,18 @@ test('emptying an existing note keeps its highlight', async ({ openViewer, serve
 test('taking the highlight off a commented passage never removes the comment', async ({ openViewer, server }, testInfo) => {
   const page = await openPaper(openViewer, server, ATTENTION);
   const tokens = await markTokens(page);
+  const dots = await threadUnderlineColour(page);
+  // Triage (tb2marks), R68: a note makes no highlight, so the words are highlighted first, then the note is written on them.
+  await selectPassage(page, ATTENTION, LINES.l11);
+  await page.keyboard.press('h');
   const sel = await postNote(page, ATTENTION, LINES.l11, 'Stays when the highlight goes');
+  const before = await paintOfSelection(page, sel);
+  expect(before.paint.share(tokens.fill[YELLOW]) + before.paint.share(tokens.active[YELLOW]), `the note keeps the highlight under it, in its colour (R68; the darker fill while its card is open): ${describe(before.paint)}`).toBeGreaterThanOrEqual(0.6);
   await selectPassage(page, ATTENTION, LINES.l11);
   await page.keyboard.press('h');
   const p = await paintOfSelection(page, sel, { name: 'highlight-off-comment-stays', testInfo });
   expect(p.paint.share(tokens.fill[YELLOW], 6), 'the highlight is off').toBeLessThan(0.1);
+  expect(hasDottedUnderline(p.shot, p.boxes[0], dots), 'and the note shows its dotted underline instead').toBe(true);
   await expect(cardWith(page, 'Stays when the highlight goes'), 'the comment is still there (comments are separate from styles)').toBeVisible();
   await shot(page, testInfo, 'comment-without-highlight');
 });
@@ -274,6 +296,11 @@ test('Ctrl+Alt+M on a passage that already has a comment opens that thread inste
 test('clicking a card makes it light, moves it 12 px left, and darkens its highlight', async ({ openViewer, server }, testInfo) => {
   const page = await openPaper(openViewer, server, ATTENTION);
   const tokens = await markTokens(page);
+  // Triage (tb2marks), R68: a note makes no highlight, so both passages are highlighted first, then the notes written.
+  for (const l of [LINES.l3, LINES.l9]) {
+    await selectPassage(page, ATTENTION, l);
+    await page.keyboard.press('h');
+  }
   const a = await postNote(page, ATTENTION, LINES.l3, 'Card A');
   const b = await postNote(page, ATTENTION, LINES.l9, 'Card B');
   const cardA = cardWith(page, 'Card A');

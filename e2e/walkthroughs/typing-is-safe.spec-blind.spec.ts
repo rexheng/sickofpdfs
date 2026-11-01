@@ -20,6 +20,7 @@ import {
   describe,
   focusInfo,
   isPlain,
+  isWashed,
   lineBoxes,
   lineColours,
   markMenu,
@@ -83,13 +84,14 @@ test('typing H, 1 to 5, Delete and Ctrl+Alt+M in the note box and the reply box 
   await expect(allCards(page), 'Ctrl+Alt+M in the reply box makes no note').toHaveCount(1);
   await shot(page, testInfo, 'typed-in-the-reply-box');
 
-  // The marks are exactly as they were: the first highlight is still yellow, the comment's highlight is still on its words.
+  // The marks are exactly as they were: the first highlight is still yellow, the comment's words still have no colour.
   await page.keyboard.press('Escape');
   await page.mouse.click(8, (page.viewportSize()?.height ?? 800) / 2);
   const first = await paintOfSelection(page, mark, { name: 'first-mark-untouched', testInfo });
   expect(first.paint.share(tokens.fill[YELLOW]), `the first highlight is still yellow: ${describe(first.paint)}`).toBeGreaterThanOrEqual(0.6);
   const second = await paintOfSelection(page, sel);
-  expect(second.paint.share(tokens.fill[YELLOW]), `the comment's highlight is still yellow: ${describe(second.paint)}`).toBeGreaterThanOrEqual(0.6);
+  // Triage (tb2marks), ruling R68: a note makes no highlight, so its words stay uncoloured.
+  expect(isPlain(second.paint), `the comment's words are still uncoloured: ${describe(second.paint)}`).toBe(true);
   const elsewhere = await selectPassage(page, ATTENTION, LINES.l9);
   expect(isPlain((await paintOfSelection(page, elsewhere)).paint), 'no other words were marked by the typing').toBe(true);
 });
@@ -116,14 +118,14 @@ test('in the note box Ctrl+B formats the note (Markdown bold), Ctrl+I italic, an
   expect(Math.abs(after.paint.darkness - before.paint.darkness) / before.paint.darkness, 'Ctrl+B in the box does not make the page text bold').toBeLessThan(0.01);
   expect(strokesOf(after.shot, after.boxes[0], lineColours(tokens.line[YELLOW], tokens.fill[YELLOW])).rows, 'and Ctrl+U in the box does not underline the page text').toEqual([]);
 
-  // Ctrl+Z inside the box undoes typing, not the highlight the note made
+  // Ctrl+Z inside the box undoes typing, not the note's passage
   await page.keyboard.press('Control+a');
   await page.keyboard.type('xyz', { delay: 10 });
   await page.keyboard.press('Control+z');
   expect((await readBox(box)).text, 'Ctrl+Z in the box undoes the typing in the box').not.toContain('xyz');
   const lit = await paintOfSelection(page, sel);
-  // Triage (TB2): the open note's card is active, so its highlight is in the active (darker) fill; either fill counts.
-  expect(lit.paint.share(tokens.fill[YELLOW]) + lit.paint.share(tokens.active[YELLOW]), `and not the note's highlight: ${describe(lit.paint)}`).toBeGreaterThanOrEqual(0.6);
+  // Triage (tb2marks), ruling R68: the open note's words are washed, not highlighted.
+  expect(isWashed(lit.paint, tokens), `and not the note's passage, still picked out: ${describe(lit.paint)}`).toBe(true);
   await expect(noteBox(page)).toHaveCount(1);
 });
 

@@ -32,6 +32,7 @@ import {
   annotations,
   cardWith,
   describe,
+  hasDottedUnderline,
   highlightFromMenu,
   libraryId,
   markPixelsOnPage,
@@ -41,6 +42,7 @@ import {
   selectPassage,
   settle,
   saveFirst,
+  threadUnderlineColour,
   waitSaved,
   waitStored,
   type OpenViewer,
@@ -105,7 +107,8 @@ test('a stamped re-download shows the same marks and notes on the same words, wi
   const green = await selectPassage(a, fx, SENTENCE_1);
   await highlightFromMenu(a, green, 'green');
   await postNote(a, fx, LINES.l7, 'Note that must survive a re-download');
-  await waitStored(a, (x) => x.marks.length >= 2 && x.comments.some((c) => c.body === 'Note that must survive a re-download' && c.draftOfTab === null), 'the marks and the note are stored');
+  // Triage (tb2marks), ruling R68: the note makes no highlight of its own, so one mark (the green highlight) is stored.
+  await waitStored(a, (x) => x.marks.length >= 1 && x.comments.some((c) => c.body === 'Note that must survive a re-download' && c.draftOfTab === null), 'the mark and the note are stored');
   await shot(a, testInfo, 'original');
 
   const b = await openServed(openViewer, server, '/gen/attention-stamped.pdf');
@@ -117,8 +120,8 @@ test('a stamped re-download shows the same marks and notes on the same words, wi
   const hl = await paintOfSelection(b, sentence, { name: 'stamped-green', testInfo });
   expect(hl.paint.share(tokens.fill[GREEN]), `the green highlight is on the same words in the stamped copy: ${describe(hl.paint)}`).toBeGreaterThanOrEqual(0.6);
   const cm = await paintOfSelection(b, line);
-  // Triage (TB2): a new note's highlight is in the last colour picked (marks.lastColor), green here.
-  expect(cm.paint.share(tokens.fill[YELLOW]) + cm.paint.share(tokens.fill[GREEN]), `and so is the comment's highlight: ${describe(cm.paint)}`).toBeGreaterThanOrEqual(0.6);
+  // Triage (tb2marks), ruling R68: a note makes no highlight; its words show its dotted underline.
+  expect(hasDottedUnderline(cm.shot, cm.boxes[0], await threadUnderlineColour(b)), `and so is the note's dotted underline: ${describe(cm.paint)}`).toBe(true);
   await expect(b.getByText('Moved', { exact: true }), 'the words are exactly where the note says: no "Moved" label').toHaveCount(0);
   const stats = await storeOf(b).stats();
   expect(stats.documents, 'the library holds one document').toBe(1);
