@@ -218,3 +218,8 @@ Library: Home; My library list (plain, row hover, selected, keyboard focus); gri
   - **D10.** Online lookups are off until you switch them on (the non-negotiable says only traffic you turn on).
   - **D11.** No Chrome Prompt API; MiniLM stays.
   - **D12.** The test-assets release holds only openly licensed files; it needs your OK to create it on GitHub.
+
+## Carried requirements (controller, 1 Nov 2026)
+
+- **R75 (privacy): Forget scrubs backups.** Forgetting a document also removes it from every backup snapshot in the backup folder: rewrite each snapshot without it, including its notes, page text and PDF copy. The Forget dialog says "Removed from your library and your backups". If a snapshot can't be rewritten (folder offline or permission lost), show it plainly and retry on the next backup run. Owners: S13 (writer) and S11's ForgetDialog, plus S17 (restore never brings a forgotten document back).
+- **Save chip (R73, from the Test build 2 critics):** the chip wording is plain ("Save to library" as a button; the hover says "This PDF isn't in your library yet. Save it to keep your notes."). "No filter yet" never shows. The saved chip opens a small menu with "Remove from library…", using the R75 Forget flow. Owner: S11, unless a Test build 2 fix lands it first.
