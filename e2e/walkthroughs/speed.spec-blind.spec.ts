@@ -135,9 +135,12 @@ test('a figure outline shows in under 100 ms (smoke: 300) after hovering, and th
     await page.mouse.move(photo.x, photo.y);
     await page.waitForTimeout(350);
     const t = await readTiming(page);
-    expect(t.markDrawn, 'an outline appeared when the pointer reached the photo (a change to an SVG layer on the page)').not.toBeNull();
-    fromHover.push(t.markDrawn!);
-    expect(t.perf['sop:figure-outline'].length, 'the page made its sop:figure-outline perf mark').toBeGreaterThan(0);
+    // Triage (Round 3 harness check): the spec does not say the figure outline is an SVG, so the delay is the first change of an SVG
+    // mark layer when there is one, and otherwise the page's own perf mark, which the plan names (sop:figure-outline).
+    const performed = t.perf['sop:figure-outline'];
+    expect(performed.length, 'the page made its sop:figure-outline perf mark').toBeGreaterThan(0);
+    expect(t.keyAt, 'the probe heard the pointer move').not.toBeNull();
+    fromHover.push(t.markDrawn ?? performed.at(-1)! - t.keyAt!);
   }
   note(testInfo, 'figure outline, ms after the pointer moved (5 tries)', fromHover.map((x) => x.toFixed(0)).join(', '));
   expect(median(fromHover), `the median outline shows within ${100 * LOOSE} ms (the spec says 100)`).toBeLessThanOrEqual(100 * LOOSE);
