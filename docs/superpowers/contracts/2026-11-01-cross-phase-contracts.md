@@ -353,7 +353,7 @@ export interface ClaudeTurnRunner { run(req: ClaudeTurnRequest, onEvent: (e: Cla
   - `claude.monthlyCapUsd` (default `null`);
   - `claude.confirmOverUsd` (`0.25`).
 
-  The month's spend is kept in `sop-local` as `claudeSpendMonth`.
+  The month's spend is kept in `sop-local` as the meta key `claudeSpendMonth`, JSON `{ month: 'YYYY-MM'; usd: number }`. Spend code opens the database only through `openLocalOnlyStore()`, which owns its creation and upgrades, and adds to the total with `LocalOnlyStore.updateMeta(key, change)`: a read-modify-write in one read-write transaction, so two tabs adding at once lose nothing. The total starts again when the local month changes.
 - **Before sending** (`decide`):
   - On a PDF that is not in the library, nothing is sent until the owner confirms.
   - An estimate over $0.25 asks first. An estimate or spend that is not a number (NaN or infinite) also asks, and so does any request on a model with no known price (`priceKnown` is a required input; the estimate carries it).
