@@ -9,7 +9,7 @@
 export interface SearchTarget {
   kind: 'doi' | 'arxiv' | 'scholar';
   url: string;
-  /** The menu row's label: says plainly where the tab will go. */
+  /** The menu row's label: always "Search" first (the spec's name for the row), then plainly where the tab will go. */
   label: string;
 }
 
@@ -57,11 +57,11 @@ export function searchTarget(text: string): SearchTarget | null {
   if (doi?.[1] !== undefined) {
     const id = trimDoi(doi[1]);
     const path = id.split('/').map(encodeURIComponent).join('/');
-    return { kind: 'doi', url: `https://doi.org/${path}`, label: 'Open the paper (doi.org)' };
+    return { kind: 'doi', url: `https://doi.org/${path}`, label: 'Search doi.org for this paper' };
   }
   if (ARXIV_MARK.test(query)) {
     const id = ARXIV_NEW.exec(query)?.[1] ?? ARXIV_OLD.exec(query)?.[1];
-    if (id !== undefined) return { kind: 'arxiv', url: `https://arxiv.org/abs/${id}`, label: 'Open the paper (arXiv)' };
+    if (id !== undefined) return { kind: 'arxiv', url: `https://arxiv.org/abs/${id}`, label: 'Search arXiv for this paper' };
   }
   const q = cut(query, MAX_QUERY_CHARS);
   return { kind: 'scholar', url: `https://scholar.google.com/scholar?q=${encodeURIComponent(q)}`, label: 'Search Google Scholar' };

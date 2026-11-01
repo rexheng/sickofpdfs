@@ -5,10 +5,11 @@
 // row is matched by position (`Alt+Shift+Digit5`).
 //
 // One exception (Phase 2 plan, section 7 risks): on a German keyboard on Windows, Ctrl+Alt+M arrives as "µ", because
-// Windows treats Ctrl+Alt as AltGr. The comment key would be out of reach. So when a Ctrl+Alt letter combo matches no
-// character, installShortcuts also tries the letter the physical key has in the current layout
-// (navigator.keyboard.getLayoutMap), unless the browser says the AltGr key itself is down (then it is typing a
-// character, as with Polish AltGr+S). `matchesCombo` alone stays strict: by the character only.
+// Windows treats Ctrl+Alt as AltGr. The comment key would be out of reach. So for the shortcuts that ask for it
+// (`byPhysicalKey`: only the comment keys), when a Ctrl+Alt letter combo matches no character, installShortcuts also
+// tries the letter the physical key has in the current layout (navigator.keyboard.getLayoutMap), unless the browser
+// says the AltGr key itself is down. Every other Ctrl+Alt letter stays matched by its character, so Polish AltGr+S
+// ("ś") is never Ctrl+Alt+S and AltGr+N ("ń") is never Ctrl+Alt+N. `matchesCombo` alone stays strict.
 
 /**
  * `Ctrl+=`, `Ctrl+Alt+S`, `Alt+Shift+Digit5`, `F4`, `Shift+F4`, `?`. Modifiers are Ctrl, Alt, Shift and Meta (Ctrl is
@@ -28,6 +29,11 @@ export interface ShortcutDef {
    * Default: single keys and Ctrl+Alt combos yield, other Ctrl combos run (Ctrl+= zooms from the page box too).
    */
   whileTyping?: 'yield' | 'default';
+  /**
+   * A Ctrl+Alt letter combo also matches the physical key of that letter when the key typed another character (the
+   * AltGr layouts; see the file comment). Only for keys that must work there: Ctrl+Alt+M.
+   */
+  byPhysicalKey?: boolean;
 }
 
 interface Parsed {
@@ -141,14 +147,17 @@ function loadLayoutMap(): void {
 
 /**
  * The AltGr layouts' way in to a Ctrl+Alt letter combo (see the file comment): Ctrl and Alt down, the AltGr key itself
- * not reported, and the physical key's letter in this layout is the combo's letter.
+ * not reported, and the physical key's letter in this layout is the combo's letter. Before the layout map is known (or
+ * where there is none), a letter other than a-z typed on the combo letter's own key position counts.
  */
 function matchesOnLayout(e: KeyboardEvent, combo: KeyCombo): boolean {
   const p = parse(combo);
-  if (p.kind !== 'letter' || !p.ctrl || !p.alt || layoutMap === null) return false;
+  if (p.kind !== 'letter' || !p.ctrl || !p.alt) return false;
   if (!e.ctrlKey || !e.altKey || Boolean(e.metaKey) !== p.meta || Boolean(e.shiftKey) !== p.shift) return false;
   if (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph')) return false;
-  const base = typeof e.code === 'string' ? layoutMap.get(e.code) : undefined;
+  if (typeof e.code !== 'string') return false;
+  if (layoutMap === null) return e.code === `Key${p.key.toUpperCase()}` && /^\p{L}$/u.test(e.key) && !/^[a-z]$/iu.test(e.key);
+  const base = layoutMap.get(e.code);
   return base !== undefined && base.toLowerCase() === p.key.toLowerCase();
 }
 
@@ -169,6 +178,7 @@ export function installShortcuts(defs: ShortcutDef[], target: Window = window): 
     for (const match of [matchesCombo, matchesOnLayout]) {
       for (const def of defs) {
         for (const combo of def.keys) {
+          if (match === matchesOnLayout && def.byPhysicalKey !== true) continue;
           if (!match(e, combo)) continue;
           if (typing && (def.whileTyping === 'yield' || yieldsToTyping(combo))) continue;
           if (def.enabled && !def.enabled()) continue;

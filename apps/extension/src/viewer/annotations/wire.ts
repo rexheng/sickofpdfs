@@ -88,6 +88,8 @@ export function writeLastColor(c: MarkColor): void {
 export interface NotesHost {
   /** The open document's notes: marks, threads, comments, drafts, the active thread and the focused mark. */
   readonly session: AnnotationSession;
+  /** The open file: its bytes' hash, its name and where it came from, and the engine's open result. */
+  readonly opened: OpenedDocument;
   readonly backend: PdfBackend;
   readonly doc: DocHandle;
   /** OpenResult.pages: each page's unrotated crop box in points, and its /Rotate. */
@@ -113,8 +115,8 @@ export interface NotesHost {
    * is not on that page or not placed. For laying cards out level with their marks.
    */
   rectsOf(id: string, pageIndex: number): readonly NormRect[];
-  /** Keeps `px` CSS px free on the right of the page list for this feature (the margin column, the panel); 0 frees it. */
-  reserveRight(featureId: string, px: number): void;
+  /** Saves typed text now (the draft keeper's flush): a note box calls it on blur and Esc. */
+  flushDrafts(): void;
 }
 
 export interface ViewerFeature {
@@ -126,6 +128,11 @@ export interface ViewerFeature {
   View?: ComponentType<{ host: NotesHost }>;
   /** Drawn on every page, over the marks and under the selection and text layer (figure outlines, pins). */
   PageLayer?: ComponentType<{ host: NotesHost; box: PageBox; ctx: PageLayerContext }>;
+  /**
+   * CSS px the page list keeps free at its right from its very first layout, for this document (ruling R60: a PDF that
+   * already has notes opens with its margin, so the page never narrows late). Read once, before the pages are drawn.
+   */
+  reserveAtOpen?(doc: OpenedDocument): number;
 }
 
 const features: ViewerFeature[] = [];
@@ -455,9 +462,6 @@ export interface Notes {
   input: MarkInput;
   /** What the marks and every registered feature do for their commands. */
   behaviours(): Partial<Record<ViewerCommandId, CommandBehaviour>>;
-  /** The right-hand space the features keep free (reserveRight), in CSS px. */
-  reservedRight(this: void): number;
-  onLayout(this: void, cb: () => void): () => void;
   dispose(): void;
 }
 
@@ -496,12 +500,11 @@ export function createNotes(d: NotesDeps): Notes | null {
   let input: MarkInput | null = null;
   const layer = createLayerSource(session, text, (pageIndex, what) => input?.drawn(pageIndex, what));
 
-  const reserved = new Map<string, number>();
-  const layoutListeners = new Set<() => void>();
   let lastColor = readLastColor();
 
   const host: NotesHost = {
     session,
+    opened: d.opened,
     backend: d.backend,
     doc,
     pages,
@@ -514,14 +517,7 @@ export function createNotes(d: NotesDeps): Notes | null {
     lastColor: () => lastColor,
     pointer: () => input?.pointer() ?? null,
     rectsOf: (id, pageIndex) => layer.rectsOf(id, pageIndex),
-    reserveRight(featureId, px) {
-      const before = reserved.get(featureId) ?? 0;
-      const next = Math.max(0, px);
-      if (before === next) return;
-      if (next === 0) reserved.delete(featureId);
-      else reserved.set(featureId, next);
-      for (const l of [...layoutListeners]) l();
-    },
+    flushDrafts: () => void drafts.flush().catch((e: unknown) => logNotesError(e, 'drafts.flush')),
   };
 
   input = createMarkInput({
@@ -550,11 +546,6 @@ export function createNotes(d: NotesDeps): Notes | null {
       for (const f of features) Object.assign(out, f.commands?.(host) ?? {});
       return out;
     },
-    reservedRight: () => [...reserved.values()].reduce((a, b) => a + b, 0),
-    onLayout(cb) {
-      layoutListeners.add(cb);
-      return () => layoutListeners.delete(cb);
-    },
     dispose() {
       mounted.dispose();
       layer.dispose();
@@ -562,7 +553,6 @@ export function createNotes(d: NotesDeps): Notes | null {
       drafts.dispose();
       presence.close();
       figures.dispose();
-      layoutListeners.clear();
     },
   };
 }

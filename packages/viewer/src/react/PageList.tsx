@@ -82,6 +82,8 @@ export interface PageListProps {
    * engine crash (PdfEngineCrashedError) from one bad page. Without it, each failure is logged.
    */
   onError?: (err: unknown) => void;
+  /** CSS px kept free at the right from the first layout (setReserveRight later changes it): a document that opens with its notes margin. */
+  initialReserveRight?: number;
 }
 
 /** Arrow keys scroll this far (Chromium's viewer). */
@@ -139,7 +141,7 @@ function nearestPage(layout: PageLayout, c: { x: number; y: number }): number {
  * The document's pages, at the store's zoom and rotation. The zoom starts as the store's (fit width by default), and
  * the list opens at the store's currentPage.
  */
-export function PageList({ doc, store, scheduler, renderPage, apiRef, onError }: PageListProps): JSX.Element {
+export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, initialReserveRight = 0 }: PageListProps): JSX.Element {
   const pages = doc.open.pages;
   const scrollerRef = useRef<HTMLDivElement>(null);
   const zoom = useViewerState(store, (s) => s.zoom);
@@ -147,7 +149,7 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError }:
   const spread = useViewerState(store, (s) => s.spread);
   const [viewport, setViewport] = useState<Viewport | null>(null);
   // CSS px kept free at the right for the notes margin: the pages lay out and fit in the rest (setReserveRight).
-  const [reserve, setReserve] = useState(0);
+  const [reserve, setReserve] = useState(() => Math.max(0, Math.round(initialReserveRight)));
   const overlayRef = useRef<HTMLDivElement>(null);
   const [dpr, setDpr] = useState(() => window.devicePixelRatio || 1);
   const [range, setRange] = useState({ first: 0, last: -1 });

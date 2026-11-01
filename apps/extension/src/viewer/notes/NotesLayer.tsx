@@ -5,59 +5,46 @@
 //   (at fit width they get narrower), and the line the note is on stays where it was on screen.
 // - The note box sits in the margin, level with its line, so it never covers the text.
 // - Enter sends. Esc, or a click away, sends a new note that has text and cancels an empty one (its highlight goes too).
-//   A reply that is not sent stays as a draft on its card. Nothing typed is ever lost: drafts and edits go through the
-//   draft keeper (contracts section 3, "no lost text").
+//   A reply with text is sent too when its card is left (the controller's ruling, the same in the notes panel). Nothing
+//   typed is ever lost: drafts and edits go through the draft keeper (contracts section 3, "no lost text").
 // - A clicked card turns light and moves 12 px left; the mark layer darkens its passage at the same time (S13 reads
 //   the session's `active`). Clicking the passage of a note opens its card too.
 //
-// It mounts with one line in App.tsx. S13's session wiring is passed in `wiring`; until S13 merges, a memory-only
-// stand-in is made here (stand-in-session.ts).
+// It mounts as the 'comments' feature of annotations/wire.ts (feature.tsx), on S13's one session for the document. Its
+// commands run from the viewer's command list (commands.ts binds Ctrl+Alt+M); this layer only publishes what they do.
 import type { NormRect } from '@sop/core';
 import { Dialog, Icon, type CardPlacement } from '@sop/ui';
-import { type PageTextProviderImpl, useViewerState, type ViewerStore } from '@sop/viewer';
-import type { PageListApi, TextLayerController } from '@sop/viewer/react';
+import { useViewerState, type ViewerStore } from '@sop/viewer';
+import type { PageListApi } from '@sop/viewer/react';
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import type { CommentId, CommentRow, Resolution, ThreadId, ThreadRow } from '../annotations/boundary';
-import type { OpenedDocument } from '../open-document';
+import type { NotesHost } from '../annotations/wire';
 import { isTypingTarget } from '../shortcuts';
 import { CARD_ID_PREFIX, CardColumn, type ColumnCard } from './CardColumn';
 import { createCommentFlow, type CommentContext, type NoteTarget } from './comment-flow';
 import { anchorHit, anchorLabel, anchorTop, columnLeft, MARGIN_RESERVE, PIN_SIZE, pointInContent, rectInContent, shownAnchor } from './margin';
-import { installNoteKeys } from './note-commands';
+import { hadNotes, rememberNotes } from './margin-at-open';
 import { marginFolded, publishNoteCommands, subscribeMarginFolded, type NoteCommands } from './notes-host';
 import styles from './NotesLayer.module.css';
-import { createStandInWiring } from './stand-in-session';
 import type { NotesWiring } from './wiring';
 
 export interface NotesLayerProps {
-  doc: OpenedDocument;
-  pageText: PageTextProviderImpl;
-  textLayers: TextLayerController;
-  pages: RefObject<PageListApi | null>;
-  store: ViewerStore;
-  /** S13's session for this document. Absent until S13 merges: a memory-only stand-in is made here. */
-  wiring?: NotesWiring | null;
+  /** The open document's notes (annotations/wire.ts): its session, the page list, the view and the selection. */
+  host: NotesHost;
 }
 
-export function NotesLayer(props: NotesLayerProps) {
-  const own = useStandInWiring(props.wiring == null, props.doc, props.pageText);
-  const wiring = props.wiring ?? own;
-  return wiring ? <Notes {...props} wiring={wiring} /> : null;
-}
-
-function useStandInWiring(wanted: boolean, doc: OpenedDocument, pageText: PageTextProviderImpl): NotesWiring | null {
-  const [w, setW] = useState<NotesWiring | null>(null);
-  useEffect(() => {
-    if (!wanted) return;
-    const made = createStandInWiring({ doc, pageText });
-    setW(made);
-    return () => {
-      made.dispose();
-      setW(null);
-    };
-  }, [wanted, doc, pageText]);
-  return w;
+export function NotesLayer({ host }: NotesLayerProps) {
+  const wiring = useMemo<NotesWiring>(
+    () => ({
+      session: host.session,
+      flushDrafts: () => host.flushDrafts(),
+      makeTextAnchor: (ranges) => host.textAnchor(ranges),
+      highlightColor: () => host.lastColor(),
+    }),
+    [host],
+  );
+  return <Notes host={host} wiring={wiring} />;
 }
 
 /** The comment being edited in its card, and the text in its editor. */
@@ -77,8 +64,11 @@ const GHOST_MS = 2500;
 /** How far "Show where it was" and a restored note scroll their passage down from the top of the view. */
 const REVEAL_FROM_TOP = 0.3;
 
-function Notes({ doc, textLayers, pages, store, wiring }: NotesLayerProps & { wiring: NotesWiring }) {
+function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }) {
   const { session } = wiring;
+  const pages = notes.pageList;
+  const store = notes.view;
+  const pageSizes = notes.pages;
   const subscribe = useCallback((cb: () => void) => session.subscribe(cb), [session]);
   const s = useSyncExternalStore(subscribe, () => session.state());
   const host = useOverlayHost(pages);
@@ -113,9 +103,9 @@ function Notes({ doc, textLayers, pages, store, wiring }: NotesLayerProps & { wi
         wiring,
         clearSelection: () => document.getSelection()?.removeAllRanges(),
         currentPage: () => store.get().currentPage,
-        pageSize: (i) => doc.open.pages[i],
+        pageSize: (i) => pageSizes[i],
       }),
-    [wiring, store, doc],
+    [wiring, store, pageSizes],
   );
 
   // ---------------------------------------------------------------- finishing a note
@@ -132,7 +122,8 @@ function Notes({ doc, textLayers, pages, store, wiring }: NotesLayerProps & { wi
 
   /**
    * The active card loses its turn. A new note with text is sent and an empty one cancelled (its highlight goes too);
-   * an edit is sent if it changed; an empty reply box leaves nothing behind; a reply with text stays as a draft.
+   * an edit is sent if it changed; a reply with text is sent and an empty reply box leaves nothing behind (ruling:
+   * leaving a card sends typed text, in the margin and in the notes panel alike).
    */
   const finishOpen = useCallback(() => {
     const e = editingRef.current;
@@ -148,7 +139,7 @@ function Notes({ doc, textLayers, pages, store, wiring }: NotesLayerProps & { wi
       const root = own[0];
       if (root) void (root.body.trim() !== '' ? session.send(root.id) : session.cancel(root.id));
     } else {
-      for (const d of own) if (d.body.trim() === '') void session.cancel(d.id);
+      for (const d of own) void (d.body.trim() !== '' ? session.send(d.id) : session.cancel(d.id));
     }
   }, [session, finishEdit, setEditing]);
 
@@ -203,7 +194,7 @@ function Notes({ doc, textLayers, pages, store, wiring }: NotesLayerProps & { wi
         run: () => {
           const t0 = performance.now();
           // Read what the note is about before anything moves: opening the margin lays the pages out again.
-          const ctx: CommentContext = { ranges: textLayers.selectionRanges(), pointer: pointerOnPage(pages.current, pointer.current) };
+          const ctx: CommentContext = { ranges: notes.selection(), pointer: pointerOnPage(pages.current, pointer.current) };
           const keep = selectionStart() ?? (pointer.current ? { clientX: pointer.current.x, clientY: pointer.current.y } : undefined);
           finishOpen();
           void flow.comment(ctx, { before: () => openMargin(keep), after: (target) => open(target, t0) }).then(nothingOpened);
@@ -221,9 +212,9 @@ function Notes({ doc, textLayers, pages, store, wiring }: NotesLayerProps & { wi
         },
       },
     };
-  }, [session, textLayers, pages, flow, finishOpen, open, openMargin, nothingOpened]);
+  }, [session, notes, pages, flow, finishOpen, open, openMargin, nothingOpened]);
 
-  useEffect(() => installNoteKeys(commands), [commands]);
+  // One listener for the keys: the viewer's command list (commands.ts) runs these through the 'comments' feature.
   useEffect(() => {
     publishNoteCommands(commands);
     return () => publishNoteCommands(null);
@@ -231,13 +222,31 @@ function Notes({ doc, textLayers, pages, store, wiring }: NotesLayerProps & { wi
 
   // ---------------------------------------------------------------- the margin
 
-  // The column shows while the document has a note, unless the notes panel holds the cards (a narrow window). A note
-  // box that is opening has already opened it (openMargin).
-  const marginOn = s.threads.length > 0 && !folded;
+  // The column shows while the document has a note, unless the notes panel holds the cards (open, or a narrow window).
+  // A note box that is opening has already opened it (openMargin). R60: a PDF that had notes last time opened with the
+  // margin (reserveAtOpen); it is kept until the stored notes have loaded, so the page never narrows late.
+  const sha = notes.opened.loaded.sha256;
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void session.ready.then(() => live && setLoaded(true));
+    return () => {
+      live = false;
+    };
+  }, [session]);
+  const [heldAtOpen] = useState(() => hadNotes(sha));
+  const hasNotes = s.threads.length > 0;
+  const marginOn = (hasNotes || (heldAtOpen && !loaded)) && !folded;
   useEffect(() => {
     const a = pages.current;
     if (a) a.setReserveRight(marginOn ? MARGIN_RESERVE : 0);
   }, [marginOn, pages, host]);
+  // What the next open of this file reserves: only a PDF whose notes are stored is remembered (never an unsaved one).
+  useEffect(() => {
+    if (!loaded) return;
+    if (!hasNotes) rememberNotes(sha, false);
+    else if (s.mode === 'stored') rememberNotes(sha, true);
+  }, [loaded, hasNotes, s.mode, sha]);
   useEffect(() => () => pages.current?.setReserveRight(0), [pages]);
 
   // ---------------------------------------------------------------- the pointer, clicks and Esc
@@ -262,7 +271,7 @@ function Notes({ doc, textLayers, pages, store, wiring }: NotesLayerProps & { wi
   const noteAt = useCallback(
     (x: number, y: number): ThreadId | null => {
       const p = pages.current?.pdfPointAt(x, y);
-      const size = p ? doc.open.pages[p.pageIndex] : undefined;
+      const size = p ? pageSizes[p.pageIndex] : undefined;
       if (!p || !size) return null;
       const u = p.x / size.width;
       const v = p.y / size.height;
@@ -274,7 +283,7 @@ function Notes({ doc, textLayers, pages, store, wiring }: NotesLayerProps & { wi
       }
       return best?.id ?? null;
     },
-    [pages, doc, session],
+    [pages, pageSizes, session],
   );
 
   useEffect(() => {
@@ -285,6 +294,7 @@ function Notes({ doc, textLayers, pages, store, wiring }: NotesLayerProps & { wi
       const el = e.target instanceof Element ? e.target : null;
       if (!el || el === scroller) return; // the page list's own scroll bar
       if (el.closest(`[id^="${CARD_ID_PREFIX}"], [data-note-pin]`)) return; // a card or a pin: its own click decides
+      if (el.closest('[data-notes-panel]')) return; // the notes panel (S15) runs its own cards
       if (el.closest('[role="menu"], [role="dialog"], [role="alertdialog"], [data-radix-popper-content-wrapper]')) return;
       if (st.active !== null && noteAt(e.clientX, e.clientY) === st.active) return; // the active note's own passage
       deactivate();
@@ -438,9 +448,12 @@ function Notes({ doc, textLayers, pages, store, wiring }: NotesLayerProps & { wi
         if (isNew) focusPages(); // the note is on its card; reading goes on
       },
       onDraftEscape: (body) => {
+        // Esc with text sends it, a new note or a reply alike (plan section 7); Esc on an empty box drops it.
         const d = draftOf(t);
-        if (d && isNew) void (body.trim() !== '' ? session.send(d.id) : session.cancel(d.id));
-        else if (d && body.trim() === '') void session.cancel(d.id);
+        if (d && body.trim() !== '') {
+          session.typeDraft(d.id, body);
+          void session.send(d.id);
+        } else if (d) void session.cancel(d.id);
         session.setActive(null);
         focusPages();
       },

@@ -1,5 +1,5 @@
 // What the comments in the viewer need from the document's annotation session. S13's wiring (annotations/wire.ts)
-// builds the one session per document; until it merges, stand-in-session.ts builds a memory-only one.
+// builds the one session per document; the comments feature (feature.tsx) hands it here from the NotesHost.
 import type { MarkColor } from '@sop/core';
 import type { Anchor, CharRange } from '../annotations/boundary';
 import type { AnnotationSession } from '../annotations/session';

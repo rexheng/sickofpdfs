@@ -26,12 +26,12 @@ import {
   type ZoomMode,
 } from '@sop/viewer';
 import { MarkLayer, type PageLayerContext, PageList, type PageListApi, TextLayer, TextLayerController } from '@sop/viewer/react';
-import { memo, type RefObject, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { memo, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { sendRuntimeMessage } from '../shared/send-message';
 import { parseViewerUrl, type ViewerParams } from '../shared/viewer-url';
 import { copyLink } from './actions/copy-link';
 import { MarkupMenu } from './annotations/MarkupMenu';
-import { createNotes, type Notes, viewerFeatures } from './annotations/wire';
+import { createNotes, type Notes, registerViewerFeature, viewerFeatures } from './annotations/wire';
 import styles from './App.module.css';
 import { backTarget, goBackToPage } from './back-to-page';
 import { AboutDialog } from './chrome/AboutDialog';
@@ -55,7 +55,7 @@ import {
   openPickedFile,
   reopenDocument,
 } from './open-document';
-import { NotesPanelMount } from './notes-panel';
+import { notesPanelFeature } from './notes-panel/feature';
 import { publishRuntime, type ViewerHooks, type ViewerState } from './runtime';
 import { openInChrome } from './open-in-chrome';
 import type { SaveControllerImpl } from './save/save-controller';
@@ -69,7 +69,7 @@ import { FileAccessDialog } from './ui/FileAccessDialog';
 import { FramedCard } from './ui/FramedCard';
 import { LargeFileNotice } from './ui/LargeFileNotice';
 import { CommentButton } from './notes/CommentButton';
-import { NotesLayer } from './notes/NotesLayer';
+import { commentsFeature } from './notes/feature';
 import { LoadErrorCard } from './ui/LoadErrorCard';
 import { LocalFileCard } from './ui/LocalFileCard';
 import { PasswordDialog } from './ui/PasswordDialog';
@@ -84,6 +84,8 @@ const backend = createEmbedPdfBackend(engineAssets((p) => chrome.runtime.getURL(
 
 // Phase 2 features mount here, one line each: registerViewerFeature(<feature>) from './annotations/wire' (S14 comments,
 // S15 the notes panel, S16 figures). Each gets the open document's notes (NotesHost) and draws beside or on the pages.
+registerViewerFeature(commentsFeature);
+registerViewerFeature(notesPanelFeature);
 
 /** Where the reader was when the engine stopped, so the document opens again at the same place. */
 type Resume = Pick<ViewerSnapshot, 'zoom' | 'currentPage' | 'viewRotation' | 'spread' | 'railOpen'>;
@@ -469,6 +471,8 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
     },
     [store, onEngineStopped],
   );
+  // R60: room the features keep at the right from the first layout (a PDF that already has notes opens with its margin).
+  const [reserveAtOpen] = useState(() => Math.max(0, ...viewerFeatures().map((f) => f.reserveAtOpen?.(doc) ?? 0)));
   const goToPage = useCallback((index: number) => void api.current?.goToPage(index), []);
   const zoom = useCallback((mode: ZoomMode) => api.current?.zoomTo(mode), []);
   return (
@@ -491,18 +495,14 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
         onOutline={nav.onOutline}
         onToggle={() => commands.get('view.toggleRail')?.run()}
       >
-        <PageList backend={backend} doc={doc} store={store} scheduler={scheduler} apiRef={api} renderPage={renderPage} onError={onDrawError} />
+        <PageList backend={backend} doc={doc} store={store} scheduler={scheduler} apiRef={api} renderPage={renderPage} onError={onDrawError} initialReserveRight={reserveAtOpen} />
       </NavRail>
       {find.view}
       {notes !== null && viewerFeatures().map((f) => f.View && <f.View key={f.id} host={notes.host} />)}
       {notes !== null && <MarkupMenu input={notes.input} commands={commands} />}
-      <NotesLayer doc={doc} pageText={pageText} textLayers={textLayers} pages={api} store={store} />
-      <NotesPanelMount session={null /* S13: the tab's AnnotationSession */} pageList={api} viewer={store} pages={doc.open.pages} jumps={null /* Task 24 */} />
     </>
   );
 });
-
-const noLayout = () => () => {};
 
 /**
  * The open document's notes, made once the page list is up and disposed with the document. In Incognito there are none

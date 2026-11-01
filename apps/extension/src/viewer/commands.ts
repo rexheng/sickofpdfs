@@ -17,7 +17,7 @@ import type { ViewerParams } from '../shared/viewer-url';
 import { downloadOriginal } from './actions/download';
 import type { OpenedDocument } from './open-document';
 import { printDocument } from './print/print';
-import type { KeyCombo, ShortcutDef } from './shortcuts';
+import { isTypingTarget, type KeyCombo, type ShortcutDef } from './shortcuts';
 
 export { buildMenus, formatCombo } from './chrome/menus';
 export { downloadOriginal } from './actions/download';
@@ -227,6 +227,25 @@ const HIDDEN_KEYS: Partial<Record<ViewerCommandId, KeyCombo[]>> = { 'view.zoomOu
 const EDITING_KEYS = new Set<ViewerCommandId>(['marks.underline', 'marks.bold', 'figures.copyImage', 'edit.undo', 'edit.redo']);
 
 /**
+ * Keys the viewer always takes, with nothing selected and in a text field too, because the browser's own action is
+ * never wanted here. Ctrl+U would open the viewer page's source in a new tab (ruling: Ctrl+U with nothing selected does
+ * nothing). In a text field it does nothing either: the note box has no underline.
+ */
+const NEVER_THE_BROWSERS: Partial<Record<ViewerCommandId, KeyCombo[]>> = { 'marks.underline': ['Ctrl+U'] };
+
+/**
+ * Commands whose Ctrl+Alt letter also matches by the physical key (shortcuts.ts): on a German keyboard Ctrl+Alt+M types
+ * "µ" and must still comment (plan section 7). Every other letter is matched by the character it types.
+ */
+const BY_PHYSICAL_KEY = new Set<ViewerCommandId>(['marks.comment', 'marks.documentNote']);
+
+/** The key was pressed in a text field (the note box, the page box). */
+function inTextField(e: KeyboardEvent): boolean {
+  const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+  return isTypingTarget(path[0] ?? e.target);
+}
+
+/**
  * A Ctrl combo without Alt is the viewer's even while its command is greyed out: it does nothing rather than let
  * Chrome print the viewer page, save it, open its find bar or zoom the browser. Single keys and Ctrl+Alt combos (F4,
  * ?, Ctrl+Alt+S) are left to the browser while their command is greyed out, and so are the editing keys above.
@@ -239,12 +258,15 @@ function alwaysOurs(id: ViewerCommandId, combo: KeyCombo): boolean {
 export function commandShortcuts(cmds: ViewerCommands): ShortcutDef[] {
   const defs: ShortcutDef[] = [];
   for (const c of cmds.values()) {
-    const keys = [...c.keys, ...(HIDDEN_KEYS[c.id] ?? [])];
+    const taken = NEVER_THE_BROWSERS[c.id] ?? [];
+    const keys = [...c.keys, ...(HIDDEN_KEYS[c.id] ?? [])].filter((k) => !taken.includes(k));
     const ours = keys.filter((k) => alwaysOurs(c.id, k));
     const others = keys.filter((k) => !alwaysOurs(c.id, k));
     const typing = EDITING_KEYS.has(c.id) ? { whileTyping: 'yield' as const } : {};
+    if (taken.length > 0) defs.push({ id: c.id, keys: taken, run: (e) => !inTextField(e) && c.enabled() && c.run() });
     if (ours.length > 0) defs.push({ id: c.id, keys: ours, run: () => c.enabled() && c.run() });
-    if (others.length > 0) defs.push({ id: c.id, keys: others, run: () => c.run(), enabled: () => c.enabled(), ...typing });
+    const physical = BY_PHYSICAL_KEY.has(c.id) ? { byPhysicalKey: true } : {};
+    if (others.length > 0) defs.push({ id: c.id, keys: others, run: () => c.run(), enabled: () => c.enabled(), ...typing, ...physical });
   }
   return defs;
 }

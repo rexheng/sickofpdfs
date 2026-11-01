@@ -3,7 +3,7 @@
 // note is active, and what each action does.
 import type { CommentId, ThreadId } from '@sop/core';
 import { Icon, IconButton, ThreadCard } from '@sop/ui';
-import { type KeyboardEvent, type Ref, useId, useRef } from 'react';
+import { type KeyboardEvent, type MouseEvent, type Ref, useId, useRef } from 'react';
 import type { NoteEntry, NoteList, NotesFilter } from './model';
 import styles from './NotesPanel.module.css';
 
@@ -69,8 +69,15 @@ export function NotesPanel(p: NotesPanelProps) {
   };
 
   // Under "Couldn't place" the heading says it once, so the cards there do not each repeat the label.
+  // A click on the card that is already active still goes to its place (the card only reports a click while it is
+  // quiet); a click in its boxes or on its buttons stays with them.
+  const showActive = (note: NoteEntry, e: MouseEvent<HTMLLIElement>) => {
+    if (p.active !== note.id || !(e.target instanceof Element)) return;
+    if (e.target.closest('textarea, input, button, a, [role="menu"], [role="menuitem"]')) return;
+    p.onActivate(note.id);
+  };
   const card = (note: NoteEntry) => (
-    <li key={note.id} className={styles.item}>
+    <li key={note.id} className={styles.item} onClick={(e) => showActive(note, e)}>
       <ThreadCard
         ref={(el: HTMLElement | null) => p.cardRef(note.id, el)}
         id={`sop-panel-note-${note.id}`}
@@ -93,7 +100,7 @@ export function NotesPanel(p: NotesPanelProps) {
   );
 
   return (
-    <aside ref={p.panelRef} className={styles.panel} aria-labelledby={titleId} onKeyDown={onKeyDown}>
+    <aside ref={p.panelRef} className={styles.panel} aria-labelledby={titleId} onKeyDown={onKeyDown} data-notes-panel="">
       <div className={styles.header}>
         <h2 id={titleId} className={styles.title}>
           Notes
