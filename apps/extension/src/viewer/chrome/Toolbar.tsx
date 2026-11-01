@@ -26,7 +26,7 @@ export function Toolbar({ commands, store, pageCount, onGoToPage, onZoom, pageFi
   const scale = useViewerState(store, (s) => s.scale);
   const button = (id: ViewerCommandId) => <CommandButton cmd={commands.get(id)} />;
   return (
-    <div className={styles.row}>
+    <div className={styles.row} data-viewer-chrome="">
       <PillToolbar label="Document">
         <span className={styles.pageLabel} aria-hidden="true">
           Page

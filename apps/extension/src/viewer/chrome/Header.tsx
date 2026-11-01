@@ -24,7 +24,7 @@ export interface HeaderProps {
  */
 export function Header({ name, onBack, menus, onOpenInChrome, chromeRefused, status }: HeaderProps) {
   return (
-    <header className={styles.header} data-theme="dark">
+    <header className={styles.header} data-theme="dark" data-viewer-chrome="">
       {onBack !== null && <IconButton icon="arrow_back" label="Back to page" size={32} iconSize={24} onClick={onBack} className={styles.back} />}
       <span className={styles.tile}>
         <FileTypeIcon kind="pdf" size={32} />

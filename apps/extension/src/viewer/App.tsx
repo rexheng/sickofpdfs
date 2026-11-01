@@ -19,7 +19,7 @@ import {
   type ZoomMode,
 } from '@sop/viewer';
 import { PageList, type PageListApi } from '@sop/viewer/react';
-import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { sendRuntimeMessage } from '../shared/send-message';
 import { parseViewerUrl, type ViewerParams } from '../shared/viewer-url';
 import { copyLink } from './actions/copy-link';
@@ -237,8 +237,11 @@ interface ReaderProps {
   onChrome: (chrome: ReaderChrome | null) => void;
 }
 
-/** The open document: the toolbar pill, the page list, its keys, the scan hint, and its test hooks. */
-function Reader({ doc, params, rootRef, pageFieldRef, ui, onChrome }: ReaderProps) {
+/**
+ * The open document: the toolbar pill, the page list, its keys, the scan hint, and its test hooks. Memoised: the header
+ * re-renders App when the view changes (its menus), and that must not re-render the page list.
+ */
+const Reader = memo(function Reader({ doc, params, rootRef, pageFieldRef, ui, onChrome }: ReaderProps) {
   const [store] = useState(() =>
     createViewerStore({ currentPage: Math.min(doc.open.pageCount - 1, Math.max(0, (params.page ?? 1) - 1)) }),
   );
@@ -287,7 +290,7 @@ function Reader({ doc, params, rootRef, pageFieldRef, ui, onChrome }: ReaderProp
       </div>
     </>
   );
-}
+});
 
 /** What follows the page in view: `#page=N` in the address, and the scan hint. Kept apart so the page list does not re-render. */
 function CurrentPageExtras(p: { store: ViewerStore; scans: ScanDetector; source: string | null; onOpenInChrome: (url: string) => void }) {
@@ -343,19 +346,39 @@ function inPageArea(): boolean {
   return a === null || a === document.body || a === document.documentElement || a.closest('[role="document"]') !== null;
 }
 
+/**
+ * A button of the header or the toolbar pill has the focus, as it does after a click there (or after a menu closes, when
+ * Radix puts the focus back on its button). Such a button only uses Enter, Space and Left/Right itself (and a menu
+ * button ArrowDown), so Page Up/Down, Home and End still move the pages, as they do in Chrome's viewer.
+ */
+function onChromeButton(): boolean {
+  const a = document.activeElement;
+  return a instanceof HTMLButtonElement && a.closest('[data-viewer-chrome]') !== null;
+}
+
+/** Up and Down too, except on a menu-bar button, where Down opens its menu. */
+function onChromeButtonNotMenu(): boolean {
+  return onChromeButton() && document.activeElement?.getAttribute('role') !== 'menuitem';
+}
+
 /** Chromium's viewer scroll keys. (The zoom keys are commands: commands.ts.) */
 function readerShortcuts(api: RefObject<PageListApi | null>): ShortcutDef[] {
   const on = (f: (a: PageListApi) => void) => () => {
     if (api.current) f(api.current);
   };
-  const page = (id: string, keys: string[], f: (a: PageListApi) => void): ShortcutDef => ({ id, keys, run: on(f), enabled: inPageArea });
+  const def = (enabled: () => boolean) => (id: string, keys: string[], f: (a: PageListApi) => void): ShortcutDef => ({ id, keys, run: on(f), enabled });
+  const page = def(inPageArea);
+  const vertical = def(() => inPageArea() || onChromeButton());
+  const line = def(() => inPageArea() || onChromeButtonNotMenu());
   return [
-    page('scroll.lineDown', ['ArrowDown'], (a) => a.scrollLines(1)),
-    page('scroll.lineUp', ['ArrowUp'], (a) => a.scrollLines(-1)),
-    page('scroll.screenDown', ['PageDown', 'Space'], (a) => a.scrollScreens(1)),
-    page('scroll.screenUp', ['PageUp', 'Shift+Space'], (a) => a.scrollScreens(-1)),
-    page('scroll.start', ['Home'], (a) => a.goToStart()),
-    page('scroll.end', ['End'], (a) => a.goToEnd()),
+    line('scroll.lineDown', ['ArrowDown'], (a) => a.scrollLines(1)),
+    line('scroll.lineUp', ['ArrowUp'], (a) => a.scrollLines(-1)),
+    vertical('scroll.screenDown', ['PageDown'], (a) => a.scrollScreens(1)),
+    page('scroll.screenDown', ['Space'], (a) => a.scrollScreens(1)),
+    vertical('scroll.screenUp', ['PageUp'], (a) => a.scrollScreens(-1)),
+    page('scroll.screenUp', ['Shift+Space'], (a) => a.scrollScreens(-1)),
+    vertical('scroll.start', ['Home'], (a) => a.goToStart()),
+    vertical('scroll.end', ['End'], (a) => a.goToEnd()),
     page('scroll.left', ['ArrowLeft'], (a) => a.scrollSideways(-1)),
     page('scroll.right', ['ArrowRight'], (a) => a.scrollSideways(1)),
   ];
