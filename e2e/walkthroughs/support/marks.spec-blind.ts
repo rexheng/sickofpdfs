@@ -60,6 +60,14 @@ export const RECEIPT = at('invoice', 'classifier/not-learning/invoice-aws-sample
 /** 120 pages of photographed text: no text layer. */
 export const SCAN = at('scan-120', 'scan-120.pdf');
 
+/** One line of the handout (a figure caption), the invoice's first sentence, a DOI and an arXiv id, each selectable as it stands. */
+export const HANDOUT_LINE: Passage = { from: 'Market equilibrium', to: 'supply shift' };
+export const INVOICE_LINE: Passage = { from: 'This invoice is for', to: 'billing period' };
+export const PLOS_DOI_PASSAGE: Passage = { from: 'doi:10.1371/journal.pone.0000308', to: 'journal.pone.0000308' };
+/** ResNet, page 9 (index 8), reference list: "... challenge. arXiv:1409.0575, 2014." */
+export const RESNET_REFS: TlFixture = { name: 'resnet-refs', file: 'classifier/learning/arxiv-1512.03385-resnet.pdf', page: 8, dir: 'ltr' };
+export const ARXIV_PASSAGE: Passage = { from: 'arXiv:1409.0575', to: '1409.0575' };
+
 /** Phrases inside ONE line of the Attention abstract: each is a single-line passage (a start phrase and an end phrase). */
 export interface Passage {
   from: string;
@@ -602,20 +610,18 @@ export interface Timing {
 const PERF_NAMES = ['sop:mark-drawn', 'sop:notebox-open', 'sop:figure-outline'] as const;
 
 /** Installs the probe: it notes the time of every key press (capture phase) and of the first change of a mark layer or note box after it. */
-export async function installTiming(page: Page): Promise<void> {
+export async function installTiming(page: Page, o: { pointer?: boolean } = {}): Promise<void> {
   await page.evaluate(
-    ({ noteName }) => {
+    ({ noteName, pointer }) => {
       const w = window as unknown as { __t?: { keyAt: number | null; mark: number | null; box: number | null } };
       w.__t = { keyAt: null, mark: null, box: null };
-      window.addEventListener(
-        'keydown',
-        (e) => {
-          w.__t!.keyAt = e.timeStamp;
-          w.__t!.mark = null;
-          w.__t!.box = null;
-        },
-        { capture: true },
-      );
+      const start = (e: Event) => {
+        w.__t!.keyAt = e.timeStamp;
+        w.__t!.mark = null;
+        w.__t!.box = null;
+      };
+      window.addEventListener('keydown', start, { capture: true });
+      if (pointer) window.addEventListener('pointermove', start, { capture: true });
       const markLayerChange = (m: MutationRecord): boolean => {
         const els: Element[] = [];
         if (m.target instanceof Element) els.push(m.target);
@@ -641,7 +647,7 @@ export async function installTiming(page: Page): Promise<void> {
         }
       }).observe(document.documentElement, { subtree: true, childList: true, attributes: true });
     },
-    { noteName: '^(?!.*(reply|edit)).*(note|comment)' },
+    { noteName: '^(?!.*(reply|edit)).*(note|comment)', pointer: o.pointer === true },
   );
 }
 
