@@ -41,6 +41,8 @@ export interface ColumnSpec {
   localOnly?: boolean;
   /** Must be null or absent on the wire; a row that has it set is refused. `draftOfTab`: drafts never sync. */
   neverSync?: boolean;
+  /** Added by a later local schema step with `ALTER TABLE ... ADD COLUMN`, so in a database it sits after `rev` and `hlc`. */
+  since?: 2;
 }
 
 export interface TableSpec {
@@ -82,7 +84,7 @@ function hex64(field: string, o: Partial<ColumnSpec> = {}): ColumnSpec {
 const AUTHORS = ['me', 'claude'] as const;
 const NOTE_ID = { maxLength: 128 };
 
-/** The tables, as local schema v1 to v3 define them. Order is the column order of the database. */
+/** The tables, as local schema v1 to v3 define them. Order is the wire order; `dbColumns` gives the database order. */
 export const TABLE_SPECS: Readonly<Record<SyncedTable, TableSpec>> = {
   documents: {
     table: 'documents',
@@ -156,10 +158,10 @@ export const TABLE_SPECS: Readonly<Record<SyncedTable, TableSpec>> = {
       json('anchor', 'object'),
       int('pageIndex'),
       real('sortKey'),
-      text('author', { oneOf: AUTHORS }),
       int('createdAt'),
       int('updatedAt'),
       int('deletedAt', { nullable: true }),
+      text('author', { oneOf: AUTHORS, since: 2 }),
     ],
   },
   threads: {
@@ -175,10 +177,10 @@ export const TABLE_SPECS: Readonly<Record<SyncedTable, TableSpec>> = {
       int('pageIndex', { nullable: true }),
       real('sortKey', { nullable: true }),
       text('placement', { oneOf: ['placed', 'unplaced'] }),
-      text('draftOfTab', { nullable: true, neverSync: true, maxLength: 128 }),
       int('createdAt'),
       int('updatedAt'),
       int('deletedAt', { nullable: true }),
+      text('draftOfTab', { nullable: true, neverSync: true, maxLength: 128, since: 2 }),
     ],
   },
   comments: {
@@ -252,7 +254,9 @@ export function wireColumns(table: SyncedTable): readonly ColumnSpec[] {
  */
 export function dbColumns(table: SyncedTable, side: 'local' | 'cloud'): string[] {
   const spec = TABLE_SPECS[table];
-  return [...spec.columns.map((c) => c.column), ...META_COLUMNS, ...(side === 'cloud' ? spec.serverColumns : [])];
+  const v1 = spec.columns.filter((c) => c.since === undefined).map((c) => c.column);
+  const later = spec.columns.filter((c) => c.since !== undefined).map((c) => c.column);
+  return [...v1, ...META_COLUMNS, ...later, ...(side === 'cloud' ? spec.serverColumns : [])];
 }
 
 /** The id a `ChangeEntry` carries for this wire row, or null when the row has none. */
