@@ -8,8 +8,10 @@
 //   live in the DOM, so it survives its pages' layers being destroyed: when a page comes back, its part of the selection
 //   is painted and selected in the DOM again. The DOM selection shows the part of the model that has layers (for
 //   screen readers, Shift+arrow keys and Find); a change someone else makes there (the keys, Find, a click outside the
-//   pages) is read back into the model. Ctrl+A selects the whole document, and Copy writes the model's text, never what
-//   happens to be in the DOM (R26 joins, pages joined by a line break; pages not on screen are read from the engine).
+//   pages) is read back into the model. A field that takes the focus (the page box, Find, a note) holds the DOM selection
+//   for a while: the model waits, still painted, and is shown in the DOM again when the focus leaves the field. Ctrl+A
+//   selects the whole document, and Copy writes the model's text, never what happens to be in the DOM (R26 joins, pages
+//   joined by a line break; pages not on screen are read from the engine). Ctrl+C with nothing selected says so.
 // - The browser's selection highlight is transparent. The viewer paints the selection itself (R44): the selected chars
 //   → PDFium's line rectangles (getTextRangeRects) → one even band a line (markLineRects, the same rects marks are drawn
 //   with, so a highlight lines up exactly with the selection it was made from) → one SVG path a page, in one colour,
@@ -85,8 +87,10 @@ export interface TextSelectionSource {
    * client px, on the mounted pages; null when no part of it is painted on screen.
    */
   point(which: 'start' | 'end'): { x: number; y: number } | null;
-  /** Lets go of the selection (the model and the DOM). */
+  /** Lets go of the selection (the model and the DOM). Its paint goes in the same frame. */
   clear(): void;
+  /** Selects the chars from `start` to `end` (a mark's text, for the mark menu's Comment). */
+  select(start: CharPos, end: CharPos): void;
   /** Calls `cb` after the selection is set, changed or cleared (not on every move of a drag: once it ends). */
   subscribe(cb: () => void): () => void;
 }
@@ -127,6 +131,10 @@ const START_REACH_PT = 24;
 const LINE_SPLIT_GAP = 1.5;
 /** A drag scrolls the pages when the pointer is this close (CSS px) to the edge of the page area, or beyond it. */
 const AUTOSCROLL_EDGE_PX = 6;
+/** Shift+arrow moves the browser's selection end at most this many times to select one more char (see extendByKey). */
+const KEY_EXTEND_TRIES = 4;
+/** What Ctrl+C says when nothing is selected. */
+export const NOTHING_TO_COPY = 'Nothing is selected, so nothing was copied.';
 /** Autoscroll speed: this share of the distance past the edge each frame, between the two bounds (CSS px a frame). */
 const AUTOSCROLL_GAIN = 0.5;
 const AUTOSCROLL_MIN_PX = 2;
@@ -259,6 +267,13 @@ export class TextLayerController {
       clear: () => {
         this.clickedAt = null;
         this.setModel(null);
+        // A mark that takes the selection's place is drawn in this frame (R71): the selection's paint must go with it,
+        // not a frame later.
+        this.paintNow();
+      },
+      select: (start, end) => {
+        this.clickedAt = null;
+        this.setModel({ anchor: start, focus: end });
       },
       subscribe: (cb) => {
         this.selectionListeners.add(cb);
@@ -616,9 +631,10 @@ export class TextLayerController {
 
   /**
    * Shows the model in the DOM selection, on the pages that have layers. Never while the focus is in a field (that would
-   * take the reader's caret out of it); the painting does not need the DOM.
+   * take the reader's caret out of it); the painting does not need the DOM. `fieldLeft`: a field has just given the focus
+   * back, and whatever it left in the DOM selection is not the reader's.
    */
-  private applyModel(): void {
+  private applyModel(fieldLeft = false): void {
     const root = this.root;
     const sel = document.getSelection();
     if (!root || !sel || this.drag || isEditable(document.activeElement)) return;
@@ -629,6 +645,8 @@ export class TextLayerController {
       if (sel.rangeCount > 0 && getSelectionRanges(root).length > 0) {
         if (this.model) sel.collapse(root, 0);
         else sel.removeAllRanges();
+      } else if (fieldLeft && this.model && sel.rangeCount > 0 && !sel.isCollapsed) {
+        sel.collapse(root, 0);
       }
       return;
     }
@@ -646,12 +664,17 @@ export class TextLayerController {
     if (!root || this.drag) return;
     const sel = document.getSelection();
     const dom = getSelectionRanges(root);
+    // A field with the focus holds the DOM selection (its caret, or text selected in it): that is not the reader letting
+    // go of the selection. The model stays, painted, and is shown again when the focus leaves the field (onFocusOut), as
+    // Chrome's viewer keeps its selection while its page box is used. So a far jump by Go to page keeps it, and Ctrl+C
+    // there copies it. Code clearing the selection (no range at all) still clears it.
+    if (dom.length === 0 && sel !== null && sel.rangeCount > 0 && isEditable(document.activeElement)) return;
     const shown = this.shownRanges();
     if (sameRanges(dom, shown)) {
-      // The same chars, but a selection elsewhere (or the focus in a field) replaces one that is not on screen.
+      // The same chars, but a selection elsewhere replaces one that is not on screen.
       const elsewhere = sel !== null && sel.rangeCount > 0 && !sel.isCollapsed;
       const cleared = sel === null || sel.rangeCount === 0;
-      if (dom.length === 0 && this.model && (elsewhere || cleared || isEditable(document.activeElement))) this.setModel(null, false);
+      if (dom.length === 0 && this.model && (elsewhere || cleared)) this.setModel(null, false);
       return;
     }
     if (!sel || sel.rangeCount === 0 || dom.length === 0) {
@@ -682,6 +705,13 @@ export class TextLayerController {
   }
 
   // ---- selection: painting ----
+
+  /** Paints the model now instead of in the next frame (requests for rects still answer later). */
+  private paintNow(): void {
+    if (this.paintFrame) cancelAnimationFrame(this.paintFrame);
+    this.paintFrame = 0;
+    this.paint();
+  }
 
   private schedulePaint(): void {
     if (this.paintFrame) return;
@@ -792,6 +822,7 @@ export class TextLayerController {
     document.addEventListener('mouseup', (e) => this.onMouseUp(e), { signal });
     window.addEventListener('blur', () => this.endDrag(), { signal });
     document.addEventListener('keydown', (e) => this.onKeyDown(e), { signal });
+    document.addEventListener('focusout', (e) => this.onFocusOut(e), { signal });
     document.addEventListener('copy', (e) => this.onCopy(e), { signal });
   }
 
@@ -1118,13 +1149,47 @@ export class TextLayerController {
 
   // ---- keys and Copy ----
 
-  /** Ctrl+A in the pages (or anywhere but a field or a dialog) selects the whole document, as in Chrome's viewer. */
+  /**
+   * Ctrl+A in the pages (or anywhere but a field or a dialog) selects the whole document, as in Chrome's viewer. Shift+Left
+   * and Shift+Right (with Ctrl, by words) move the selection's end: see extendByKey.
+   */
   private onKeyDown(e: KeyboardEvent): void {
-    if (e.defaultPrevented || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || (e.key !== 'a' && e.key !== 'A' && e.code !== 'KeyA')) return;
+    if (e.defaultPrevented || e.altKey) return;
     const t = e.target instanceof Element ? e.target : document.activeElement;
-    if (isEditable(t) || isEditable(document.activeElement) || t?.closest('[role="dialog"], [role="alertdialog"], [role="menu"]')) return;
+    if (isEditable(t) || isEditable(document.activeElement)) return;
+    if (e.shiftKey && !e.metaKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+      this.extendByKey(e, e.key === 'ArrowRight' ? 'right' : 'left', e.ctrlKey ? 'word' : 'character');
+      return;
+    }
+    if (!(e.ctrlKey || e.metaKey) || e.shiftKey || (e.key !== 'a' && e.key !== 'A' && e.code !== 'KeyA')) return;
+    if (t?.closest('[role="dialog"], [role="alertdialog"], [role="menu"]')) return;
     e.preventDefault();
     this.selectAll();
+  }
+
+  /**
+   * Shift+arrow on a selection in the pages. The browser moves the selection's end itself, but each span of the layer is
+   * placed on its own, so it stops once at every edge between two spans (the end of one span's text, then the gap
+   * between them) and one press in two selected nothing more. Here every press moves it on until another char is
+   * selected (or there is none left). The model follows from the DOM (syncFromDom), as for any change made there.
+   */
+  private extendByKey(e: KeyboardEvent, direction: 'left' | 'right', granularity: 'character' | 'word'): void {
+    const root = this.root;
+    const sel = document.getSelection();
+    if (!root || !sel || sel.rangeCount === 0 || sel.isCollapsed || !sel.focusNode || !root.contains(sel.focusNode)) return;
+    e.preventDefault();
+    const before = getSelectionRanges(root);
+    for (let i = 0; i < KEY_EXTEND_TRIES; i++) {
+      sel.modify('extend', direction, granularity);
+      if (!sameRanges(getSelectionRanges(root), before)) return;
+    }
+  }
+
+  /** A field gives the focus back to anything but another field: the selection it held off (syncFromDom) is shown again. */
+  private onFocusOut(e: FocusEvent): void {
+    if (!this.model || !isEditable(e.target instanceof Element ? e.target : null)) return;
+    if (isEditable(e.relatedTarget instanceof Element ? e.relatedTarget : null)) return;
+    this.applyModel(true);
   }
 
   /**
@@ -1136,10 +1201,16 @@ export class TextLayerController {
   private onCopy(e: ClipboardEvent): void {
     const root = this.root;
     const m = this.model;
-    if (e.defaultPrevented || !e.clipboardData || !root || !m) return;
+    if (e.defaultPrevented || !e.clipboardData || !root) return;
     if (isEditable(e.target instanceof Element ? e.target : null) || isEditable(document.activeElement)) return;
     const sel = document.getSelection();
     if (sel && sel.rangeCount > 0 && !sel.isCollapsed && getSelectionRanges(root).length === 0) return;
+    if (!m) {
+      // Nothing is selected anywhere: the browser copies nothing and the clipboard keeps what it had. Say so, so that a
+      // paste of that old text is never a surprise.
+      if (!sel || sel.isCollapsed) this.o.onNote?.(NOTHING_TO_COPY);
+      return;
+    }
     e.preventDefault();
     const text = this.copyText(m);
     e.clipboardData.setData('text/plain', text ?? '');
