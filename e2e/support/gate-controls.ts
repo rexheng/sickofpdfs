@@ -1,4 +1,5 @@
 import type { BrowserContext, Page, Worker } from '@playwright/test';
+import { EXTENSION_ID } from '../../apps/extension/scripts/extension-id.mjs';
 
 /**
  * Positive controls for the network gate (carried requirement R22).
@@ -16,6 +17,8 @@ export interface ControlEnv {
   page: Page;
   /** The address of `path` on the stray origin. */
   stray: (path: string) => string;
+  /** The address of `path` on the fixture server (the allowed origin). */
+  fixtureUrl: (path: string) => string;
 }
 
 export interface GateControl {
@@ -64,6 +67,26 @@ const inBlobWorker = (body: string) => `new Promise((resolve) => {
   worker.onmessage = () => resolve(1);
   worker.onerror = () => resolve(0);
 })`;
+
+/**
+ * Runs `expression` in the isolated world of the extension's content script in `page` (where `chrome.runtime` is the
+ * extension's, and the page's own scripts cannot reach), through the debugging protocol. Playwright does not expose
+ * that world.
+ */
+async function evaluateInContentScript(context: BrowserContext, page: Page, expression: string): Promise<void> {
+  const cdp = await context.newCDPSession(page);
+  try {
+    const worlds: { id: number; origin: string }[] = [];
+    cdp.on('Runtime.executionContextCreated', (e) => worlds.push({ id: e.context.id, origin: e.context.origin }));
+    await cdp.send('Runtime.enable'); // replays the contexts that already exist
+    const world = worlds.find((w) => w.origin === `chrome-extension://${EXTENSION_ID}`);
+    if (!world) throw new Error('the extension has no content script in this page');
+    const result = await cdp.send('Runtime.evaluate', { contextId: world.id, expression, awaitPromise: true, returnByValue: true });
+    if (result.exceptionDetails) throw new Error(`content script evaluate failed: ${JSON.stringify(result.exceptionDetails)}`);
+  } finally {
+    await cdp.detach().catch(() => {});
+  }
+}
 
 export const GATE_CONTROLS: GateControl[] = [
   {
@@ -174,6 +197,17 @@ export const GATE_CONTROLS: GateControl[] = [
         });
       }, url);
       await page.evaluate(() => fetch('http://dnr-control.invalid/start').then((r) => r.status).catch(() => 0));
+      return url;
+    },
+  },
+  {
+    api: 'fetch() in the extension content script (embed.content, in a page on the fixture server)',
+    run: async ({ context, fixtureUrl, stray }) => {
+      const url = stray('control/content-script-fetch');
+      const page = await context.newPage();
+      await page.goto(fixtureUrl('/h/referer-page')); // an ordinary page: the content script runs in it and takes nothing over
+      await evaluateInContentScript(context, page, `fetch(${JSON.stringify(url)}).then((r) => r.status, () => 0)`);
+      await page.close();
       return url;
     },
   },

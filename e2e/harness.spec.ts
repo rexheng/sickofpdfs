@@ -17,7 +17,7 @@ test.describe('the network gate catches stray requests', () => {
   test('one request through each extension path is reported, and the fixture server is not', async ({ context, sw, server, openViewer, netgate }) => {
     const page = await openViewer(server.url('/f/paper-50.pdf'));
     const strayOrigin = server.origin.replace('127.0.0.1', 'localhost');
-    const env = { context, sw, page, stray: (path: string) => `${strayOrigin}/${path}` };
+    const env = { context, sw, page, stray: (path: string) => `${strayOrigin}/${path}`, fixtureUrl: (path: string) => server.url(path) };
 
     const made: { api: string; url: string }[] = [];
     for (const control of GATE_CONTROLS) made.push({ api: control.api, url: await control.run(env) });

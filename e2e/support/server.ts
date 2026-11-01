@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { PDFDocument } from 'pdf-lib';
 import { HEADER_CASES } from './header-cases';
 
-const TEST_ASSETS = fileURLToPath(new URL('../../test-assets/', import.meta.url));
+/** The folder `pnpm fixtures` fills (gitignored). */
+export const TEST_ASSETS = fileURLToPath(new URL('../../test-assets/', import.meta.url));
 
 export interface FixtureServer {
   /** `http://127.0.0.1:<port>`: the one origin the network gate allows. */
@@ -37,6 +38,21 @@ function parseRange(header: string | undefined, size: number): { start: number; 
   return start <= end ? { start, end } : null;
 }
 
+/** Small pages that link to or embed the `/h/*` PDFs. Each is served as text/html. */
+const HTML_PAGES: Record<string, string> = {
+  // A form whose POST answer is a PDF: Chrome keeps it, because the viewer cannot replay a POST.
+  '/h/post-form': '<h1>Form</h1><form method="post" action="/h/post"><button type="submit">Open the PDF</button></form>',
+  // A link to a PDF that the server serves only when the request carries this page as its Referer.
+  '/h/referer-page': '<h1>Reading list</h1><p><a id="pdf" href="/h/needs-referer.pdf">The paper</a></p>',
+  '/h/embed-page': '<h1>A page with an embedded PDF</h1><p>Above the PDF.</p><embed type="application/pdf" src="/h/plain.pdf" width="600" height="400"><p>Below the PDF.</p>',
+  '/h/object-page': '<h1>A page with an embedded PDF</h1><p>Above the PDF.</p><object type="application/pdf" data="/h/plain.pdf" width="600" height="400"></object><p>Below the PDF.</p>',
+  '/h/iframe-page': '<h1>A page with an embedded PDF</h1><p>Above the PDF.</p><iframe src="/h/plain.pdf" width="600" height="400"></iframe><p>Below the PDF.</p>',
+  // The iframe's PDF is an attachment: a download, which the page must survive.
+  '/h/iframe-attachment-page': '<h1>A page with an attached PDF</h1><iframe src="/h/attachment.pdf" width="600" height="400"></iframe>',
+};
+
+const htmlPage = (body: string) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>fixture page</title></head><body>${body}</body></html>`;
+
 let tinyPdf: Promise<Uint8Array> | undefined;
 /** One small, valid page: the body of every `/h/*` answer. */
 function tinyPdfBytes(): Promise<Uint8Array> {
@@ -50,13 +66,16 @@ function tinyPdfBytes(): Promise<Uint8Array> {
 /**
  * Serves the e2e fixtures on 127.0.0.1 at a random port.
  * - `/f/<name>`: `test-assets/<name>` as application/pdf, with `Range` support (`pnpm fixtures` builds that folder).
- * - `/h/*`: the HEADER_CASES, each with its own Content-Type and Content-Disposition; later tasks add pages here.
+ * - `/h/*`: the HEADER_CASES, each with its own Content-Type and Content-Disposition, and the pages in HTML_PAGES.
+ *   `POST /h/post` answers a PDF. `/h/needs-referer.pdf` answers 403 unless the request's Referer is `/h/referer-page`.
  * CORS is open because extension pages (chrome-extension://...) fetch from this origin.
  */
 export async function startFixtureServer(): Promise<FixtureServer & { close(): Promise<void> }> {
   const counts = new Map<string, number>();
   const sequences = new Map<string, { bodies: Uint8Array[]; next: number }>();
-  const headerCases = new Map<string, (typeof HEADER_CASES)[number]>(HEADER_CASES.map((c) => [pathOf(c.path), c]));
+  const headerCases = new Map<string, { ct: string | null; cd?: string }>(HEADER_CASES.map((c) => [pathOf(c.path), c]));
+  // The Referer-checked PDF is a plain PDF once the check above has passed.
+  headerCases.set('/h/needs-referer.pdf', { ct: 'application/pdf' });
 
   async function serveFile(req: IncomingMessage, res: ServerResponse, name: string): Promise<void> {
     const root = resolve(TEST_ASSETS);
@@ -82,7 +101,8 @@ export async function startFixtureServer(): Promise<FixtureServer & { close(): P
     void (async () => {
       res.setHeader('access-control-allow-origin', '*');
       res.setHeader('access-control-expose-headers', 'accept-ranges, content-range, content-length');
-      if (req.method !== 'GET' && req.method !== 'HEAD') return void res.writeHead(405).end();
+      const isPost = req.method === 'POST' && pathOf(req.url ?? '/') === '/h/post';
+      if (req.method !== 'GET' && req.method !== 'HEAD' && !isPost) return void res.writeHead(405).end();
       let path: string;
       try {
         path = decodeURIComponent(pathOf(req.url ?? '/'));
@@ -98,12 +118,27 @@ export async function startFixtureServer(): Promise<FixtureServer & { close(): P
         return void res.end(req.method === 'HEAD' ? undefined : body);
       }
       if (path.startsWith('/f/')) return serveFile(req, res, path.slice(3));
+      if (isPost) {
+        req.resume(); // the form body is not needed
+        const body = await tinyPdfBytes();
+        return void res.writeHead(200, { 'content-type': 'application/pdf', 'content-length': body.byteLength, 'cache-control': 'no-store' }).end(body);
+      }
+      if (path === '/h/post') return void res.writeHead(405, { allow: 'POST' }).end(); // only the form's POST answers
+      const page = HTML_PAGES[path];
+      if (page !== undefined) {
+        const html = Buffer.from(htmlPage(page));
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': html.byteLength, 'cache-control': 'no-store' });
+        return void res.end(req.method === 'HEAD' ? undefined : html);
+      }
+      if (path === '/h/needs-referer.pdf' && req.headers.referer !== `http://${req.headers.host}/h/referer-page`) {
+        return void res.writeHead(403, { 'content-type': 'text/plain' }).end('Referer required');
+      }
       const headerCase = headerCases.get(path);
       if (headerCase) {
         const body = await tinyPdfBytes();
         res.writeHead(200, {
           ...(headerCase.ct !== null ? { 'content-type': headerCase.ct } : {}),
-          ...('cd' in headerCase ? { 'content-disposition': headerCase.cd } : {}),
+          ...(headerCase.cd !== undefined ? { 'content-disposition': headerCase.cd } : {}),
           'content-length': body.byteLength,
           'cache-control': 'no-store',
         });

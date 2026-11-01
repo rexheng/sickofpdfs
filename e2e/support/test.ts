@@ -1,4 +1,6 @@
-import { rm } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { expect, test as base, type BrowserContext, type Page, type Worker } from '@playwright/test';
 import { EXTENSION_ID } from '../../apps/extension/scripts/extension-id.mjs';
 import { buildViewerUrl, VIEWER_PATH } from '../../apps/extension/src/shared/viewer-url';
@@ -6,12 +8,22 @@ import type { SopTestHooks } from '../../apps/extension/src/testing/test-hooks';
 import { launchExtension, waitForExtensionWorker } from './launch';
 import { netlogBrowserServiceHosts, netlogExternalUrls, readNetlogRequests } from './netlog';
 import { profileTemplates, type ProfileKind } from './seed-profile';
-import { startFixtureServer, type FixtureServer } from './server';
+import { startFixtureServer, TEST_ASSETS, type FixtureServer } from './server';
 
 export { expect };
 export type { FixtureServer };
 export { EXTENSION_ID, VIEWER_PATH };
 export { TEST_BUILD_DIR, PROD_BUILD_DIR } from './launch';
+
+/**
+ * Copies `test-assets/<name>` to `dest`, making the folders on the way, and returns `dest`. For tests that open local
+ * files: pass a path under the `tmp` fixture, and give it whatever name the test needs (spaces, accents, `.PDF`).
+ */
+export async function copyFixture(name: string, dest: string): Promise<string> {
+  await mkdir(dirname(dest), { recursive: true });
+  await copyFile(join(TEST_ASSETS, name), dest);
+  return dest;
+}
 
 /** Every test's browser starts with the service worker fetching this path from the fixture server (see GateReport.recording). */
 const GATE_PING = '/__gate-ping';
@@ -54,6 +66,8 @@ interface Fixtures {
   context: BrowserContext;
   sw: Worker;
   server: FixtureServer;
+  /** A folder of the test's own, removed afterwards. */
+  tmp: string;
   netgate: NetGate;
   openViewer: (source: string, opts?: { back?: string; page?: number }) => Promise<Page>;
 }
@@ -81,6 +95,13 @@ export const test = base.extend<Options & Fixtures, WorkerFixtures>({
     const server = await startFixtureServer();
     await provide(server);
     await server.close();
+  },
+
+  // eslint-disable-next-line no-empty-pattern -- Playwright needs a destructuring pattern as the first parameter
+  tmp: async ({}, provide) => {
+    const dir = await mkdtemp(join(tmpdir(), 'sop-tmp-'));
+    await provide(dir);
+    await rm(dir, { recursive: true, force: true });
   },
 
   // Playwright's own `context` fixture is replaced: a persistent Chromium with the test build, a copy of the seeded
@@ -117,6 +138,14 @@ export const test = base.extend<Options & Fixtures, WorkerFixtures>({
     try {
       const worker = await waitForExtensionWorker(context); // fails with "extension did not load"
       await worker.evaluate((u) => fetch(u).then((r) => r.status), server.url(GATE_PING));
+      // Ready means the takeover is registered: a PDF opened in the first moments must not race the worker's start-up.
+      await worker.evaluate(async () => {
+        const deadline = Date.now() + 10_000;
+        while (!(await chrome.storage.session.get('takeoverMode')).takeoverMode) {
+          if (Date.now() > deadline) throw new Error('the takeover was not registered');
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+      });
     } catch (error) {
       await context.close().catch(() => {});
       await rm(userDataDir, { recursive: true, force: true }).catch(() => {});

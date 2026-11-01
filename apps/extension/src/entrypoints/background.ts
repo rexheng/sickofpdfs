@@ -1,4 +1,16 @@
 import { defineBackground } from 'wxt/utils/define-background';
+import { installFileFallback } from '../background/takeover/file-fallback';
+import { installTakeoverMessages } from '../background/takeover/messages';
+import { registerTakeover } from '../background/takeover/register';
+import { installRequestLog } from '../background/takeover/request-log';
+import { installTabLifecycle } from '../background/takeover/tab-lifecycle';
 
-// The service worker. Later tasks add the takeover rules, the file fallback and the store broker here.
-export default defineBackground(() => {});
+// The service worker. Listeners are registered here, synchronously, so that the events they handle wake it. Later
+// tasks add the store broker.
+export default defineBackground(() => {
+  installTakeoverMessages();
+  installFileFallback();
+  installRequestLog();
+  installTabLifecycle();
+  registerTakeover().catch((error: unknown) => console.error('sickofpdfs: the takeover is not registered', error));
+});

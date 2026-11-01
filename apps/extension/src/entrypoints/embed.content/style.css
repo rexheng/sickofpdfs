@@ -1,0 +1,36 @@
+/*
+Copyright 2014 Mozilla Foundation
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+/* Modified for sickofpdfs, 2026. Adapted from pdf.js extensions/chromium/contentstyle.css (see background/takeover/LICENSE.pdfjs). */
+
+/* eslint-disable css/no-important, css/no-empty-blocks -- the empty keyframes and the !important flags are the detection trick: the page's own CSS must not be able to switch the animation off */
+
+/*
+ * Detects the creation of <embed> and <object> tags: every one starts this animation, and the content script hears
+ * the "animationstart" event. Nothing else is drawn.
+ */
+@keyframes sop-detect-embed {
+  from {
+    /* empty */
+  }
+}
+
+object,
+embed {
+  animation-delay: 0s !important;
+  animation-name: sop-detect-embed !important;
+  animation-play-state: running !important;
+}
