@@ -14,10 +14,11 @@ import type { FilterLists, FilterRulesSource } from './rules-source';
 import { type TieBreaker, tieBreakerText } from './tie-breaker';
 
 /**
- * How long the decision waits for the tie-breaker (S10: about 1.5 s cold, 0.2 s warm) before the PDF just stays "not
- * sure". The chip shows nothing meanwhile, so this is kept well under S10's own 30 s limit.
+ * How long the decision waits for the tie-breaker (S10: about 1.5 s cold, 0.2 s warm; about 2 s on a loaded test box)
+ * before the PDF just stays "not sure". Generous, so a slow computer gets the same answer as a fast one; the chip shows
+ * nothing meanwhile, so it is kept under S10's own 30 s limit.
  */
-export const MODEL_TIMEOUT_MS = 8000;
+export const MODEL_TIMEOUT_MS = 15_000;
 
 const NO_LISTS: FilterLists = { deny: [], allow: [] };
 const EMPTY_INPUT: FilterInput = {

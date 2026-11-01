@@ -1,32 +1,29 @@
 // "Forget this PDF" (File menu, Ctrl+Shift+Delete) and the saved chip's "Remove from library…" (R73): one flow (R75).
-// - With notes or marks, it asks first, and offers "Never save this file".
-// - With none, it forgets at once and offers "Never save this file" afterwards.
-// - Then it says what happened: "Removed from your library and your backups." (or that the backup folder could not be
-//   reached, and the next backup run finishes the job).
+// - With notes or marks (notes still being typed count), it asks first: "It will be removed from your library and your
+//   backups", what goes with it, and a "Never save this file" box.
+// - With none, it forgets at once: there is nothing of the owner's to lose (plan S11: "asks first if there are notes").
+// - Then a note says what happened, in the backup writer's words (S13): "Removed from your library and your backups", or
+//   that the backup folder could not be reached and the next backup cleans it, or "Removed from your library".
 import { Dialog } from '@sop/ui';
 import { useEffect, useState } from 'react';
+import type { ViewerUi } from '../commands';
 import cards from '../ui/cards.module.css';
-import type { BackupScrubResult } from './backup-scrub';
-import type { ForgetOutcome, SaveControllerImpl } from './save-controller';
 import { Choice } from './Choice';
+import type { ForgetOutcome, SaveControllerImpl } from './save-controller';
 
 export const FORGET_TITLE = 'Forget this PDF?';
-/** R75: what the dialog says once the PDF and its backups are clean. */
-export const REMOVED_EVERYWHERE = 'Removed from your library and your backups.';
 export const NEVER_SAVE_LABEL = 'Never save this file';
+const FORGET_FAILED = 'Couldn’t forget this PDF. It is still in your library. Try again.';
 
 export interface ForgetDialogProps {
   save: SaveControllerImpl;
   open: boolean;
   onClose: () => void;
+  /** Its `showNote`: what happened, once the PDF is forgotten. */
+  ui: Pick<ViewerUi, 'showNote'>;
 }
 
-type Step =
-  | { kind: 'counting' }
-  | { kind: 'confirm'; marks: number; notes: number }
-  | { kind: 'working' }
-  | { kind: 'done'; outcome: ForgetOutcome; offerNever: boolean }
-  | { kind: 'failed'; neverSave: boolean };
+type Step = { kind: 'counting' } | { kind: 'confirm'; marks: number; notes: number } | { kind: 'idle' };
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
@@ -36,27 +33,26 @@ export function whatGoes(marks: number, notes: number): string {
   return parts.length === 0 ? '' : `Its ${parts.join(' and ')} will be deleted too.`;
 }
 
-/** The first line after a Forget: where it is gone from. */
-export function removedLine(backups: BackupScrubResult): string {
-  switch (backups) {
-    case 'cleaned':
-      return REMOVED_EVERYWHERE;
-    case 'no-backup':
-      return 'Removed from your library.';
-    case 'pending':
-      return 'Removed from your library. Your backup folder can’t be reached right now, so it will be removed from your backups the next time a backup runs.';
-  }
+/** What a Forget did, as one or two short sentences for the note. */
+export function forgottenNote(outcome: ForgetOutcome): string {
+  const m = outcome.backups.message;
+  const first = /[.!?]$/.test(m) ? m : `${m}.`;
+  if (outcome.neverSave === 'kept') return `${first} It won’t be saved again.`;
+  if (outcome.neverSave === 'failed') return `${first} “Never save this file” couldn’t be kept.`;
+  return first;
 }
 
-export function ForgetDialog({ save, open, onClose }: ForgetDialogProps) {
+export function ForgetDialog({ save, open, onClose, ui }: ForgetDialogProps) {
   const [step, setStep] = useState<Step>({ kind: 'counting' });
   const [never, setNever] = useState(false);
 
-  const forget = (neverSave: boolean, offerNever: boolean): void => {
-    setStep({ kind: 'working' });
+  /** Forgets, closes, and says what happened. */
+  const forget = (neverSave: boolean): void => {
+    setStep({ kind: 'idle' });
+    onClose();
     save.forget({ neverSave }).then(
-      (outcome) => setStep({ kind: 'done', outcome, offerNever }),
-      () => setStep({ kind: 'failed', neverSave }),
+      (outcome) => ui.showNote(forgottenNote(outcome)),
+      () => ui.showNote(FORGET_FAILED),
     );
   };
 
@@ -69,7 +65,7 @@ export function ForgetDialog({ save, open, onClose }: ForgetDialogProps) {
       (c) => {
         if (!live) return;
         if (c.marks + c.notes > 0) setStep({ kind: 'confirm', ...c });
-        else forget(false, true);
+        else forget(false);
       },
       // It could not count them: ask, as if there were notes.
       () => live && setStep({ kind: 'confirm', marks: 0, notes: 0 }),
@@ -77,63 +73,23 @@ export function ForgetDialog({ save, open, onClose }: ForgetDialogProps) {
     return () => {
       live = false;
     };
-    // `forget` only reads `save`, which is a dependency
+    // `forget` only reads `save`, `onClose` and `ui`, which do not change while the dialog is open
   }, [open, save]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const finish = (): void => {
-    if (step.kind === 'done' && step.offerNever && never) void save.neverSave().catch(() => {});
-    onClose();
-  };
-
-  const neverBox = <Choice type="checkbox" label={NEVER_SAVE_LABEL} checked={never} onChange={setNever} />;
-
-  switch (step.kind) {
-    case 'counting':
-      return null;
-    case 'confirm':
-      return (
-        <Dialog
-          open={open}
-          title={FORGET_TITLE}
-          actions={[
-            { label: 'Cancel', onClick: onClose },
-            { label: 'Forget', primary: true, onClick: () => forget(never, false) },
-          ]}
-          onOpenChange={(o) => !o && onClose()}
-        >
-          <p className={cards.body}>It will be removed from your library and your backups. {whatGoes(step.marks, step.notes)}</p>
-          <p className={cards.body}>This can’t be undone.</p>
-          {neverBox}
-        </Dialog>
-      );
-    case 'working':
-      return (
-        <Dialog open={open} title="Forgetting this PDF…" actions={[]} onOpenChange={(o) => !o && onClose()}>
-          <p className={cards.body}>Removing it from your library and your backups…</p>
-        </Dialog>
-      );
-    case 'done':
-      return (
-        <Dialog open={open} title="PDF forgotten" actions={[{ label: 'Done', primary: true, onClick: finish }]} onOpenChange={(o) => !o && finish()}>
-          <p className={cards.body}>{removedLine(step.outcome.backups)}</p>
-          {step.outcome.neverSave === 'kept' && <p className={cards.body}>It won’t be saved again on this computer.</p>}
-          {step.outcome.neverSave === 'failed' && <p className={cards.body}>“Never save this file” couldn’t be kept. Try again later.</p>}
-          {step.offerNever && neverBox}
-        </Dialog>
-      );
-    case 'failed':
-      return (
-        <Dialog
-          open={open}
-          title="Couldn’t forget this PDF"
-          actions={[
-            { label: 'Close', onClick: onClose },
-            { label: 'Try again', primary: true, onClick: () => forget(step.neverSave, false) },
-          ]}
-          onOpenChange={(o) => !o && onClose()}
-        >
-          <p className={cards.body}>It is still in your library, with its notes. Try again.</p>
-        </Dialog>
-      );
-  }
+  if (step.kind !== 'confirm') return null;
+  return (
+    <Dialog
+      open={open}
+      title={FORGET_TITLE}
+      actions={[
+        { label: 'Cancel', onClick: onClose },
+        { label: 'Forget', primary: true, onClick: () => forget(never) },
+      ]}
+      onOpenChange={(o) => !o && onClose()}
+    >
+      <p className={cards.body}>It will be removed from your library and your backups. {whatGoes(step.marks, step.notes)}</p>
+      <p className={cards.body}>This can’t be undone.</p>
+      <Choice type="checkbox" label={NEVER_SAVE_LABEL} checked={never} onChange={setNever} />
+    </Dialog>
+  );
 }

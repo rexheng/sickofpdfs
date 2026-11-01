@@ -43,7 +43,7 @@ import type { FilterReportLabel } from '../../local-only/secrets-store';
 import { FORGOTTEN_REASON, NEVER_SAVE_REASON, neverSaveDecision } from '../filter/async-filter';
 import { type FilterRulesSource, type SiteRule, siteRuleFor } from '../filter/rules-source';
 import { buildFilterInput } from '../filter/sample-input';
-import type { BackupScrubResult } from './backup-scrub';
+import { FORGOTTEN_BACKUP_PENDING, FORGOTTEN_LIBRARY_ONLY, type ForgetBackupResult } from '../../backup/forget';
 import { type IdentityResult, resolveIdentity } from '../identity/resolve-identity';
 import type { OpenedDocument } from '../open-document';
 
@@ -105,8 +105,8 @@ export interface SaveControllerDeps {
   fileChoice?: () => Promise<FilterDecision | null>;
   /** Phase 3: the owner's rules and the records the filter keeps on this computer. Null in Incognito and for an upload. */
   rules?: FilterRulesSource | null;
-  /** R75: takes a forgotten document out of every backup snapshot (the backup writer, S13). Left out: there are no backups. */
-  scrubBackups?: (documentId: DocumentId) => Promise<BackupScrubResult>;
+  /** R75: takes a forgotten document out of every backup snapshot (S13's `forgetFromBackups`). Left out: there are no backups. */
+  scrubBackups?: (documentId: DocumentId) => Promise<ForgetBackupResult>;
   incognito: boolean;
   /** Where the PDF was opened from; null for a file picked from disk. */
   location: SaveLocation | null;
@@ -167,7 +167,8 @@ export interface SaveControllerImpl extends SaveController {
 
 /** What a Forget did besides removing the PDF: the backups, and the "Never save this file" choice. */
 export interface ForgetOutcome {
-  backups: BackupScrubResult;
+  /** S13's answer: removed from the backups too, waiting for the folder, or no backup folder; with the words to show. */
+  backups: ForgetBackupResult;
   neverSave: 'kept' | 'failed' | 'not-asked';
 }
 
@@ -315,8 +316,8 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
 
   /**
    * Title, authors, year, DOI, arXiv id and kind for the library (S4's `extractMetadata` and `guessKind`): the Info fields
-   * unless they are junk, then page 1, then the link and the file name. A PDF with card or bank numbers saved by choice
-   * (`private`) is named from its Info title and file name only, never from its pages.
+   * unless they are junk, then page 1, then the link and the file name. A PDF saved by choice that is not a reading
+   * (`private`: card or bank numbers, or judged not learning) is named from its Info title and file name only.
    */
   function metadataToSave(pages: readonly string[], private_: boolean) {
     const first = private_ ? '' : (pages[0] ?? '');
@@ -352,7 +353,9 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       cause === 'filter' ? (decision?.reasons ?? []) : [cause === 'owner' ? SAVED_BY_OWNER : cause === 'first-note' ? SAVED_BY_FIRST_NOTE : SAVED_BY_FIRST_MARK];
     // D9: card, bank or ID numbers. The owner's own save wins, with a warning, and the text is kept out of search.
     const owner = decision?.ownerSave ?? null;
-    const meta = metadataToSave(pages, owner !== null);
+    // Page 1 names a reading; paperwork saved by choice (a receipt, a never-save file) keeps its own name instead, which is
+    // both the better name for it and keeps the words of a private page out of the library's title.
+    const meta = metadataToSave(pages, owner !== null || decision?.verdict === 'not-learning');
     let created: boolean;
     try {
       ({ created } = await store.saveDocument({
@@ -453,16 +456,17 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
   }
 
   /** R75: the backup writer takes the document out of every snapshot. A wait that ends says the next backup finishes it. */
-  async function scrub(id: DocumentId): Promise<BackupScrubResult> {
-    if (d.scrubBackups === undefined) return 'no-backup';
+  async function scrub(id: DocumentId): Promise<ForgetBackupResult> {
+    if (d.scrubBackups === undefined) return { status: 'no-backup', message: FORGOTTEN_LIBRARY_ONLY };
+    const pending: ForgetBackupResult = { status: 'pending', message: FORGOTTEN_BACKUP_PENDING };
     let timer: ReturnType<typeof setTimeout> | null = null;
     try {
-      const late = new Promise<BackupScrubResult>((resolve) => {
-        timer = setTimeout(() => resolve('pending'), SCRUB_WAIT_MS);
+      const late = new Promise<ForgetBackupResult>((resolve) => {
+        timer = setTimeout(() => resolve(pending), SCRUB_WAIT_MS);
       });
       return await Promise.race([d.scrubBackups(id), late]);
     } catch {
-      return 'pending';
+      return pending;
     } finally {
       if (timer !== null) clearTimeout(timer);
     }

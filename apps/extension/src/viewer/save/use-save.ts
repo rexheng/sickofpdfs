@@ -16,7 +16,7 @@ import { libraryStore } from '../use-store';
 import { createViewerFilter } from '../filter/async-filter';
 import { createRulesSource } from '../filter/rules-source';
 import { createTieBreaker } from '../filter/tie-breaker';
-import { scrubBackups } from './backup-scrub';
+import { forgetFromBackups } from '../../backup/forget';
 import { createSaveController, type SaveControllerImpl, type SaveLocation } from './save-controller';
 
 /**
@@ -84,7 +84,7 @@ export function useSave(o: { opened: OpenedDocument | null; params: ViewerParams
       filter: (input) => filter.filter(input),
       fileChoice: () => filter.fileChoice(),
       rules,
-      scrubBackups,
+      scrubBackups: forgetFromBackups,
       incognito,
       location: saveLocationOf(params, opened),
       now: () => Date.now(),

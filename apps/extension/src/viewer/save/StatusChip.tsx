@@ -3,7 +3,7 @@
 // menu with "Remove from library…" (the Forget flow). After a first mark saved the PDF, "Undo" stands next to it for 10 s.
 //
 // Wording (R73: plain, for an owner who reads best in short sentences):
-//   not sure      "Save to library"                               hover: "This PDF isn't in your library yet. Save it to keep your notes."
+//   not sure      "Not sure: Save to library"                     hover: "This PDF isn't in your library yet. Save it to keep your notes."
 //   not learning  "Not saved: looks like an invoice or receipt"   hover: "Click to save it to your library anyway." and what else it saw
 //   saved         "Saved to library"                              hover: the reasons ("References section, DOI, 40 pages")
 // "No filter yet" never shows.
@@ -94,7 +94,8 @@ export function chipFor(state: SaveState, busy: SaveControllerImpl['busy'], save
     case 'unsure': {
       const why = reasonsLine(state.reasons.filter((r) => !QUIET_REASONS.has(r)).slice(0, 2));
       return {
-        label: 'Save to library',
+        // The plan's "Not sure: Save?" with R73's plain "Save to library": the filter really is not sure now, and says so.
+        label: 'Not sure: Save to library',
         icon: 'library_add',
         tone: 'attention',
         tooltip: why === undefined ? NOT_IN_LIBRARY : `${NOT_IN_LIBRARY} Not sure it’s for learning: ${why}.`,

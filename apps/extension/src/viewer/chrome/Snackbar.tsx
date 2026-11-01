@@ -8,6 +8,7 @@ export interface SnackbarProps {
 
 /** How long a note stays. */
 const SHOW_MS = 4000;
+const READ_MS_PER_CHAR = 60;
 
 /**
  * A short note after an action that shows no result of its own ("Link copied"), as Drive confirms one: GM3's snackbar
@@ -18,7 +19,8 @@ export function Snackbar({ note }: SnackbarProps) {
   useEffect(() => {
     if (note === null) return;
     setShown(note);
-    const timer = setTimeout(() => setShown(null), SHOW_MS);
+    // A longer note stays longer, so it can be read to the end (about 60 ms a character).
+    const timer = setTimeout(() => setShown(null), Math.max(SHOW_MS, note.text.length * READ_MS_PER_CHAR));
     return () => clearTimeout(timer);
   }, [note]);
   return (

@@ -27,7 +27,7 @@ export function SaveDialogs({ save, ui }: SaveDialogsProps) {
   if (save === null || !save.hasRules) return null;
   return (
     <>
-      <ForgetDialog save={save} open={open === 'forget'} onClose={closeSaveDialog} />
+      <ForgetDialog save={save} open={open === 'forget'} onClose={closeSaveDialog} ui={ui} />
       <ReportDialog save={save} open={open === 'report'} onClose={closeSaveDialog} ui={ui} />
     </>
   );

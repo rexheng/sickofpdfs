@@ -9,8 +9,9 @@ export function saveDecisionCommands(save: SaveControllerImpl | null): Partial<R
   return {
     'file.forget': {
       run: () => openSaveDialog('forget'),
-      enabled: () => save.state.kind === 'saved' && save.busy === null,
-      disabledReason: () => (save.state.kind === 'saved' ? 'wait until it has finished saving' : 'this PDF isn’t in your library'),
+      // Not tied to `busy`: the menus are rebuilt when the save state changes, not when a save ends; Forget waits for it.
+      enabled: () => save.state.kind === 'saved',
+      disabledReason: () => 'this PDF isn’t in your library',
     },
     'file.reportDecision': {
       run: () => openSaveDialog('report'),
