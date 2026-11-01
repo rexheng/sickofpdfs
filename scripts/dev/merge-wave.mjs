@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const LOCK = 'pnpm-lock.yaml';
-const ENGINE_PATHS = ['packages/viewer/src/backend/', 'packages/viewer/src/text-layer/', 'patches/'];
+const ENGINE_PATHS = ['packages/viewer/src/backend/', 'packages/viewer/src/text-layer/', 'packages/viewer/src/render/', 'packages/viewer/src/text/', 'patches/'];
 const FLAGS = ['--dry-run', '--no-gates', '--engine'];
 const TRAILERS = 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n'
   + 'Claude-Session: https://claude.ai/code/session_018a7n5nH5SCa485R8ETxAWJ';
