@@ -62,10 +62,11 @@
 /*
  * The page list, under the toolbar row: with its 16 px gap the first page starts at y 128, as in Drive. It is its own
  * stacking context, so the pages' layers (canvases, text and links) stay under the rail when the rail lies over them.
+ * It ends --viewer-end-inset before the right edge: the room the notes panel takes while it is open (notes-panel/).
  */
 .pages {
   position: absolute;
-  inset: var(--viewer-pill-h) 0 0;
+  inset: var(--viewer-pill-h) var(--viewer-end-inset, 0) 0 0;
   isolation: isolate;
 }
 

@@ -55,6 +55,7 @@ import {
   openPickedFile,
   reopenDocument,
 } from './open-document';
+import { NotesPanelMount } from './notes-panel';
 import { publishRuntime, type ViewerHooks, type ViewerState } from './runtime';
 import { openInChrome } from './open-in-chrome';
 import type { SaveControllerImpl } from './save/save-controller';
@@ -496,6 +497,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       {notes !== null && viewerFeatures().map((f) => f.View && <f.View key={f.id} host={notes.host} />)}
       {notes !== null && <MarkupMenu input={notes.input} commands={commands} />}
       <NotesLayer doc={doc} pageText={pageText} textLayers={textLayers} pages={api} store={store} />
+      <NotesPanelMount session={null /* S13: the tab's AnnotationSession */} pageList={api} viewer={store} pages={doc.open.pages} jumps={null /* Task 24 */} />
     </>
   );
 });

@@ -355,6 +355,7 @@
      --sop-notes-panel-bg (part 3). */
   --sop-notes-panel-w: 320px;
   --sop-notes-panel-radius: var(--shape-docs-sidebar); /* 16px */
+  --sop-notes-tab-bar-h: 3px;      /* [live] the bar under the selected All or Mine tab, round on top */
 
   /* ===== Part 3: component roles that change with the theme. tokens-dark.css declares each one again. ===== */
   --menu-bg: var(--gm3-sys-color-surface-container);           /* #f0f4f9 light context menu [live] */

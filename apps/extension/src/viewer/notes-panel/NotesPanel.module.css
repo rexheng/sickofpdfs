@@ -1,0 +1,200 @@
+/*
+ * The notes panel: Docs' comments sidebar (02 section 4.11; drive-refs live-17, live-18) on the viewer's dark canvas.
+ *   320 px wide with 16 px corners, on --sop-notes-panel-bg (#1e1f20). It sits under the toolbar row on the right,
+ *   16 px in, level with the first page, as the navigation rail sits on the left (Task 24).
+ *   Header 56 px: "Notes" in Google Sans 22/28 at 16 px in, Close (24 px icon) at the right.
+ *   Tabs row 48 px with 12 px side padding and a 1 px divider. The selected tab: primary label, an 8 % primary wash and a
+ *   3 px primary bar with round top corners, the width of its label plus 3 px.
+ *   Cards 16 px apart and 16 px in (Docs: x+16, 288 wide, a 16 px gap). A card in the panel does not move left when it
+ *   is active: that is for margin cards only.
+ */
+.panel {
+  --sop-card-w: 100%;
+  --sop-card-shift: 0px;
+
+  position: absolute;
+  inset: calc(var(--viewer-pill-h) + var(--space-4)) var(--space-4) var(--space-4) auto;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  inline-size: var(--sop-notes-panel-w);
+  overflow: hidden;
+  border-radius: var(--sop-notes-panel-radius);
+  background-color: var(--sop-notes-panel-bg);
+  color: var(--gm3-sys-color-on-surface);
+  outline: none;
+}
+
+/* A very narrow window has no room beside the pages: the panel lies over them, raised (NotesPanelMount.module.css). */
+@media (width < 720px) {
+  .panel {
+    box-shadow: var(--elev-3);
+  }
+}
+
+.panel:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  block-size: var(--space-14);
+  padding: 0 var(--space-3) 0 var(--space-4);
+}
+
+.title {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-docs-sidebar-title);
+}
+
+.tabs {
+  display: flex;
+  flex: none;
+  box-sizing: border-box;
+  block-size: var(--space-12);
+  padding: 0 var(--space-3);
+  border-block-end: 1px solid var(--gm3-sys-color-outline-variant);
+}
+
+.tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0 var(--space-4);
+  border: 0;
+  background-color: transparent;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-docs-comment-body);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tab:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.tab:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.tab[aria-selected='true'] {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-primary) calc(var(--gm3-state-hover) * 100%), transparent);
+  color: var(--gm3-sys-color-primary);
+}
+
+.tabLabel {
+  position: relative;
+  block-size: 100%;
+  display: flex;
+  align-items: center;
+}
+
+/* The bar under the selected tab: 3 px tall, round on top, the width of its label plus 3 px (Docs). */
+.tab[aria-selected='true'] .tabLabel::after {
+  position: absolute;
+  inset: auto calc(-0.5 * var(--sop-notes-tab-bar-h)) 0;
+  block-size: var(--sop-notes-tab-bar-h);
+  border-radius: var(--sop-notes-tab-bar-h) var(--sop-notes-tab-bar-h) 0 0;
+  background-color: var(--gm3-sys-color-primary);
+  content: "";
+}
+
+/*
+ * The cards. A thin scrollbar keeps them close to Docs' 288 px; its gutter is kept, so a card never changes width when
+ * the list starts to scroll. The 8 px right padding plus the gutter matches the 16 px on the left.
+ */
+.list {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  padding: var(--space-4) var(--space-2) var(--space-4) var(--space-4);
+  overflow-y: auto;
+  /* eslint-disable css/use-baseline -- a Chrome-only extension (minimum Chrome 128): Chrome has overscroll-behavior since 63,
+     scrollbar-gutter since 94 and scrollbar-width since 121 */
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  /* eslint-enable css/use-baseline */
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: block;
+}
+
+/* "Couldn't place": its own section after the placed notes, with one plain line on what it means. */
+.unplaced {
+  margin-block-start: var(--space-6);
+}
+
+.unplaced:first-child {
+  margin-block-start: 0;
+}
+
+.sectionTitle {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-docs-comment-author);
+  letter-spacing: var(--tracking-tight);
+}
+
+.sectionIcon {
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.count {
+  color: var(--gm3-sys-color-on-surface-variant);
+  font-weight: 400;
+}
+
+.sectionNote {
+  margin: var(--space-1) 0 var(--space-3);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-docs-comment-time);
+  letter-spacing: var(--tracking-tight);
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+}
+
+.emptyIcon {
+  margin-block-end: var(--space-3);
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.emptyTitle {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-docs-comment-author);
+  letter-spacing: var(--tracking-tight);
+}
+
+.emptyHint {
+  margin: var(--space-1) 0 0;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-docs-comment-body);
+}
