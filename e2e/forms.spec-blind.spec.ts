@@ -31,7 +31,8 @@ const SA100 = '/f/classifier/not-learning/tax-form-hmrc-sa100-2026.pdf';
 const W9 = '/f/classifier/not-learning/tax-form-irs-w9.pdf';
 const NBER = '/f/classifier/learning/nber-w29000.pdf';
 
-const bannerOf = (page: import('@playwright/test').Page) => page.getByRole('status').filter({ hasText: /form/i });
+// Triage (t30-triage T5): the plan's wording is "This PDF has fillable fields. …", which says "fillable", not "form".
+const bannerOf = (page: import('@playwright/test').Page) => page.getByRole('status').filter({ hasText: /form|fillable/i });
 
 test('a real fillable form (text fields, or XFA) opens in our viewer for a moment and then reopens in Chrome\'s own viewer, and it is not kept in the library', async ({ context, openViewer, server }, testInfo) => {
   test.setTimeout(120_000);

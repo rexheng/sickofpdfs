@@ -68,6 +68,9 @@ afterEach(() => vi.unstubAllGlobals());
 function fakeSave(initial: SaveState) {
   let state = initial;
   const subscribers = new Set<(s: SaveState) => void>();
+  // Triage (t30-triage T3): the real controller's start() resolves once the decision has settled (a learning save done), so the fake's does too.
+  let decided = () => {};
+  const startDone = initial.kind === 'checking' ? new Promise<void>((resolve) => (decided = resolve)) : Promise.resolve();
   const controller = {
     get state() {
       return state;
@@ -76,7 +79,7 @@ function fakeSave(initial: SaveState) {
       subscribers.add(cb);
       return () => void subscribers.delete(cb);
     },
-    start: () => Promise.resolve(),
+    start: () => startDone,
     requestSave: () => Promise.resolve(),
     firstMark: () => Promise.resolve(),
     undo: () => Promise.resolve(),
@@ -87,6 +90,7 @@ function fakeSave(initial: SaveState) {
     settle(next: SaveState) {
       state = next;
       for (const cb of [...subscribers]) cb(next);
+      if (next.kind !== 'checking') decided();
     },
   };
 }

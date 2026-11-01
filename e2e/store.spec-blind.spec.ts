@@ -56,7 +56,8 @@ test('closing Chrome and opening it again: the saved PDF is still in the library
 
     expect(await store(page).call('resolveFingerprint', again.id)).toBe(input.id);
     expect(await store(page).getDocument(input.id)).toMatchObject({ id: input.id, title: input.title, createdAt: saved.row.createdAt });
-    expect(await store(page).stats()).toMatchObject({ documents: 1, locations: 1 });
+    // Triage (t30-triage T4): since Task 30, opening a saved PDF from a new link records that place (walkthrough 9), so it is 2 here.
+    await expect.poll(() => store(page).stats()).toMatchObject({ documents: 1, locations: 2 });
 
     const reopened = await store(page).saveDocument(again);
     expect(reopened.created, 'it is not a new document').toBe(false);
