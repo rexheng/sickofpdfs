@@ -12,8 +12,8 @@ import {
 import {
   ADMIN_GROUPS,
   academicWordCount,
+  labelKind,
   labelPoints,
-  type AdminGroup,
   countCitations,
   cvEvidence,
   currencyCount,
@@ -106,16 +106,18 @@ function mergeHost(a: HostClass, b: HostClass): HostClass {
   };
 }
 
-/** When two kinds tie, the more specific one comes first and the generic invoice kind last. */
-const KIND_ORDER: readonly AdminKind[] = ['tax', 'payslip', 'bank', 'ticket', 'contract', 'medical', 'insurance', 'cv', 'letter', 'personal', 'invoice'];
+/** When two kinds tie, the more specific one comes first. */
+const KIND_ORDER: readonly AdminKind[] = ['tax', 'payslip', 'bank', 'ticket', 'contract', 'medical', 'insurance', 'cv', 'letter', 'personal'];
 
 /**
- * The kinds of the matched admin groups, the one the chip should name first. Each group adds its `labelPoints`
- * (invoice and bank wording 1, most others 2, tax-authority wording 6); ties go to the more specific kind.
+ * The kind of admin wording the chip should name. Invoice or receipt is the general fallback: it labels the chip only when
+ * nothing more specific matched. Among the specific kinds, each group adds its `points` (tax-authority wording counts 6,
+ * the others 2 or 1), and ties go to the order above.
  */
-export function rankKinds(groups: readonly AdminGroup[]): AdminKind[] {
+export function rankKinds(entries: readonly { kind: AdminKind; points: number }[]): AdminKind[] {
   const points = new Map<AdminKind, number>();
-  for (const g of groups) points.set(g.kind, (points.get(g.kind) ?? 0) + labelPoints(g));
+  for (const e of entries) if (e.kind !== 'invoice') points.set(e.kind, (points.get(e.kind) ?? 0) + e.points);
+  if (points.size === 0) return entries.length ? ['invoice'] : [];
   return [...points.keys()].sort((a, b) => (points.get(b) as number) - (points.get(a) as number) || KIND_ORDER.indexOf(a) - KIND_ORDER.indexOf(b));
 }
 
@@ -197,14 +199,14 @@ export function gatherEvidence(input: FilterInput): Evidence {
   // ---- evidence against ----
   // At most ADMIN_CAP groups count against the PDF; when more matched, the ones that say most about what it is come first
   const counted = [...matched].sort((a, b) => labelPoints(b) - labelPoints(a)).slice(0, ADMIN_CAP);
-  for (const g of counted) add(`admin:${g.id}`, -1, g.label);
+  for (const g of counted) add(labelKind(g, text) === g.kind ? `admin:${g.id}` : `admin:${g.id}:plain`, -1, g.label);
 
   const money = (1000 * currencyCount(text)) / Math.max(1, words);
   if (money >= 30) add('currency', -3, 'Many money amounts');
   else if (money >= 15) add('currency', -2, 'Many money amounts');
   else if (money >= 5) add('currency', -1, 'Money amounts');
 
-  const adminKinds = rankKinds(matched);
+  const adminKinds = rankKinds(matched.map((g) => ({ kind: labelKind(g, text), points: labelPoints(g) })));
 
   let score = BIAS;
   let positive = 0;

@@ -95,10 +95,28 @@ export interface AdminGroup {
    * return that also says "payment" and "account number" is still named a tax form. This does not touch the score.
    */
   labelPoints?: number;
+  /**
+   * For groups whose words also turn up on invoices (a bank statement's "statement date", an invoice's IBAN, a hotel's
+   * "reservation number"): the group names its own kind on the chip only when one of `any` appears, or at least `needed`
+   * of `markers`. Otherwise the chip treats it as plain invoice wording. The group still counts in the score either way.
+   */
+  labelNeeds?: { any?: readonly RegExp[]; markers?: readonly RegExp[]; needed?: number };
 }
 
 export function labelPoints(g: AdminGroup): number {
   return g.labelPoints ?? (g.kind === 'invoice' || g.kind === 'bank' ? 1 : 2);
+}
+
+/** The kind a matched group lends to the chip: its own, or the general `invoice` when it lacks its label markers. */
+export function labelKind(g: AdminGroup, text: string): AdminKind {
+  const need = g.labelNeeds;
+  if (!need) return g.kind;
+  if (need.any?.some((re) => re.test(text))) return g.kind;
+  let n = 0;
+  for (const re of need.markers ?? []) {
+    if (re.test(text) && ++n >= (need.needed ?? 2)) return g.kind;
+  }
+  return 'invoice';
 }
 
 const w = (...parts: string[]): RegExp => new RegExp(parts.join('|'), 'i');
@@ -148,10 +166,27 @@ export const ADMIN_GROUPS: readonly AdminGroup[] = [
     strong: w('boarding pass', '\\bpnr\\b', 'e-?ticket', 'booking ref(?:erence)?', 'booking confirmation', 'reservation (?:number|no\\b|code)'),
     weak: [/\bgate\b/i, /\bseat\b/i, /\bflight\b/i, /\bdeparture\b/i, /\barrival\b/i, /\bpassenger\b/i, /\bitinerary\b/i, /check-?in\b/i, /check-?out\b/i],
     needed: 2,
+    // A ticket says so, or shows two of these. A hotel invoice with a reservation number and check-in dates does not.
+    labelNeeds: {
+      any: [/boarding pass/i, /\bpnr\b/i, /e-?ticket/i],
+      markers: [/\bgate\b/i, /\bseat\b/i, /\bflight\b/i, /\bdeparture\b/i, /\barrival\b/i, /\bpassenger\b/i, /\bitinerary\b/i],
+      needed: 2,
+    },
   },
   {
     id: 'bank-words', kind: 'bank', label: 'Bank statement wording',
     strong: w('statement (?:date|period)', 'sort code', '\\biban\\b', '\\bswift code\\b', 'bic/swift', 'opening balance', 'closing balance', 'available balance', 'direct debit', 'balance brought forward', 'overdraft', 'kontoauszug', 'kontostand', 'relevé de compte', 'extracto bancario', 'estratto conto'),
+    // A bank statement is titled as one, or shows three or more of these. An invoice that prints an IBAN, a sort code or a
+    // "statement date" shows one or two.
+    labelNeeds: {
+      any: [/bank statement/i, /statement of account/i, /kontoauszug/i, /estratto conto/i, /extracto bancario/i, /relev\u00e9 de compte/i],
+      markers: [
+        /statement (?:dates?|period)/i, /(?:opening|beginning) balance/i, /(?:closing|ending) balance/i, /available balance/i,
+        /balance brought forward/i, /\boverdraft\b/i, /direct debit/i, /standing order/i, /sort code/i, /deposits\/credits/i,
+        /checks\/debits/i, /average (?:ledger|collected)/i, /kontostand/i,
+      ],
+      needed: 3,
+    },
   },
   {
     id: 'payslip-words', kind: 'payslip', label: 'Payslip wording',

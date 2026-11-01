@@ -11,7 +11,7 @@
 import { detectHardBlocks, hardBlockApplies } from './hard-blocks';
 import { listMatches } from './rules';
 import { gatherEvidence, NO_TEXT_WORDS, rankKinds, type Evidence } from './signals';
-import { ADMIN_GROUPS, type AdminGroup, type AdminKind } from './terms';
+import { ADMIN_GROUPS, labelPoints, type AdminKind } from './terms';
 import type { FilterDecision, FilterInput, FilterRules, FilterSignal, HardBlock } from './types';
 
 /** Positive evidence at or above this overrides a hard block (a paper that quotes an example IBAN). */
@@ -83,12 +83,16 @@ function looksLike(e: Evidence): string {
 
 /** The "looks like …" phrase for a decision that kept its signals: the kind with most admin groups, else null. */
 export function looksLikeFromSignals(signals: readonly FilterSignal[] | undefined): string | null {
-  const groups: AdminGroup[] = [];
+  const entries: { kind: AdminKind; points: number }[] = [];
   for (const s of signals ?? []) {
-    const g = s.id.startsWith('admin:') ? ADMIN_GROUPS.find((x) => `admin:${x.id}` === s.id) : undefined;
-    if (g) groups.push(g);
+    if (!s.id.startsWith('admin:')) continue;
+    // `admin:<id>:plain` is a group that matched without its label markers, so it counts as general invoice wording
+    const plain = s.id.endsWith(':plain');
+    const id = s.id.slice('admin:'.length, plain ? -':plain'.length : undefined);
+    const g = ADMIN_GROUPS.find((x) => x.id === id);
+    if (g) entries.push({ kind: plain ? 'invoice' : g.kind, points: labelPoints(g) });
   }
-  const best = rankKinds(groups)[0];
+  const best = rankKinds(entries)[0];
   return best ? LOOKS_LIKE[best] : null;
 }
 
