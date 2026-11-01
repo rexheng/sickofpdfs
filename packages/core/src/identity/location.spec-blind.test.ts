@@ -73,10 +73,14 @@ describe('canonicalFileLocation: one file on disk has one location', () => {
 
   describe('characters that are legal in Windows file names must not be mistaken for URL syntax', () => {
     it('a "#" in a file name (C# notes) is part of the name, not the start of a fragment', () => {
-      const withHash = 'file:///C:/Users/Rex/Downloads/C%23%20intro.pdf';
-      expectAllDistinctFiles([withHash, 'file:///C:/Users/Rex/Downloads/C', 'file:///C:/Users/Rex/Downloads/C%20intro.pdf']);
-      const once = canonicalFileLocation(withHash);
-      expect(canonicalFileLocation(once)).toBe(once);
+      // Only raw file URLs go into canonicalFileLocation. The canonical form is a readable path with a real "#"
+      // (plan vector: ...%23notes.pdf gives ...#notes.pdf), which as a URL could only mean a fragment, so it is never
+      // fed back in. That is why this test has no idempotence line for names with "#".
+      expectAllDistinctFiles([
+        'file:///C:/Users/Rex/Downloads/C%23%20intro.pdf',
+        'file:///C:/Users/Rex/Downloads/C',
+        'file:///C:/Users/Rex/Downloads/C%20intro.pdf',
+      ]);
     });
 
     it('"+" is a plus in a file name, not a space', () => {
@@ -94,18 +98,23 @@ describe('canonicalFileLocation: one file on disk has one location', () => {
     });
   });
 
-  describe('guesses', () => {
-    it('the drive letter case does not matter (Chrome writes C:, other tools write c:)', () => {
-      expectOneFile(['file:///C:/Users/Rex/Downloads/paper.pdf', 'file:///c:/Users/Rex/Downloads/paper.pdf']);
-    });
+  it('the drive letter case does not matter (Chrome writes C:, other tools write c:); it is the only case that is folded (plan vector)', () => {
+    expectOneFile(['file:///C:/Users/Rex/Downloads/paper.pdf', 'file:///c:/Users/Rex/Downloads/paper.pdf']);
+    expect(canonicalFileLocation('file:///c:/Users/Rex/a.PDF')).toBe('file:///C:/Users/Rex/a.PDF');
+  });
 
-    it('hex digits in percent-escapes do not matter (%C3%A9 = %c3%a9)', () => {
-      expectOneFile(['file:///C:/Users/Rex/Downloads/Caf%C3%A9.pdf', 'file:///C:/Users/Rex/Downloads/Caf%c3%a9.pdf']);
-    });
+  it('hex digits in percent-escapes do not matter (%C3%A9 = %c3%a9)', () => {
+    expectOneFile(['file:///C:/Users/Rex/Downloads/Caf%C3%A9.pdf', 'file:///C:/Users/Rex/Downloads/Caf%c3%a9.pdf']);
+  });
 
-    it('Windows paths are case-insensitive, so Paper.PDF and paper.pdf in the same folder are one location', () => {
-      expectOneFile(['file:///C:/Users/Rex/Downloads/Paper.PDF', 'file:///c:/users/rex/downloads/paper.pdf']);
-    });
+  it('the case of folder and file names is kept: Paper.PDF and paper.pdf stay two locations', () => {
+    // Mac and Linux paths are case-sensitive, so folding is the riskier direction. The notes are found by fingerprint,
+    // so a case difference only costs a second place row.
+    expectAllDistinctFiles([
+      'file:///C:/Users/Rex/Downloads/Paper.PDF',
+      'file:///C:/Users/Rex/Downloads/paper.pdf',
+      'file:///C:/users/rex/downloads/paper.pdf',
+    ]);
   });
 });
 

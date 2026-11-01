@@ -10,6 +10,12 @@
 // any sensible output: links to the same thing give one canonical string, links to different things stay different.
 // Exact strings are asserted only where the rule leaves no room (http to https, proxy host mapped back, params sorted).
 // Tests whose expectation is a reading of the spec rather than its words live in the "guess" describes (see the report).
+//
+// Second pass: after the first run, the plan's Task 18 rule list and pinned link vectors were opened to me. Rows that
+// the plan settles were moved out of the "guess" describes and aligned with it: a leading "www." is dropped, a trailing
+// slash is kept, publisher /doi/ forms are NOT merged, "login?url=" is unwrapped, arXiv versions and mirrors collapse,
+// DOIs are lower-cased, Moodle's revision becomes 0. Two rows are new spec decisions the plan does not yet list
+// (marked "spec decision"): Moodle "sesskey" is always stripped, and the revision inside pluginfile.php?file=... becomes 0.
 import { describe, expect, it } from 'vitest';
 import { canonicalLink, cleanLink } from '../index';
 
@@ -181,6 +187,7 @@ describe('cleanLink: tracking and token params out, fragment out, params sorted 
   // a copied link has to still open the page the reader is looking at.
   it.each([
     ['keeps http', 'http://example.edu/a.pdf?utm_source=x', 'http://example.edu/a.pdf'],
+    ['keeps a leading www.', 'http://www.jstor.org/stable/pdf/1234.pdf?utm_source=x', 'http://www.jstor.org/stable/pdf/1234.pdf'],
     ['keeps the arXiv version and /pdf/ form', 'https://arxiv.org/pdf/1706.03762v7?utm_source=x#page=2', 'https://arxiv.org/pdf/1706.03762v7'],
     ['keeps dx.doi.org', 'http://dx.doi.org/10.1371/journal.pone.0000308?utm_source=x', 'http://dx.doi.org/10.1371/journal.pone.0000308'],
     [
@@ -197,15 +204,26 @@ describe('cleanLink: tracking and token params out, fragment out, params sorted 
     expect(cleanLink(input)).toBe(expected);
   });
 
-  // GUESSES: the spec says "tracking and token parameters" without listing them beyond utm_*, fbclid, gclid and token.
-  describe('guesses: which other names count as tracking or token', () => {
-    it.each([
-      ['upper-case UTM_ keys from old mailing tools', 'https://example.edu/a.pdf?UTM_Source=mail&UTM_Campaign=w3&id=5', [['id', '5']] as Params],
-      ['access_token', 'https://example.edu/files/a.pdf?access_token=ya29.a0AfH6SMB&id=5', [['id', '5']] as Params],
-      ['Moodle sesskey', 'https://moodle.lse.ac.uk/mod/resource/view.php?id=2345678&sesskey=Zk3d9aQwLm', [['id', '2345678']] as Params],
-    ])('%s is removed', (_name, input, params) => {
-      expect(shape(cleanLink(input)).params).toEqual(params);
-    });
+  // Other names that count as tracking or token. Key matching is case-insensitive (plan, cleanLink rule list).
+  it.each([
+    ['upper-case UTM_ keys from old mailing tools', 'https://example.edu/a.pdf?UTM_Source=mail&UTM_Campaign=w3&id=5', [['id', '5']] as Params],
+    ['access_token', 'https://example.edu/files/a.pdf?access_token=ya29.a0AfH6SMB&id=5', [['id', '5']] as Params],
+    // Spec decision (rule 4, "token parameters"): sesskey is Moodle's per-login session key. It never picks a document,
+    // so it is always stripped, in any case, wherever it sits in the query.
+    ['Moodle sesskey (spec decision)', 'https://moodle.lse.ac.uk/mod/resource/view.php?id=2345678&sesskey=Zk3d9aQwLm', [['id', '2345678']] as Params],
+    ['Moodle sesskey first, in capitals (spec decision)', 'https://moodle.lse.ac.uk/mod/resource/view.php?SESSKEY=Zk3d9aQwLm&id=2345678', [['id', '2345678']] as Params],
+    ['Moodle sesskey as the only param, no dangling "?" (spec decision)', 'https://moodle.lse.ac.uk/my/?sesskey=Zk3d9aQwLm', [] as Params],
+  ])('%s is removed', (_name, input, params) => {
+    const out = cleanLink(input);
+    expect(shape(out).params).toEqual(params);
+    if (params.length === 0) expect(out).not.toContain('?');
+  });
+
+  it('a value or a longer key that merely contains "sesskey" is not the session key (spec decision, negative)', () => {
+    expect(shape(cleanLink('https://moodle.lse.ac.uk/help?topic=sesskey&x_sesskey=keep')).params).toEqual([
+      ['topic', 'sesskey'],
+      ['x_sesskey', 'keep'],
+    ]);
   });
 });
 
@@ -213,7 +231,10 @@ describe('cleanLink: tracking and token params out, fragment out, params sorted 
 describe('canonicalLink: https, case, fragments, trailing slashes', () => {
   it.each([
     ['http becomes https', 'http://example.edu/reading.pdf', 'https://example.edu/reading.pdf'],
-    ['scheme and host case fold, path case is kept', 'HTTP://WWW.Example.EDU/Reading.PDF', 'https://www.example.edu/Reading.PDF'],
+    ['scheme and host case fold, a leading www. is dropped, path case is kept', 'HTTP://WWW.Example.EDU/Reading.PDF', 'https://example.edu/Reading.PDF'],
+    ['a leading www. is dropped (plan vector)', 'http://www.jstor.org/stable/pdf/1234.pdf', 'https://jstor.org/stable/pdf/1234.pdf'],
+    ['only a LEADING www. goes: a www. inside the host stays', 'https://docs.www.example.edu/a.pdf', 'https://docs.www.example.edu/a.pdf'],
+    ['a trailing slash after a path is kept on purpose (/x and /x/ can be two resources on a server)', 'https://example.edu/course/syllabus/', 'https://example.edu/course/syllabus/'],
     ['the default port of http disappears with the upgrade', 'http://example.edu:80/a.pdf', 'https://example.edu/a.pdf'],
     ['the default https port disappears', 'https://example.edu:443/a.pdf', 'https://example.edu/a.pdf'],
     ['a non-default port is a different server and stays', 'https://example.edu:8443/a.pdf', 'https://example.edu:8443/a.pdf'],
@@ -247,11 +268,12 @@ describe('canonicalLink: https, case, fragments, trailing slashes', () => {
     ]);
   });
 
-  describe('guess: a trailing slash after a path is not part of the identity', () => {
-    it('treats /syllabus and /syllabus/ as one place, but keeps inner slashes', () => {
-      expectOneLocation(['https://example.edu/course/syllabus', 'https://example.edu/course/syllabus/']);
-      expectAllDistinct(['https://example.edu/course/syllabus', 'https://example.edu/course-syllabus']);
-    });
+  it('a trailing slash is kept, so /syllabus and /syllabus/ stay two places (merging them is the riskier direction)', () => {
+    expectAllDistinct([
+      'https://example.edu/course/syllabus',
+      'https://example.edu/course/syllabus/',
+      'https://example.edu/course-syllabus',
+    ]);
   });
 });
 
@@ -267,6 +289,16 @@ describe('canonicalLink: a query parameter that picks a different document is ne
       'tracking between real params (SSRN)',
       'https://papers.ssrn.com/sol3/Delivery.cfm?abstractid=3000000&utm_campaign=x&mirid=1',
       'https://papers.ssrn.com/sol3/Delivery.cfm?mirid=1&abstractid=3000000',
+    ],
+    [
+      'Moodle page with a per-login sesskey (spec decision)',
+      'https://moodle.lse.ac.uk/mod/resource/view.php?id=2345678&sesskey=Zk3d9aQwLm',
+      'https://moodle.lse.ac.uk/mod/resource/view.php?id=2345678&sesskey=Q8wNxP2vTr',
+    ],
+    [
+      'Moodle page with and without sesskey (spec decision)',
+      'https://moodle.lse.ac.uk/mod/resource/view.php?sesskey=Zk3d9aQwLm&id=2345678',
+      'https://moodle.lse.ac.uk/mod/resource/view.php?id=2345678',
     ],
     [
       'JSTOR ?seq=1 with a click id',
@@ -370,8 +402,7 @@ describe('canonicalLink: arXiv', () => {
     expect(canonicalLink(input)).toBe(input);
   });
 
-  describe('guess: the version suffix is not part of the identity of a link', () => {
-    // The spec has no version tracking for files ("PDFs rarely change"); the owner's brief lists v1/v2 links among the cases.
+  describe('the version suffix is not part of the identity of a link (plan rule 4)', () => {
     it.each([
       ['v1, v2 and v7 of 1706.03762 are one place', [...ARXIV_NEW.slice(0, 2), 'https://arxiv.org/abs/1706.03762v1', 'https://arxiv.org/pdf/1706.03762v7', 'https://arxiv.org/pdf/1706.03762v7.pdf']],
       ['5-digit id with a version', ['https://arxiv.org/abs/2301.12345', 'https://arxiv.org/pdf/2301.12345v2']],
@@ -381,10 +412,8 @@ describe('canonicalLink: arXiv', () => {
     });
   });
 
-  describe('guess: arXiv mirrors and the www host are the same site', () => {
-    it('www.arxiv.org and export.arxiv.org map to arxiv.org', () => {
-      expectOneLocation(['https://arxiv.org/abs/1706.03762', 'https://www.arxiv.org/abs/1706.03762', 'https://export.arxiv.org/abs/1706.03762']);
-    });
+  it('www.arxiv.org and export.arxiv.org map to arxiv.org (plan rules 3 and 4)', () => {
+    expectOneLocation(['https://arxiv.org/abs/1706.03762', 'https://www.arxiv.org/abs/1706.03762', 'https://export.arxiv.org/abs/1706.03762']);
   });
 });
 
@@ -452,21 +481,27 @@ describe('canonicalLink: DOI', () => {
     ]);
   });
 
-  describe('guesses', () => {
-    it('DOIs are case-insensitive, so upper and lower case are one place', () => {
-      expectOneLocation([`https://doi.org/${PLOS}`, 'https://doi.org/10.1371/JOURNAL.PONE.0000308']);
-    });
+  it('DOIs are case-insensitive: the DOI is written lower-case (plan vector)', () => {
+    expect(canonicalLink('http://dx.doi.org/10.1371/JOURNAL.PONE.0000308')).toBe('https://doi.org/10.1371/journal.pone.0000308');
+    expectOneLocation([`https://doi.org/${PLOS}`, 'https://doi.org/10.1371/JOURNAL.PONE.0000308']);
+  });
 
-    it('a %2F in place of the slash is the same DOI', () => {
-      expectOneLocation([`https://doi.org/${PLOS}`, 'https://doi.org/10.1371%2Fjournal.pone.0000308']);
-    });
+  it('a %2F in place of the slash is the same DOI (plan vector)', () => {
+    expect(canonicalLink('https://doi.org/10.1000%2F182')).toBe('https://doi.org/10.1000/182');
+    expectOneLocation([`https://doi.org/${PLOS}`, 'https://doi.org/10.1371%2Fjournal.pone.0000308']);
+  });
 
-    it.each([
-      ['Wiley', ['https://onlinelibrary.wiley.com/doi/10.1111/jofi.12345', 'https://onlinelibrary.wiley.com/doi/pdf/10.1111/jofi.12345', 'https://onlinelibrary.wiley.com/doi/epdf/10.1111/jofi.12345']],
-      ['Taylor & Francis', ['https://www.tandfonline.com/doi/full/10.1080/00220485.2019.1234567', 'https://www.tandfonline.com/doi/pdf/10.1080/00220485.2019.1234567']],
-    ])('publisher %s: /doi/, /doi/pdf/ and /doi/epdf/ forms of one DOI are one place', (_name, urls) => {
-      expectOneLocation(urls);
-    });
+  // Publisher pages are not merged: /doi/ and /doi/epdf/ are web pages, /doi/pdf/ is the PDF. Joining them would be a merge
+  // nobody asked for. A PDF seen at two links still gets one fingerprint, so the notes are found anyway.
+  it.each([
+    ['Wiley', ['https://onlinelibrary.wiley.com/doi/10.1111/jofi.12345', 'https://onlinelibrary.wiley.com/doi/pdf/10.1111/jofi.12345', 'https://onlinelibrary.wiley.com/doi/epdf/10.1111/jofi.12345']],
+    ['Taylor & Francis', ['https://www.tandfonline.com/doi/full/10.1080/00220485.2019.1234567', 'https://www.tandfonline.com/doi/pdf/10.1080/00220485.2019.1234567']],
+  ])('publisher %s: the /doi/ page forms of one DOI stay separate places', (_name, urls) => {
+    expectAllDistinct(urls);
+  });
+
+  it('a publisher /doi/pdf/ link is kept as written (plan vector, after the proxy host is mapped back)', () => {
+    expect(canonicalLink('https://onlinelibrary-wiley-com.ezp.lib.cam.ac.uk/doi/pdf/10.1111/x')).toBe('https://onlinelibrary.wiley.com/doi/pdf/10.1111/x');
   });
 });
 
@@ -549,12 +584,50 @@ describe('canonicalLink: Moodle revision number', () => {
     ]);
   });
 
-  describe('guess: the older ?file= form of a Moodle file link carries the revision inside the query', () => {
-    const legacy = (rev: number, name = 'Lecture1.pdf') =>
-      `https://moodle.lse.ac.uk/pluginfile.php?file=${encodeURIComponent(`/1234567/mod_resource/content/${rev}/${name}`)}`;
-    it('revision inside file= is dropped too, but the file= param itself is never stripped', () => {
-      expectOneLocation([legacy(2), legacy(5)]);
-      expectAllDistinct([legacy(2, 'Lecture1.pdf'), legacy(2, 'Lecture2.pdf')]);
+  // Spec decision (rule 4, "Moodle's revision number removed"): when Moodle has slash-arguments off, the file link is
+  // pluginfile.php?file=/<ctx>/mod_resource/content/<rev>/<name>. The revision hides in the query value. It becomes 0,
+  // exactly as in the path form; the file= param, the rest of its value and its place in the query stay.
+  describe('the older ?file= form of a Moodle file link (spec decision)', () => {
+    const legacy = (rev: number, name = 'Lecture1.pdf', component = 'mod_resource', ctx = 1234567) =>
+      `https://moodle.lse.ac.uk/pluginfile.php?file=${encodeURIComponent(`/${ctx}/${component}/content/${rev}/${name}`)}`;
+    const fileParam = (url: string) => new URL(canonicalLink(url)).searchParams.get('file');
+
+    it('the revision inside file= becomes 0, and file= itself is never stripped', () => {
+      expect(shape(canonicalLink(legacy(7)))).toEqual({
+        base: 'https://moodle.lse.ac.uk/pluginfile.php',
+        params: [['file', '/1234567/mod_resource/content/0/Lecture1.pdf']],
+        hash: '',
+      });
+      expectOneLocation([legacy(2), legacy(5), legacy(0)]);
+    });
+
+    it.each(['mod_resource', 'mod_folder', 'mod_page', 'mod_book'])('%s: revision 12 becomes 0', (component) => {
+      expect(fileParam(legacy(12, 'a.pdf', component))).toBe(`/1234567/${component}/content/0/a.pdf`);
+    });
+
+    it('a ?file= value that is not a revisioned file keeps its numbers (forum attachment post id, label intro, viewer file name)', () => {
+      expect(fileParam('https://moodle.lse.ac.uk/pluginfile.php?file=%2F55%2Fmod_forum%2Fattachment%2F1001%2Fslides.pdf')).toBe(
+        '/55/mod_forum/attachment/1001/slides.pdf',
+      );
+      expect(fileParam('https://moodle.lse.ac.uk/pluginfile.php?file=%2F99%2Fmod_label%2Fintro%2Fa.pdf')).toBe('/99/mod_label/intro/a.pdf');
+      expect(fileParam('https://example.edu/viewer?file=%2F1234567%2Fmod_resource%2Fcontent%2F2%2Fa.pdf')).toBe('/1234567/mod_resource/content/2/a.pdf');
+    });
+
+    it('different files stay different: file name, context id, sub-folder', () => {
+      expectAllDistinct([
+        legacy(2, 'Lecture1.pdf'),
+        legacy(2, 'Lecture2.pdf'),
+        legacy(2, 'Lecture1.pdf', 'mod_resource', 1234568),
+        legacy(2, 'Week3/Lecture1.pdf'),
+      ]);
+    });
+
+    it('other params stay and tracking goes', () => {
+      const out = canonicalLink(`${legacy(3)}&utm_source=email&lang=en`);
+      expect(shape(out).params).toEqual([
+        ['file', '/1234567/mod_resource/content/0/Lecture1.pdf'],
+        ['lang', 'en'],
+      ]);
     });
   });
 });
@@ -563,14 +636,14 @@ describe('canonicalLink: Moodle revision number', () => {
 describe('canonicalLink: library-proxy (EZproxy) hosts are mapped back', () => {
   it.each([
     [
-      'JSTOR through the LSE proxy (research note 04: www-jstor-org.<proxy>.ac.uk)',
+      'JSTOR through the LSE proxy (research note 04: www-jstor-org.<proxy>.ac.uk); the www. goes',
       'https://www-jstor-org.ezproxy.lse.ac.uk/stable/10.2307/2118477',
-      'https://www.jstor.org/stable/10.2307/2118477',
+      'https://jstor.org/stable/10.2307/2118477',
     ],
     [
       'ScienceDirect, plain http, tracking',
       'http://www-sciencedirect-com.ezproxy.cam.ac.uk/science/article/pii/S0304405X20300015?utm_source=lib',
-      'https://www.sciencedirect.com/science/article/pii/S0304405X20300015',
+      'https://sciencedirect.com/science/article/pii/S0304405X20300015',
     ],
     [
       'SSRN keeps its real query, sorted',
@@ -590,12 +663,12 @@ describe('canonicalLink: library-proxy (EZproxy) hosts are mapped back', () => {
     [
       'a hyphen in the real host is doubled by EZproxy and must come back as one hyphen',
       'https://www-econ--papers-org.ezproxy.lse.ac.uk/a.pdf',
-      'https://www.econ-papers.org/a.pdf',
+      'https://econ-papers.org/a.pdf',
     ],
     [
       'proxy host in capitals',
       'https://WWW-JSTOR-ORG.EZPROXY.LSE.AC.UK/stable/10.2307/2118477',
-      'https://www.jstor.org/stable/10.2307/2118477',
+      'https://jstor.org/stable/10.2307/2118477',
     ],
   ])('%s', (_name, input, expected) => {
     expect(canonicalLink(input)).toBe(expected);
@@ -615,22 +688,24 @@ describe('canonicalLink: library-proxy (EZproxy) hosts are mapped back', () => {
   });
 
   it.each([
-    ['a GitHub Pages site with a hyphenated name', 'https://my-course-site.github.io/notes.pdf'],
-    ['a university department host with hyphens', 'https://dept-of-economics.lse.ac.uk/papers/w1.pdf'],
-    ['hyphens in the real domain, not the first label', 'https://www.econ-papers.org/a.pdf'],
-    ['a CDN host with hyphens', 'https://cdn-assets-prod.cloudfront.net/report.pdf'],
-    ['the proxy\'s own login page, nothing proxied in it', 'https://ezproxy.lse.ac.uk/login'],
-    ['the word ezproxy in a path', 'https://example.edu/ezproxy/guide.pdf'],
-  ])('a host that is not proxy-rewritten is left alone: %s', (_name, input) => {
-    expect(canonicalLink(input)).toBe(input);
+    ['a GitHub Pages site with a hyphenated name', 'https://my-course-site.github.io/notes.pdf', 'https://my-course-site.github.io/notes.pdf'],
+    ['a university department host with hyphens', 'https://dept-of-economics.lse.ac.uk/papers/w1.pdf', 'https://dept-of-economics.lse.ac.uk/papers/w1.pdf'],
+    // the hyphen in econ-papers is left alone; only the leading www. goes (plan vector: www.ezproxy-docs.org -> ezproxy-docs.org)
+    ['hyphens in the real domain, not the first label (only the www. goes)', 'https://www.econ-papers.org/a.pdf', 'https://econ-papers.org/a.pdf'],
+    ['the word "ezproxy" in a hyphenated real domain', 'https://www.ezproxy-docs.org/a.pdf', 'https://ezproxy-docs.org/a.pdf'],
+    ['a CDN host with hyphens', 'https://cdn-assets-prod.cloudfront.net/report.pdf', 'https://cdn-assets-prod.cloudfront.net/report.pdf'],
+    ["the proxy's own login page, nothing proxied in it", 'https://ezproxy.lse.ac.uk/login', 'https://ezproxy.lse.ac.uk/login'],
+    ['the word ezproxy in a path', 'https://example.edu/ezproxy/guide.pdf', 'https://example.edu/ezproxy/guide.pdf'],
+  ])('a host that is not proxy-rewritten is left alone: %s', (_name, input, expected) => {
+    expect(canonicalLink(input)).toBe(expected);
   });
 
-  describe('guess: the login?url= form of an EZproxy link', () => {
+  describe('the login?url= and ?qurl= forms of an EZproxy link (plan rule 1)', () => {
     it.each([
       ['url=', 'https://ezproxy.lse.ac.uk/login?url=https://www.jstor.org/stable/10.2307/2118477'],
       ['qurl= (encoded)', 'https://ezproxy.lse.ac.uk/login?qurl=https%3A%2F%2Fwww.jstor.org%2Fstable%2F10.2307%2F2118477'],
     ])('%s leads to the real page', (_name, input) => {
-      expect(canonicalLink(input)).toBe('https://www.jstor.org/stable/10.2307/2118477');
+      expect(canonicalLink(input)).toBe('https://jstor.org/stable/10.2307/2118477');
     });
   });
 });
