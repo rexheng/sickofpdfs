@@ -22,6 +22,7 @@ import {
   rangeRects,
   rangeText,
   readSelection,
+  setZoom,
   settle,
   type CharRange,
   type TlFixture,
@@ -625,6 +626,13 @@ export async function waitStored(page: Page, ok: (a: Annotations) => boolean, me
 export async function reloadAndWait(page: Page, fx: TlFixture): Promise<void> {
   await page.reload();
   await page.waitForFunction(() => (globalThis as unknown as { __sopTest?: { viewerState?: () => string } }).__sopTest?.viewerState?.() === 'ready', undefined, { timeout: 25_000 });
+  // Triage (TB2 rebase): as openFixture does since Task 24, shut the navigation rail (it opens again on a reload in a wide
+  // window) and go back to 100%, so the paper is judged at the size it was marked at.
+  if (await hooks(page).eval((h) => h.viewer.snapshot().railOpen)) {
+    await page.keyboard.press('F4');
+    await page.waitForFunction(() => !(globalThis as unknown as { __sopTest: { viewer: { snapshot(): { railOpen: boolean } } } }).__sopTest.viewer.snapshot().railOpen);
+  }
+  await setZoom(page, 1);
   await hooks(page).eval((h, i) => h.viewer.scrollTo(i), fx.page);
   await page.waitForSelector(`[data-page-index="${fx.page}"] [data-start]`, { state: 'attached', timeout: 20_000 });
   await settle(page, 500);
