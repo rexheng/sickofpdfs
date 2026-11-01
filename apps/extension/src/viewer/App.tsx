@@ -15,6 +15,7 @@ import {
   displayNameFor,
   ENGINE_WORKERS,
   engineAssets,
+  type JumpHistory,
   type PageBox,
   PdfEngineCrashedError,
   PdfLoadError,
@@ -406,7 +407,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   // Find jumps through the same history as links, so Back returns from each jump to a hit (Task 25).
   const find = useReaderFind({ backend, doc, store, api, pageText, textLayers, jumps: nav.jumps, root: rootRef });
   // The document's notes: marks, comments and drafts (Phase 2). Null in Incognito, which has none.
-  const notes = useNotes(doc, pageText, store, api, textLayers, save);
+  const notes = useNotes(doc, pageText, store, api, textLayers, save, nav.jumps);
   const commands = useMemo(() => {
     const ctx: ViewerContext = {
       params,
@@ -516,11 +517,12 @@ function useNotes(
   pageList: RefObject<PageListApi | null>,
   textLayers: TextLayerController,
   save: SaveControllerImpl | null,
+  jumps: JumpHistory,
 ): Notes | null {
   const [notes, setNotes] = useState<Notes | null>(null);
   useEffect(() => {
     if (save === null) return;
-    const made = createNotes({ backend, opened: doc, pageText, view, pageList, selection: () => textLayers.selectionRanges(), save });
+    const made = createNotes({ backend, opened: doc, pageText, view, pageList, jumps, selection: () => textLayers.selectionRanges(), save });
     setNotes(made);
     publishRuntime({ annotations: made?.host.session ?? null });
     return () => {
@@ -528,7 +530,7 @@ function useNotes(
       setNotes(null);
       publishRuntime({ annotations: null });
     };
-  }, [doc, pageText, view, pageList, textLayers, save]);
+  }, [doc, pageText, view, pageList, textLayers, save, jumps]);
   return notes;
 }
 

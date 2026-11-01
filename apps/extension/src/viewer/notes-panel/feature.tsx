@@ -23,8 +23,8 @@ function delegate(id: NotesCommandId, checked = false): CommandBehaviour {
 }
 
 function NotesPanelView({ host }: { host: NotesHost }) {
-  // Task 24's jump history is not merged yet: without it a note jump shows the note's page (S15's null path).
-  return <NotesPanelMount session={host.session} pageList={host.pageList} viewer={host.view} pages={host.pages} jumps={null} onCommands={onCommands} />;
+  // Note jumps go through the reader's jump history (Task 24), so a run of them is one Back step.
+  return <NotesPanelMount session={host.session} pageList={host.pageList} viewer={host.view} pages={host.pages} jumps={host.jumps} onCommands={onCommands} />;
 }
 
 export const notesPanelFeature: ViewerFeature = {
