@@ -8,7 +8,23 @@
 // wasm module can no longer be trusted (a trap, or out of memory); the page then ends the worker.
 import { PdfEngineCrashedError, PdfFormatError, PdfPasswordError, type EngineFailure } from '../errors';
 import type { EngineAssets } from '../engine-config';
-import type { FormInfo, OutlineItem, PageGlyphs, PageObjectList, PageSize, PdfLink, PdfMetadata, PdfRect, SearchHit, StructElement, TextRun, TileRequest } from '../types';
+import type { Sha256 } from '@sop/core';
+import type {
+  FormInfo,
+  GlyphOutline,
+  OutlineItem,
+  PageGlyphs,
+  PageObjectList,
+  PageSize,
+  PdfLink,
+  PdfMetadata,
+  PdfRect,
+  SearchHit,
+  StructElement,
+  TextRun,
+  TextRunList,
+  TileRequest,
+} from '../types';
 
 /** What openDocument tells the page (OpenResult without the handle, which the page makes). */
 export interface OpenedDocument {
@@ -25,6 +41,7 @@ export interface EngineApi {
   renderBitmap(docId: string, req: TileRequest): Promise<ImageBitmap>;
   getGlyphs(docId: string, pageIndex: number): PageGlyphs;
   getPageText(docId: string, pageIndex: number): string;
+  getPageChars(docId: string, pageIndex: number): string;
   getTextRange(docId: string, pageIndex: number, start: number, count: number): string;
   getTextRangeRects(docId: string, pageIndex: number, start: number, count: number): PdfRect[];
   searchPage(docId: string, pageIndex: number, query: string, opts: { matchCase: boolean; wholeWord: boolean }): SearchHit[];
@@ -33,7 +50,10 @@ export interface EngineApi {
   getFormInfo(docId: string): FormInfo;
   listPageObjects(docId: string, pageIndex: number, opts?: { recurseForms?: boolean; maxObjects?: number; budgetMs?: number }): PageObjectList;
   getStructTree(docId: string, pageIndex: number): StructElement[];
-  getTextRuns(docId: string, pageIndex: number): TextRun[];
+  /** With opts.budgetMs, the budgeted form (TextRunList); without, every run. */
+  getTextRuns(docId: string, pageIndex: number, opts?: { budgetMs?: number }): TextRun[] | TextRunList;
+  getGlyphOutlines(docId: string, pageIndex: number, charStart: number, charCount: number): GlyphOutline[];
+  hashImageObject(docId: string, pageIndex: number, objectIndex: number): Promise<Sha256 | null>;
 }
 export type EngineMethod = keyof EngineApi;
 
@@ -44,6 +64,7 @@ export const ENGINE_METHODS: readonly EngineMethod[] = [
   'renderBitmap',
   'getGlyphs',
   'getPageText',
+  'getPageChars',
   'getTextRange',
   'getTextRangeRects',
   'searchPage',
@@ -53,6 +74,8 @@ export const ENGINE_METHODS: readonly EngineMethod[] = [
   'listPageObjects',
   'getStructTree',
   'getTextRuns',
+  'getGlyphOutlines',
+  'hashImageObject',
 ];
 
 export interface InitMessage {

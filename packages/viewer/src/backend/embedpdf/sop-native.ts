@@ -4,12 +4,14 @@
 //
 // Ported from the Phase 0 spike (spikes/phase0/src/engine/spike-native.ts): getGlyphs and getTextRange (P0-4),
 // getFormInfo (P0-7), listPageObjects, getStructTree and getTextRuns (P0-10; the spike's getPageObjects and
-// getPageTextRuns). The patch patches/@embedpdf__engines@2.15.1.patch makes PdfiumNative's `pdfiumModule` and `cache`
+// getPageTextRuns), getGlyphOutlines (P0-5, Phase 2 S11, ruling R29), hashImageObject and getPageChars (Phase 2 S11).
+// The patch patches/@embedpdf__engines@2.15.1.patch makes PdfiumNative's `pdfiumModule` and `cache`
 // protected, so these methods can reach PDFium.
 //
 // Coordinates: every rect is in points, unrotated page space, with the origin at the top-left of the page's bounding
 // box (FPDF_GetPageBoundingBox: the crop box within the media box), as in types.ts.
 import { PdfiumNative, type PdfiumEngineOptions } from '@embedpdf/engines/pdfium';
+import { sha256Hex, type Sha256 } from '@sop/core';
 import { stripPdfUnwantedMarkers, type PdfDocumentObject, type PdfTask } from '@embedpdf/models';
 import type { WrappedPdfiumModule } from '@embedpdf/pdfium';
 import { PdfFormatError, PdfPasswordError } from '../errors';
@@ -17,6 +19,7 @@ import type {
   FormInfo,
   FormType,
   Glyph,
+  GlyphOutline,
   LinkTarget,
   OutlineItem,
   PageGlyphs,
@@ -24,6 +27,7 @@ import type {
   PageObjectList,
   PageObjectType,
   PageSize,
+  PdfColor,
   PdfLink,
   PdfMetadata,
   PdfRect,
@@ -31,6 +35,7 @@ import type {
   SearchHit,
   StructElement,
   TextRun,
+  TextRunList,
   TileRequest,
 } from '../types';
 import type { EngineApi, OpenedDocument } from './rpc';
@@ -68,6 +73,25 @@ const VIEW_FITV = 4;
 const VIEW_FITR = 5;
 const VIEW_FITBH = 7;
 const VIEW_FITBV = 8;
+/** getTextRuns with a budget checks the clock every this many chars. */
+const RUNS_CLOCK_EVERY = 256;
+/** fpdf_edit.h path segment types. */
+const FPDF_SEGMENT_LINETO = 0;
+const FPDF_SEGMENT_BEZIERTO = 1;
+const FPDF_SEGMENT_MOVETO = 2;
+/**
+ * FPDFTextObj_GetTextRenderMode (FPDF_TEXTRENDERMODE_*): 0 fill, 1 stroke, 2 fill and stroke, 3 invisible, 4–6 the
+ * same three adding the text to the clip, 7 clip only. -1 (unknown) is read as 0.
+ */
+const FILLS_BY_MODE = [true, false, true, false, true, false, true, false];
+const STROKES_BY_MODE = [false, true, true, false, false, true, true, false];
+/** The ligatures Unicode encodes, by the chars PDFium expands them into (P0-5). */
+const LIGATURES: Record<string, number> = { ff: 0xfb00, fi: 0xfb01, fl: 0xfb02, ffi: 0xfb03, ffl: 0xfb04, ſt: 0xfb05, st: 0xfb06 };
+/** getGlyphOutlines reads chars this far either side of the range, to find a ligature the range starts or ends inside. */
+const GLYPH_GROUP_REACH = 8;
+/** Outline coordinates are written to 1/100 pt (0.05 px at 400% on a DPR-2 screen). */
+const OUTLINE_PRECISION = 100;
+
 /** renderBitmap refuses bitmaps larger than this (a side, and in all): beyond it the wasm heap would run out. */
 export const MAX_TILE_SIDE = 16_384;
 export const MAX_TILE_PIXELS = 2 ** 26;
@@ -114,6 +138,20 @@ type ExportName =
   | 'FPDFText_GetSchCount'
   | 'FPDFText_FindClose'
   | 'FPDFTextObj_GetFontSize'
+  | 'FPDFTextObj_GetFont'
+  | 'FPDFTextObj_GetTextRenderMode'
+  | 'FPDFText_GetUnicode'
+  | 'FPDFText_HasUnicodeMapError'
+  | 'FPDFText_IsHyphen'
+  | 'FPDFText_GetFillColor'
+  | 'FPDFText_GetStrokeColor'
+  | 'FPDFFont_GetGlyphPath'
+  | 'FPDFGlyphPath_CountGlyphSegments'
+  | 'FPDFGlyphPath_GetGlyphPathSegment'
+  | 'FPDFPathSegment_GetPoint'
+  | 'FPDFPathSegment_GetType'
+  | 'FPDFPathSegment_GetClose'
+  | 'FPDFImageObj_GetImageDataRaw'
   | 'FPDF_GetFormType'
   | 'PDFiumExt_OpenFormFillInfo'
   | 'PDFiumExt_InitFormFillEnvironment'
@@ -401,6 +439,11 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
 
   getPageText(docId: string, pageIndex: number): string {
     return this.withTextPage(docId, pageIndex, (textPage) => stripPdfUnwantedMarkers(this.rawText(textPage, 0, this.x.FPDFText_CountChars(textPage))));
+  }
+
+  /** FPDFText_GetText over every char of the page, as it is: raw[i] is char i (PdfBackend.getPageChars). */
+  getPageChars(docId: string, pageIndex: number): string {
+    return this.withTextPage(docId, pageIndex, (textPage) => this.rawText(textPage, 0, this.x.FPDFText_CountChars(textPage)));
   }
 
   getTextRange(docId: string, pageIndex: number, start: number, count: number): string {
@@ -758,19 +801,26 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
    * FPDFTextObj_GetFontSize × the vertical scale of the first char's matrix (R30).
    *
    * Named getTextRuns, not getPageTextRuns: PdfiumNative's own getPageTextRuns (runs by font and colour) stays as it is.
+   *
+   * With opts.budgetMs it answers a TextRunList: the walk stops once it has run that long (checked every 256 chars,
+   * the clock started once the page and its text page are loaded, as listPageObjects', R31), and the runs so far are
+   * kept. Without, it reads every char and answers the runs alone.
    */
-  getTextRuns(docId: string, pageIndex: number): TextRun[] {
+  getTextRuns(docId: string, pageIndex: number, opts?: { budgetMs?: number }): TextRun[] | TextRunList {
     const { doc } = this.state(docId);
     this.page(doc, pageIndex);
     const x = this.x;
     const h = this.h;
     const pageCtx = this.ctx(doc).acquirePage(pageIndex);
     const mem = x.malloc(64);
+    const budgetMs = opts?.budgetMs;
     try {
       const crop = this.cropBox(pageCtx.pagePtr, mem);
       const textPage = pageCtx.getTextPage();
+      const walkStart = performance.now();
       const count = x.FPDFText_CountChars(textPage);
       const text = this.rawText(textPage, 0, count);
+      let truncated = false;
 
       const runs: TextRun[] = [];
       let run: { start: number; end: number; obj: number; baseline: number; size: number; l: number; t: number; r: number; b: number } | null = null;
@@ -786,6 +836,10 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
         run = null;
       };
       for (let i = 0; i < count; i++) {
+        if (budgetMs !== undefined && i > 0 && i % RUNS_CLOCK_EVERY === 0 && performance.now() - walkStart > budgetMs) {
+          truncated = true;
+          break;
+        }
         const ch = text.charCodeAt(i);
         if (ch === 0x0d || ch === 0x0a) {
           close();
@@ -815,11 +869,250 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
         run = { start: i, end: i + 1, obj, baseline, size: size > 0 ? size : t - b, l, t, r, b };
       }
       close();
-      return runs;
+      return budgetMs === undefined ? runs : { runs, truncated };
     } finally {
       x.free(mem);
       pageCtx.release();
     }
+  }
+
+  // ---- bold (P0-5, Phase 2 S11) ----
+
+  /**
+   * The glyph outlines of chars [charStart, charStart + charCount) (PdfBackend.getGlyphOutlines). Per glyph:
+   *   1. its text object (FPDFText_GetTextObject) gives the font (FPDFTextObj_GetFont), the size (GetFontSize), the
+   *      render mode (GetTextRenderMode) and, with the char, its fill and stroke colours (FPDFText_GetFillColor and
+   *      GetStrokeColor). Invisible text is skipped: modes 3 and 7, or nothing painted with alpha above 0;
+   *   2. the outline, in ems: FPDFFont_GetGlyphPath(font, argument, size), the argument being the char's Unicode value
+   *      (GLYPH_ARG = unicode), or the forms in glyphArguments for ligatures and joined hyphens. Outlines are cached by
+   *      font and argument for as long as the page stays loaded (see outlineCache);
+   *   3. scaled by size × the char matrix's linear part (FPDFText_GetMatrix, whose translation is the text object's),
+   *      moved to the char's origin (FPDFText_GetCharOrigin), flipped to a top-left origin and written as SVG path data.
+   * Every PDFium call goes to the wasm exports directly (P0-5: about 3× cheaper than the wrappers).
+   */
+  getGlyphOutlines(docId: string, pageIndex: number, charStart: number, charCount: number): GlyphOutline[] {
+    const { doc } = this.state(docId);
+    this.page(doc, pageIndex);
+    const x = this.x;
+    const h = this.h;
+    const pageCtx = this.ctx(doc).acquirePage(pageIndex);
+    const mem = x.malloc(64);
+    try {
+      const textPage = pageCtx.getTextPage();
+      const total = x.FPDFText_CountChars(textPage);
+      const [start, count] = clampRange(charStart, charCount, total);
+      if (count === 0) return [];
+      const end = start + count;
+      const crop = this.cropBox(pageCtx.pagePtr, mem);
+      let byFont = this.outlineCache.get(pageCtx);
+      if (!byFont) this.outlineCache.set(pageCtx, (byFont = new Map<number, Map<number, CachedGlyph | null>>()));
+
+      // Per char, over the range and a few chars either side: its text object (0 for a generated char) and origin.
+      // PDFium expands a char code with several Unicode chars (a ligature, a surrogate pair) into that many chars,
+      // which share the text object and the origin: they are one glyph.
+      const lo = Math.max(0, start - GLYPH_GROUP_REACH);
+      const hi = Math.min(total, end + GLYPH_GROUP_REACH);
+      const objs = new Float64Array(hi - lo);
+      const ox = new Float64Array(hi - lo);
+      const oy = new Float64Array(hi - lo);
+      for (let i = lo; i < hi; i++) {
+        const obj = x.FPDFText_IsGenerated(textPage, i) === 1 ? 0 : x.FPDFText_GetTextObject(textPage, i);
+        objs[i - lo] = obj;
+        if (!obj) continue;
+        x.FPDFText_GetCharOrigin(textPage, i, mem, mem + 8);
+        ox[i - lo] = h.double(mem);
+        oy[i - lo] = h.double(mem + 8);
+      }
+      const sameGlyph = (a: number, b: number) => objs[a - lo] !== 0 && objs[a - lo] === objs[b - lo] && ox[a - lo] === ox[b - lo] && oy[a - lo] === oy[b - lo];
+
+      const objects = new Map<number, TextObjectPaint | null>(); // null: invisible text
+      const paintOf = (obj: number, charIndex: number): TextObjectPaint | null => {
+        const known = objects.get(obj);
+        if (known !== undefined) return known;
+        const paint = this.textObjectPaint(textPage, obj, charIndex, mem);
+        objects.set(obj, paint);
+        return paint;
+      };
+
+      const out: GlyphOutline[] = [];
+      const units: number[] = [];
+      let i = start;
+      while (i < end) {
+        const obj = objs[i - lo];
+        if (!obj) {
+          i++;
+          continue;
+        }
+        let first = i;
+        while (first > lo && sameGlyph(first - 1, first)) first--; // the range starts inside a ligature
+        let next = i + 1;
+        while (next < hi && sameGlyph(next - 1, next)) next++;
+        const paint = paintOf(obj, first);
+        if (!paint) {
+          i = next;
+          continue;
+        }
+        units.length = 0;
+        for (let k = first; k < next; k++) units.push(x.FPDFText_GetUnicode(textPage, k));
+        let glyph: CachedGlyph | null = null;
+        for (const arg of this.glyphArguments(textPage, first, units)) {
+          glyph = this.cachedGlyph(byFont, paint.font, arg, paint.size, mem);
+          if (glyph) break;
+        }
+        if (glyph) {
+          let placed = glyph.placed.get(paint.matrixKey);
+          if (!placed) glyph.placed.set(paint.matrixKey, (placed = placeOutline(glyph.em, paint.matrix)));
+          // The origin on the 1/100 pt grid, then the glyph's own points relative to it (see placeOutline).
+          const x0 = Math.round(((ox[first - lo] ?? 0) - crop.left) * OUTLINE_PRECISION) + placed.x0;
+          const y0 = Math.round((crop.top - (oy[first - lo] ?? 0)) * OUTLINE_PRECISION) + placed.y0;
+          out.push({ charIndex: i, d: `M${x0 / OUTLINE_PRECISION} ${y0 / OUTLINE_PRECISION}${placed.tail}`, fill: paint.fill, stroke: paint.stroke });
+        }
+        i = next;
+      }
+      return out;
+    } finally {
+      x.free(mem);
+      pageCtx.release();
+    }
+  }
+
+  /**
+   * Glyph outlines by font and FPDFFont_GetGlyphPath argument, per loaded page: the em-space outline, and its path data
+   * for each char matrix it has been drawn with. A font pointer is valid only while a loaded page uses the font, and
+   * PDFium may free it and reuse its address once the pages using it close, so the cache hangs off EmbedPDF's
+   * PageContext, which lives exactly as long as the page stays loaded: a reloaded page gets a new PageContext and an
+   * empty cache. null: the glyph has no outline (a space, a Type3 glyph).
+   */
+  private readonly outlineCache = new WeakMap<PageContext, Map<number, Map<number, CachedGlyph | null>>>();
+
+  /** The glyph's outline in ems, as [segment type, x, y, close] per segment, from the cache or from PDFium. */
+  private cachedGlyph(byFont: Map<number, Map<number, CachedGlyph | null>>, font: number, arg: number, size: number, mem: number): CachedGlyph | null {
+    let byArg = byFont.get(font);
+    if (!byArg) byFont.set(font, (byArg = new Map<number, CachedGlyph | null>()));
+    const known = byArg.get(arg);
+    if (known !== undefined) return known;
+    const x = this.x;
+    const path = font ? x.FPDFFont_GetGlyphPath(font, arg, size) : 0;
+    const segments = path ? x.FPDFGlyphPath_CountGlyphSegments(path) : 0;
+    let em: Float32Array | null = null;
+    if (segments > 0) {
+      em = new Float32Array(4 * segments);
+      for (let s = 0; s < segments; s++) {
+        const segment = x.FPDFGlyphPath_GetGlyphPathSegment(path, s);
+        x.FPDFPathSegment_GetPoint(segment, mem, mem + 4);
+        em[4 * s] = x.FPDFPathSegment_GetType(segment);
+        em[4 * s + 1] = this.h.float(mem);
+        em[4 * s + 2] = this.h.float(mem + 4);
+        em[4 * s + 3] = x.FPDFPathSegment_GetClose(segment);
+      }
+    }
+    const glyph = em ? { em, placed: new Map<string, PlacedOutline>() } : null;
+    byArg.set(arg, glyph);
+    return glyph;
+  }
+
+  /**
+   * How the text object paints its glyphs: font, size, the linear part of the char matrix (size included), and the
+   * fill and stroke colours its render mode uses. null for invisible text: render mode 3 or 7, or nothing painted
+   * with an alpha above 0. `charIndex` is any char of the object (colours and matrix are the object's).
+   */
+  private textObjectPaint(textPage: number, obj: number, charIndex: number, mem: number): TextObjectPaint | null {
+    const x = this.x;
+    const h = this.h;
+    const raw = x.FPDFTextObj_GetTextRenderMode(obj);
+    const mode = raw >= 0 && raw <= 7 ? raw : 0;
+    const colour = (get: (...a: number[]) => number): PdfColor | null =>
+      get(textPage, charIndex, mem, mem + 4, mem + 8, mem + 12) ? [h.int(mem), h.int(mem + 4), h.int(mem + 8), h.int(mem + 12)] : null;
+    const fillColour = FILLS_BY_MODE[mode] ? (colour(x.FPDFText_GetFillColor) ?? [0, 0, 0, 255]) : null;
+    const strokeColour = STROKES_BY_MODE[mode] ? (colour(x.FPDFText_GetStrokeColor) ?? [0, 0, 0, 255]) : null;
+    const fill = fillColour && fillColour[3] > 0 ? fillColour : null;
+    const stroke = strokeColour && strokeColour[3] > 0 ? strokeColour : null;
+    if (!fill && !stroke) return null;
+    const size = x.FPDFTextObj_GetFontSize(obj, mem) ? h.float(mem) : 0;
+    x.FPDFText_GetMatrix(textPage, charIndex, mem); // FS_MATRIX: a b c d e f (floats)
+    const matrix: [number, number, number, number] = [size * h.float(mem), size * h.float(mem + 4), size * h.float(mem + 8), size * h.float(mem + 12)];
+    return { font: x.FPDFTextObj_GetFont(obj), size, matrix, matrixKey: matrix.join(' '), fill, stroke };
+  }
+
+  /**
+   * FPDFFont_GetGlyphPath arguments to try, in order, for the glyph of chars [first, first + units.length) (P0-5). The
+   * call maps its argument through the font's CharCodeFromUnicode, so every form is a Unicode value. PDFium has no call
+   * that returns a char's code: for a char without Unicode, FPDFText_GetUnicode already returns the code, so retrying
+   * "with the char code" is the same call.
+   * - One char: its Unicode value; for PDFium's joined line-end hyphen (FPDFText_IsHyphen; its Unicode reads 0x2),
+   *   U+002D, then U+2010.
+   * - Several chars (one glyph): the code point they compose to (a surrogate pair, a decomposed accent), the ligature
+   *   they spell (U+FB01 for "fi"), and last the first char's own glyph.
+   */
+  private glyphArguments(textPage: number, first: number, units: number[]): number[] {
+    const x = this.x;
+    const [own = 0] = units;
+    if (units.length === 1 && x.FPDFText_IsHyphen(textPage, first) === 1) return [0x2d, 0x2010, own];
+    if (units.length === 1) return [own];
+    const text = String.fromCharCode(...units);
+    const composed = [...text.normalize('NFC')];
+    const out: number[] = [];
+    const single = composed.length === 1 ? composed[0]?.codePointAt(0) : undefined;
+    if (single !== undefined) out.push(single);
+    const ligature = LIGATURES[text];
+    if (ligature !== undefined) out.push(ligature);
+    out.push(own);
+    return out;
+  }
+
+  // ---- image fingerprints (research 06 §5) ----
+
+  /**
+   * SHA-256 of the image object's raw stream data (FPDFImageObj_GetImageDataRaw), the object found by counting as
+   * listPageObjects with recurseForms does. null when there is no such object, it is not an image, or it has no data.
+   */
+  async hashImageObject(docId: string, pageIndex: number, objectIndex: number): Promise<Sha256 | null> {
+    const { doc } = this.state(docId);
+    this.page(doc, pageIndex);
+    if (!Number.isInteger(objectIndex) || objectIndex < 0) return null;
+    const x = this.x;
+    const pageCtx = this.ctx(doc).acquirePage(pageIndex);
+    const bytes = ((): Uint8Array | null => {
+      try {
+        const obj = this.objectAt(pageCtx.pagePtr, objectIndex);
+        if (!obj || PAGE_OBJECT_TYPES[x.FPDFPageObj_GetType(obj)] !== 'image') return null;
+        const length = x.FPDFImageObj_GetImageDataRaw(obj, 0, 0);
+        if (length <= 0) return null;
+        const buf = x.malloc(length);
+        try {
+          x.FPDFImageObj_GetImageDataRaw(obj, buf, length);
+          return this.h.bytes(buf, length);
+        } finally {
+          x.free(buf);
+        }
+      } finally {
+        pageCtx.release();
+      }
+    })();
+    return bytes ? sha256Hex(bytes) : null;
+  }
+
+  /** The page object at `index` in listPageObjects' recurseForms order (depth first, a form before its objects), or 0. */
+  private objectAt(pagePtr: number, index: number): number {
+    const x = this.x;
+    let seen = 0;
+    const visit = (obj: number): number => {
+      if (seen++ === index) return obj;
+      if (PAGE_OBJECT_TYPES[x.FPDFPageObj_GetType(obj)] === 'form') {
+        const count = x.FPDFFormObj_CountObjects(obj);
+        for (let k = 0; k < count && seen <= index; k++) {
+          const found = visit(x.FPDFFormObj_GetObject(obj, k));
+          if (found) return found;
+        }
+      }
+      return 0;
+    };
+    const count = x.FPDFPage_CountObjects(pagePtr);
+    for (let i = 0; i < count && seen <= index; i++) {
+      const found = visit(x.FPDFPage_GetObject(pagePtr, i));
+      if (found) return found;
+    }
+    return 0;
   }
 
   // ---- helpers ----
@@ -906,6 +1199,88 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
     }
     return filters;
   }
+}
+
+/** What getGlyphOutlines needs of a visible text object (textObjectPaint). */
+interface TextObjectPaint {
+  font: number;
+  size: number;
+  /** The char matrix's a, b, c, d, times the font size: em space → page space, without the translation. */
+  matrix: [number, number, number, number];
+  /** `matrix` as a cache key. */
+  matrixKey: string;
+  fill: PdfColor | null;
+  stroke: PdfColor | null;
+}
+
+/** A glyph in the outline cache: its em-space outline, and its placed path data by char matrix (placeOutline). */
+interface CachedGlyph {
+  em: Float32Array;
+  placed: Map<string, PlacedOutline>;
+}
+
+/**
+ * A glyph's outline under one char matrix, ready to place at any origin: its first point (x0, y0) from the origin, in
+ * 1/100 pt with y down, and the rest of its path data in relative commands. A glyph drawn many times on a page at one
+ * size and angle is formatted once; each char then costs one absolute move. Every point is rounded on the 1/100 pt grid
+ * relative to the origin, and the relative steps are differences of those rounded points, so nothing drifts.
+ */
+interface PlacedOutline {
+  x0: number;
+  y0: number;
+  tail: string;
+}
+
+/**
+ * placeOutline: SVG path data for an em-space outline ([type, x, y, close] per segment) under `m` (em → points, without
+ * the translation), flipped to y down. A cubic is three BEZIERTO points: two controls, then the end, all three relative
+ * to the point the curve starts from. After a close, the current point is the start of the closed contour.
+ */
+function placeOutline(em: Float32Array, m: [number, number, number, number]): PlacedOutline {
+  const [a, b, c, d] = m;
+  const P = OUTLINE_PRECISION;
+  let x0 = 0;
+  let y0 = 0;
+  let [cx, cy] = [0, 0]; // the current point
+  let [sx, sy] = [0, 0]; // the current contour's start
+  let tail = '';
+  let curve: number[] = [];
+  let closeAfterCurve = false;
+  const step = (x: number, y: number) => `${(x - cx) / P} ${(y - cy) / P}`;
+  for (let s = 0; s < em.length; s += 4) {
+    const gx = em[s + 1] ?? 0;
+    const gy = em[s + 2] ?? 0;
+    const x = Math.round((a * gx + c * gy) * P);
+    const y = Math.round(-(b * gx + d * gy) * P);
+    const type = em[s];
+    const close = em[s + 3] !== 0;
+    if (s === 0) {
+      [x0, y0, cx, cy, sx, sy] = [x, y, x, y, x, y];
+    } else if (type === FPDF_SEGMENT_MOVETO) {
+      tail += `m${step(x, y)}`;
+      [cx, cy, sx, sy] = [x, y, x, y];
+    } else if (type === FPDF_SEGMENT_LINETO) {
+      tail += `l${step(x, y)}`;
+      [cx, cy] = [x, y];
+    } else if (type === FPDF_SEGMENT_BEZIERTO) {
+      curve.push(x, y);
+      if (curve.length === 6) {
+        const [x1 = 0, y1 = 0, x2 = 0, y2 = 0, x3 = 0, y3 = 0] = curve;
+        tail += `c${step(x1, y1)} ${step(x2, y2)} ${step(x3, y3)}`;
+        [cx, cy] = [x3, y3];
+        curve = [];
+      } else if (close) {
+        closeAfterCurve = true;
+        continue;
+      }
+    }
+    if ((close || closeAfterCurve) && curve.length === 0) {
+      tail += 'z';
+      [cx, cy] = [sx, sy];
+      closeAfterCurve = false;
+    }
+  }
+  return { x0, y0, tail };
 }
 
 /** A PdfTask that failed: PDFium's error code (FPDF_ERR_*) when it gave one. */

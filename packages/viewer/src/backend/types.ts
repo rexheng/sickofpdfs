@@ -6,6 +6,7 @@
 // the origin at the top-left corner of the page's crop box and y growing downwards. "Unrotated" means the page's
 // /Rotate is not applied: a page with /Rotate 90 still has its glyph boxes where they are in the file. PageSize gives
 // the size of that space and the rotation to display it with.
+import type { Sha256 } from '@sop/core';
 
 /** An open document. Made by PdfBackend.open; valid until close, or until the engine stops (PdfEngineCrashedError). */
 export type DocHandle = string & { readonly __doc: unique symbol };
@@ -198,6 +199,31 @@ export interface TextRun {
   charCount: number;
 }
 
+/** getTextRuns with a time budget: like PageObjectList, `runs` is a prefix of the page's runs when `truncated`. */
+export interface TextRunList {
+  runs: TextRun[];
+  /** The walk stopped at budgetMs before the page's last char. */
+  truncated: boolean;
+}
+
+/** A colour as PDFium gives it: red, green, blue and alpha, 0–255 each. */
+export type PdfColor = [r: number, g: number, b: number, a: number];
+
+/**
+ * One glyph's outline, for drawing bold over the page (P0-5; contracts §2's `{ charIndex, d }` plus how the page paints
+ * the glyph, so that bold keeps the text's own colour, ruling R29).
+ */
+export interface GlyphOutline {
+  /** PDFium char index. A glyph PDFium expands into several chars (a ligature such as "fi") is one outline, at the first of them in the range. */
+  charIndex: number;
+  /** SVG path data in points, unrotated page space, origin at the crop box's top-left (the space of Glyph boxes). */
+  d: string;
+  /** FPDFText_GetFillColor; null when the text is stroked but not filled (render modes 1 and 5). */
+  fill: PdfColor | null;
+  /** FPDFText_GetStrokeColor; null when the text is filled but not stroked (render modes 0 and 4). */
+  stroke: PdfColor | null;
+}
+
 /**
  * The PDF engine. It runs in a worker (or two: ENGINE_WORKERS); each worker runs its calls one at a time, in the
  * order they are made.
@@ -228,6 +254,14 @@ export interface PdfBackend {
    * U+FFFF, soft hyphens, zero-width spaces, word joiners and BOMs. Select-all must copy exactly this (R26).
    */
   getPageText(doc: DocHandle, pageIndex: number): Promise<string>;
+  /**
+   * The page's chars exactly as PDFium has them: FPDFText_GetText over every char, nothing removed (U+FFFE where PDFium
+   * joins a line-end hyphen, soft hyphens, zero-width chars and PDFium's generated '\r', '\n' and spaces all stay), so
+   * `raw.length` is the page's char count and `raw[i]` is char `i` (getPageGlyphs' `glyphs[i].text`). One engine call;
+   * anchoring reads its char positions from this (getPageText's offsets drift from char indices after the first
+   * removed char).
+   */
+  getPageChars(doc: DocHandle, pageIndex: number): Promise<string>;
   /** The text of chars [start, start + count), cleaned as getPageText. */
   getTextRange(doc: DocHandle, pageIndex: number, start: number, count: number): Promise<string>;
   /**
@@ -261,4 +295,23 @@ export interface PdfBackend {
   getStructTree(doc: DocHandle, pageIndex: number): Promise<StructElement[]>;
   /** The page's text runs (the figure detector's lines, Phase 2). */
   getTextRuns(doc: DocHandle, pageIndex: number): Promise<TextRun[]>;
+  /**
+   * The page's text runs, stopping once the walk has run `budgetMs` (checked every 256 chars; the clock starts once the
+   * page and its text page are loaded, as listPageObjects' does, R31). The figure detector uses this form.
+   */
+  getTextRuns(doc: DocHandle, pageIndex: number, opts: { budgetMs: number }): Promise<TextRunList>;
+  /**
+   * The glyph outlines of chars [charStart, charStart + charCount), for bold (P0-5, R29). Left out: chars with no glyph
+   * (PDFium's generated spaces and line breaks, whitespace) and invisible text (render modes 3 and 7, such as a scan's
+   * OCR layer, or a fill with alpha 0), so a visible char in the range with no outline is one bold cannot redraw (the
+   * caller draws the "strong" style there). A ligature, a surrogate pair and PDFium's joined line-end hyphen each give
+   * one outline. A Type3 glyph has no outline. In char order.
+   */
+  getGlyphOutlines(doc: DocHandle, pageIndex: number, charStart: number, charCount: number): Promise<GlyphOutline[]>;
+  /**
+   * SHA-256 of an image object's stream data as stored in the file (FPDFImageObj_GetImageDataRaw), computed in the
+   * engine. `objectIndex` counts as listPageObjects(doc, pageIndex, { recurseForms: true }) does (depth first, a form
+   * before its objects). null when the index is out of range, the object is not an image, or it has no data.
+   */
+  hashImageObject(doc: DocHandle, pageIndex: number, objectIndex: number): Promise<Sha256 | null>;
 }

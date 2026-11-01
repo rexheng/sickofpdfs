@@ -136,6 +136,7 @@ export function createEmbedPdfBackend(assets: EngineAssets, opts: EmbedPdfBacken
     renderTile: (doc, req, signal) => call(doc, req.pageIndex, 'renderBitmap', [req], signal),
     getPageGlyphs: (doc, pageIndex) => call(doc, pageIndex, 'getGlyphs', [pageIndex]),
     getPageText: (doc, pageIndex) => call(doc, pageIndex, 'getPageText', [pageIndex]),
+    getPageChars: (doc, pageIndex) => call(doc, pageIndex, 'getPageChars', [pageIndex]),
     getTextRange: (doc, pageIndex, start, count) => call(doc, pageIndex, 'getTextRange', [pageIndex, start, count]),
     getTextRangeRects: (doc, pageIndex, start, count) => call(doc, pageIndex, 'getTextRangeRects', [pageIndex, start, count]),
     searchPage: (doc, pageIndex, query, o) => call(doc, pageIndex, 'searchPage', [pageIndex, query, { matchCase: o.matchCase, wholeWord: o.wholeWord }]),
@@ -153,6 +154,10 @@ export function createEmbedPdfBackend(assets: EngineAssets, opts: EmbedPdfBacken
     },
     listPageObjects: (doc, pageIndex, o) => call(doc, pageIndex, 'listPageObjects', [pageIndex, o]),
     getStructTree: (doc, pageIndex) => call(doc, pageIndex, 'getStructTree', [pageIndex]),
-    getTextRuns: (doc, pageIndex) => call(doc, pageIndex, 'getTextRuns', [pageIndex]),
+    // One implementation for both forms of the overload: the worker answers TextRunList when a budget is given.
+    getTextRuns: ((doc: DocHandle, pageIndex: number, o?: { budgetMs: number }) =>
+      call(doc, pageIndex, 'getTextRuns', o ? [pageIndex, { budgetMs: o.budgetMs }] : [pageIndex])) as PdfBackend['getTextRuns'],
+    getGlyphOutlines: (doc, pageIndex, charStart, charCount) => call(doc, pageIndex, 'getGlyphOutlines', [pageIndex, charStart, charCount]),
+    hashImageObject: (doc, pageIndex, objectIndex) => call(doc, pageIndex, 'hashImageObject', [pageIndex, objectIndex]),
   };
 }
