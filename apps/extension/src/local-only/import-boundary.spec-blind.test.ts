@@ -9,10 +9,12 @@
 //   spec, Backups: "secrets live in a separate store that backups, export and sync cannot read".
 // Written as a walk over the source files: from every file that must not reach the secrets store, follow every import that is not
 // type-only (static, dynamic import(), and `new Worker(new URL(...))`) and report any path that ends in src/local-only/.
+// The lint rule is asked of ESLint itself: its computed configuration for a real file in each area, and a real import line linted.
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ESLint } from 'eslint';
 import { describe, expect, it } from 'vitest';
 
 const SRC = fileURLToPath(new URL('..', import.meta.url));
@@ -139,12 +141,40 @@ describe('the secrets store is out of reach of the store, the service worker, th
     expect(runtimeImports(source).filter((s) => /(^|\/)store(\/|$)/.test(s) && !s.includes('local-only')), 'it must not depend on the library store').toEqual([]);
   });
 
-  it('the lint rule is in place: no-restricted-imports on "**/local-only/**" for the four areas', () => {
-    const config = readFileSync(join(REPO, 'eslint.config.mjs'), 'utf8');
-    const at = config.indexOf('**/local-only/**');
-    expect(at, 'eslint.config.mjs forbids "**/local-only/**"').toBeGreaterThan(-1);
-    const around = config.slice(Math.max(0, at - 900), at + 300);
-    expect(around).toContain('no-restricted-imports');
-    for (const area of FORBIDDEN_AREAS) expect(around, `the rule covers ${area}`).toContain(area);
+  describe('the lint rule is in place (asked of ESLint itself)', () => {
+    const AREA_FILES: Record<string, string> = {
+      store: 'apps/extension/src/store/annotations.ts',
+      background: 'apps/extension/src/background/takeover/register.ts',
+      'entrypoints/offscreen': 'apps/extension/src/entrypoints/offscreen/main.ts',
+      testing: 'apps/extension/src/testing/test-hooks.ts',
+    };
+    const IMPORT_LINE = "import { openLocalOnlyStore } from '../local-only/secrets-store';\nvoid openLocalOnlyStore;\n";
+    const DYNAMIC_LINE = "export const load = () => import('../local-only/secrets-store');\n";
+    const eslint = new ESLint({ cwd: REPO });
+    const ruleIds = async (code: string, filePath: string): Promise<string[]> => {
+      const [result] = await eslint.lintText(code, { filePath: join(REPO, filePath) });
+      expect(result, `ESLint answered for ${filePath}`).toBeDefined();
+      expect(result.messages.filter((m) => m.fatal), `ESLint could not parse the probe for ${filePath}`).toEqual([]);
+      return result.messages.filter((m) => m.severity === 2 && m.message.length > 0 && m.ruleId !== null).map((m) => m.ruleId!);
+    };
+
+    it.each(Object.entries(AREA_FILES))('%s: the configuration forbids **/local-only/** as an error', async (_area, file) => {
+      const config = (await eslint.calculateConfigForFile(join(REPO, file))) as { rules?: Record<string, unknown> } | undefined;
+      const setting = config?.rules?.['no-restricted-imports'] as [unknown, { patterns?: (string | { group?: string[] })[] }?] | undefined;
+      expect(setting, `no-restricted-imports is set for ${file}`).toBeDefined();
+      expect([2, 'error']).toContain(setting![0]);
+      const groups = (setting![1]?.patterns ?? []).flatMap((p) => (typeof p === 'string' ? [p] : (p.group ?? [])));
+      expect(groups, 'a pattern group covers **/local-only/**').toContain('**/local-only/**');
+    }, 60_000);
+
+    it.each(Object.entries(AREA_FILES))('%s: a real import of the secrets store is reported as an error, static and dynamic', async (_area, file) => {
+      expect(await ruleIds(IMPORT_LINE, file), 'import ... from the local-only folder').toContain('no-restricted-imports');
+      expect(await ruleIds(DYNAMIC_LINE, file), "import('...') of the local-only folder").toContain('no-restricted-syntax');
+    }, 180_000);
+
+    it('the viewer is allowed to import it (the rule is aimed, not blanket)', async () => {
+      const ids = await ruleIds(IMPORT_LINE, 'apps/extension/src/viewer/App.tsx');
+      expect(ids).not.toContain('no-restricted-imports');
+    }, 120_000);
   });
 });
