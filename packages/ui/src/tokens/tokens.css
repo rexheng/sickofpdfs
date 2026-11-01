@@ -242,6 +242,86 @@
   --z-menu: 1000;
   --z-tooltip: 1100;
 
+  /* ===== Phase 2: marks, figures, comment cards and the notes panel (plan S4, contracts D5) ===== */
+  /*
+   * The five mark colours. MarkColor 1–5 (packages/core model/rows.ts) is a slot, and these are its only hex values;
+   * P8's PDF export reads them from here. Marks are drawn ON the white PDF page, never on the chrome, so these values
+   * are the same in both themes: tokens-dark.css does not touch them.
+   *   --sop-mark-N          the highlight fill. Opaque, and drawn with --sop-mark-blend (multiply), so black text
+   *                         stays black and overlapping highlights never darken into bands (R44).
+   *   --sop-mark-N-active   the fill while its comment card is active (Docs darkens the anchor the same way).
+   *   --sop-mark-N-line     underline and strikethrough in this colour: a deeper tone, so a thin line still reads
+   *                         on white.
+   *   --sop-mark-N-swatch   the dot in the dark right-click menu (#282a2c): one step deeper than the fill, so the five
+   *                         stay apart on the dark surface and still look like the highlight they make.
+   * The tones are Google's palette, as in Docs and Drive: fills at 200, active fills and swatches at 300 (yellow active
+   * at 500, the #fbbc04 Docs uses for its active anchor, research 02 section 4.11), lines at 600. Black text keeps at
+   * least 11.7:1 on every fill and 9.8:1 on every active fill. Two tones are tuned:
+   *   - Blue is a sky blue (Drive's own #7fcfff, and #4fc3f7 one step deeper), not Google Blue 200 (#aecbfa): that one
+   *     is the same colour as the text selection (Task 22's --text-selection, #0b57d0 at 30% ≈ #b6cdf1), so a blue mark
+   *     would look like a selection that never went away.
+   *   - The yellow line is a deeper gold (#e09b00): Google Yellow 700 (#f29900) sits too close to the orange line.
+   */
+  --sop-mark-1: #fde293;           /* yellow, the default. Docs' inactive comment anchor is about #fde293 */
+  --sop-mark-1-active: #fbbc04;    /* Google Yellow; Docs' active anchor measured #fcbc03 [px] */
+  --sop-mark-1-line: #e09b00;      /* gold: 2.4:1 on white, and 26° of hue away from the orange line */
+  --sop-mark-1-swatch: #fdd663;
+  --sop-mark-2: #a8dab5;           /* green */
+  --sop-mark-2-active: #81c995;
+  --sop-mark-2-line: #1e8e3e;
+  --sop-mark-2-swatch: #81c995;
+  --sop-mark-3: #7fcfff;           /* blue: Drive's sky blue (GM3 secondary-fixed-dim), kept apart from the selection */
+  --sop-mark-3-active: #4fc3f7;
+  --sop-mark-3-line: #1a73e8;      /* Google Blue 600, 4.5:1 on white */
+  --sop-mark-3-swatch: #4fc3f7;
+  --sop-mark-4: #fba9d6;           /* pink */
+  --sop-mark-4-active: #ff8bcb;
+  --sop-mark-4-line: #e52592;
+  --sop-mark-4-swatch: #ff8bcb;
+  --sop-mark-5: #fdc69c;           /* orange */
+  --sop-mark-5-active: #fcad70;
+  --sop-mark-5-line: #e8710a;
+  --sop-mark-5-swatch: #fcad70;
+  --sop-mark-blend: multiply;
+  --sop-mark-line-w: 2px;          /* underline and strikethrough at 100% zoom; the mark layer scales it with the zoom */
+  --sop-mark-focus: #0b57d0;       /* ring on a keyboard-focused mark: the light primary, because the page is white even in the dark viewer */
+  --sop-thread-underline: #747775; /* dotted underline of a thread whose text has no style left: a quiet grey, not a mark colour */
+
+  /* Swatches in the dark right-click menu: a 20 px dot (an icon's size) in a 36 px slot (a dark menu row). The current
+     colour shows a dark check; the hovered or keyboard-focused swatch gets a 2 px on-surface ring, 2 px out. */
+  --sop-swatch-size: 20px;
+  --sop-swatch-slot: 36px;
+  --sop-swatch-ring-gap: 2px;
+  --sop-swatch-ring-w: 2px;
+  --sop-swatch-check: #1f1f1f;     /* at least 7.7:1 on all five dots */
+
+  /* Area marks and figures (research 06 section 4). An area mark has no colour slot: it draws in this one outline, and
+     P8's "border in the mark colour" means this token. */
+  --sop-area-outline: #e09b00;     /* the default (yellow) mark's line colour; never one of the other four, so an area never reads as orange */
+  --sop-area-outline-w: 2px;
+  --sop-figure-hover-outline: rgba(11,87,208,.45); /* the faint 1 px outline on hover: #0b57d0 at 45% */
+  --sop-figure-hover-outline-w: 1px;
+  --sop-figure-selected-outline: #0b57d0;          /* solid 2 px once selected */
+  --sop-figure-selected-outline-w: 2px;
+
+  /* Comment cards in the right margin: Docs' margin cards (research 02 section 4.11) on the viewer's dark canvas. The
+     surface is the theme role --sop-card-bg (part 3). The active card turns light (white, Docs' active shadow) and sits
+     12 px left of the others. */
+  --sop-card-w: 282px;
+  --sop-card-radius: var(--shape-docs-comment);    /* 12px */
+  --sop-card-gap: 10px;
+  --sop-card-pad: 16px 16px 12px;
+  --sop-card-active-shift: 12px;
+  --sop-card-active-bg: #ffffff;
+  --sop-card-active-shadow: var(--shadow-docs-comment-active);
+  --sop-card-avatar: 32px;         /* the author's round avatar; the name starts 12 px after it */
+  --sop-card-thumb: 64px;          /* figure thumbnail on a figure card (research 06 section 4) */
+
+  /* The notes panel: Docs' comments sidebar (research 02 section 4.11). Its surface is the theme role
+     --sop-notes-panel-bg (part 3). */
+  --sop-notes-panel-w: 320px;
+  --sop-notes-panel-radius: var(--shape-docs-sidebar); /* 16px */
+
   /* ===== Part 3: component roles that change with the theme. tokens-dark.css declares each one again. ===== */
   --menu-bg: var(--gm3-sys-color-surface-container);           /* #f0f4f9 light context menu [live] */
   --menu-row-h: var(--menu-item-h);                            /* 32px light library menu */
@@ -249,4 +329,6 @@
   --menubar-open-bg: var(--gm3-sys-color-surface-container-highest);
   --icon-btn-hover: color-mix(in srgb, var(--gm3-sys-color-on-surface-variant) 8%, transparent); /* 8% state layer */
   --dialog-bg: var(--gm3-sys-color-surface);
+  --sop-card-bg: var(--drive-app-bg);                            /* #f8fafd Docs margin card [live] */
+  --sop-notes-panel-bg: var(--gm3-sys-color-surface-container);  /* #f0f4f9 Docs comments sidebar [live] */
 }

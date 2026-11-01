@@ -1,5 +1,6 @@
-/** Every Material Symbol the interface uses in Phase 1. Add a name here before using it, so the glyph test covers it. */
+/** Every Material Symbol the interface uses. Add a name here before using it, so the glyph test covers it. */
 export const ICON_NAMES = [
+  // Phase 1
   'open_in_new',
   'download',
   'link',
@@ -33,9 +34,28 @@ export const ICON_NAMES = [
   'check',
   'undo',
   'menu_book',
-  // Phase 2 comment cards (S5): the card's actions button and the owner's avatar
+  // Phase 2: the right-click mark-up menu (S6, S13)
+  'ink_highlighter',
+  'format_underlined',
+  'format_bold',
+  'format_strikethrough',
+  'add_comment', // also the pill's "Comment" text button, as in Drive's signed-in viewer (research 02 section 4.10)
+  'search',
+  'content_copy',
+  'redo',
+  // Phase 2: comment cards, the notes panel and figures (S5, S14, S15, S16)
+  'comment',
   'more_vert',
-  'person',
+  'edit',
+  'delete',
+  'send',
+  'account_circle',
+  'my_location', // "Show where it was" on a Moved card (D7)
+  'location_off', // "Couldn't place"
+  'image', // figure cards and the rail's Figures tab
+  'select', // the area tool: a dashed rectangle
+  'keep', // a pin (Material Symbols' push pin)
+  'person', // the owner's avatar on comment cards (S5)
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

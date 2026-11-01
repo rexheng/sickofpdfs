@@ -57,4 +57,6 @@
   --menubar-open-bg: var(--gm3-sys-color-surface-bright);      /* #37393b open File button [live] */
   --icon-btn-hover: var(--viewer-icon-hover);                  /* #3e4041 [px] */
   --dialog-bg: var(--gm3-sys-color-surface-container-high);
+  --sop-card-bg: var(--gm3-sys-color-surface-container-high);    /* #282a2c, the dark menu's surface, on the #1b1b1b canvas */
+  --sop-notes-panel-bg: var(--gm3-sys-color-surface-container);  /* #1e1f20; its cards sit on --sop-card-bg (#282a2c) */
 }
