@@ -286,6 +286,12 @@ One reference implementation in TypeScript, with its test cases, defines these r
 | Receipt-roll page shape, tax-form type, invoice or receipt in path | −2 each |
 | Made by invoice-generator software | −1 |
 
+**Decided while building the filter (Phase 3, 1 Nov 2026).**
+- **Second look for text-poor decks.** If the first and last 5 pages hold fewer than 15 words, up to 10 middle pages are sampled before the no-text rule applies. Slide decks such as the CS50 lectures are judged on their real content. Image-only receipts and scans still never save.
+- **CVs never save by score.** CV evidence counts against saving: CV, résumé or curriculum vitae titles, Education, Experience or Skills headings, and a contact block on page 1. A CV laid out like a paper, with a References heading, is personal, not learning.
+- **The chip names what a file looks like.** The first reason of a not-learning verdict is a plain "looks like …" phrase for the most specific admin group that matched. For example: "looks like a tax form", "an invoice or receipt", "a bank statement". There are 24 admin groups.
+- **Your own choice to save always wins (D9).** This holds even over a card or bank-number block. A warning shows, and the file's text is not indexed.
+
 **What leaves your computer, and when:**
 
 | Data | Goes to | When |
