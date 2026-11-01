@@ -6,6 +6,7 @@
  * Google Drive, 2026-10-31). Part 2 adds what the viewer and the components need, in the same block.
  * The dark viewer-chrome theme is in tokens-dark.css (imported here, so one import is enough) and is switched on with
  * data-theme="dark" on the viewer root.
+ * Themes are explicit (data-theme on <html>); the OS colour-scheme preference is ignored on purpose.
  */
 @import './tokens-dark.css';
 
