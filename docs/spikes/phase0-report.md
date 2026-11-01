@@ -8,6 +8,7 @@ Phase 0 is a throwaway engine proof in `spikes/phase0/`. It has its own package 
 pnpm -C spikes/phase0 install
 pnpm -C spikes/phase0 fixtures            # SOP_FIXTURE_SRC=<folder> copies instead of downloading
 pnpm -C spikes/phase0 fixtures:scan       # scan-600.pdf for P0-3 (about 4 minutes, 178 MB)
+pnpm -C spikes/phase0 fixtures:textlayer  # tl-*.pdf for P0-4 (a few seconds)
 pnpm -C spikes/phase0 build
 pnpm -C spikes/phase0 exec playwright test
 pnpm -C spikes/phase0 report              # rewrites the table below
@@ -27,7 +28,7 @@ Result values: PASS, FAIL, BLOCKED, NOT RUN, and MIXED. MIXED means some variant
 | P0-1 | EmbedPDF renders in MV3 with bundled wasm and fonts | PASS | v2-blob first page 262 ms; v2-file first page 221 ms |  |
 | P0-2 | Zero network beyond the PDF | PASS | 2 requested URLs in the net log, all 127.0.0.1:37719: /font-fixture.pdf, /paper-50.pdf | Chromium's own service requests left out: clients2.google.com, accounts.google.com, www.google.com, update.googleapis.com |
 | P0-3 | 600-page scan scrolls with no blank page over 150 ms | PASS | workers=1 steady: blank p50 0 / p95 0 / max 0 ms over 34 pages; workers=1 jump: blank p50 49.5 / p95 50.8 / max 50.8 ms over 3 pages; workers=2 steady: blank p50 0 / p95 0 / max 0 ms over 32 pages; workers=2 jump: blank p50 49.2 / p95 55 / max 55 ms over 3 pages |  |
-| P0-4 | Text-layer selection suite | NOT RUN | | |
+| P0-4 | Text-layer selection suite | MIXED | PASS: two-column@100% drag 20/20; PASS: two-column@100% edge 0.509 px, overlap 1; PASS: two-column@200% drag 20/20; PASS: two-column@200% edge 0.506 px, overlap 1; PASS: rotated-table@100% drag 20/20; PASS: rotated-table@100% edge 0.472 px, overlap 0.999; PASS: rotated-table@200% drag 20/20; PASS: rotated-table@200% edge 0.468 px, overlap 1; PASS: ligatures@100% drag 20/20; PASS: ligatures@100% edge 0.485 px, overlap 1; PASS: ligatures@200% drag 20/20; PASS: ligatures@200% edge 0.506 px, overlap 1; PASS: maths@100% drag 20/20; PASS: maths@100% edge 0.477 px, overlap 0.999; PASS: maths@200% drag 20/20; PASS: maths@200% edge 0.505 px, overlap 0.999; PASS: rtl@100% drag 20/20; PASS: rtl@100% edge 0.507 px, overlap 1; PASS: rtl@200% drag 20/20; PASS: rtl@200% edge 0.512 px, overlap 1; PASS: rotated-page@100% drag 20/20; PASS: rotated-page@100% edge 0.509 px, overlap 1; PASS: rotated-page@200% drag 20/20; PASS: rotated-page@200% edge 0.506 px, overlap 1; PASS: resnet-p1@100% drag 20/20; PASS: resnet-p1@100% edge 0.516 px, overlap 0.973; PASS: resnet-p1@200% drag 20/20; PASS: resnet-p1@200% edge 0.516 px, overlap 0.998; PASS: attention-p1@100% drag 20/20; PASS: attention-p1@100% edge 0.521 px, overlap 0.973; PASS: attention-p1@200% drag 20/20; PASS: attention-p1@200% edge 0.509 px, overlap 0.999; PASS: attention-p2@100% drag 20/20; PASS: attention-p2@100% edge 0.521 px, overlap 0.998; PASS: attention-p2@200% drag 20/20; PASS: attention-p2@200% edge 0.521 px, overlap 0.999; FAIL: select-all = truth: two-column, ligatures, rotated-page; differs: rotated-table, maths; PASS: column drag: 1 range, 37 chars, no column-2 lower text; PASS: rtl: 77/85 spans rtl; drags both ways [[0,249]] and [[0,249]] | Error: expect(received).toBe(expected) // Object.is equality Expected: "Table 2. Water samples by station Station Depth Temperature Salinity North bank 12 m 14.2 C 35.1 Old mill 3 m 16.8 C 34.6 Bridge 7 m 15.5 C 34.9 South bank 9 m 15.0 C 35.0" Received: "Table 2. Water samples by station Statio n D |
 | P0-5 | Bold as a glyph-outline overlay | NOT RUN | | |
 | P0-6 | 300 MB tab↔offscreen moves; the 1 GB open limit | NOT RUN | | |
 | P0-7 | Form-field detection | NOT RUN | | |
@@ -125,6 +126,68 @@ All numbers so far come from Chrome for Testing 153.0.8010.12 on Linux, launched
   
   A render failure ends the scroll check with that message.
 - The `engine=pdfjs` variant was not added: the budget passes with both worker counts.
+
+### P0-4 Text layer on PDFium glyph boxes
+
+- **MIXED: selection and copy pass everywhere, but PDFium's own text differs from the page on two fixtures.**
+  - The 36 drag and alignment tests pass on 9 pages at 100% and 200%.
+  - The two-column and RTL tests pass.
+  - Select-all text equals the ground truth on two-column, ligatures and rotated-page. It differs on rotated-table and maths, because PDFium inserts line breaks there (see below).
+  - For the Task 10 gate, "P0-4 pairs and copy" is PASS.
+- 100% is 96/72 CSS px per point, at DPR 1. The viewport is sized to hold the whole page, so the mouse reaches every glyph. A "drag" is a mouse-down at glyph a's PDFium centre and a mouse-up at glyph b's, through 8 moves. The expected range is [min, max + 1), and the copied text is compared with `getTextRange` after NFKC and whitespace collapsing. Endpoints are 20 seeded pairs per page: half anywhere, half within 40 glyphs.
+
+| Page | Drag pairs (range and text), 100% / 200% | Max glyph-edge error, 100% / 200% | Min vertical overlap, 100% / 200% | Select-all = truth |
+| --- | --- | --- | --- | --- |
+| two-column | 20/20 / 20/20 | 0.509 / 0.506 px | 1 / 1 | equal |
+| rotated-table | 20/20 / 20/20 | 0.472 / 0.468 px | 0.999 / 1 | differs (PDFium) |
+| ligatures | 20/20 / 20/20 | 0.485 / 0.506 px | 1 / 1 | equal |
+| maths | 20/20 / 20/20 | 0.477 / 0.505 px | 0.999 / 0.999 | differs (PDFium) |
+| rtl | 20/20 / 20/20 | 0.507 / 0.512 px | 1 / 1 | not compared (RTL) |
+| rotated-page (/Rotate 90) | 20/20 / 20/20 | 0.509 / 0.506 px | 1 / 1 | equal |
+| ResNet p1 | 20/20 / 20/20 | 0.516 / 0.516 px | 0.973 / 0.998 | no truth |
+| Attention p1 | 20/20 / 20/20 | 0.521 / 0.509 px | 0.973 / 0.999 | no truth |
+| Attention p2 (inline maths) | 20/20 / 20/20 | 0.521 / 0.521 px | 0.998 / 0.999 | no truth |
+
+- **How the error and overlap are measured.**
+  - Edge error is per character: the DOM Range rect against PDFium's loose box (scale and /Rotate applied), along the displayed text direction, on both edges. It covers 56 to 3,634 characters a page.
+  - Chars sharing one PDFium box (ligatures) get equal shares of it.
+  - Median errors are 0.07–0.18 px. The maximum sits just above the drift limit of 0.5 px, plus DOM rounding.
+  - Overlap is the share of PDFium's box height covered by the DOM rect.
+- **Other results.**
+  - Two-column: a drag from the middle of column 1's bottom line to the middle of column 2's top line gives one range of 37 chars, with no column-2 lower text. A positive control confirms the page text does contain the sentence searched for.
+  - RTL: 77 of 85 spans carry `dir="rtl"`, and dragging either way gives [0, 249).
+- **How it works.**
+  - `getGlyphs` reads every char's loose and tight box, effective font size, angle and generated flag from PDFium.
+  - `buildTextItems` drift-splits the page into spans, each keeping all its char edges within 0.5 px of PDFium's.
+  - The pdf.js `TextLayer` port renders one transparent, absolutely positioned span per item, scaled to the item's box.
+  - `charRangeFromDomRange` maps the selection back to char indices.
+- **Choices beyond the brief, with the evidence:**
+  1. **Glyph boxes are read unrounded.** `getPageGeometry` rounds every box to whole points (`FPDF_PageToDevice`, integers at 1 px per point), up to 0.67 CSS px off at 100% and 1.33 px at 200%. `getGlyphs` takes `getPageGeometry`'s runs and reads the boxes from the same PDFium calls itself.
+  2. **Runs are not split points.** Chromium's PDF output gives each glyph cluster its own text object (two-column: 2,151 runs for 2,212 chars). Splitting at runs would make every glyph its own span. Spans split instead where direction, font size or line band changes, at PDFium line breaks, and by the drift rule. The drift rule also checks each char's left edge, not only its right.
+  3. **Glyph-inclusive drag selection** (`enableGlyphSelection`), as Chrome's PDF viewer selects. The browser puts each selection end at the nearest caret position, which is a coin toss at a glyph's centre. Single-click drags only; double and triple clicks keep the browser's word and line selection.
+     - With it off (`snap=0`), the same seeded drags match exactly in 0–8 of 20 pairs per page and zoom, and within one char in 5–14 more.
+     - Two-column at 100%: 0 exact, 12 within one char, 8 further off.
+  4. **Vertical fit.** Each span's content area is scaled to PDFium's loose box (`--scale-y`), with Blink's floored half-leading. Without the floor, a 1.67 pt space on ResNet p1 overlapped only 0.79.
+  5. **PDFium's joined line-end hyphen** (U+FFFE in `FPDFText_GetText`, dropped by `getTextRange`) is shown as an unselectable "-". The glyph keeps its box, and copied text drops it as PDFium does.
+  6. **The layer font is the bundled `pdf/NotoSans-Regular.ttf`** (Hebrew falls back to a system font). The canvas measurer matched DOM widths within 0.02 px.
+  7. **Attention page 2 is an extra fixture.** Page 1 has no inline maths.
+- **Why select-all differs on rotated-table and maths: PDFium's text.** The text layer shows PDFium's text exactly, so copying matches what Chrome's PDF viewer (same PDFium) copies.
+  - In the rotated table (one text object per glyph, text at 270°), PDFium inserts generated line breaks inside words: "Statio⏎n⏎D⏎e⏎pth T⏎e⏎m⏎p…".
+  - Around every superscript it inserts line breaks too: `x²` copies as "x 2", while the truth has "x2". `a₀` is fine.
+  - A fix would be a text model in Task 22 that drops PDFium's generated breaks between glyphs on the same visual line, used for both the DOM and the copied text.
+- **Not in the suite: double-click selects whole words only when a word sits in one span.** Each absolutely positioned span is its own block, and word selection stops at block edges.
+  - Drift-split cuts many words. Words in more than one span: two-column 269/390 at 100% and 341/390 at 200%; ResNet 443/665 and 479/665; ligatures 8/8, because equal shares of a ligature never match NotoSans' f and i.
+  - Double-clicking the middle of a word selected the whole word for 12/44 sampled words on two-column at 100% (3/44 at 200%), and for 0–11 per page elsewhere. Across all pages and zooms, 2 of 517 sampled split words came out whole.
+  - pdf.js keeps whole PDF runs in one span and gives up alignment instead.
+  - Two fixes for Task 22:
+    - a double-click handler that selects PDFium's word (Intl.Segmenter over the char map), like the drag rule;
+    - one block per line with the drift items as inline children, so words stay in one formatting context.
+- **Cost a page:**
+  - `getGlyphs` 17–135 ms (`getPageGeometry`'s per-char calls plus six more per char);
+  - `buildTextItems` 3.5–37 ms;
+  - building the DOM 5–40 ms;
+  - 26–2,550 spans.
+- **Controls.** Moving the layer 2 px along the text direction raises the maximum edge error from about 0.5 px to 2.37–2.51 px on every page. On the rotated page the move has to be vertical.
 
 ## Handed to the Windows checklist
 

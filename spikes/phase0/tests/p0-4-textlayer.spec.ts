@@ -30,7 +30,7 @@ for (const f of TEXTLAYER_FIXTURES) for (const zoom of [1, 2]) {
     }
     await record('P0-4', {
       pass: rangesOk === pairs.length && textOk === pairs.length,
-      measured: `${f.name}@${zoom * 100}% drag: ${rangesOk}/${pairs.length} ranges, ${textOk}/${pairs.length} text`,
+      measured: `${f.name}@${zoom * 100}% drag ${rangesOk}/${pairs.length}${textOk === rangesOk ? '' : ` (text ${textOk}/${pairs.length})`}`,
       note: misses.length ? `${f.name}@${zoom * 100}%: ${misses.slice(0, 3).join(', ')}` : undefined,
     });
   });
@@ -38,7 +38,7 @@ for (const f of TEXTLAYER_FIXTURES) for (const zoom of [1, 2]) {
     const r = await (await textlayerPage(f, zoom)).alignment(); // along-text edges per char; ligature expansions split their box equally
     await record('P0-4', {
       pass: r.maxEdgeErrorPx < 1 && r.minVerticalOverlap >= 0.8,
-      measured: `${f.name}@${zoom * 100}% edges: max ${px(r.maxEdgeErrorPx)} px, p99 ${px(r.p99EdgeErrorPx)} px over ${r.chars} chars, min vertical overlap ${px(r.minVerticalOverlap)}`,
+      measured: `${f.name}@${zoom * 100}% edge ${px(r.maxEdgeErrorPx)} px, overlap ${px(r.minVerticalOverlap)}`,
       note: r.maxEdgeErrorPx >= 1 || r.minVerticalOverlap < 0.8 ? `${f.name}@${zoom * 100}% worst: ${r.worst}` : undefined,
     });
     expect(r.maxEdgeErrorPx).toBeLessThan(1);
@@ -52,7 +52,9 @@ test('P0-4 generated LTR fixtures: select-all text equals the HTML ground truth'
     results.push(`${f.name} ${text === norm(f.truth!) ? 'equal' : 'differs'}`);
     expect.soft(text).toBe(norm(f.truth!));
   }
-  await record('P0-4', { pass: results.every((r) => r.endsWith('equal')), measured: `select-all vs truth: ${results.join(', ')}` });
+  const equal = results.filter((r) => r.endsWith('equal')).map((r) => r.split(' ')[0]);
+  const differs = results.filter((r) => r.endsWith('differs')).map((r) => r.split(' ')[0]);
+  await record('P0-4', { pass: differs.length === 0, measured: `select-all = truth: ${equal.join(', ') || 'none'}${differs.length ? `; differs: ${differs.join(', ')}` : ''}` });
 });
 test('P0-4 two-column: dragging from column 1 bottom line to column 2 top line selects no column-2 lower text', async ({ textlayerPage }) => {
   const p = await textlayerPage(TWO_COLUMN, 1);
@@ -61,7 +63,7 @@ test('P0-4 two-column: dragging from column 1 bottom line to column 2 top line s
   expect(norm(await p.selectAllText())).toContain(TWO_COLUMN.column2LastSentence);
   await record('P0-4', {
     pass: r.ranges.length === 1 && !r.domText.includes(TWO_COLUMN.column2LastSentence!),
-    measured: `two-column drag across columns: ${r.ranges.length} range [${r.ranges.map((x) => `${x.start}–${x.end}`)}], ${r.domText.length} chars, column-2 last sentence ${r.domText.includes(TWO_COLUMN.column2LastSentence!) ? 'included' : 'not included'}`,
+    measured: `column drag: ${r.ranges.length} range, ${r.domText.length} chars, ${r.domText.includes(TWO_COLUMN.column2LastSentence!) ? 'includes' : 'no'} column-2 lower text`,
   });
   expect(r.ranges).toHaveLength(1);
   expect(r.domText).not.toContain(TWO_COLUMN.column2LastSentence);
@@ -73,7 +75,7 @@ test('P0-4 rtl: Hebrew runs carry dir="rtl" and a right-to-left drag gives the s
   const ltrToRtl = (await p.dragSelect(p.firstGlyph, p.lastGlyph)).ranges;
   await record('P0-4', {
     pass: dirs.includes('rtl') && JSON.stringify(rtlToLtr) === JSON.stringify(ltrToRtl),
-    measured: `rtl: ${dirs.filter((d) => d === 'rtl').length} of ${dirs.length} spans dir=rtl; drag ${p.lastGlyph}→${p.firstGlyph} ${JSON.stringify(rtlToLtr.map((r) => [r.start, r.end]))}, ${p.firstGlyph}→${p.lastGlyph} ${JSON.stringify(ltrToRtl.map((r) => [r.start, r.end]))}`,
+    measured: `rtl: ${dirs.filter((d) => d === 'rtl').length}/${dirs.length} spans rtl; drags both ways ${JSON.stringify(rtlToLtr.map((r) => [r.start, r.end]))} and ${JSON.stringify(ltrToRtl.map((r) => [r.start, r.end]))}`,
   });
   expect(dirs).toContain('rtl');
   expect(rtlToLtr).toEqual(ltrToRtl);
