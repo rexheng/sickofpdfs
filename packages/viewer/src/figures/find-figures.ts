@@ -34,7 +34,7 @@ export interface FigureInput {
 }
 
 export interface FindFiguresOptions {
-  /** Default FIND_FIGURES_BUDGET_MS. Past it, the page gives no figures and `complete` is false. */
+  /** Default FIND_FIGURES_BUDGET_MS. Past it, only caption-based figures are kept (PageAnalysis.timedOut) and `complete` is false. */
   budgetMs?: number;
   /** The clock (default performance.now). */
   now?: () => number;
@@ -246,11 +246,14 @@ function clock(budgetMs: number, now: () => number): () => void {
 export interface PageAnalysis {
   figures: PageFigure[];
   /**
-   * False when the budget ran out (then `figures` is empty) or an input was truncated. Only complete results are worth
-   * keeping beyond this session: the others depend on how fast the machine was at the time.
+   * False when the budget ran out or an input was truncated. Only complete results are worth keeping beyond this
+   * session: the others depend on how fast the machine was at the time.
    */
   complete: boolean;
-  /** The budget ran out. */
+  /**
+   * The budget ran out. `figures` then holds what a second, cheaper pass found within the same budget again: the
+   * figures paired with image and form XObjects, and tables (none when that pass ran out too).
+   */
   timedOut: boolean;
   elapsedMs: number;
   /** Diagnostics (rects in unrotated page space). */
@@ -282,11 +285,21 @@ export function analysePage(input: FigureInput, opts: FindFiguresOptions = {}): 
       ? input
       : { ...input, page: shownSize, objects: input.objects.map((o) => ({ ...o, bounds: toShown(o.bounds) })), runs: input.runs.map((r) => ({ ...r, rect: toShown(r.rect) })) };
   let result: Analysis;
+  let timedOut = false;
   try {
     result = analyseShown(shown, tick);
   } catch (err) {
     if (!(err instanceof OutOfTime)) throw err;
-    return { figures: [], complete: false, timedOut: true, elapsedMs: now() - started, bodySize: 0, columnWidth: 0, lines: [], captions: [], candidates: [] };
+    // 06 §3.2: a pathological page (a map, a plot of 100,000 points) keeps only its caption-based figures. A second
+    // pass looks at images and forms only, as for an object list cut short (no path
+    // clustering, the costly part), and boxes no figure from text alone. It has a budget of its own, the same again.
+    timedOut = true;
+    try {
+      result = analyseShown({ ...shown, truncated: true }, clock(opts.budgetMs ?? FIND_FIGURES_BUDGET_MS, now), true);
+    } catch (again) {
+      if (!(again instanceof OutOfTime)) throw again;
+      return { figures: [], complete: false, timedOut: true, elapsedMs: now() - started, bodySize: 0, columnWidth: 0, lines: [], captions: [], candidates: [] };
+    }
   }
   const back = <T extends { rect: Rect }>(x: T): T => (rotation === 0 ? x : { ...x, rect: fromShown(x.rect) });
   return {
@@ -297,8 +310,8 @@ export function analysePage(input: FigureInput, opts: FindFiguresOptions = {}): 
       captionRect: f.captionRect && rotation !== 0 ? fromShown(f.captionRect) : f.captionRect,
       confidence: input.runsTruncated ? 'medium' : f.confidence,
     })),
-    complete: !input.truncated && input.runsTruncated !== true,
-    timedOut: false,
+    complete: !timedOut && !input.truncated && input.runsTruncated !== true,
+    timedOut,
     elapsedMs: now() - started,
     lines: result.lines.map(back),
     captions: result.captions.map(back),
@@ -306,7 +319,7 @@ export function analysePage(input: FigureInput, opts: FindFiguresOptions = {}): 
   };
 }
 
-function analyseShown(input: FigureInput, tick: () => void): Analysis {
+function analyseShown(input: FigureInput, tick: () => void, captionsOnly = false): Analysis {
   const { page } = input;
   const pageArea = page.width * page.height;
   const lines = buildLines(input.runs);
@@ -387,6 +400,8 @@ function analyseShown(input: FigureInput, tick: () => void): Analysis {
   // on the caption's usual side, else on its other side (a table captioned below, with body text under the caption).
   for (const caption of captions) {
     if (paired.has(caption)) continue;
+    // After the budget ran out, only a table's or an algorithm's text is boxed: a figure's graphics were not looked at.
+    if (captionsOnly && !caption.table && !caption.algorithm) continue;
     tick();
     const ruled = caption.algorithm ? ruledRegion(caption, small, lines, captions) : null;
     const text = ruled ? null : (captionRegion(caption, lines, small, candidates, page, caption.below) ?? captionRegion(caption, lines, small, candidates, page, !caption.below));
@@ -854,9 +869,8 @@ function graphicCandidates(input: FigureInput, pageArea: number, captions: Capti
  * across a column gutter are not joined (two tables in neighbouring columns can be under 6 pt apart).
  * A box over more than BIG_ITEM_CELLS cells (a contour line or a filled area across a whole plot) stays out of the grid:
  * entered in it, a few hundred of them cost every pair once per shared cell (120 ms on a page of Boyd's Convex
- * Optimization). Once the grid's items are grouped, each big item is compared with the groups instead: a group whose box
- * is out of reach, or that the item has already joined, is skipped whole, and in a group within reach its items are
- * compared until one is near. The groups come out the same as comparing every pair.
+ * Optimization). Once the grid's items are grouped, the groups are joined through their big items in one sweep down the
+ * page (below). The groups come out the same as comparing every pair.
  */
 const BIG_ITEM_CELLS = 64;
 function clusterItems(items: { rect: Rect }[], page: { width: number; height: number }, gaps: { from: number; to: number }[], tick: () => void): number[][] {
@@ -879,6 +893,7 @@ function clusterItems(items: { rect: Rect }[], page: { width: number; height: nu
     if (a !== b && gapXY(r, nth(items, other).rect) <= RULES.clusterGap && !acrossGutter(r, nth(items, other).rect, gaps)) parent[a] = b;
   };
   const big: number[] = [];
+  const sameGroup = new Int32Array(cols * rows).fill(-1); // per cell: an item whose group holds all the cell's items, or -1
   items.forEach((item, k) => {
     const x0 = clamp(Math.floor((item.rect.x - half) / CELL), cols);
     const x1 = clamp(Math.floor((right(item.rect) + half) / CELL), cols);
@@ -890,44 +905,90 @@ function clusterItems(items: { rect: Rect }[], page: { width: number; height: nu
     }
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
-        const cell = (cells[y * cols + x] ??= []);
-        for (const other of cell) join(k, other);
+        const c = y * cols + x;
+        const cell = (cells[c] ??= []);
+        // A cell whose items are all in one group (a dense scatter's cells soon are) is skipped whole when the item is
+        // in that group already, and left as soon as the item joins it (ours: 20,000 points cost every pair per cell).
+        const rep = nth(sameGroup, c);
+        if (rep >= 0 && find(rep) === find(k)) {
+          cell.push(k);
+          continue;
+        }
+        for (const other of cell) {
+          join(k, other);
+          if (rep >= 0 && find(rep) === find(k)) break;
+        }
+        sameGroup[c] = cell.length === 0 ? k : rep >= 0 && find(rep) === find(k) ? rep : -1;
         cell.push(k);
       }
     }
   });
   // The groups so far, by root, with their boxes; the big items start as groups of their own.
-  const groups = new Map<number, { rect: Rect; members: number[] }>();
+  const isBig = new Uint8Array(items.length);
+  for (const k of big) isBig[k] = 1;
+  type Group = { rect: Rect; members: number[]; bigs: number[] };
+  const byRoot = new Map<number, Group>();
   items.forEach((item, k) => {
     const root = find(k);
-    const group = groups.get(root);
+    const group = byRoot.get(root);
     if (group) {
       group.members.push(k);
       group.rect = union(group.rect, item.rect);
-    } else groups.set(root, { rect: item.rect, members: [k] });
+    } else byRoot.set(root, { rect: item.rect, members: [k], bigs: [] });
+    if (isBig[k]) byRoot.get(root)!.bigs.push(k);
   });
-  for (const k of big) {
-    const r = nth(items, k).rect;
-    for (const root of [...groups.keys()]) {
-      tick();
-      const own = find(k);
-      const group = groups.get(root);
-      if (!group || root === own || gapXY(r, group.rect) > RULES.clusterGap) continue;
-      const near = group.members.some((m) => {
+  // A sweep down the page joins the groups through their big items: groups in order of their tops, each compared with
+  // the groups still within reach above it (their bottoms within the gap of its top). Groups with no big item never
+  // join each other here (the grid has joined every pair of them that is near), so they are compared only with groups
+  // that hold one. Two groups join when an item of one is within the gap of an item of the other, one of the two big,
+  // and not across a gutter: the groups come out as comparing every pair (ours: the earlier pass compared each big
+  // item with every group, 2 s on a page of 4,011 paths).
+  const near = (p: Group, q: Group) => {
+    const [a, b] = p.members.length <= q.members.length ? [p, q] : [q, p];
+    for (const x of a.members) {
+      const xr = nth(items, x).rect;
+      const others = isBig[x] ? b.members : b.bigs;
+      for (let i = others.length - 1; i >= 0; i--) {
         tick();
-        const mr = nth(items, m).rect;
-        return gapXY(r, mr) <= RULES.clusterGap && !acrossGutter(r, mr, gaps);
-      });
-      if (!near) continue;
-      const mine = groups.get(own);
-      if (!mine) continue;
-      parent[root] = own;
-      mine.members = mine.members.concat(group.members);
-      mine.rect = union(mine.rect, group.rect);
-      groups.delete(root);
+        const yr = nth(items, nth(others, i)).rect;
+        if (gapXY(xr, yr) <= RULES.clusterGap && !acrossGutter(xr, yr, gaps)) return true;
+      }
     }
+    return false;
+  };
+  const order = [...byRoot.values()].sort((a, b) => a.rect.y - b.rect.y);
+  const done: Group[] = [];
+  let withBig: Group[] = []; // within reach, holding a big item
+  let without: Group[] = []; // within reach, none
+  const expire = (list: Group[], top: number) =>
+    list.filter((g) => {
+      if (bottom(g.rect) + RULES.clusterGap >= top) return true;
+      done.push(g);
+      return false;
+    });
+  for (const g of order) {
+    tick();
+    withBig = expire(withBig, g.rect.y);
+    let cur = g;
+    // The smaller group's items go into the larger's lists, at their ends (where near() looks first).
+    const join = (list: Group[]) =>
+      list.filter((a) => {
+        if (gapXY(cur.rect, a.rect) > RULES.clusterGap || !near(cur, a)) return true;
+        const [into, from] = a.members.length >= cur.members.length ? [a, cur] : [cur, a];
+        for (const m of from.members) into.members.push(m);
+        for (const m of from.bigs) into.bigs.push(m);
+        into.rect = union(into.rect, from.rect);
+        cur = into;
+        return false;
+      });
+    withBig = join(withBig);
+    if (cur.bigs.length) {
+      without = expire(without, g.rect.y);
+      without = join(without);
+      withBig.push(cur);
+    } else without.push(cur);
   }
-  return [...groups.values()].map((g) => g.members);
+  return [...done, ...withBig, ...without].map((g) => g.members);
 }
 
 /** Two boxes side by side with the white space between them inside a column gutter. */
