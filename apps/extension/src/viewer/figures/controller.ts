@@ -12,8 +12,8 @@
 // - Right-click a figure: Comment and Copy image (Ask Claude and Explain this figure join in Phase 4). Ctrl+C copies the
 //   selected figure as a PNG drawn at 2×, on this computer.
 // - Alt+drag anywhere (links are ignored while Alt is held), on scans too: an area mark, which is then the focused mark,
-//   so Ctrl+Alt+M comments on it, Ctrl+C copies it and Delete removes it. Inside a figure, a note on that area is a part
-//   of the figure (stored relative to it). Alt+click selects any figure under the pointer, medium ones included.
+//   so Ctrl+Alt+M comments on it, Ctrl+C copies it and Delete removes it. Inside a figure, the mark and a note on it are
+//   a part of the figure (`figure` with `sub.rect`, stored relative to it). Alt+click selects any figure under the pointer, medium ones included.
 // - The area tool (toolbar, Tools menu): the next plain drag draws a rectangle and opens a note on it at once.
 //
 // Notes go through the comments feature (S14): Ctrl+Alt+M reads `noteTarget` first (notes-bridge.ts), so the note box,
@@ -28,6 +28,7 @@ import { noteCommands } from '../notes/notes-host';
 import { installShortcuts, isTypingTarget } from '../shortcuts';
 import {
   type AreaAnchor,
+  areaMarkPlace,
   contains,
   type FigureAnchor,
   figureAnchor,
@@ -47,7 +48,10 @@ import { copyRegion, createThumbnailCache, regionPng, type ThumbnailCache } from
 import { setSpecialNoteTarget, type SpecialNote } from './notes-bridge';
 
 /** What Ctrl+Alt+M, Ctrl+C and the figure menu act on: the selected figure, or the focused area mark. */
-export type Region = { kind: 'figure'; found: FoundFigure } | { kind: 'area'; markId: MarkId; page: number; rect: NormRect; dHash: string };
+export type Region =
+  | { kind: 'figure'; found: FoundFigure }
+  /** `rect` is on the page; `part` is the mark's own anchor when the area is a part of a figure (null for a plain area). */
+  | { kind: 'area'; markId: MarkId; page: number; rect: NormRect; dHash: string; part: FigureAnchor | null };
 
 export interface FigureState {
   /** The figure under the pointer. */
@@ -178,8 +182,8 @@ export function createFigureController(host: NotesHost): FigureController {
       const m = s.marks[i];
       if (m?.style !== 'area') continue;
       const r = s.placement.get(m.id);
-      const a = r?.placed === true ? r.anchor : null;
-      if (a?.kind === 'area' && a.page === page && contains(a.rect, u, v, 0.002)) return { kind: 'area', markId: m.id, page, rect: a.rect, dHash: a.dHash };
+      const p = areaMarkPlace(r?.placed === true ? r.anchor : null);
+      if (p !== null && p.page === page && contains(p.rect, u, v, 0.002)) return { kind: 'area', markId: m.id, ...p };
     }
     return null;
   }
@@ -191,8 +195,8 @@ export function createFigureController(host: NotesHost): FigureController {
     const m = id === null ? undefined : s.marks.find((x) => x.id === id);
     if (!m || m.style !== 'area') return null;
     const r = s.placement.get(m.id);
-    const a = r?.placed === true ? r.anchor : null;
-    return a?.kind === 'area' ? { kind: 'area', markId: m.id, page: a.page, rect: a.rect, dHash: a.dHash } : null;
+    const p = areaMarkPlace(r?.placed === true ? r.anchor : null);
+    return p !== null ? { kind: 'area', markId: m.id, ...p } : null;
   }
 
   // ---------------------------------------------------------------- anchors for notes
@@ -230,7 +234,9 @@ export function createFigureController(host: NotesHost): FigureController {
     }
     const had = noteOnPlace(s.threads, s.placement, r.page, r.rect);
     if (had !== null) return { kind: 'existing', threadId: had };
-    return { kind: 'new', anchor: areaNoteAnchor(r.page, r.rect, r.dHash), ...withKeep(keepPoint(r.page, r.rect)) };
+    const part = r.part;
+    const anchor = part !== null ? () => Promise.resolve(partNoteAnchor(part)) : areaNoteAnchor(r.page, r.rect, r.dHash);
+    return { kind: 'new', anchor, ...withKeep(keepPoint(r.page, r.rect)) };
   }
 
   /** The note for a region, which then stops being selected: its outline and card take its place, as a text note's highlight does. */
@@ -239,6 +245,13 @@ export function createFigureController(host: NotesHost): FigureController {
     if (r.kind === 'figure') select(null);
     else if (session.state().focusedMark === r.markId) session.setFocusedMark(null);
     return note;
+  }
+
+  /** The note on a part-of-a-figure mark: the mark's own anchor, or the whole figure when the part is all of it. */
+  function partNoteAnchor(part: FigureAnchor): FigureAnchor {
+    const a = structuredClone(part);
+    if (a.sub?.rect && sameRect(a.sub.rect, [0, 0, 1, 1], 0.9)) delete a.sub;
+    return a;
   }
 
   /** A rectangle's note: the whole figure when it is the figure, a part of the figure inside one, else an area. */
@@ -399,20 +412,26 @@ export function createFigureController(host: NotesHost): FigureController {
       runComment(had !== null ? { kind: 'existing', threadId: had } : { kind: 'new', anchor: areaNoteAnchor(page, rect, null), ...withKeep(keepPoint(page, rect)) });
       return;
     }
-    // Alt+drag: an area mark, focused once it is there.
+    // Alt+drag: an area mark, focused once it is there. Inside a figure it is a part of that figure, stored relative to
+    // it (plan S16: "Alt+drag draws an area mark, or a sub-area inside a figure"), so it stays on the figure.
     const t0 = Date.now() - 1;
-    const isOurs = (m: ReturnType<typeof session.state>['marks'][number]) =>
-      m.style === 'area' && m.anchor.kind === 'area' && m.anchor.page === page && m.createdAt >= t0 && sameRect(m.anchor.rect, rect, 0.999);
+    const isOurs = (m: ReturnType<typeof session.state>['marks'][number]) => {
+      const p = m.style === 'area' && m.createdAt >= t0 ? areaMarkPlace(m.anchor) : null;
+      return p !== null && p.page === page && sameRect(p.rect, rect, 0.9);
+    };
     holdDrawing(() => {
       const m = session.state().marks.find(isOurs);
       if (m && session.state().focusedMark !== m.id) session.setFocusedMark(m.id);
       return m !== undefined;
     });
-    void host.figures
-      .dHash(page, rect)
-      .catch(() => '')
-      .then((dHash) => session.addAreaMark({ kind: 'area', page, rect, dHash }))
-      .catch(() => set({ drawing: null }));
+    const around = figureAround(peek(page), page, sizeOf(page), rect);
+    const anchor: Promise<AreaAnchor | FigureAnchor> = around
+      ? figureAnchor(around, anchorDeps, { rect: relativeRect(around.rect, rect) })
+      : host.figures
+          .dHash(page, rect)
+          .catch(() => '')
+          .then((dHash): AreaAnchor => ({ kind: 'area', page, rect, dHash }));
+    void anchor.then((a) => session.addAreaMark(a)).catch(() => set({ drawing: null }));
   }
 
   function setAreaTool(on: boolean): void {
@@ -728,11 +747,11 @@ export function createFigureController(host: NotesHost): FigureController {
     const areaRects = new Map<number, NormRect[]>();
     for (const m of s.marks) {
       const r = s.placement.get(m.id);
-      const a = r?.placed === true ? r.anchor : null;
-      if (m.style !== 'area' || a?.kind !== 'area') continue;
-      let list = areaRects.get(a.page);
-      if (!list) areaRects.set(a.page, (list = []));
-      list.push(a.rect);
+      const p = m.style === 'area' ? areaMarkPlace(r?.placed === true ? r.anchor : null) : null;
+      if (p === null) continue;
+      let list = areaRects.get(p.page);
+      if (!list) areaRects.set(p.page, (list = []));
+      list.push(p.rect);
     }
     for (const t of s.threads) {
       const place = notePlace(placedAnchor(t, s.placement.get(t.id)));

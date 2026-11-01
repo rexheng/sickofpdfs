@@ -126,7 +126,8 @@ export interface AnnotationSession {
   state(): AnnotationState;
   subscribe(cb: () => void): () => void;
   applyStyle(ranges: CharRange[], style: Exclude<MarkStyle, 'area'>, color: MarkColor | null): Promise<void>;
-  addAreaMark(a: Extract<Anchor, { kind: 'area' }>): Promise<MarkId>;
+  /** An `area` anchor, or a part of a figure (`figure` with `sub.rect`): an Alt+drag inside a figure is stored relative to it. */
+  addAreaMark(a: Extract<Anchor, { kind: 'area' | 'figure' }>): Promise<MarkId>;
   recolor(id: MarkId, c: MarkColor): Promise<void>;
   removeMark(id: MarkId): Promise<void>;
   startThread(a: Anchor, o: { highlight: MarkColor | null }): { threadId: ThreadId; commentId: CommentId };

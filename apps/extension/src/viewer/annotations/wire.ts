@@ -19,6 +19,7 @@ import type { CommandBehaviour, ViewerCommandId } from '../commands';
 import { isIncognito } from '../incognito';
 import type { OpenedDocument } from '../open-document';
 import { libraryStore } from '../use-store';
+import { areaMarkPlace } from '../figures/anchors';
 import { createAnchorContext, createDocumentFigures, createTextAnchorMaker, type DocumentText, markNormRects } from './anchor-context';
 import { localDraftJournal } from './draft-journal';
 import { createDraftKeeper } from './drafts';
@@ -355,11 +356,12 @@ function createLayerSource(session: AnnotationSession, text: DocumentText, onDra
     for (const m of state.marks) {
       const a = placedAnchor(state, m.id);
       if (a === null) continue;
-      if (a.kind === 'area') {
-        push(a.page, { id: m.id, style: 'area', color: null, rects: [a.rect] });
+      const area = m.style === 'area' ? areaMarkPlace(a) : null; // an area, or a part of a figure (S16)
+      if (area !== null) {
+        push(area.page, { id: m.id, style: 'area', color: null, rects: [area.rect] });
         continue;
       }
-      if (a.kind !== 'text' || m.style === 'area') continue; // figure marks are drawn by the figure layer (S16)
+      if (a.kind !== 'text' || m.style === 'area') continue;
       styled.push(a);
       if (m.style === 'highlight') highlights.push(a);
       for (let p = a.start.page; p <= a.end.page; p++) {

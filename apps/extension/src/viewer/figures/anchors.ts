@@ -6,7 +6,9 @@
 //   section 5): its caption label and quote, the SHA-256 of its largest image, the dHash of how it looks, and the
 //   detector that found it. A pin is the same anchor with `sub.point`, and a part of a figure with `sub.rect`, both 0–1
 //   of the figure's box, so they stay on the figure if it is found a little elsewhere.
-// - An area outside any figure is an `area` anchor: its page, its rect and its dHash.
+// - An area outside any figure is an `area` anchor: its page, its rect and its dHash. An area mark drawn inside a figure
+//   (Alt+drag) is a part of that figure: a `figure` anchor with `sub.rect` (plan S16: "Alt+drag draws an area mark, or a
+//   sub-area inside a figure"; spec: "Pins and sub-areas are stored relative to the figure").
 import { type Anchor, buildTextAnchor, type NormRect, type PageFigure, type Resolution, type ThreadId, type ThreadRow } from '@sop/core';
 import { DETECTOR_VERSION, isOutlined, type PageSize, pdfRectToNorm } from '@sop/viewer';
 
@@ -71,6 +73,16 @@ export function relativePoint(outer: NormRect, u: number, v: number): [number, n
   const h = outer[3] - outer[1] || 1;
   const c = (x: number) => Math.min(1, Math.max(0, x));
   return [c((u - outer[0]) / w), c((v - outer[1]) / h)];
+}
+
+/**
+ * Where an area mark is on its page: an `area` anchor's rect, or a part of a figure (a `figure` anchor with `sub.rect`),
+ * back on the page. `part` is that figure anchor (null for a plain area). Null for any other anchor.
+ */
+export function areaMarkPlace(a: Anchor | null): { page: number; rect: NormRect; dHash: string; part: FigureAnchor | null } | null {
+  if (a?.kind === 'area') return { page: a.page, rect: a.rect, dHash: a.dHash, part: null };
+  if (a?.kind === 'figure' && a.sub?.rect) return { page: a.page, rect: absoluteRect(a.rect, a.sub.rect), dHash: '', part: a };
+  return null;
 }
 
 /** A rect given as 0–1 of `outer`'s box, back on the page. */
