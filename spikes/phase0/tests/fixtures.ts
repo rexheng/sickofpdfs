@@ -73,9 +73,16 @@ interface Fixtures {
   server: SpikeServer;
   /** Opens spike.html?<q> in the test's browser (launched on first use) and resolves window.__result. */
   spikePage(q: SpikeQuery, o?: { timeout?: number }): Promise<any>;
+  /**
+   * Saves a PNG of the page spikePage opened last, as results/<file>: the element `selector`, or `clip` in
+   * client px. The viewport first grows to hold the whole document, so nothing is cut off. Returns the path.
+   */
+  spikeScreenshot(file: string, target: { selector: string } | { clip: { x: number; y: number; width: number; height: number } }): Promise<string>;
   launchSpike(o: LaunchOptions): Promise<SpikeSession>;
   /** Opens `f`'s page at `zoom` (1 = 100% = 96/72 CSS px per pt) in the textlayer check; the viewport is resized to fit it. */
   textlayerPage(f: TextlayerFixture, zoom: number): Promise<TextlayerPage>;
+  /** The browser that spikePage and spikeScreenshot share, launched on first use. */
+  _spikeSession: () => Promise<SpikeSession>;
   /** Results of every spike page opened in this test, for the failure record. */
   _spikeResults: unknown[];
   /** Writes a FAIL entry for a failed `P0-<n>…` test, so a failing check still gets a report row. */
@@ -203,11 +210,28 @@ export const test = base.extend<Fixtures>({
     for (const dir of tempDirs) await rm(dir, { recursive: true, force: true });
   },
 
-  spikePage: async ({ launchSpike }, use) => {
-    let session: SpikeSession | undefined;
-    await use(async (q, o) => {
-      session ??= await launchSpike({});
-      return session.openSpike(q, o);
+  _spikeSession: async ({ launchSpike }, use) => {
+    let session: Promise<SpikeSession> | undefined;
+    await use(() => (session ??= launchSpike({})));
+  },
+
+  spikePage: async ({ _spikeSession }, use) => {
+    await use(async (q, o) => (await _spikeSession()).openSpike(q, o));
+  },
+
+  spikeScreenshot: async ({ _spikeSession }, use) => {
+    await use(async (file, target) => {
+      const { page } = await _spikeSession();
+      const size = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight }));
+      const viewport = page.viewportSize();
+      if (!viewport || size.width > viewport.width || size.height > viewport.height) {
+        await page.setViewportSize({ width: Math.max(size.width, viewport?.width ?? 0), height: Math.max(size.height, viewport?.height ?? 0) });
+      }
+      await mkdir(RESULTS_DIR, { recursive: true });
+      const path = join(RESULTS_DIR, file);
+      if ('selector' in target) await page.locator(target.selector).screenshot({ path });
+      else await page.screenshot({ path, clip: target.clip });
+      return path;
     });
   },
 
