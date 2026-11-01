@@ -5,7 +5,7 @@
 //
 // Both tabs show the same saved PDF, so this needs the save decision (Task 30). The walkthrough looks at the screen of tab B only:
 // the colour under the words, and the cards.
-import { expect, test } from '../support/test';
+import { expect, hooks, test } from '../support/test';
 import {
   ATTENTION,
   LINES,
@@ -80,6 +80,8 @@ test('a highlight, a sent comment, a reply and a removed highlight made in tab A
   await a.keyboard.press('h'); // H uses the last colour, green, and the words are already green: it takes the highlight off
   await clearSelection(a);
   await b.bringToFront();
+  // Triage (TB2): clicking B's reply box in step 3 scrolled B's pages to reach it; bring the passage back into view first.
+  await hooks(b).eval((h) => h.viewer.scrollTo(0));
   await expect
     .poll(async () => isPlain((await paintOfSelection(b, green)).paint), { message: 'when A undoes the highlight, it goes from B too', timeout: 10_000 })
     .toBe(true);

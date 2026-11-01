@@ -65,6 +65,8 @@ test('with nothing selected and the pointer over a page, Ctrl+Alt+M makes a poin
   const at = await middleOf(page, sel);
   await clearSelection(page);
   await page.mouse.move(at.x, at.y);
+  // Triage (TB2): the page moves when the note margin opens; the point is where the pointer was on the page before that.
+  const pBefore = await pageRect(page, 0);
   const box = await startNoteAnswering(page, 'No');
   await page.waitForTimeout(300);
   await shot(page, testInfo, 'point-note-box');
@@ -91,8 +93,8 @@ test('with nothing selected and the pointer over a page, Ctrl+Alt+M makes a poin
     const a = await waitStored(page, (x) => x.threads.some((t) => t.anchor.kind === 'point'), 'a point thread is stored');
     const t = a.threads.find((x) => x.anchor.kind === 'point')!;
     const [nx, ny] = t.anchor.point as [number, number];
-    expect(Math.abs(nx - (at.x - p.left) / (p.right - p.left)), 'the point is where the pointer was (across the page)').toBeLessThan(0.03);
-    expect(Math.abs(ny - (at.y - p.top) / (p.bottom - p.top)), 'and down the page').toBeLessThan(0.03);
+    expect(Math.abs(nx - (at.x - pBefore.left) / (pBefore.right - pBefore.left)), 'the point is where the pointer was (across the page)').toBeLessThan(0.03);
+    expect(Math.abs(ny - (at.y - pBefore.top) / (pBefore.bottom - pBefore.top)), 'and down the page').toBeLessThan(0.03);
     expect(t.anchor.page ?? t.pageIndex, 'on the first page').toBe(0);
     expect(a.marks.filter((m) => m.style === 'highlight' && m.deletedAt === null), 'and no highlight is stored with it').toHaveLength(0);
   }
