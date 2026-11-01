@@ -9,6 +9,7 @@ pnpm -C spikes/phase0 install
 pnpm -C spikes/phase0 fixtures            # SOP_FIXTURE_SRC=<folder> copies instead of downloading
 pnpm -C spikes/phase0 fixtures:scan       # scan-600.pdf for P0-3 (about 4 minutes, 178 MB)
 pnpm -C spikes/phase0 fixtures:textlayer  # tl-*.pdf for P0-4 (a few seconds)
+pnpm -C spikes/phase0 fixtures:objects    # objects.pdf and tagged.pdf for P0-10 (a few seconds)
 pnpm -C spikes/phase0 build
 pnpm -C spikes/phase0 exec playwright test
 pnpm -C spikes/phase0 report              # rewrites the table below
@@ -34,7 +35,7 @@ Result values: PASS, FAIL, BLOCKED, NOT RUN, and MIXED. MIXED means some variant
 | P0-7 | Form-field detection | NOT RUN | | |
 | P0-8 | Backup-folder permission from an extension origin | NOT RUN | | |
 | P0-9 | TypeScript 7 with typescript-eslint | NOT RUN | | |
-| P0-10 | Page objects find figures within 20 ms a page | NOT RUN | | |
+| P0-10 | Page objects find figures within 20 ms a page | PASS | objects.pdf p1: 93 objects (1 image, 48 path, 44 text) in 1.1 ms, truncated false; image (72, 90, 216 × 144) 432×288 px DCTDecode; objects.pdf p1 detection in 25.9 ms: Figure 1 image high (72, 90, 216 × 144) IoU 1; Figure 2 vector high (330, 90, 200 × 140) IoU 1; Table 1 table high (72, 416.9, 302 × 85.2) IoU 0.933; tagged.pdf p1 structure tree: 11 elements (Document, H1, NonStruct, P, Figure, Caption); Figure alt "Bar chart of test scores", marked-content ids [2]; detection: Figure 1 image high (72, 142.5, 225 × 135); objects.pdf p1: 44 text runs; caption run "Figure 1: A photo." at (72, 238.9, 74.9 × 14.2), 9 pt, chars 0+18; 50 paper pages (5 papers × 10): objects + detection p50 1.7 / p95 6.2 / max 8.5 ms (first call, text page still to load: p50 3.5 / p95 13.8 / max 20.2 ms); objects a page median 285, max 1079; 45 figures (43 captioned); slowest nature-s41586-021-03819-2-alphafold p4 8.5 ms; ResNet p1 labels [Figure 1]; objects.pdf p2 (50,000 rectangles): stopped at 11520 objects in 15.8 ms, truncated true |  |
 <!-- results:end -->
 
 ## Notes
@@ -253,9 +254,83 @@ All numbers so far come from Chrome for Testing 153.0.8010.12 on Linux, launched
   - **Not covered:** pages with /Rotate (the check refuses them; outlines are in unrotated space), Type3 fonts (`FPDFFont_GetGlyphPath` needs a font program), vertical CJK text, and DPR 1.5.
 - **Test title.** "the nine glyph-path functions" is verbatim from the plan. The probe checks all 17 functions `getGlyphOutlines` calls, in both the wrapper and the wasm.
 
+### P0-10 Page objects find figures within 20 ms a page
+
+- **PASS.** Objects plus detection on 50 real paper pages (the first 10 pages of ResNet, Attention, XGBoost, AlphaFold and Deep hedging), timed inside the engine worker:
+
+| Run | p50 | p95 | max | First call on the page (its text page still to load): p50 / p95 / max |
+| --- | --- | --- | --- | --- |
+| Recorded | 1.7 ms | **6.2 ms** | **8.5 ms** | 3.5 / 13.8 / 20.2 ms |
+| Four earlier runs, same build | 1.7–2 ms | 5.3–6.6 ms | 6.6–11.9 ms | 3.7–4.2 / 9.6–14.4 / 18.6–26.3 ms |
+
+  - **What is timed.** The check draws each page first, because the viewer draws a page before it looks for figures. It then calls `detectFigures` twice:
+    - the first call also loads PDFium's text page;
+    - the second is the asserted number: the page and its text page are loaded, as after the page is drawn and its text layer built.
+  - **The first-call maximum.** It is always the first page of the run, with a cold JIT.
+  - **Per page.** 50–1,079 objects (median 285).
+  - **Cost split** (median / max over the 50 pages): objects 0.2 / 1.1 ms, structure tree 0 / 0.1 ms, text runs 0.9 / 4.1 ms, finding 0.6 / 5.8 ms. Text runs are the largest part on text-heavy pages; finding is the largest on AlphaFold's figure pages.
+  - **The cap.** On the 50,000-rectangle page, `getPageObjects` stops at 8,300–11,500 objects after 15.3–16.2 ms (`truncated`). The budget, not the 20,000-object cap, stops it.
+  - **Per-page rows.** `results/P0-10-pages.json` (not committed).
+- **PDFium functions.** All 33 are exported by the installed 2.15.1 wasm (`missingObjectFunctions()` returns []) and listed in v2's `packages/pdfium/src/vendor/functions.ts`:
+  - `FPDFPage_CountObjects` (l.446), `FPDFPage_GetObject` (460);
+  - `FPDFPageObj_GetType` (502), `GetBounds` (487), `GetMarkedContentID` (497), `GetMatrix` (498);
+  - `FPDFFormObj_CountObjects`/`GetObject` (409–410);
+  - `FPDFImageObj_GetImagePixelSize` (421), `GetImageFilterCount`/`GetImageFilter` (419, 418);
+  - `FPDFPath_CountSegments`/`GetDrawMode` (535–536);
+  - `FPDF_StructTree_GetForPage`/`CountChildren`/`GetChildAtIndex`/`Close` (271–274);
+  - `FPDF_StructElement_CountChildren`/`GetChildAtIndex`/`GetType`/`GetAltText`/`GetActualText`/`GetMarkedContentIdCount`/`GetMarkedContentIdAtIndex` (254–270);
+  - `FPDFText_CountChars`/`GetText`/`IsGenerated`/`GetTextObject`/`GetCharOrigin`/`GetLooseCharBox`/`GetMatrix` (551–578), `FPDFTextObj_GetFontSize` (587), `FPDF_GetPageBoundingBox` (200).
+
+  The P0-10 methods call the wasm exports directly, not the cwrap wrappers (P0-5 measured the wrappers at about 3× the cost). No wasm rebuild is needed.
+- **`getPageObjects`.**
+  - **Form XObjects.** PDFium gives an object inside a form XObject its bounds in the form's own space. ResNet page 1's figure children span 0–323 × 0–109 while the form sits at 309–545 × 490–569 with a 0.731 matrix. Each child is mapped through the chain of form matrices (`FPDFPageObj_GetMatrix` on the form).
+  - **The budget.** The 15 ms clock starts once the page is loaded, so loading an unloaded page does not use up the walk; `elapsedMs` covers the whole call.
+  - **Fixture.** `objects.pdf` page 1: 93 objects (1 image at exactly (72, 90, 216 × 144), 432 × 288 px DCTDecode; 48 paths; 44 text) in about 1 ms.
+- **`getStructTree`** on `tagged.pdf` (Chromium `page.pdf({ tagged: true })`): Document > H1, P, Figure > (Figure alt "Bar chart of test scores" [MCID 2], Caption > NonStruct [MCID 3]), P. Chromium nests the `<img>` Figure inside the `<figure>` Figure. PDFium returns an empty string for a missing /Alt, so `altText` reads null when empty. Detection on this page uses the tagged path: "Figure 1", image, (72, 142.5, 225 × 135), with the Caption's MCIDs kept out of the box.
+- **`getPageTextRuns`.**
+  - **Runs.** Split as the plan says: by text object, or a baseline move of more than half the font size. PDFium's generated line breaks end a run, and a generated space stays inside a run only when the run goes on after it.
+  - **`fontSize`.** `FPDFTextObj_GetFontSize` × the char matrix's vertical scale, as `Glyph.fontSize`. Chromium writes Tf 32 under a 0.75 matrix, which reads 24.
+  - **`rect`.** The union of loose char boxes. These are taller than the font size: 14.2 pt for 9 pt Helvetica in the extension.
+  - **Name clash.** `PdfiumNative` already has `getPageTextRuns(doc, page)` (runs split by font, size and colour). The spike's method replaces it with a documented `@ts-expect-error`; nothing in the engine calls the base one. Task 15's `getTextRuns` may build on the stock method or port the spike's.
+- **Detection (`src/figures/find-figures.ts`, research 06 §3.2 steps 1–4).** Every value from 06 is as written:
+  - 2% / 36 pt for images and forms;
+  - 6 pt path clusters with ≥ 8 paths or ≥ 3%;
+  - 12 pt text absorption;
+  - the §3.3 caption pattern;
+  - high confidence for tagged, caption-linked or single image/form figures.
+
+  What the real pages needed beyond 06 (each found on these pages and named in `RULES`):
+  - **Pairing on either side.** A caption pairs on either side, with its usual side preferred by 4 pt: ResNet's CVPR tables have their captions below. The pairs are solved as one assignment (Hungarian, most pairs at the least distance), because a caption between two tables must take its own.
+  - **Caption blocks.** A block continues only after a full line, and only to a line alone on its row, so table header cells stay out. Nature sets captions across two columns, and the second column is joined. A caption may overlap its figure by 40% of a line, because loose boxes overhang.
+  - **Absorption.** Half inside counts, because subcaptions poke out a point. A figure also takes the free graphics in its band above the caption (side-by-side panels more than 24 pt apart).
+  - **Body text.** A body line needs a body-wide neighbour: a lone wide line is a subcaption, heading or header row. A run-in heading on a body line's row is body text.
+  - **Clusters.** They do not join across a column gutter (XGBoost's Tables 2 and 3 are 5.9 pt apart). Page-high rules and graphics inside a caption are dropped. A form with no image and fewer than 3 paths is looked through.
+  - **Text-only tables.** The caption-region fallback stops at a gap over twice the region's median row gap.
+  - **The caption pattern** gains one lookahead. Without it "Figure 3.1 shows…" matches as "Figure 3": the pattern backtracks into the dotted number.
+- **Detection quality, labelled by eye from overlays of every page.**
+  - **The 50 timing pages** hold 43 captioned figures and tables (ResNet 7 figures and 8 tables, Attention 2 and 4, XGBoost 13 and 4, AlphaFold 5, Deep hedging 0):
+    - 43 found, with the right labels;
+    - 0 false caption-linked figures;
+    - 2 medium-confidence uncaptioned clusters: a real uncaptioned inline table on ResNet p7, and a small 42 × 15 pt cluster on AlphaFold p7;
+    - every box encloses its figure or table, with axis labels, legends and subfigure captions, and not its caption, judged at contact-sheet scale. No hand-drawn boxes exist, so there is no IoU number for real pages.
+  - **These pages were used to tune the rules**, so this is a training-set result.
+  - **Held out, rules frozen.** PLOS ONE pp. 1–5, the DiD paper pp. 31–45 (maths-heavy proofs) and Sutskever's thesis pp. 21–35:
+    - 9 of 9 captioned figures and tables found;
+    - 1 false caption: the thesis paragraph "Figure 3.1 shows…", fixed afterwards by the lookahead above;
+    - no false clusters from fraction bars.
+  - **Not detected by design.** XGBoost's Algorithm boxes ("Algorithm" is not in the pattern).
+  - **Fixture IoU:** Figure 1 1.000, Figure 2 1.000, Table 1 0.933 (the text table's loose boxes).
+- **For Task 15 and Phase 2:**
+  - port the direct-export calls and the form-matrix mapping;
+  - keep the budget clock after page load;
+  - evaluate on 06 §3.7's labelled set of 30 papers with hand-drawn boxes before trusting precision;
+  - add "Algorithm" captions if wanted;
+  - scans, rotated pages (/Rotate) and vertical text are not covered.
+
 ## Handed to the Windows checklist
 
 - P0-5: bold timing and look at 150% scaling on Windows. The overlay and its rasterisation grow with DPR, and Windows text rendering may differ from PDFium's bitmaps.
+- P0-10: detection time per page on the reference laptop (the perf-gate job), with the page and its text page loaded and with the text page still to load. Headless Linux gives p95 5–7 ms and 10–14 ms.
 
 ## Decision
 

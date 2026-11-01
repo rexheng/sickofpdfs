@@ -21,7 +21,7 @@ export const RULES = {
   minSide: 36,
   /** One image over ≥ 85% of the page is a scan page: no candidates (06 §3.5). */
   scanAreaShare: 0.85,
-  /** Ours: a form XObject over ≥ 85% of the page, or with no graphics in it, wraps content: its objects count as the page's. */
+  /** Ours: a form XObject over ≥ 85% of the page (or with no image and under 3 paths) wraps content: its objects are the page's. */
   wrapperAreaShare: 0.85,
   /** Paths whose boxes lie within 6 pt of each other form a cluster, kept with ≥ 8 paths or ≥ 3% of the page. */
   clusterGap: 6,
@@ -39,7 +39,7 @@ export const RULES = {
   /** A body-text line is at least 60% of the column wide and not smaller than the body font (0.6 pt tolerance, ours). */
   bodyWidthShare: 0.6,
   bodySizeTolerance: 0.6,
-  /** Ours: a caption pairs with a candidate at most 72 pt away; more candidates join a captioned figure within 24 pt. */
+  /** Ours: a caption pairs with a candidate at most 72 pt away; more join a captioned figure within 24 pt (or in its band). */
   captionReach: 72,
   growGap: 24,
   /** Ours: lines whose gap is under 0.6 × the font size are in one block (one paragraph, one caption). */
@@ -54,9 +54,13 @@ export const RULES = {
   otherSideHandicap: 4,
 } as const;
 
-/** 06 §3.3: at the start of a line that starts a block, case-insensitive. */
+/**
+ * 06 §3.3: at the start of a line that starts a block, case-insensitive. One change (ours): `(?![.\-]?\d)` after the
+ * number. Without it the pattern backtracks into a dotted number and takes "Figure 3.1 shows…" as "Figure 3" with the
+ * "." as its separator (found on a held-out thesis page).
+ */
 export const CAPTION_PATTERN =
-  /^(figure|fig\.?|table|tab\.?|chart|plate|scheme|exhibit|abbildung|abb\.?|tabelle|figura|tableau|tabla)\s*((?:[A-Z]{1,2}\.?)?\d+(?:[.\-]\d+)*[a-z]?|[IVXLC]+)\s*(?:[:.—–\-|]|\s{2,}|$)/i;
+  /^(figure|fig\.?|table|tab\.?|chart|plate|scheme|exhibit|abbildung|abb\.?|tabelle|figura|tableau|tabla)\s*((?:[A-Z]{1,2}\.?)?\d+(?:[.\-]\d+)*(?![.\-]?\d)[a-z]?|[IVXLC]+)\s*(?:[:.—–\-|]|\s{2,}|$)/i;
 const TABLE_WORD = /^(table|tab\.?|tabelle|tableau|tabla)$/i;
 const LABEL_WORDS: Record<string, string> = { fig: 'Figure', 'fig.': 'Figure', tab: 'Table', 'tab.': 'Table', abb: 'Abbildung', 'abb.': 'Abbildung' };
 
@@ -136,7 +140,8 @@ export function analysePage(input: FigureInput): PageAnalysis {
   if (graphics === 'scan') return out([]);
   const { small } = graphics;
 
-  // 1. Tagged: each Figure or Table element's marked-content ids give its objects, and so an exact box.
+  // 2. (graphicCandidates) Images, form XObjects and path clusters. 1. Tagged: each Figure or Table element's
+  //    marked-content ids give its objects, and so an exact box; object candidates it overlaps are dropped.
   const tagged = taggedCandidates(input);
   const all = tagged.length ? [...tagged, ...graphics.candidates.filter((c) => !tagged.some((t) => intersects(t.rect, c.rect)))] : graphics.candidates;
   for (const c of all) absorb(c, lines, small);
@@ -194,7 +199,7 @@ const kindOf = (images: number, paths: number): DetectedFigure['kind'] => (image
 /** Lines: runs on one baseline band, joined left to right while the gap between them is under 0.8 × the font size. */
 function buildLines(runs: TextRun[]): Line[] {
   const pieces = runs
-    .map((r) => ({ rect: r.rect, size: r.fontSize, text: r.text.replace(/[\u0000-\u001f￾￿]/g, ''), cy: r.rect.y + r.rect.height / 2 }))
+    .map((r) => ({ rect: r.rect, size: r.fontSize, text: r.text.replace(/[\u0000-\u001f\ufffe\uffff]/g, ''), cy: r.rect.y + r.rect.height / 2 }))
     .filter((p) => p.text.trim() !== '' && p.rect.width > 0 && p.rect.height > 0)
     .sort((a, b) => a.cy - b.cy);
   const lines: Line[] = [];
@@ -581,7 +586,8 @@ function mergeOverlapping(candidates: Candidate[]): Candidate[] {
           rect: union(p.rect, q.rect),
           images: p.images + q.images,
           paths: p.paths + q.paths,
-          source: p.source === q.source ? p.source : p.source === 'tagged' || q.source === 'tagged' ? 'tagged' : 'form',
+          // Tagged wins; any cluster keeps the merge a cluster (medium when uncaptioned): it is no longer a single object.
+          source: p.source === 'tagged' || q.source === 'tagged' ? 'tagged' : p.source === 'cluster' || q.source === 'cluster' ? 'cluster' : 'form',
           table: p.table || q.table,
           claimed: false,
         };

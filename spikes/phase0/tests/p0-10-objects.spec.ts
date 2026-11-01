@@ -1,7 +1,10 @@
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { expect } from '@playwright/test';
 import type { DetectedFigure, PageObjectInfo, Rect, StructElement, TextRun } from '../src/engine/spike-native';
+import { CAPTION_PATTERN } from '../src/figures/find-figures';
 import { test } from './fixtures';
-import { record } from './record';
+import { record, RESULTS_DIR } from './record';
 
 // The brief's tests, with their assertions unchanged (the iou helper is ruling R1's real intersection over union).
 // Additions: each check test writes its measurements with record() before asserting, so a failing run keeps them.
@@ -21,6 +24,12 @@ test('P0-10: the iou helper is real intersection over union', () => {
   expect(iou({ x: 0, y: 0, width: 10, height: 10 }, { x: 0, y: 0, width: 10, height: 10 })).toBe(1);
   expect(iou({ x: 0, y: 0, width: 10, height: 10 }, { x: 5, y: 0, width: 10, height: 10 })).toBeCloseTo(50 / 150, 6);
   expect(iou({ x: 0, y: 0, width: 10, height: 10 }, { x: 20, y: 20, width: 5, height: 5 })).toBe(0);
+});
+test('P0-10: the caption pattern (06 §3.3) takes labels and leaves running text', () => {
+  const label = (line: string) => CAPTION_PATTERN.exec(line)?.slice(1, 3).join(' ') ?? null;
+  expect(['Figure 3: x', 'Fig. 2.3. x', 'Table A1 x', 'Figure S4: x', 'TABLE IV', 'Fig. 1 | AlphaFold', 'Figure 3.1: A'].map(label)).toEqual(['Figure 3', 'Fig. 2.3', null, 'Figure S4', 'TABLE IV', 'Fig. 1', 'Figure 3.1']);
+  // Running text: no separator after the number. "Figure 3.1 shows" must not backtrack to "Figure 3" + "." (our lookahead).
+  expect(['Figure 3 shows the', 'Figure 3.1 shows an RBM', 'Tables are'].map(label)).toEqual([null, null, null]);
 });
 test('P0-10: objects fixture enumerates images and paths with exact bounds', async ({ objectsPage }) => {
   const r = await objectsPage('objects.pdf', 0);
@@ -88,6 +97,7 @@ test('P0-10: objects + detection p95 ≤ 20 ms a page on 50 real paper pages', a
   const r = await objectsPage('papers', 0, { timing: PAPERS, pages: 10 });
   const objects = r.pages.map((p: { objectCount: number }) => p.objectCount).sort((a: number, b: number) => a - b);
   const slowest = [...r.pages].sort((a, b) => b.ms - a.ms)[0];
+  await writeFile(join(RESULTS_DIR, 'P0-10-pages.json'), `${JSON.stringify(r.pages, null, 2)}\n`); // per page, for the report
   await record('P0-10', {
     pass: r.p95Ms <= 20 && r.maxMs <= 40 && r.resnetPage0Labels.includes('Figure 1'),
     measured:
