@@ -1,7 +1,7 @@
 // Opens the library schema: connection settings first, then each schema step in order, each in one transaction.
 import type { Sqlite3Database } from './store-api';
 import { SCHEMA_V1, triggersV1 } from './schema';
-import { applySchemaV2, guardNewerSchema, userVersion } from './schema-v2';
+import { applySchemaV2, guardNewerSchema, refreshCommentsFtsTrigger, userVersion } from './schema-v2';
 
 /**
  * The connection settings, set on every open. Deleted rows are overwritten in the file (secure_delete), and the journal
@@ -29,5 +29,6 @@ export function migrate(db: Sqlite3Database): number {
     });
   }
   if (userVersion(db) < 2) applySchemaV2(db);
+  if (userVersion(db) === 2) refreshCommentsFtsTrigger(db);
   return userVersion(db);
 }

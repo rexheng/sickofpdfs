@@ -21,6 +21,7 @@ import { libraryStore } from '../use-store';
 import { createAnchorContext, createDocumentFigures, createTextAnchorMaker, type DocumentText, markNormRects } from './anchor-context';
 import { localDraftJournal } from './draft-journal';
 import { createDraftKeeper } from './drafts';
+import { localPendingSaves } from './save-pending';
 import { createMarkInput, type MarkInput } from './mark-input';
 import { type AnnotationSession, type AnnotationState, createAnnotationSession } from './session';
 import { createTabPresence, tabIdentity } from './tab-presence';
@@ -548,6 +549,9 @@ export function createNotes(d: NotesDeps): Notes | null {
     planStyle,
     resolveAnchor,
     onError: logNotesError,
+    // R67: rows made before the save lands carry the file's fingerprint, and are kept as save-pending under it.
+    fingerprint: d.opened.loaded.sha256,
+    pending: localPendingSaves(),
   });
 
   let input: MarkInput | null = null;

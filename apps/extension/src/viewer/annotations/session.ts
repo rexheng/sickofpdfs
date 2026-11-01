@@ -69,6 +69,7 @@ import {
   type ThreadId,
   type ThreadRow,
 } from './boundary';
+import type { PendingSave, PendingSaves } from './save-pending';
 import {
   anchorKey,
   createUndoStack,
@@ -176,6 +177,13 @@ export interface SessionDeps {
   retryMs?: readonly number[];
   /** Told about failures that the session survives (a failed write that will be retried, a placement that threw). */
   onError?(e: unknown, where: string): void;
+  /**
+   * R67: the opened file's SHA-256. Rows made before the save lands carry it as their document id (never ''), and the
+   * save-pending record is kept under it.
+   */
+  fingerprint?: string | null;
+  /** R67 (a): where notes made while the save is on its way are kept (save-pending.ts). The viewer passes `localPendingSaves()`. */
+  pending?: PendingSaves | null;
 }
 
 // ---------------------------------------------------------------- small helpers
@@ -293,10 +301,15 @@ interface Batch {
   probed: boolean;
   /** The text of its new comments has been given to the draft keeper as drafts. */
   safe: boolean;
+  /** Resolves once the batch is written, or dropped because the document was forgotten. Never while it is parked. */
+  gone: Promise<void>;
+  leave(): void;
 }
 
 function newBatch(ops: AnnotationOp[]): Batch {
-  const b: Batch = { id: newId<string>(), ops, firstAttempt: Promise.resolve(), attempted() {}, attempts: 0, probed: false, safe: false };
+  let leave = () => {};
+  const gone = new Promise<void>((r) => (leave = r));
+  const b: Batch = { id: newId<string>(), ops, firstAttempt: Promise.resolve(), attempted() {}, attempts: 0, probed: false, safe: false, gone, leave };
   renewAttempt(b);
   return b;
 }
@@ -352,6 +365,20 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
   /** Rows made by the change that started the save. "Undo" on the chip removes them. */
   const savedTriggerKeys = new Set<string>();
   let kick: Promise<void> | null = null;
+  /** R67 (c, f): the save this tab is starting gets no Undo (a note started it, or more was made before it began). */
+  let kickNoUndo = false;
+  /** R67 (b): typing started a save that has not been undone yet; keystrokes do not start another (a failed one is retried from the chip). */
+  let typingSaved = false;
+  /** R67 (b): the note whose first keystroke started this tab's save, while nothing else has been made. */
+  let typedTrigger: CommentId | null = null;
+  /** R67 (a): a save is on its way (or failed): what is made now is kept in the save-pending record. */
+  let ownerSave = false;
+  /** R67 (a): the save-pending record of this tab exists. */
+  let pendingKept = false;
+  /** R67 (a): the records of tabs that went have been looked for (once, when the save state is first known). */
+  let pendingLooked = false;
+  /** R67 (a): this page life, for its save-pending record (a tab keeps its id across reloads, R65). */
+  const life = newId<string>();
 
   // The write queue.
   const queue: Batch[] = [];
@@ -414,6 +441,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
 
   function emit(): void {
     snap = null;
+    keepPending(); // R67 (a): while a save is on its way, every change is kept at once
     for (const cb of [...listeners]) {
       try {
         cb();
@@ -445,6 +473,11 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     const s = d.save?.state;
     if (s && s.kind === 'saved') return s.documentId;
     return d.documentId();
+  }
+
+  /** The id a row is made under: the library id, or, before the save lands, the file's fingerprint (R67: never ''). */
+  function stampId(): DocumentId {
+    return (currentDocId() ?? d.fingerprint ?? '') as DocumentId;
   }
 
   function canWrite(): boolean {
@@ -483,21 +516,40 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
   }
 
   /**
+   * R67 (c): there is more here than the mark that started the save (another mark, a note box, a typed note). Its Undo
+   * goes, in this tab and in every other (the controller tells them), so Undo only ever removes the save and that mark.
+   */
+  function contentAdded(): void {
+    typedTrigger = null;
+    if (kick) kickNoUndo = true;
+    try {
+      d.save?.endUndo?.();
+    } catch (e) {
+      report(e, 'endUndo');
+    }
+  }
+
+  /**
    * Called by every change that creates rows. On a PDF that is not saved yet it asks the save controller to save it
    * ("your first mark saves it"). Returns whether this call started the save.
    */
-  function startSaveIfNeeded(triggerKeys: string[]): boolean {
+  function startSaveIfNeeded(triggerKeys: string[], o: { note?: boolean } = {}): boolean {
     const save = d.save;
     if (mode !== 'pending-save' || !save || kick) return false;
     const s = save.state;
     if (s.kind === 'asking') return false; // the question is already open
     for (const k of triggerKeys) savedTriggerKeys.add(k);
+    kickNoUndo = o.note === true; // R67 (f): a save a note started has no Undo
     kick = (async () => {
       try {
         // Identity is still being worked out; firstMark would do nothing yet.
         await waitForSaveState((x) => x.kind !== 'checking').done;
         const now = save.state;
-        if (!disposed && (now.kind === 'unsure' || now.kind === 'not-learning')) await save.firstMark();
+        if (!disposed && (now.kind === 'unsure' || now.kind === 'not-learning')) {
+          // A "not sure" PDF saves now: what is made from here on is save-pending (R67 a). A "not learning" one asks first.
+          if (now.kind === 'unsure') markOwnerSave();
+          await save.firstMark(kickNoUndo ? { undoable: false } : undefined);
+        }
         syncSaveState();
       } catch (e) {
         report(e, 'firstMark');
@@ -532,7 +584,8 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     const prevMode = mode;
     lastSaveKind = s.kind;
     if (prevKind === 'saved' && s.kind !== 'saved' && s.kind !== 'incognito') {
-      // The save was undone, or the PDF forgotten. The store has lost everything of this document.
+      // The save was undone, or the PDF forgotten (here or in another tab, R67 d). The store has lost everything of this
+      // document, and so have the journal and the save-pending records (forgetLocalTraces).
       clearDocGoneTimer();
       docGone = false;
       mode = computeMode();
@@ -542,17 +595,170 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     }
     if (s.kind === 'saved') docGone = false;
     mode = computeMode();
+    if (mode === 'pending-save' && d.save?.busy === 'save') markOwnerSave(); // Save, Yes, or a learning PDF's own save
+    if (mode === 'memory-only' || mode === 'view-only') {
+      // The owner said No: nothing of this PDF is kept anywhere but this tab.
+      ownerSave = false;
+      dropPending();
+    }
     if (prevMode !== 'stored' && mode === 'stored') onBecameStored();
     if (prevMode !== mode) emit();
+    if (s.kind !== 'checking') void lookForPending();
   }
 
   function onBecameStored(): void {
+    ownerSave = false; // from here on the store and the keeper keep everything
     compactQueue();
+    // Rows made before the save carry the file's fingerprint; the library id may differ (a stamped copy). Stamp them
+    // before anything is handed on (finding 1: a draft handed over with the old id was refused and lost).
+    patchDocIds();
     // Drafts that could not be saved until now are given to the keeper again.
     for (const c of drafts.values()) if (c.body !== '') pushDraft(c);
     for (const e of edits.values()) pushEdit(e.commentId, e.body);
+    keepPending(); // the drafts are the keeper's now; the record keeps only the writes still waiting
     void pump();
     void refresh().then(adoptDraftsImpl);
+  }
+
+  // ------------------------------------------------------------ R67 (a): save-pending
+
+  /** A save is on its way: from now on, and for what is already here, the session keeps a save-pending record. */
+  function markOwnerSave(): void {
+    if (ownerSave || mode !== 'pending-save') return;
+    ownerSave = true;
+    keepPending();
+  }
+
+  /** Writes this tab's save-pending record as the session holds things now, or removes it when it holds nothing. */
+  function keepPending(): void {
+    const pj = d.pending;
+    const fp = d.fingerprint;
+    if (!pj || !fp || disposed) return;
+    const keeping = (mode === 'pending-save' && ownerSave) || (mode === 'stored' && pendingKept);
+    if (!keeping) return;
+    const ops: AnnotationOp[] = [];
+    for (const b of [...queue, ...parked]) ops.push(...b.ops);
+    const draftRows: CommentRow[] = [];
+    const editRows: SessionEditDraft[] = [];
+    if (mode === 'pending-save') {
+      for (const c of drafts.values()) if (c.body.trim() !== '') draftRows.push(keeperRow(c));
+      for (const e of edits.values()) editRows.push({ ...e });
+    }
+    if (ops.length === 0 && draftRows.length === 0 && editRows.length === 0) {
+      dropPending();
+      return;
+    }
+    const rec: PendingSave = { v: 1, fingerprint: fp, tab: tabId, life, at: d.now(), undoable: !kickNoUndo, ops, drafts: draftRows, edits: editRows };
+    pendingKept = pj.put(rec);
+  }
+
+  function dropPending(): void {
+    if (!pendingKept) return;
+    pendingKept = false;
+    if (d.pending && d.fingerprint) d.pending.remove({ fingerprint: d.fingerprint, tab: tabId, life });
+  }
+
+  /**
+   * Once, when the save state is first known: the records of tabs that closed or crashed with a save on its way, for this
+   * file (or, once the document exists, for its library id: a stamped copy). This tab takes them: their notes come back,
+   * and if the PDF is still not saved, its save completes (the owner's own action started it).
+   */
+  async function lookForPending(): Promise<void> {
+    const pj = d.pending;
+    const fp = d.fingerprint;
+    if (pendingLooked || !pj || !fp || disposed || !d.store || !d.save) return;
+    if (mode !== 'pending-save' && mode !== 'stored') return;
+    pendingLooked = true;
+    let live: Set<TabId>;
+    try {
+      live = new Set(await d.presence.liveTabs());
+    } catch (e) {
+      report(e, 'liveTabs');
+      return;
+    }
+    let undoable = true;
+    const taken: PendingSave[] = [];
+    await pj
+      .locked(() => {
+        const keys = new Set<string>([fp]);
+        const id = currentDocId();
+        if (id) keys.add(id);
+        for (const key of keys) {
+          for (const rec of pj.list(key)) {
+            if (disposed) return Promise.resolve();
+            if (rec.life === life) continue; // this page's own
+            if (rec.tab !== tabId && live.has(rec.tab)) continue; // that tab is open and still saving it
+            adoptPending(rec);
+            if (!rec.undoable) undoable = false;
+            taken.push(rec);
+          }
+        }
+        if (taken.length === 0) return Promise.resolve();
+        if (!undoable) kickNoUndo = true;
+        // This page's own record holds them before the old ones go, so a crash in between loses nothing.
+        if (mode === 'stored') {
+          pendingKept = true;
+          onBecameStoredAgain(); // the notes go to the keeper (its journal), the writes to this page's record
+        } else {
+          ownerSave = true;
+          keepPending();
+        }
+        for (const rec of taken) pj.remove(rec);
+        return Promise.resolve();
+      })
+      .catch((e: unknown) => report(e, 'pending.restore'));
+    if (taken.length === 0 || disposed) return;
+    if (mode !== 'stored') resumeSave(undoable);
+    emit();
+  }
+
+  /** Puts a record's rows and notes into the model. What is already here (newer) is left as it is. */
+  function adoptPending(rec: PendingSave): void {
+    const ops = rec.ops.filter((op) => op && typeof op === 'object' && op.row && typeof op.row.id === 'string');
+    const moved: string[] = [];
+    for (const op of ops) {
+      const table = op.table;
+      const id = op.row.id;
+      if (op.op === 'soft-delete') put(table, id, null);
+      else put(table, id, op.row);
+      if (op.op !== 'soft-delete' && table !== 'comments') moved.push(id);
+      if (rec.undoable && op.op !== 'soft-delete') savedTriggerKeys.add(rowKey(table, id));
+    }
+    if (ops.length > 0) queue.push(newBatch(ops));
+    for (const r of rec.drafts) if (adoptDraftRow(r) && active === null) active = r.threadId;
+    for (const e of rec.edits) if (!edits.has(e.commentId)) edits.set(e.commentId, { ...e });
+    tidyAfterRemoval();
+    resolveLater(moved);
+  }
+
+  /** Records taken while the PDF is already saved: their notes go to the keeper and their writes to the store now. */
+  function onBecameStoredAgain(): void {
+    patchDocIds();
+    for (const c of drafts.values()) if (c.body !== '') pushDraft(c);
+    for (const e of edits.values()) pushEdit(e.commentId, e.body);
+    keepPending();
+    void pump();
+  }
+
+  /** Completes the save of a record whose tab went before it finished. */
+  function resumeSave(undoable: boolean): void {
+    const save = d.save;
+    if (!save || kick) return;
+    kick = (async () => {
+      try {
+        await waitForSaveState((x) => x.kind !== 'checking').done;
+        const now = save.state;
+        if (disposed || now.kind === 'saved' || now.kind === 'incognito' || now.kind === 'asking') return;
+        if (save.resumeSave) await save.resumeSave(undoable);
+        else if (undoable) await save.firstMark();
+        else await save.requestSave();
+        syncSaveState();
+      } catch (e) {
+        report(e, 'resumeSave');
+      } finally {
+        kick = null;
+      }
+    })();
   }
 
   /**
@@ -563,6 +769,12 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     const gone = new Set<string>([...persisted, ...savedTriggerKeys]);
     persisted.clear();
     savedTriggerKeys.clear();
+    // R67: the next mark or keystroke is a first one again; nothing of this PDF is kept outside this tab until then.
+    ownerSave = false;
+    typingSaved = false;
+    typedTrigger = null;
+    kickNoUndo = false;
+    dropPending();
     for (const k of gone) {
       const sep = k.indexOf(':');
       const table = k.slice(0, sep) as Table;
@@ -586,6 +798,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
         if (b.ops.length === 0) {
           list.splice(list.indexOf(b), 1);
           b.attempted();
+          b.leave();
         }
       }
     }
@@ -626,6 +839,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
         if (b.ops.length === 0) {
           list.splice(list.indexOf(b), 1);
           b.attempted();
+          b.leave();
         }
       }
     }
@@ -681,6 +895,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       emit(); // the card for this change shows "couldn't save" too
     } else queue.push(b);
     if (parked.length > 0) compactQueue();
+    keepPending();
     void pump();
     return b;
   }
@@ -745,7 +960,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
         const isRoot = !!threadCopy && liveCommentsOf(c.threadId)[0]?.id === c.id;
         const meta = isRoot && threadCopy ? stashMeta(threadCopy, parkedHighlightFor(threadCopy)) : c.meta;
         try {
-          d.drafts.change({ ...c, draftOfTab: tabId, meta }, threadCopy);
+          d.drafts.change({ ...c, documentId: stampId(), draftOfTab: tabId, meta }, threadCopy);
           safeCopied.add(c.id);
           any = true;
         } catch (e) {
@@ -836,6 +1051,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
           }
           failures = 0;
           b.attempts = 0;
+          b.leave();
         } catch (e) {
           if (!queue.includes(b)) outcome = 'gone'; // emptied and dropped while in flight (the document was forgotten)
           else {
@@ -861,6 +1077,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       pumping = false;
     }
     if (queue.length === 0) patchDocIds();
+    if (pendingKept && mode === 'stored') keepPending(); // the record goes once what it kept is written
   }
 
   /** Rows made before the document had an id carry a blank one in memory. Fix them once the id is known. */
@@ -956,6 +1173,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     // A change that only removed a highlight nobody had saved yet leaves nothing to undo.
     if (ops.length > 0) undo.record(c);
     const started = startSaveIfNeeded(triggerKeysOf(c));
+    if (!started && c.rows.some((rc) => rc.after !== null && !savedTriggerKeys.has(rowKey(rc.table, rc.id)))) contentAdded();
     emit(); // draw first
     const batch = enqueue(ops);
     return { batch, started };
@@ -1007,7 +1225,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     return {
       ...blankSync(),
       id: newId<MarkId>(),
-      documentId: (currentDocId() ?? '') as DocumentId,
+      documentId: stampId(),
       style,
       color,
       anchor,
@@ -1092,16 +1310,24 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     if (keeperHas.has(root.id)) pushDraft(root);
   }
 
-  /** Gives the keeper the draft's latest text, with its thread if it opened one. */
-  function pushDraft(c: CommentRow): void {
+  /** A draft as the keeper saves it: this tab's, under the PDF's id, a new note's thread and highlight in its `meta`. */
+  function keeperRow(c: CommentRow): CommentRow & { draftOfTab: TabId } {
     const stash = rootDrafts.get(c.id);
     const thread = stash ? threads.get(c.threadId) : undefined;
-    const meta = stash && thread ? stashMeta(thread, stash.highlight) : c.meta;
-    // While the PDF is not saved, the text stays in this session only. It goes to the keeper the moment the PDF is saved.
+    const meta = stash && thread ? stashMeta({ ...thread, documentId: stampId() }, stash.highlight) : c.meta;
+    return { ...c, documentId: stampId(), draftOfTab: tabId, meta };
+  }
+
+  /** Gives the keeper the draft's latest text, with its thread if it opened one. */
+  function pushDraft(c: CommentRow): void {
+    // While the PDF is not saved, the text is kept by the save-pending record (R67 a), or in this session only before
+    // any save was asked for. It goes to the keeper the moment the PDF is saved.
     if (mode !== 'stored') return;
+    const stash = rootDrafts.get(c.id);
+    const thread = stash ? threads.get(c.threadId) : undefined;
     keeperHas.add(c.id);
     try {
-      d.drafts.change({ ...c, draftOfTab: tabId, meta }, thread);
+      d.drafts.change(keeperRow(c), thread ? { ...thread, documentId: stampId() } : undefined);
     } catch (e) {
       report(e, 'drafts.change');
     }
@@ -1123,6 +1349,8 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     const draft = drafts.get(id);
     if (!draft) return;
     const isRoot = rootDrafts.has(id);
+    const wasTrigger = id === typedTrigger;
+    if (wasTrigger) typedTrigger = null;
     dropDraft(id);
     if (isRoot) {
       for (const [mid, tid] of [...pendingMarks]) {
@@ -1137,6 +1365,11 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       placement.delete(draft.threadId);
     }
     tidyAfterRemoval();
+    // R67 (b): the note whose typing saved the PDF was emptied and closed, and nothing else was made: the save goes, as
+    // if the note box had never been typed in.
+    if (wasTrigger && marks.size === 0 && threads.size === 0 && comments.size === 0 && drafts.size === 0 && edits.size === 0 && d.save?.withdraw) {
+      void d.save.withdraw().catch((e: unknown) => report(e, 'withdraw'));
+    }
     emit();
   }
 
@@ -1145,7 +1378,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     const commentId = newId<CommentId>();
     if (disposed || mode === 'view-only') return { threadId, commentId };
     const t = d.now();
-    const docId = (currentDocId() ?? '') as DocumentId;
+    const docId = stampId();
     const where = placeOf(a);
     const thread: ThreadRow = {
       ...blankSync(),
@@ -1185,7 +1418,10 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       placeNow(mark.id, a);
       triggers.push(rowKey('marks', mark.id));
     }
-    startSaveIfNeeded(triggers);
+    // R67 (b): an open, empty note box saves nothing; its first keystroke does (typeDraft). A PDF judged not learning
+    // asks its question now, before any typing (asking is not saving).
+    if (d.save?.state.kind === 'not-learning') startSaveIfNeeded(triggers);
+    contentAdded(); // R67 (c): there is no Undo while a note box is open
     emit();
     return { threadId, commentId };
   }
@@ -1310,6 +1546,14 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     if (!c || disposed || c.body === body) return;
     const next = { ...c, body };
     drafts.set(id, next);
+    const real = body.trim() !== '';
+    const first = real && c.body.trim() === '';
+    // R67 (b, f): real text in a note saves a PDF that is not saved yet, with no Undo. Not again once typing has started a
+    // save (a failed one is retried from the chip), until that save is undone or forgotten.
+    if (real && mode === 'pending-save' && !typingSaved && startSaveIfNeeded([], { note: true })) {
+      typingSaved = true;
+      if (first) typedTrigger = id;
+    } else if (first) contentAdded();
     // An untouched empty draft is not worth saving. Once text has been saved, an emptied draft is saved too.
     if (body !== '' || keeperHas.has(id)) pushDraft(next);
     emit();
@@ -1331,7 +1575,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     const c = comments.get(id);
     if (mode !== 'stored' || !c) return;
     try {
-      d.drafts.changeEdit(c, body);
+      d.drafts.changeEdit({ ...c, documentId: stampId() }, body);
     } catch (e) {
       report(e, 'drafts.changeEdit');
     }
@@ -1408,7 +1652,9 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       }
     }
     tidyAfterRemoval();
-    const started = startSaveIfNeeded(ops.filter((o) => o.op !== 'soft-delete').map((o) => rowKey(o.table, o.row.id)));
+    const brought = ops.filter((o) => o.op !== 'soft-delete').map((o) => rowKey(o.table, o.row.id));
+    const started = startSaveIfNeeded(brought);
+    if (!started && brought.some((k) => !savedTriggerKeys.has(k))) contentAdded();
     emit();
     const batch = enqueue(ops);
     resolveLater(back);
@@ -1586,31 +1832,39 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     }
     let last: ThreadId | null = null;
     for (const r of rows) {
-      if (disposed || drafts.has(r.id) || comments.has(r.id) || r.deletedAt !== null) continue;
-      const stash = readStash(r);
-      const row: CommentRow = { ...r, draftOfTab: tabId, meta: stash ? {} : r.meta };
-      if (stash) {
-        const thread: ThreadRow = { ...stash.thread, draftOfTab: tabId };
-        if (!threads.has(thread.id)) {
-          threads.set(thread.id, thread);
-          placeNow(thread.id, thread.anchor);
-        }
-        rootDrafts.set(row.id, { highlight: stash.highlight });
-        if (stash.highlight !== null && thread.anchor.kind === 'text') {
-          const mark = newMark('highlight', stash.highlight, thread.anchor);
-          marks.set(mark.id, mark);
-          marksVersion++;
-          pendingMarks.set(mark.id, thread.id);
-          placeNow(mark.id, thread.anchor);
-        }
+      if (disposed) break;
+      if (adoptDraftRow(r)) {
+        keeperHas.add(r.id);
+        last = r.threadId;
       }
-      drafts.set(row.id, row);
-      keeperHas.add(row.id);
-      last = row.threadId;
     }
     const restoredEdits = !disposed && takeRestoredEdits(id);
     if (last && active === null) active = last;
     if (last || restoredEdits) emit();
+  }
+
+  /** Puts a restored draft in its card: its new thread and the highlight it was to get come with it. False if not taken. */
+  function adoptDraftRow(r: CommentRow): boolean {
+    if (drafts.has(r.id) || comments.has(r.id) || r.deletedAt !== null) return false;
+    const stash = readStash(r);
+    const row: CommentRow = { ...r, draftOfTab: tabId, meta: stash ? {} : r.meta };
+    if (stash) {
+      const thread: ThreadRow = { ...stash.thread, draftOfTab: tabId };
+      if (!threads.has(thread.id)) {
+        threads.set(thread.id, thread);
+        placeNow(thread.id, thread.anchor);
+      }
+      rootDrafts.set(row.id, { highlight: stash.highlight });
+      if (stash.highlight !== null && thread.anchor.kind === 'text') {
+        const mark = newMark('highlight', stash.highlight, thread.anchor);
+        marks.set(mark.id, mark);
+        marksVersion++;
+        pendingMarks.set(mark.id, thread.id);
+        placeNow(mark.id, thread.anchor);
+      }
+    }
+    drafts.set(row.id, row);
+    return true;
   }
 
   // ------------------------------------------------------------ placement
@@ -1694,6 +1948,8 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       document.addEventListener('visibilitychange', onVisible);
       cleanups.push(() => document.removeEventListener('visibilitychange', onVisible));
     }
+    if (mode === 'pending-save' && d.save?.busy === 'save') markOwnerSave(); // a save was already running (R67 a)
+    if (d.save && d.save.state.kind !== 'checking') void lookForPending();
     if (canRead()) {
       await refresh();
       await adoptDraftsImpl();
@@ -1761,7 +2017,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
         ...blankSync(),
         id: commentId,
         threadId: t,
-        documentId: (currentDocId() ?? '') as DocumentId,
+        documentId: stampId(),
         author: 'me',
         body: '',
         draftOfTab: tabId,
@@ -1770,6 +2026,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
         editedAt: null,
       };
       drafts.set(commentId, row);
+      contentAdded(); // R67 (c)
       emit();
       return commentId;
     },
@@ -1793,16 +2050,9 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     editComment(id, body) {
       let wasEditing = false;
       let done: Committed | null = null;
-      return mutate('editComment', () => {
-        if (!editable()) return null;
-        wasEditing = edits.has(id);
-        done = editCommentImpl(id, body);
-        if (wasEditing) emit();
-        return done;
-      }).then(() => {
-        // R54: the edit is over once the new text is written; the store closed it in that same write. Still queued or
-        // parked: the keeper keeps the edit draft, and the store closes it when the write lands.
-        if (!wasEditing || !written(done?.batch ?? null)) return;
+      // R54: the edit is over once the new text is written; the store closed it in that same write. Until then the keeper
+      // keeps the edit draft, and a new edit of the note begins its own session, which waits for this write.
+      const finish = (): void => {
         const newer = edits.get(id); // a new edit began while this one was written: it gets its own edit session
         try {
           d.drafts.dropEdit(id);
@@ -1810,6 +2060,29 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
           report(e, 'drafts.dropEdit');
         }
         if (newer) pushEdit(id, newer.body);
+      };
+      return mutate('editComment', () => {
+        if (!editable()) return null;
+        wasEditing = edits.has(id);
+        done = editCommentImpl(id, body);
+        if (wasEditing && done?.batch) {
+          try {
+            d.drafts.sentEdit?.(id);
+          } catch (e) {
+            report(e, 'drafts.sentEdit');
+          }
+        }
+        if (wasEditing) emit();
+        return done;
+      }).then(() => {
+        if (!wasEditing) return;
+        const b = done?.batch ?? null;
+        if (written(b)) return finish();
+        // Finding 7: a write slower than settle()'s limit used to leave the keeper on a session the store had closed. Wait
+        // for the write itself. A parked write waits for its Retry; the keeper keeps the text meanwhile.
+        void b!.gone.then(() => {
+          if (!disposed && written(b)) finish();
+        });
       });
     },
 

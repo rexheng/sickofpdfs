@@ -19,6 +19,14 @@ const POOL_RETRY_STEP_MS = 150;
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+/** Every table whose rows carry an HLC stamp (schema v1). */
+const STAMPED_TABLES = ['documents', 'aliases', 'locations', 'marks', 'threads', 'comments', 'history', 'settings', 'outbox'];
+
+/** The newest HLC stamp on any row: the clock's floor after a restart. */
+function newestStampSql(): string {
+  return `SELECT MAX(hlc) FROM (${STAMPED_TABLES.map((t) => `SELECT MAX(hlc) AS hlc FROM ${t}`).join(' UNION ALL ')})`;
+}
+
 let ownerLock: Promise<void> | null = null;
 
 /** Waits until this worker is the only owner (the STORE_OWNER_LOCK Web Lock), then holds that until it ends. */
@@ -67,8 +75,10 @@ async function openStore(): Promise<StoreApi> {
   const db = new pool.OpfsSAHPoolDb(DB_FILE);
   migrate(db);
   const hlc = new Hlc(await ensureDeviceId());
-  // Keep stamps going up across restarts even if the wall clock went back: start past the newest stamp written.
-  const newest = db.selectValue('SELECT hlc FROM outbox ORDER BY seq DESC LIMIT 1');
+  // Keep stamps going up across restarts even if the wall clock went back: start past the newest stamp written. TB2
+  // finding 8: the newest one on any synced row, not only in the outbox, which sync empties from Release 2 on (and a
+  // draft's stamp can be newer than the outbox's). Stamps sort as text: 13 digits of ms, then the counter.
+  const newest = db.selectValue(newestStampSql());
   if (typeof newest === 'string') hlc.receive(newest);
   const changes = createChangePublisher();
   return createStoreApi(db, { now: () => Date.now(), hlc, publish: (c) => changes.publish(c) });

@@ -10,6 +10,9 @@
 // - Incognito touches neither the store nor the blob store.
 // - Undo (and later "Forget this PDF") deletes every row of the document and its stored copy (R13). A save that fails
 //   half-way removes the copy it made, so no copy is left without its document.
+// - R67: Undo and Forget also remove what this computer kept of the PDF outside the store (forgetLocalTraces), and every
+//   open tab follows a forget back to "Not sure". The first-mark Undo is offered only while that mark is all there is,
+//   in any tab; a save a note started has none.
 import {
   type DocumentId,
   type FilterDecision,
@@ -26,7 +29,7 @@ import {
 import type { PdfBackend, SaveController } from '@sop/viewer';
 import type { BlobStore } from '../../store/blob-store';
 import type { StoreChange } from '../../store/change-bus';
-import { forgetDraftJournal } from '../annotations/draft-journal';
+import { forgetLocalTraces } from './local-traces';
 import type { StoreClient } from '../../store/client';
 import { type IdentityResult, resolveIdentity } from '../identity/resolve-identity';
 import type { OpenedDocument } from '../open-document';
@@ -39,6 +42,15 @@ export const PAGE_TEXT_BATCH = 50;
 /** Tooltips of the "Saved to library" chip after a save in this tab (an automatic save shows the filter's reasons). */
 export const SAVED_BY_OWNER = 'You saved it';
 export const SAVED_BY_FIRST_MARK = 'Your first mark saved it';
+export const SAVED_BY_FIRST_NOTE = 'Your first note saved it';
+
+/** R67 (c): the channel on which a tab tells the others that a PDF has more than its first mark now. */
+export const SAVE_CHANNEL = 'sop-save';
+interface MoreContent {
+  type: 'more-content';
+  /** The file's fingerprint and, once saved, its library id. */
+  ids: string[];
+}
 
 export interface SaveLocation {
   kind: LocationKind;
@@ -71,6 +83,8 @@ export interface SaveControllerImpl extends SaveController {
   readonly busy: 'save' | 'forget' | null;
   /** The reasons a save in this tab stored, for the chip's tooltip; null when the PDF was already in the library. */
   readonly savedReasons: readonly string[] | null;
+  /** R67 (a): the last save failed and nothing has saved the PDF since. The chip says "Couldn't save. Try again". */
+  readonly failed: boolean;
   /** The library document, while the state is `saved`. */
   documentId(): DocumentId | null;
   /** `cb` hears of a save or forget that failed. The state is then what it was before; the call also rejects. */
@@ -79,7 +93,7 @@ export interface SaveControllerImpl extends SaveController {
   dispose(): void;
 }
 
-type SaveCause = 'filter' | 'owner' | 'first-mark';
+type SaveCause = 'filter' | 'owner' | 'first-mark' | 'first-note';
 
 export function createSaveController(d: SaveControllerDeps): SaveControllerImpl {
   const { loaded, open } = d.opened;
@@ -98,6 +112,18 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
   let blobs: BlobStore | null = null;
   /** Stops listening to the library's changes (another tab's save). */
   let stopFollowing: (() => void) | null = null;
+  /** R67 (a): the last save failed. */
+  let failed = false;
+  /** R67 (c): since the last first mark here, more was made here (another mark, a note): its save gets no Undo. */
+  let moreHere = false;
+  /** R67 (f): the last first-mark save here was asked for by a note. */
+  let byNote = false;
+  /** R67 (c): another tab said it has more on this PDF; a save here gets no Undo until the PDF is forgotten. */
+  let othersAdded = false;
+  /** R67 (b): this tab's last save created the document (not another tab's, not one already there). */
+  let createdHere = false;
+  /** R67 (c): tells the other tabs; null in Incognito or where there is no BroadcastChannel. */
+  let channel: BroadcastChannel | null = null;
 
   const notify = (): void => {
     for (const cb of [...listeners]) {
@@ -127,6 +153,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     const undoable = next.kind === 'saved' && next.undoable;
     if (next === state) return;
     state = next;
+    if (next.kind === 'saved') failed = false;
     if (undoable && !wasUndoable) startUndoTimer();
     if (!undoable) stopUndoTimer();
     if (next.kind !== 'saved') savedReasons = null;
@@ -177,9 +204,11 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     const id = loaded.sha256;
     const pages = await allPageTexts();
     const put = blobs === null ? null : await blobs.put(loaded.blob, id);
-    const reasons = cause === 'filter' ? (decision?.reasons ?? []) : [cause === 'owner' ? SAVED_BY_OWNER : SAVED_BY_FIRST_MARK];
+    const reasons =
+      cause === 'filter' ? (decision?.reasons ?? []) : [cause === 'owner' ? SAVED_BY_OWNER : cause === 'first-note' ? SAVED_BY_FIRST_NOTE : SAVED_BY_FIRST_MARK];
+    let created: boolean;
     try {
-      await store.saveDocument({
+      ({ created } = await store.saveDocument({
         id,
         byteSize: loaded.size,
         pageCount: open.pageCount,
@@ -192,7 +221,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
         saveReasons: reasons,
         location: d.location,
         openedAt,
-      });
+      }));
     } catch (error) {
       if (put?.created === true) await dropCopyWithoutDocument(store, blobs, id);
       throw error;
@@ -210,7 +239,10 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     }
     texts.clear(); // the library has the text now; this tab no longer needs its copy
     savedReasons = reasons;
-    await dispatch({ type: 'saved', documentId: id, undoable });
+    createdHere = created && (cause === 'first-mark' || cause === 'first-note');
+    // R67 (c): Undo only ever removes the save and the one mark that caused it. Not when this tab did not create the
+    // document, nor when more was made meanwhile, here or in another tab.
+    await dispatch({ type: 'saved', documentId: id, undoable: undoable && created && !moreHere && !othersAdded });
   }
 
   /** The copy this tab stored, when the document did not get saved after all (another tab may have saved it). */
@@ -226,11 +258,45 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     if (store === null || state.kind !== 'saved') return;
     const id = state.documentId;
     await store.forgetDocument(id);
-    forgetDraftJournal(id); // the drafts' crash-safe copies go with the document
+    // R67 (e): the drafts' crash-safe copies, the save-pending records and the margin hint go with the document.
+    forgetLocalTraces(id, loaded.sha256);
     await blobs?.delete(id);
+    backToNotSure();
+  }
+
+  /** After a forget, here or in another tab (R67 d): "Not sure" again, and the next first mark starts afresh. */
+  function backToNotSure(): void {
+    othersAdded = false;
+    moreHere = false;
+    byNote = false;
+    createdHere = false;
     const step = reduceSave(state, { type: 'undone' });
     // The reducer goes back to the stand-in's "not sure"; the filter's own reasons are the right tooltip.
     set(step.state.kind === 'unsure' && decision?.verdict === 'unsure' ? { kind: 'unsure', reasons: decision.reasons } : step.state);
+  }
+
+  /** R67 (c): no Undo for what is saved here, or for the save on its way. */
+  function endUndoHere(): void {
+    moreHere = true;
+    if (state.kind === 'saved' && state.undoable) void dispatch({ type: 'undo-expired' });
+  }
+
+  function tellOthers(): void {
+    try {
+      const msg: MoreContent = { type: 'more-content', ids: [loaded.sha256, ...(state.kind === 'saved' ? [state.documentId] : [])] };
+      channel?.postMessage(msg);
+    } catch {
+      // the other tabs keep their Undo a little longer; it still runs out after 10 s
+    }
+  }
+
+  function onMoreContent(e: MessageEvent): void {
+    const m = e.data as Partial<MoreContent> | null;
+    if (disposed || !m || m.type !== 'more-content' || !Array.isArray(m.ids)) return;
+    const mine = m.ids.includes(loaded.sha256) || (state.kind === 'saved' && m.ids.includes(state.documentId));
+    if (!mine) return;
+    othersAdded = true;
+    endUndoHere();
   }
 
   function run(effect: SaveEffect, cause: SaveCause): Promise<void> {
@@ -244,6 +310,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       );
     }
     const kind = effect.kind;
+    if (kind === 'save') failed = false;
     const done = (kind === 'save' ? saveEffect(effect.undoable, cause) : forgetEffect()).then(
       () => {
         busy = null;
@@ -251,6 +318,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       },
       (error: unknown) => {
         busy = null;
+        if (kind === 'save' && state.kind !== 'saved') failed = true; // R67 (a): the chip offers to try again
         if (kind === 'forget' && state.kind === 'saved' && state.undoable) startUndoTimer(); // Undo can be tried again
         notify();
         for (const cb of [...failureListeners]) cb(kind);
@@ -267,7 +335,14 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     const step = reduceSave(state, e);
     set(step.state);
     if (step.effect === null) return;
-    const cause: SaveCause = e.type === 'classified' ? 'filter' : e.type === 'first-mark' ? 'first-mark' : 'owner';
+    const cause: SaveCause =
+      e.type === 'classified'
+        ? 'filter'
+        : e.type === 'first-mark' || (e.type === 'resume-save' && e.undoable)
+          ? e.undoable === false
+            ? 'first-note'
+            : 'first-mark'
+          : 'owner';
     await run(step.effect, cause);
   }
 
@@ -290,7 +365,16 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
   let following: Promise<void> | null = null;
   let lookAgain = false;
   function onLibraryChange(c: StoreChange): void {
-    if (disposed || c.op !== 'upsert' || (c.table !== 'documents' && c.table !== 'aliases')) return;
+    if (disposed) return;
+    if (c.table === 'documents' && c.op === 'delete') {
+      // R67 (d): another tab forgot this PDF (its Undo). This tab follows: "Not sure", and its notes session drops what
+      // the store no longer has. Never "Saved" for a PDF that is not saved. While a save or Undo runs here, that decides.
+      const mine = c.ids.includes(loaded.sha256) || (state.kind === 'saved' && c.ids.includes(state.documentId));
+      if (mine) othersAdded = false;
+      if (mine && state.kind === 'saved' && busy === null) backToNotSure();
+      return;
+    }
+    if (c.op !== 'upsert' || (c.table !== 'documents' && c.table !== 'aliases')) return;
     if (following !== null) {
       lookAgain = true;
       return;
@@ -320,6 +404,14 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       return;
     }
     if (!disposed) stopFollowing = store.onChange(onLibraryChange);
+    if (!disposed && typeof BroadcastChannel !== 'undefined') {
+      try {
+        channel = new BroadcastChannel(SAVE_CHANNEL);
+        channel.onmessage = onMoreContent;
+      } catch {
+        channel = null;
+      }
+    }
     let identity: IdentityResult = { kind: 'unknown' };
     try {
       identity = await resolveIdentity({ sha256: loaded.sha256, pageCount: open.pageCount, pageTexts: allPageTexts }, store);
@@ -361,6 +453,9 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     get savedReasons() {
       return savedReasons;
     },
+    get failed() {
+      return failed && state.kind !== 'saved';
+    },
     documentId: () => (state.kind === 'saved' ? state.documentId : null),
     subscribe(cb) {
       listeners.add(cb);
@@ -375,9 +470,32 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       await afterStart();
       await dispatch({ type: 'save-requested' });
     },
-    async firstMark() {
+    async firstMark(o) {
+      // R67 (c, f): a note's save, or one with more than the first mark already made, gets no Undo.
+      const undoable = o?.undoable !== false;
+      moreHere = false;
+      byNote = !undoable;
+      tellOthers(); // for the other tabs this mark or note is more than their first mark
       await afterStart();
-      await dispatch({ type: 'first-mark' });
+      await dispatch({ type: 'first-mark', ...(undoable ? {} : { undoable: false }) });
+    },
+    endUndo() {
+      if (disposed) return;
+      const tell = state.kind === 'saved' || busy?.kind === 'save';
+      endUndoHere();
+      if (tell) tellOthers();
+    },
+    async withdraw() {
+      // R67 (b): the note that saved the PDF was emptied and closed before anything else was made, in any tab.
+      if (busy?.kind === 'save') await busy.done.catch(() => {});
+      if (disposed || !byNote || !createdHere || moreHere || othersAdded || state.kind !== 'saved') return;
+      byNote = false;
+      await run({ kind: 'forget' }, 'owner');
+    },
+    async resumeSave(undoable) {
+      await afterStart();
+      if (!undoable) byNote = false;
+      await dispatch({ type: 'resume-save', undoable });
     },
     async undo() {
       stopUndoTimer();
@@ -389,6 +507,8 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     dispose() {
       disposed = true;
       stopFollowing?.();
+      channel?.close();
+      channel = null;
       stopUndoTimer();
       listeners.clear();
       failureListeners.clear();

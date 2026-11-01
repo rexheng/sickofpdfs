@@ -13,8 +13,16 @@ export type SaveEvent =
   | { type: 'classified'; decision: FilterDecision }
   /** The chip, or Ctrl+Alt+S. */
   | { type: 'save-requested' }
-  /** The first mark or note on a PDF that is not saved. */
-  | { type: 'first-mark' }
+  /**
+   * The first mark or note on a PDF that is not saved. `undoable: false` (R67 c, f): the save gets no Undo, because a
+   * note started it, or more than one mark was made before it began. Left out, a "not sure" PDF saves with an Undo.
+   */
+  | { type: 'first-mark'; undoable?: boolean }
+  /**
+   * R67 (a): a save the owner started earlier, in a tab that closed or crashed before it finished, completes now.
+   * `undoable` as that save would have had it.
+   */
+  | { type: 'resume-save'; undoable: boolean }
   /** A save effect finished. */
   | { type: 'saved'; documentId: DocumentId; undoable: boolean }
   /** "Save this PDF to keep your notes?" was answered. */
@@ -63,13 +71,18 @@ export function reduceSave(s: SaveState, e: SaveEvent): Step {
     case 'first-mark':
       switch (s.kind) {
         case 'unsure':
-          return save(s, true);
+          return save(s, e.undoable !== false);
         case 'not-learning':
           return { state: { kind: 'asking' }, effect: { kind: 'ask' } };
         default:
           // Asking already, memory-only (the owner said No), saved, or still checking: nothing to do.
           return stay(s);
       }
+    case 'resume-save':
+      // The owner already chose to save (their mark or note started it, or they answered Yes). A first-mark save on a PDF
+      // now judged not learning asks again instead.
+      if (s.kind === 'not-learning' && e.undoable) return { state: { kind: 'asking' }, effect: { kind: 'ask' } };
+      return notSaved(s) && s.kind !== 'asking' ? save(s, e.undoable && s.kind === 'unsure') : stay(s);
     case 'saved':
       return stay({ kind: 'saved', documentId: e.documentId, undoable: e.undoable });
     case 'ask-answered':

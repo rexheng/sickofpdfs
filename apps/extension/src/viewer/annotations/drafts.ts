@@ -71,6 +71,13 @@ export interface DraftKeeper {
    * refused and the edit cannot come back. Call it after the live text was written (that write closes the edit too) and on cancel.
    */
   dropEdit(commentId: CommentId): void;
+  /**
+   * R54: the edit was sent, and its live write is on its way. The keeper keeps this text (a crash before the write lands
+   * brings it back), and the next `changeEdit` of the comment begins a new edit session. That session's text is kept in
+   * the journal at once, but only reaches the store after `dropEdit`, because the live write closes whatever edit of this
+   * tab is open. Optional, so a keeper without it still compiles.
+   */
+  sentEdit?(commentId: CommentId): void;
   /** R54: the unsent edits of this document that this tab holds (restored by `restore`, or typed here). */
   editDrafts(documentId: DocumentId): EditDraft[];
   /** Stop listening to the page and clear timers. Does not write; call `flush()` first if that is wanted. */
@@ -132,6 +139,10 @@ interface EditEntry extends Slot {
   editId: string;
   body: string;
   updatedAt: number;
+  /** The edit was sent (`sentEdit`); its live write has not been confirmed by `dropEdit` yet. */
+  sent?: boolean;
+  /** A new session begun while the last one's live write was on its way: journaled, not sent to the store until `dropEdit`. */
+  held?: boolean;
 }
 
 /** A delete that waits for a write already on its way. `skip` says it is no longer wanted. */
@@ -158,6 +169,8 @@ export function createDraftKeeper(d: {
 }): DraftKeeper {
   const entries = new Map<CommentId, Entry>();
   const edits = new Map<CommentId, EditEntry>();
+  /** R54: edits that were sent, whose live write `dropEdit` has not confirmed yet, while a newer session of them is open. */
+  const sentEdits = new Map<CommentId, EditEntry>();
   const journal = d.journal ?? null;
   const threads = new Map<ThreadId, ThreadRow>();
   const discards = new Map<string, Discard>();
@@ -374,6 +387,7 @@ export function createDraftKeeper(d: {
     }
     for (const x of edits.values()) {
       if (x.dirty && x.journaledSeq !== x.seq) journalEdit(x);
+      if (x.held) continue; // waits for the live write of the edit before it (sentEdit)
       if (x.dirty && (urgent || !x.inflight)) waits.push(launchEdit(store, x));
       else if (x.inflight) waits.push(x.inflight);
     }
@@ -507,6 +521,35 @@ export function createDraftKeeper(d: {
     if (any) schedule();
   }
 
+  /**
+   * Closes one edit session in the store, after any save of it that is already on its way. A newer session of the same
+   * comment has another edit id and is left alone by the store, and keeps its own journal entry.
+   */
+  function closeSession(x: EditEntry): void {
+    const commentId = x.commentId;
+    const newer = (): boolean => {
+      const now = edits.get(commentId);
+      return now !== undefined && now !== x;
+    };
+    if (d.store === null || d.memoryOnly()) {
+      if (!newer()) journal?.remove('edit', commentId);
+      return;
+    }
+    if (!newer()) closeInJournal('edit', commentId);
+    discards.set(`e:${commentId}:${x.editId}`, {
+      id: commentId,
+      after: x.inflight ?? Promise.resolve(),
+      running: false,
+      skip: () => false,
+      run: (store) => store.discardEditDraft?.(commentId, x.editId),
+      done: () => {
+        if (!edits.has(commentId)) journal?.remove('edit', commentId); // a newer edit of this comment keeps its entry
+      },
+    });
+    const store = usable();
+    if (store) runDiscards(store);
+  }
+
   const byCreated = (a: CommentRow, b: CommentRow): number => a.createdAt - b.createdAt;
   // Sorts by when the session began, so the store can tell a newer session of this tab from an older one.
   const newEditId = (): string => `${Date.now().toString(36).padStart(10, '0')}-${globalThis.crypto.randomUUID()}`;
@@ -523,6 +566,11 @@ export function createDraftKeeper(d: {
   return {
     change(row, thread) {
       if (disposed) return;
+      // R67: a draft is kept under the library id of its PDF. A row without one could never be restored or stored.
+      if (row.documentId === '') {
+        report(row.id, new Error('bad-row: a draft needs its document id'));
+        return;
+      }
       let e = entries.get(row.id);
       if (!e) {
         e = { ...newSlot(), row, thread: undefined, threadSaved: false };
@@ -580,9 +628,20 @@ export function createDraftKeeper(d: {
 
     changeEdit(comment, body) {
       if (disposed) return;
+      if (comment.documentId === '') {
+        report(comment.id, new Error('bad-row: an edit needs its document id'));
+        return;
+      }
       let x = edits.get(comment.id);
+      if (x?.sent) {
+        // The last edit was sent and its write is on its way: this is a new session (R54). The old one stays until
+        // `dropEdit`, so its delete still runs then.
+        sentEdits.set(comment.id, x);
+        x = undefined;
+      }
       if (!x) {
-        x = { ...newSlot(), commentId: comment.id, threadId: comment.threadId, documentId: comment.documentId, editId: newEditId(), body, updatedAt: Date.now() };
+        const held = sentEdits.has(comment.id);
+        x = { ...newSlot(), commentId: comment.id, threadId: comment.threadId, documentId: comment.documentId, editId: newEditId(), body, updatedAt: Date.now(), ...(held ? { held } : {}) };
         edits.set(comment.id, x);
       }
       x.body = body;
@@ -594,29 +653,29 @@ export function createDraftKeeper(d: {
       schedule();
     },
 
+    sentEdit(commentId) {
+      const x = edits.get(commentId);
+      if (x) x.sent = true;
+    },
+
     dropEdit(commentId) {
+      // The live write of a sent edit has landed. A session begun meanwhile (sentEdit) is let go to the store now; the
+      // sent one is closed as before.
+      const old = sentEdits.get(commentId);
+      if (old) {
+        sentEdits.delete(commentId);
+        const next = edits.get(commentId);
+        if (next?.held) {
+          next.held = false;
+          if (next.dirty) schedule();
+        }
+        closeSession(old);
+        return;
+      }
       const x = edits.get(commentId);
       if (!x) return;
       edits.delete(commentId);
-      if (d.store === null || d.memoryOnly()) {
-        journal?.remove('edit', commentId);
-        return;
-      }
-      closeInJournal('edit', commentId);
-      // Closes this edit session in the store, after any save of it that is already on its way. A newer session of the same
-      // comment has another edit id and is left alone by the store.
-      discards.set(`e:${commentId}:${x.editId}`, {
-        id: commentId,
-        after: x.inflight ?? Promise.resolve(),
-        running: false,
-        skip: () => false,
-        run: (store) => store.discardEditDraft?.(commentId, x.editId),
-        done: () => {
-          if (!edits.has(commentId)) journal?.remove('edit', commentId); // a newer edit of this comment keeps its entry
-        },
-      });
-      const store = usable();
-      if (store) runDiscards(store);
+      closeSession(x);
     },
 
     editDrafts: (documentId) =>

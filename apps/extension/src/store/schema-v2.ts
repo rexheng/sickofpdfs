@@ -59,15 +59,20 @@ function outboxTriggers(table: 'threads' | 'comments'): string[] {
   ];
 }
 
-// comments -> comments_fts: only sent, live comments are searchable. A draft, a soft-deleted comment and a Trash-restored
-// comment all go through the UPDATE trigger, which drops the old entry and adds a new one only if the row now qualifies.
+// comments -> comments_fts: only sent, live comments are searchable. A sent, a soft-deleted and a Trash-restored comment
+// all go through the UPDATE trigger, which drops the old entry and adds a new one only if the row now qualifies.
+// TB2 finding 8: a draft is never indexed, so saving one (every typing burst) must not touch the index at all. The
+// UPDATE trigger only runs when the row was or is a sent one, and only for the columns the index depends on; its DELETE
+// scans the index (comment_id is UNINDEXED), which cost 2-7 ms per draft save on a big library.
+const COMMENTS_FTS_AU = `CREATE TRIGGER comments_fts_au AFTER UPDATE OF body, draft_of_tab, deleted_at, document_id ON comments
+     WHEN OLD.draft_of_tab IS NULL OR NEW.draft_of_tab IS NULL BEGIN
+     DELETE FROM comments_fts WHERE comment_id = OLD.id;
+     INSERT INTO comments_fts (comment_id, document_id, body) SELECT NEW.id, NEW.document_id, NEW.body
+       WHERE NEW.draft_of_tab IS NULL AND NEW.deleted_at IS NULL; END`;
 const COMMENTS_FTS_TRIGGERS = [
   `CREATE TRIGGER comments_fts_ai AFTER INSERT ON comments WHEN NEW.draft_of_tab IS NULL AND NEW.deleted_at IS NULL BEGIN
      INSERT INTO comments_fts (comment_id, document_id, body) VALUES (NEW.id, NEW.document_id, NEW.body); END`,
-  `CREATE TRIGGER comments_fts_au AFTER UPDATE ON comments BEGIN
-     DELETE FROM comments_fts WHERE comment_id = OLD.id;
-     INSERT INTO comments_fts (comment_id, document_id, body) SELECT NEW.id, NEW.document_id, NEW.body
-       WHERE NEW.draft_of_tab IS NULL AND NEW.deleted_at IS NULL; END`,
+  COMMENTS_FTS_AU,
   `CREATE TRIGGER comments_fts_ad AFTER DELETE ON comments BEGIN DELETE FROM comments_fts WHERE comment_id = OLD.id; END`,
 ];
 
@@ -139,6 +144,20 @@ export function isReadOnly(db: SqlDb): boolean {
  * Every trigger on `threads` or `comments` that queues to the outbox or feeds `comments_fts` is dropped by what it does,
  * not by its name, because v1's generated names are not part of the contract.
  */
+/**
+ * A database already at v2 got the first comments_fts UPDATE trigger, which ran on every draft save. This puts the
+ * current one in its place. It is a re-created trigger (contracts §4: allowed), changes no data and needs no rebuild,
+ * because the index holds exactly what it held. Safe to run on every open; it does nothing when the trigger is current.
+ */
+export function refreshCommentsFtsTrigger(db: SqlDb): void {
+  const now = db.selectValue(`SELECT sql FROM sqlite_schema WHERE type = 'trigger' AND name = 'comments_fts_au'`);
+  if (now === COMMENTS_FTS_AU) return;
+  db.savepoint((tx) => {
+    tx.exec('DROP TRIGGER IF EXISTS comments_fts_au');
+    tx.exec(COMMENTS_FTS_AU);
+  });
+}
+
 export function applySchemaV2(db: SqlDb): void {
   if (userVersion(db) > SCHEMA_VERSION) throw new Error('read-only: this database is newer than this version of sickofpdfs');
   db.savepoint((tx) => {

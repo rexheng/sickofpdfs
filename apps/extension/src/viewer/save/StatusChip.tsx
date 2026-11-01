@@ -13,9 +13,16 @@ const SAVE_HINT = 'Save it to your library (Ctrl+Alt+S)';
 
 type ChipLook = Pick<ChipProps, 'label' | 'icon' | 'tone' | 'tooltip' | 'disabled'> & { saves: boolean };
 
+/** The chip after a save failed (R67 a): the notes are still kept in this tab and on this computer. */
+export const SAVE_FAILED = 'Couldn’t save. Try again';
+const SAVE_FAILED_HINT = 'Your notes are kept on this computer. Click to try again.';
+
 /** What the chip shows for a state; null for none (while the PDF is being checked). */
-export function chipFor(state: SaveState, busy: SaveControllerImpl['busy'], savedReasons: readonly string[] | null): ChipLook | null {
+export function chipFor(state: SaveState, busy: SaveControllerImpl['busy'], savedReasons: readonly string[] | null, failed = false): ChipLook | null {
   if (busy === 'save' && state.kind !== 'saved') return { label: 'Saving…', icon: 'library_add', tone: 'attention', saves: false };
+  if (failed && busy === null && state.kind !== 'saved' && state.kind !== 'asking' && state.kind !== 'incognito') {
+    return { label: SAVE_FAILED, icon: 'error', tone: 'attention', tooltip: SAVE_FAILED_HINT, saves: true };
+  }
   switch (state.kind) {
     case 'checking':
       return null;
@@ -48,11 +55,12 @@ function tooltipOf(reasons: readonly string[]): string | undefined {
 }
 
 /** The controller's state and running effect, re-read whenever it announces a change. */
-export function useSaveView(save: SaveControllerImpl | null): { state: SaveState | null; busy: SaveControllerImpl['busy'] } {
+export function useSaveView(save: SaveControllerImpl | null): { state: SaveState | null; busy: SaveControllerImpl['busy']; failed: boolean } {
   const subscribe = useCallback((cb: () => void) => save?.subscribe(cb) ?? (() => {}), [save]);
   const state = useSyncExternalStore(subscribe, () => save?.state ?? null);
   const busy = useSyncExternalStore(subscribe, () => save?.busy ?? null);
-  return { state, busy };
+  const failed = useSyncExternalStore(subscribe, () => save?.failed ?? false);
+  return { state, busy, failed };
 }
 
 export interface StatusChipProps {
@@ -63,9 +71,9 @@ export interface StatusChipProps {
 const quietly = (p: Promise<void>): void => void p.catch(() => {});
 
 export function StatusChip({ save }: StatusChipProps) {
-  const { state, busy } = useSaveView(save);
+  const { state, busy, failed } = useSaveView(save);
   if (state === null) return null;
-  const look = chipFor(state, busy, save.savedReasons);
+  const look = chipFor(state, busy, save.savedReasons, failed);
   if (look === null) return null;
   const { saves, ...chip } = look;
   return (
