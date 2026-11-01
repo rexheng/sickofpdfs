@@ -18,7 +18,7 @@ import { requestById } from './request-log';
  * repeats: the one Chrome sent for that PDF, never the one of some other request of the tab.
  *
  * The records are in chrome.storage.session (memory only, gone when the browser closes), so a reload or Back in the
- * tab still works after the worker slept. They go when the tab closes.
+ * tab still works after the worker slept. They go dormant when the tab goes to another page, and go when it closes.
  *
  * A refusal is remembered too, two ways: for the browser session, by address; and in the refused viewer's own address,
  * which it marks (viewer-url.ts, `withRefusal`). Chrome keeps that address in the tab's history, so the marker also
@@ -30,6 +30,12 @@ import { requestById } from './request-log';
 export interface Grant extends Opened {
   /** The address as the network stack sees it: normalised, without a fragment. */
   url: string;
+  /**
+   * The tab has left the viewer for another page since (`leaveGrants`). A dormant record counts for nothing: a web
+   * page in the tab cannot use it to re-open that PDF with the owner's sign-in. Only the owner's own return to that
+   * viewer (Back or Forward, a reload, a typed address) wakes it, with its Referer and page.
+   */
+  dormant?: boolean;
 }
 
 /** How the tab opened the address. */
@@ -117,7 +123,13 @@ function grantOwnerOpening(tabId: number, url: string, revisit: boolean, marked:
   return inOrder(async () => {
     const target = keyUrl(url);
     if (target === null || tabId < 0) return;
-    if ((await read(tabId)).some((g) => g.url === target)) return;
+    const records = await read(tabId);
+    const own = records.find((g) => g.url === target);
+    if (own !== undefined) {
+      // The owner came back to a viewer this tab opened: its record wakes, Referer and page kept.
+      if (own.dormant === true) await chrome.storage.session.set({ [keyOf(tabId)]: records.map((g) => (g === own ? { ...g, dormant: false } : g)) });
+      return;
+    }
     if (revisit && (marked || (await readRefused()).includes(target))) return;
     await write(tabId, target, {});
   });
@@ -166,7 +178,18 @@ export function findGrant(tabId: number, url: string): Promise<Grant | null> {
   return inOrder(async () => {
     const target = keyUrl(url);
     if (target === null) return null;
-    return (await read(tabId)).find((g) => g.url === target) ?? null;
+    return (await read(tabId)).find((g) => g.url === target && g.dormant !== true) ?? null;
+  });
+}
+
+/**
+ * The tab went to a page that is not the viewer: its records go dormant (`Grant.dormant`). A page the tab shows from
+ * now on must not re-open, by a link of its own, a PDF the owner opened in the tab earlier.
+ */
+export function leaveGrants(tabId: number): Promise<void> {
+  return inOrder(async () => {
+    const records = await read(tabId);
+    if (records.some((g) => g.dormant !== true)) await chrome.storage.session.set({ [keyOf(tabId)]: records.map((g) => ({ ...g, dormant: true })) });
   });
 }
 

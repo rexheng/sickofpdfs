@@ -1,7 +1,7 @@
 import { VIEWER_PATH } from '../../shared/viewer-url';
 import * as embedded from './embedded';
 import * as escape from './escape';
-import { forgetGrants } from './grants';
+import { forgetGrants, leaveGrants } from './grants';
 import { clearStickyReferer } from './referer';
 import { forgetTab } from './request-log';
 
@@ -11,7 +11,8 @@ import { forgetTab } from './request-log';
  * - the embedded-PDF suppression of "Back to page" (embedded.ts);
  * - the sticky Referer rule (referer.ts);
  * - the request log (request-log.ts);
- * - the addresses the tab opened (grants.ts), which outlive navigation so that Back and reload work, until it closes.
+ * - the addresses the tab opened (grants.ts): they go dormant when the tab goes to another page, so that page cannot
+ *   re-open them with the owner's sign-in, and wake when the owner comes back (Back, reload); they go when it closes.
  */
 export function installTabLifecycle(): void {
   chrome.webNavigation.onCommitted.addListener((details) => {
@@ -19,8 +20,11 @@ export function installTabLifecycle(): void {
     const { tabId, url } = details;
     void escape.onTabCommitted(tabId, url);
     void embedded.onTabCommitted(tabId, url);
-    // The viewer's own reload keeps its rule; any other page ends it.
-    if (!url.startsWith(chrome.runtime.getURL(VIEWER_PATH))) void clearStickyReferer(tabId);
+    // The viewer's own reload keeps its rule and its records; any other page ends the rule and puts the records to sleep.
+    if (!url.startsWith(chrome.runtime.getURL(VIEWER_PATH))) {
+      void clearStickyReferer(tabId);
+      void leaveGrants(tabId);
+    }
   });
   chrome.tabs.onRemoved.addListener((tabId) => {
     void escape.onTabRemoved(tabId);
