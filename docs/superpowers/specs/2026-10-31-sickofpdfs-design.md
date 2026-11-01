@@ -123,7 +123,7 @@ docs/              this spec, research reports, reference screenshots
 | Local database | @sqlite.org/sqlite-wasm 3.54.1 with FTS5, stored in the origin private file system |
 | UI building blocks | Radix UI primitives, Material Symbols Outlined, Google Sans fonts bundled locally |
 | Claude | @anthropic-ai/sdk 1.3.0; default model chosen at setup (Haiku 5.5 suggested, Opus 5.5 for Think harder) |
-| Filter tie-breaker | transformers.js with the MiniLM model (23 MB) bundled, no downloads at run time |
+| Filter tie-breaker | onnxruntime-web (one thread, plain wasm; Phase 7 OCR reuses it) with a MiniLM model (about 16 MB) and our own WordPiece tokenizer, all bundled, no downloads at run time. About 0.2 s warm and 1.5 s cold; it runs only for "not sure" PDFs, off the drawing path |
 | Cloud | Cloudflare Workers, D1, R2, Workers Static Assets, Workers OAuth Provider, MCP server SDK |
 | Tests | Vitest, Playwright driving Chromium with the extension loaded, pixelmatch for screenshot diffs |
 | Text layer | pdf.js text-layer code (Apache-2.0), fed with PDFium glyph boxes |
@@ -263,7 +263,7 @@ The filter runs on your computer, in memory, before anything is stored. It glanc
    3. Your deny and allow lists for sites and folders.
    4. Force save: an arXiv id plus a References section, or a DOI plus an Abstract plus References.
    5. The score, for PDFs with text: 3 or more saves; 0 or less does not; anything between is "not sure".
-3. **Not sure:** a small bundled model (MiniLM, about 20 ms) nudges the score. If still unsure, the chip asks you.
+3. **Not sure:** a small bundled model (MiniLM, well under a second) nudges the score. If still unsure, the chip asks you.
 4. **Scans with no text** are never saved automatically, and the score is not used for them. From scholarly sites or course pages the chip asks; otherwise they are not saved. They are never OCR'd to decide.
 
 One reference implementation in TypeScript, with its test cases, defines these rules and weights. It replaces the research prototype, which scored 43 of 44 with zero false saves but had no hard block, force save or MiniLM. Expected results are regenerated from PDFium's text, and any decision that differs from the prototype's is reviewed by hand.
