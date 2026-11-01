@@ -25,7 +25,7 @@ import { CARD_ID_PREFIX, CardColumn, type ColumnCard } from './CardColumn';
 import { createCommentFlow, type CommentContext, type NoteTarget } from './comment-flow';
 import { anchorHit, anchorLabel, anchorTop, columnLeft, MARGIN_RESERVE, PIN_SIZE, pointInContent, rectInContent, shownAnchor } from './margin';
 import { installNoteKeys } from './note-commands';
-import { publishNoteCommands, type NoteCommands } from './notes-host';
+import { marginFolded, publishNoteCommands, subscribeMarginFolded, type NoteCommands } from './notes-host';
 import styles from './NotesLayer.module.css';
 import { createStandInWiring } from './stand-in-session';
 import type { NotesWiring } from './wiring';
@@ -84,6 +84,7 @@ function Notes({ doc, textLayers, pages, store, wiring }: NotesLayerProps & { wi
   const host = useOverlayHost(pages);
   const scroller = host?.closest<HTMLElement>('[role="document"]') ?? null;
   const layoutTick = useLayoutTick(store, host);
+  const folded = useSyncExternalStore(subscribeMarginFolded, marginFolded);
 
   const [editing, setEditingState] = useState<Editing | null>(null);
   const editingRef = useRef<Editing | null>(null);
@@ -191,7 +192,7 @@ function Notes({ doc, textLayers, pages, store, wiring }: NotesLayerProps & { wi
   /** Opens the margin before the note appears, keeping `keep` (client px) where it is on screen. */
   const openMargin = useCallback((keep?: { clientX: number; clientY: number }) => {
     const a = pages.current;
-    if (a && a.reserveRight() !== MARGIN_RESERVE) a.setReserveRight(MARGIN_RESERVE, keep);
+    if (a && !marginFolded() && a.reserveRight() !== MARGIN_RESERVE) a.setReserveRight(MARGIN_RESERVE, keep);
   }, [pages]);
 
   const commands = useMemo<NoteCommands>(() => {
@@ -230,8 +231,9 @@ function Notes({ doc, textLayers, pages, store, wiring }: NotesLayerProps & { wi
 
   // ---------------------------------------------------------------- the margin
 
-  // The column shows while the document has a note. A note box that is opening has already opened it (openMargin).
-  const marginOn = s.threads.length > 0;
+  // The column shows while the document has a note, unless the notes panel holds the cards (a narrow window). A note
+  // box that is opening has already opened it (openMargin).
+  const marginOn = s.threads.length > 0 && !folded;
   useEffect(() => {
     const a = pages.current;
     if (a) a.setReserveRight(marginOn ? MARGIN_RESERVE : 0);
@@ -513,7 +515,7 @@ function Notes({ doc, textLayers, pages, store, wiring }: NotesLayerProps & { wi
           <Icon name="comment" size={20} filled />
         </button>
       ))}
-      {cards.length > 0 && <CardColumn cards={cards} left={left} activeId={s.active} animate={animate} />}
+      {cards.length > 0 && !folded && <CardColumn cards={cards} left={left} activeId={s.active} animate={animate} />}
     </>
   );
 

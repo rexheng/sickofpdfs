@@ -22,3 +22,27 @@ export function subscribeNoteCommands(cb: () => void): () => void {
   listeners.add(cb);
   return () => listeners.delete(cb);
 }
+
+// ---------------------------------------------------------------- folding the margin (for the notes panel, S15)
+
+let folded = false;
+const foldListeners = new Set<() => void>();
+
+/**
+ * Narrow windows (plan S15): the cards fold into the notes panel. While folded, the margin column is closed and draws
+ * no cards; the notes, their drafts and the session are untouched.
+ */
+export function setMarginFolded(f: boolean): void {
+  if (folded === f) return;
+  folded = f;
+  for (const cb of [...foldListeners]) cb();
+}
+
+export function marginFolded(): boolean {
+  return folded;
+}
+
+export function subscribeMarginFolded(cb: () => void): () => void {
+  foldListeners.add(cb);
+  return () => foldListeners.delete(cb);
+}
