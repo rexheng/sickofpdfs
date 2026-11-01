@@ -1,10 +1,11 @@
 // Comments in the viewer (Phase 2, S14): Ctrl+Alt+M, type, Enter, and the note is a card in the margin with replies,
 // as in Google Docs (spec "The Ctrl+Alt+M flow"; plan section 2, S14).
 //
-// - The margin's room is kept beside the pages whenever they fit with it at the zoom the reader chose, so a first note
-//   moves nothing (ruling R69: a note never changes the zoom). When they do not fit, the thumbnail rail folds away
-//   first (the pages slide over in about 200 ms, the line the note is on keeping its height); if they still do not fit,
-//   the cards fold into the toolbar's Notes button and a note that becomes active opens the notes panel.
+// - A PDF with no notes is centred (ruling R79). The first note makes room for the margin: the pages glide left over
+//   about 200 ms, only as far as the cards need, and the line the note is on keeps its height. A note never changes the
+//   zoom (R69): when the pages do not fit with the margin, the thumbnail rail folds away first; if they still do not
+//   fit, the cards fold into the toolbar's Notes button and a note that becomes active opens the notes panel. A PDF that
+//   had notes opens with the room already kept (R60). Once kept, the room stays while the PDF is open.
 // - The note box sits in the margin, level with its line, so it never covers the text.
 // - Enter sends. Esc, or a click away, sends a new note that has text and cancels an empty one (its highlight goes too).
 //   A reply with text is sent too when its card is left (the controller's ruling, the same in the notes panel). Nothing
@@ -28,7 +29,7 @@ import { CARD_ID_PREFIX, CardColumn, type ColumnCard } from './CardColumn';
 import { createCommentFlow, type CommentContext, type NoteTarget } from './comment-flow';
 import { anchorHit, anchorLabel, anchorTop, columnLeft, MARGIN_RESERVE, PANEL_RESERVE, pinAt, rectInContent, shownAnchor } from './margin';
 import { keptOf } from './kept';
-import { rememberNotes } from './margin-at-open';
+import { hadNotes, rememberNotes } from './margin-at-open';
 import { publishNoteCommands, type NoteCommands } from './notes-host';
 import { notesPanel, setCardsFolded, setPanelOverPages, useNotesPanelOpen } from '../notes-panel/panel-state';
 import styles from './NotesLayer.module.css';
@@ -83,6 +84,11 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
   const panelOpen = useNotesPanelOpen();
   /** The rail is folding away for the margin: the cards count as fitting until the pages have moved. */
   const [railFolding, setRailFolding] = useState(false);
+  /**
+   * The margin's room is wanted: the PDF has notes, a note box has opened, or it had notes when last open here (R60, as
+   * reserveAtOpen kept it). A PDF with none stays centred (R79). Once wanted it stays, so the page never slides back.
+   */
+  const [marginWanted, setMarginWanted] = useState(() => hadNotes(notes.opened.loaded.sha256));
 
   const [editing, setEditingState] = useState<Editing | null>(null);
   const editingRef = useRef<Editing | null>(null);
@@ -196,19 +202,25 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
     return true;
   }, [pages, scroller, store]);
 
-  /** Nothing was made. The margin's room stays (it is there whenever it fits), so there is nothing to undo. */
+  /** Nothing was made. The margin's room, once opened, stays (the page does not slide back), so there is nothing to undo. */
   const nothingOpened = useCallback((target: NoteTarget | null) => void target, []);
 
   /**
-   * Makes room for the margin before the note appears (S14's step, also used by S16). The room is kept whenever the
-   * pages fit with it, so only the rail may have to fold; `keep` is the point the note is about, which keeps its height.
+   * Makes room for the margin before the note appears (S14's step, also used by S16), R79: the rail folds first if the
+   * room needs it, then the pages glide left as far as the cards need. `keep` is the point the note is about (client
+   * px): its line keeps its height on screen. The zoom never changes (R69).
    */
   const openMargin = useCallback(
     (keep?: { clientX: number; clientY: number }) => {
-      void keep;
       foldRailForMargin();
+      const a = pages.current;
+      if (a && !notesPanel.isOpen() && a.reserveRight() !== MARGIN_RESERVE) {
+        a.glide();
+        a.setReserveRight(MARGIN_RESERVE, keep);
+      }
+      setMarginWanted(true);
     },
-    [foldRailForMargin],
+    [foldRailForMargin, pages],
   );
 
   const commands = useMemo<NoteCommands>(() => {
@@ -252,21 +264,21 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
 
   // ---------------------------------------------------------------- the margin (R60, R69)
 
-  // The room at the right of the pages: the margin's, kept whenever the pages fit with it (from the first layout:
-  // reserveAtOpen), so a first note moves nothing; the notes panel's while it is open. Neither ever changes the zoom.
-  // A page that does not fit beside the panel stays where it is, under the panel, and can be scrolled out from under it.
+  // The room at the right of the pages: the notes panel's while it is open; otherwise the margin's once it is wanted
+  // (R79; openMargin makes it for a first note, keeping the note's line in place). Neither ever changes the zoom. A page
+  // that does not fit beside the panel stays where it is, under the panel, and can be scrolled out from under it.
   const [, relaidOut] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
     const a = pages.current;
     if (!a) return;
-    const want = panelOpen ? PANEL_RESERVE : MARGIN_RESERVE;
+    const want = panelOpen ? PANEL_RESERVE : marginWanted ? MARGIN_RESERVE : 0;
     if (a.reserveRight() === want) return;
     a.glide();
     a.setReserveRight(want, undefined, { scroll: panelOpen });
     // The pages may have moved inside a scroll area of the same size, which layoutTick does not see. The page list lays
     // them out once this effect is done, so the cards are placed again just after, before the browser paints.
     queueMicrotask(() => flushSync(relaidOut));
-  }, [panelOpen, pages, host]);
+  }, [panelOpen, marginWanted, pages, host]);
 
   // Whether the cards fit beside the pages at their size, measured after every layout (layoutTick). While the rail is
   // folding away for them they count as fitting, so a new note does not open the panel in the meantime.
@@ -305,7 +317,9 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
   }, [notes]);
   const hasNotes = s.threads.length > 0;
   useEffect(() => {
-    if (hasNotes) foldRailForMargin();
+    if (!hasNotes) return;
+    foldRailForMargin();
+    setMarginWanted(true);
   }, [hasNotes, foldRailForMargin]);
   // What the next open of this file reserves: only a PDF whose notes are stored is remembered (never an unsaved one).
   useEffect(() => {

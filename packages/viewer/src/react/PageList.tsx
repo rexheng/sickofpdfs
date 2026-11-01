@@ -98,8 +98,8 @@ export interface PageListProps {
    */
   onError?: (err: unknown) => void;
   /**
-   * CSS px kept free at the right from the first layout (setReserveRight later changes it), for the notes margin: when
-   * the pages fit with it beside them, a first note does not move them (R60, R69).
+   * CSS px kept free at the right from the first layout (setReserveRight later changes it): a document that already has
+   * notes opens with room for its notes margin, so its pages do not move once shown (R60).
    */
   initialReserveRight?: number;
 }
