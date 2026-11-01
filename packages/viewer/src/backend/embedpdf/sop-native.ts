@@ -47,6 +47,10 @@ const FORM_TYPES: FormType[] = ['none', 'acroform', 'xfa-full', 'xfa-foreground'
 const FILLABLE_FIELD_TYPES: ReadonlySet<number> = new Set([2, 3, 4, 5, 6]);
 /** FPDF_ANNOT_WIDGET (fpdf_annot.h). */
 const FPDF_ANNOT_WIDGET = 20;
+/** FPDF_ANNOT_LINK (fpdf_annot.h). */
+const FPDF_ANNOT_LINK = 2;
+/** FPDF_ANNOT_FLAG_HIDDEN (fpdf_annot.h). */
+const FPDF_ANNOT_FLAG_HIDDEN = 2;
 /** FPDFAnnot_GetFormFieldType's answer for a widget that is not (yet) linked to a form field. */
 const NO_FIELD = -1;
 /** Annotation flags (PDF 32000 12.5.3) that make a widget unusable: Hidden 2, NoView 32, ReadOnly 64. */
@@ -165,6 +169,8 @@ type ExportName =
   | 'FPDFPage_CloseAnnot'
   | 'FPDFAnnot_GetSubtype'
   | 'FPDFAnnot_GetFlags'
+  | 'FPDFAnnot_SetFlags'
+  | 'EPDFAnnot_HasAppearanceStream'
   | 'FPDFAnnot_GetFormFieldType'
   | 'FPDFAnnot_GetFormFieldFlags'
   | 'FORM_OnAfterLoadPage'
@@ -277,6 +283,8 @@ interface DocState {
   doc: PdfDocumentObject;
   /** Per page, unrotated. */
   sizes: PageSize[];
+  /** The pages whose borderless-link annotations are already hidden (hideLinkBorders), so that is done once per page. */
+  linksHidden: Set<number>;
 }
 
 export class SopPdfiumNative extends PdfiumNative implements EngineApi {
@@ -318,7 +326,7 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
       // EmbedPDF's size is PDFium's page size, which is turned by /Rotate; PageSize is the unrotated one.
       return rotation % 180 === 0 ? { width: p.size.width, height: p.size.height, rotation } : { width: p.size.height, height: p.size.width, rotation };
     });
-    this.docs.set(docId, { doc, sizes });
+    this.docs.set(docId, { doc, sizes, linksHidden: new Set() });
     try {
       return { pageCount: doc.pageCount, pages: sizes, metadata: this.metadata(doc), encrypted: doc.isEncrypted };
     } catch (err) {
@@ -369,7 +377,8 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
    * space and adds its `rotation` on top; req.rect is unrotated, so it is turned by the page's /Rotate first.
    */
   async renderBitmap(docId: string, req: TileRequest): Promise<ImageBitmap> {
-    const { doc, sizes } = this.state(docId);
+    const state = this.state(docId);
+    const { doc, sizes } = state;
     const page = this.page(doc, req.pageIndex);
     const size = sizes[req.pageIndex];
     const rect = req.rect ?? { x: 0, y: 0, width: size.width, height: size.height };
@@ -384,6 +393,10 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
     if (w > MAX_TILE_SIDE || h > MAX_TILE_SIDE || w * h > MAX_TILE_PIXELS) {
       throw new RangeError(`renderTile: a ${w} × ${h} px bitmap is too large (at most ${MAX_TILE_SIDE} px a side and ${MAX_TILE_PIXELS} px)`);
     }
+    if (req.withAnnotations && !state.linksHidden.has(req.pageIndex)) {
+      this.hideLinkBorders(doc, req.pageIndex);
+      state.linksHidden.add(req.pageIndex);
+    }
     const image = settled(
       this.renderPageRect(doc, page, { origin: { x: turned.x, y: turned.y }, size: { width: turned.width, height: turned.height } }, {
         scaleFactor: req.scale,
@@ -392,6 +405,36 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
       }),
     );
     return createImageBitmap(new ImageData(image.data, image.width, image.height));
+  }
+
+  /**
+   * Hides every Link annotation of the page that has no appearance stream, so drawing annotations does not box it.
+   * EmbedPDF's PDFium makes an appearance stream for such a link when it draws annotations: a box in the link's /C colour
+   * and /Border width, which hyperref sets (green for citations, red for links, cyan for URLs). Chrome's PDFium draws
+   * nothing for a link without an appearance stream, and a coloured box round every citation looks like the owner's own
+   * marks. The flag is set on the open copy in memory only (this engine never saves a document), and it does not touch
+   * the link itself: FPDFLink_Enumerate (getLinks) ignores annotation flags. A link that has its own appearance stream is
+   * left alone and drawn, as Chrome does, and so is every other kind of annotation. This must run before the page's first
+   * drawing with annotations, which is what makes the stream.
+   */
+  private hideLinkBorders(doc: PdfDocumentObject, pageIndex: number): void {
+    const x = this.x;
+    const page = this.ctx(doc).acquirePage(pageIndex);
+    try {
+      const count = x.FPDFPage_GetAnnotCount(page.pagePtr);
+      for (let i = 0; i < count; i++) {
+        const annot = x.FPDFPage_GetAnnot(page.pagePtr, i);
+        if (!annot) continue;
+        try {
+          if (x.FPDFAnnot_GetSubtype(annot) !== FPDF_ANNOT_LINK || x.EPDFAnnot_HasAppearanceStream(annot, 0)) continue;
+          x.FPDFAnnot_SetFlags(annot, x.FPDFAnnot_GetFlags(annot) | FPDF_ANNOT_FLAG_HIDDEN);
+        } finally {
+          x.FPDFPage_CloseAnnot(annot);
+        }
+      }
+    } finally {
+      page.release();
+    }
   }
 
   // ---- text ----
