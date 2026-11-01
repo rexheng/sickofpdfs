@@ -33,7 +33,8 @@
 // to test-assets/figures/last-run.json (or --json) for overlay drawing and debugging.
 //
 // Exit code: 0 when precision and recall both meet the plan's bar, 1 when either misses it, 2 when a hash, the manifest or
-// the label file is wrong. Timing is printed against the plan's 20 ms but is not part of the exit code.
+// the label file is wrong, or when getPageChars on a scored page is not one unit per char (its length differs from
+// FPDFText_CountChars: the rawText rule of commit d2dc051). Timing is printed against the plan's 20 ms but is not part of the exit code.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -157,6 +158,11 @@ const iou = (a, b) => {
   const inter = w * h;
   return inter / (a.width * a.height + b.width * b.height - inter);
 };
+/**
+ * FPDFText_CountChars of a page, asked of PDFium directly on the engine's own text page (a private helper, reached from
+ * this script on purpose), so the check below does not take getPageChars' word for its own length.
+ */
+const countChars = (doc, pageIndex) => native.withTextPage(doc, pageIndex, (textPage) => module.pdfium.wasmExports.FPDFText_CountChars(textPage));
 const sameRect = (a, b) => ['x', 'y', 'width', 'height'].every((k) => Math.abs(a[k] - b[k]) < 1e-6);
 const median = (v) => [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)];
 
@@ -185,6 +191,15 @@ for (const item of items) {
   const bytes = readFileSync(join(cacheDir, item.path));
   const open = native.openDocument(id, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
   if (open.pageCount !== item.pages) fail(2, [`${item.file}: the engine reads ${open.pageCount} pages, the manifest says ${item.pages}`]);
+  // rawText's rule (commit d2dc051): one UTF-16 unit per PDFium char, a dropped char as U+FFFF. Text runs, captions and
+  // anchoring all index into it, so a page where it is off is a data problem, not a detector score.
+  const unaligned = [];
+  for (let i = 0; i < open.pageCount; i++) {
+    const chars = native.getPageChars(id, i).length;
+    const counted = countChars(id, i);
+    if (chars !== counted) unaligned.push(`  p${i + 1}: getPageChars has ${chars} units, FPDFText_CountChars says ${counted}`);
+  }
+  if (unaligned.length) fail(2, [`${item.file}: page chars are not one unit per char (rawText, d2dc051):`, ...unaligned]);
   const pages = [];
   // Run 1, as shipped: the production service, budgets and retries as they are.
   const service = createFigureService({ backend, doc: id, pages: open.pages, dHash64: () => '', idle: (task) => (setTimeout(task, 0), () => {}) });
