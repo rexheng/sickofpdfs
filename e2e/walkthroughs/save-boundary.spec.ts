@@ -44,16 +44,15 @@ import { shot } from './support/takeover';
 
 test.setTimeout(180_000);
 
-// Triage (S11): Phase 3's real filter calls these papers learning and saves them as they open, and the chip that said
-// "Not sure: Save?" now says "Save to library" (ruling R73). These tests are about the moment a "not sure" PDF is saved,
-// so the test build's switch makes every PDF "not sure", as TB2's stand-in filter did.
+// Triage (S11): Phase 3's real filter calls these papers learning and saves them as they open. These tests are about the
+// moment a "not sure" PDF is saved, so the test build's switch makes every PDF "not sure", as TB2's stand-in filter did.
 test.beforeEach(async ({ context }) => forceVerdict(context, 'unsure'));
 
 /** A 714-page textbook: its save reads every page's text first, so "Saving…" lasts seconds (4–4.5 s on the critic's box). */
 const BOOK: TlFixture = { name: 'boyd', file: 'classifier/learning/textbook-boyd-convex-optimization.pdf', page: 0, dir: 'ltr' };
 
 const undoChip = (page: Page) => page.getByRole('button', { name: /^undo$/i });
-const notSureChip = (page: Page) => page.getByRole('button', { name: /^(not sure|save to library)/i });
+const notSureChip = (page: Page) => page.getByRole('button', { name: /^not sure/i });
 const savedChip = (page: Page) => page.getByText(/^saved to library$/i);
 const savingChip = (page: Page) => page.getByText(/^saving/i);
 const address = (server: FixtureServer, fx: TlFixture): string => server.url(`/f/${fx.file}`);
