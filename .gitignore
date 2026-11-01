@@ -18,3 +18,4 @@ test-assets/
 *.pem
 .vitest-attachments/
 .vitest/
+apps/extension/.output/

@@ -9,18 +9,21 @@
     "node": ">=22"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --if-present run typecheck",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p e2e/tsconfig.json && pnpm -r --if-present run typecheck",
     "lint": "eslint .",
     "test": "vitest run --project unit",
     "test:browser": "vitest run --project browser",
     "fixtures": "node scripts/fixtures/build.mjs",
-    "merge:wave": "node scripts/dev/merge-wave.mjs"
+    "merge:wave": "node scripts/dev/merge-wave.mjs",
+    "build": "pnpm -C apps/extension build",
+    "e2e": "pnpm -C apps/extension build:e2e && playwright test -c e2e/playwright.config.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
     "@eslint/css": "2.0.1",
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.63.0",
+    "@types/chrome": "0.3.7",
     "@types/node": "22.20.5",
     "@vitest/browser-playwright": "5.0.5",
     "eslint": "10.14.0",

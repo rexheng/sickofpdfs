@@ -1,0 +1,95 @@
+{
+ "constants": {
+  "logEventTypes": {
+   "URL_REQUEST_START_JOB": 135,
+   "REQUEST_ALIVE": 2
+  },
+  "logEventPhase": {
+   "PHASE_BEGIN": 1,
+   "PHASE_END": 2,
+   "PHASE_NONE": 0
+  },
+  "logSourceType": {
+   "URL_REQUEST": 1
+  }
+ },
+ "events": [
+  {
+   "params": {
+    "initiator": "not an origin",
+    "load_flags": 0,
+    "method": "POST",
+    "network_isolation_key": "https://google.com https://google.com",
+    "request_type": "other",
+    "site_for_cookies": "SiteForCookies: {site=https://google.com; schemefully_same=true}",
+    "upload_id": "0",
+    "url": "https://accounts.google.com/ListAccounts?gpsia=1&source=ChromiumBrowser&json=standard&laf=b64bin"
+   },
+   "phase": 1,
+   "source": {
+    "id": 13,
+    "start_time": "17492346",
+    "type": 1
+   },
+   "time": "17492346",
+   "type": 135
+  },
+  {
+   "params": {
+    "initiator": "chrome-extension://donjaoofgenmbfgfcefnmlgmhiffbglk",
+    "load_flags": 73728,
+    "method": "GET",
+    "network_isolation_key": "chrome-extension://donjaoofgenmbfgfcefnmlgmhiffbglk chrome-extension://donjaoofgenmbfgfcefnmlgmhiffbglk",
+    "request_type": "other",
+    "site_for_cookies": "SiteForCookies: {site=chrome-extension://donjaoofgenmbfgfcefnmlgmhiffbglk; schemefully_same=true}",
+    "url": "http://127.0.0.1:4100/f/a.pdf"
+   },
+   "phase": 1,
+   "source": {
+    "id": 201,
+    "start_time": "1200",
+    "type": 1
+   },
+   "time": "1203",
+   "type": 135
+  },
+  {
+   "params": {
+    "initiator": "chrome-extension://donjaoofgenmbfgfcefnmlgmhiffbglk",
+    "load_flags": 73728,
+    "method": "GET",
+    "network_isolation_key": "chrome-extension://donjaoofgenmbfgfcefnmlgmhiffbglk chrome-extension://donjaoofgenmbfgfcefnmlgmhiffbglk",
+    "request_type": "other",
+    "site_for_cookies": "SiteForCookies: {site=chrome-extension://donjaoofgenmbfgfcefnmlgmhiffbglk; schemefully_same=true}",
+    "url": "chrome-extension://donjaoofgenmbfgfcefnmlgmhiffbglk/pdf/pdfium.wasm"
+   },
+   "phase": 1,
+   "source": {
+    "id": 202,
+    "start_time": "1210",
+    "type": 1
+   },
+   "time": "1213",
+   "type": 135
+  },
+  {
+   "params": {
+    "initiator": "chrome-extension://donjaoofgenmbfgfcefnmlgmhiffbglk",
+    "load_flags": 73728,
+    "method": "GET",
+    "network_isolation_key": "chrome-extension://donjaoofgenmbfgfcefnmlgmhiffbglk chrome-extension://donjaoofgenmbfgfcefnmlgmhiffbglk",
+    "request_type": "other",
+    "site_for_cookies": "SiteForCookies: {site=chrome-extension://donjaoofgenmbfgfcefnmlgmhiffbglk; schemefully_same=true}",
+    "url": "https://cdn.jsdelivr.net/npm/x.wasm"
+   },
+   "phase": 1,
+   "source": {
+    "id": 203,
+    "start_time": "1220",
+    "type": 1
+   },
+   "time": "1223",
+   "type": 135
+  }
+ ]
+}
