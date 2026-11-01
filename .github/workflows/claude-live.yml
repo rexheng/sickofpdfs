@@ -1,0 +1,52 @@
+# The live check for @Claude: one real run against the real API, once per gate (plan §10).
+# Runs by hand (Actions -> "Claude live check" -> Run workflow) and when the `phase-4-gate` tag is pushed.
+# It needs the repository secret ANTHROPIC_API_KEY_LIVE: a separate key with a $5 monthly spend limit. Without the secret the
+# script says so and the job passes without sending anything. It costs a few cents per run.
+#
+# Security: read-only token, actions pinned to full commit SHAs, the secret is given to the one step that runs the script (never
+# the whole job), and the script scrubs the key from everything it prints. The dispatch input reaches the script as an
+# environment variable, never pasted into the shell command.
+name: Claude live check
+
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: 'Run only some steps, comma separated: models,text,figure,web,think,effort (empty = all)'
+        required: false
+        default: ''
+  push:
+    tags:
+      - 'phase-4-gate'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: claude-live
+  cancel-in-progress: false
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Run the live check
+        env:
+          ANTHROPIC_API_KEY_LIVE: ${{ secrets.ANTHROPIC_API_KEY_LIVE }}
+          LIVE_ONLY: ${{ inputs.only }}
+        run: node scripts/claude/live-check.mjs ${LIVE_ONLY:+--only "$LIVE_ONLY"}

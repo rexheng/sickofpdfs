@@ -1,0 +1,13 @@
+{
+ "description": "HTTP 529 overloaded_error.",
+ "synthetic": true,
+ "steps": [
+  {
+   "status": 529,
+   "error": {
+    "type": "overloaded_error",
+    "message": "Overloaded"
+   }
+  }
+ ]
+}

@@ -1,0 +1,206 @@
+{
+ "description": "The list setup shows: newest first, three lines, an older model of two of them.",
+ "synthetic": true,
+ "models": {
+  "data": [
+   {
+    "type": "model",
+    "id": "fixture-opus-a",
+    "display_name": "Claude Opus 5.5",
+    "created_at": "2026-09-20T00:00:00Z",
+    "max_input_tokens": 1000000,
+    "max_tokens": 64000,
+    "line": "opus",
+    "lifecycle": "active",
+    "retires_at": null,
+    "capabilities": {
+     "image_input": {
+      "supported": true
+     },
+     "citations": {
+      "supported": true
+     },
+     "effort": {
+      "supported": true,
+      "low": {
+       "supported": true
+      },
+      "medium": {
+       "supported": true
+      },
+      "high": {
+       "supported": true
+      },
+      "max": {
+       "supported": true
+      }
+     },
+     "server_tools": {
+      "web_search": {
+       "supported": true
+      }
+     }
+    }
+   },
+   {
+    "type": "model",
+    "id": "fixture-sonnet-a",
+    "display_name": "Claude Sonnet 5.5",
+    "created_at": "2026-09-20T00:00:00Z",
+    "max_input_tokens": 1000000,
+    "max_tokens": 64000,
+    "line": "sonnet",
+    "lifecycle": "active",
+    "retires_at": null,
+    "capabilities": {
+     "image_input": {
+      "supported": true
+     },
+     "citations": {
+      "supported": true
+     },
+     "effort": {
+      "supported": true,
+      "low": {
+       "supported": true
+      },
+      "medium": {
+       "supported": true
+      },
+      "high": {
+       "supported": true
+      },
+      "max": {
+       "supported": true
+      }
+     },
+     "server_tools": {
+      "web_search": {
+       "supported": true
+      }
+     }
+    }
+   },
+   {
+    "type": "model",
+    "id": "fixture-haiku-a",
+    "display_name": "Claude Haiku 5.5",
+    "created_at": "2026-09-20T00:00:00Z",
+    "max_input_tokens": 1000000,
+    "max_tokens": 64000,
+    "line": "haiku",
+    "lifecycle": "active",
+    "retires_at": null,
+    "capabilities": {
+     "image_input": {
+      "supported": true
+     },
+     "citations": {
+      "supported": true
+     },
+     "effort": {
+      "supported": true,
+      "low": {
+       "supported": true
+      },
+      "medium": {
+       "supported": true
+      },
+      "high": {
+       "supported": true
+      },
+      "max": {
+       "supported": true
+      }
+     },
+     "server_tools": {
+      "web_search": {
+       "supported": true
+      }
+     }
+    }
+   },
+   {
+    "type": "model",
+    "id": "fixture-opus-old",
+    "display_name": "Claude Opus 5",
+    "created_at": "2026-06-01T00:00:00Z",
+    "max_input_tokens": 1000000,
+    "max_tokens": 64000,
+    "line": "opus",
+    "lifecycle": "active",
+    "retires_at": null,
+    "capabilities": {
+     "image_input": {
+      "supported": true
+     },
+     "citations": {
+      "supported": true
+     },
+     "effort": {
+      "supported": true,
+      "low": {
+       "supported": true
+      },
+      "medium": {
+       "supported": true
+      },
+      "high": {
+       "supported": true
+      },
+      "max": {
+       "supported": true
+      }
+     },
+     "server_tools": {
+      "web_search": {
+       "supported": true
+      }
+     }
+    }
+   },
+   {
+    "type": "model",
+    "id": "fixture-haiku-old",
+    "display_name": "Claude Haiku 4.5",
+    "created_at": "2025-10-01T00:00:00Z",
+    "max_input_tokens": 200000,
+    "max_tokens": 64000,
+    "line": "haiku",
+    "lifecycle": "active",
+    "retires_at": null,
+    "capabilities": {
+     "image_input": {
+      "supported": true
+     },
+     "citations": {
+      "supported": true
+     },
+     "effort": {
+      "supported": false,
+      "low": {
+       "supported": true
+      },
+      "medium": {
+       "supported": true
+      },
+      "high": {
+       "supported": true
+      },
+      "max": {
+       "supported": true
+      }
+     },
+     "server_tools": {
+      "web_search": {
+       "supported": true
+      }
+     }
+    }
+   }
+  ],
+  "has_more": false,
+  "first_id": "fixture-opus-a",
+  "last_id": "fixture-haiku-old"
+ }
+}

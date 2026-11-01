@@ -20,6 +20,11 @@ export interface FixtureServer {
   requests(path: string): number;
   /** Successive GETs of `path` get successive bodies; the last one repeats. */
   serveSequence(path: string, bodies: Uint8Array[]): void;
+  /**
+   * Hands every request whose path starts with `prefix` (any method, including OPTIONS) to `handler`, before the server's own
+   * routes. `requests(path)` still counts them. The recorded-response double for @Claude mounts itself here (claude-replay.ts).
+   */
+  mount(prefix: string, handler: (req: IncomingMessage, res: ServerResponse, path: string) => Promise<void>): void;
 }
 
 const pathOf = (p: string) => new URL(p, 'http://x').pathname;
@@ -75,6 +80,7 @@ function tinyPdfBytes(): Promise<Uint8Array> {
 export async function startFixtureServer(): Promise<FixtureServer & { close(): Promise<void> }> {
   const counts = new Map<string, number>();
   const sequences = new Map<string, { bodies: Uint8Array[]; next: number }>();
+  const mounts: { prefix: string; handler: (req: IncomingMessage, res: ServerResponse, path: string) => Promise<void> }[] = [];
   const headerCases = new Map<string, { ct: string | null; cd?: string }>(HEADER_CASES.map((c) => [pathOf(c.path), c]));
   // The Referer-checked PDF is a plain PDF once the check above has passed.
   headerCases.set('/h/needs-referer.pdf', { ct: 'application/pdf' });
@@ -103,6 +109,12 @@ export async function startFixtureServer(): Promise<FixtureServer & { close(): P
     void (async () => {
       res.setHeader('access-control-allow-origin', '*');
       res.setHeader('access-control-expose-headers', 'accept-ranges, content-range, content-length');
+      const mounted = mounts.find((m) => pathOf(req.url ?? '/').startsWith(m.prefix));
+      if (mounted) {
+        const mountedPath = pathOf(req.url ?? '/');
+        counts.set(mountedPath, (counts.get(mountedPath) ?? 0) + 1);
+        return void (await mounted.handler(req, res, mountedPath));
+      }
       const isPost = req.method === 'POST' && pathOf(req.url ?? '/') === '/h/post';
       if (req.method !== 'GET' && req.method !== 'HEAD' && !isPost) return void res.writeHead(405).end();
       let path: string;
@@ -163,6 +175,9 @@ export async function startFixtureServer(): Promise<FixtureServer & { close(): P
     origin,
     url: (p) => `${origin}/${p.replace(/^\/+/, '')}`,
     requests: (p) => counts.get(pathOf(p)) ?? 0,
+    mount(prefix, handler) {
+      mounts.push({ prefix, handler });
+    },
     serveSequence(p, bodies) {
       if (bodies.length === 0) throw new Error('serveSequence needs at least one body');
       sequences.set(pathOf(p), { bodies, next: 0 });

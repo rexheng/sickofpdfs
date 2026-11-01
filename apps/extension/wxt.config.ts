@@ -5,16 +5,21 @@ import { defineConfig } from 'wxt';
 const key = readFileSync(new URL('./extension-key.pub.txt', import.meta.url), 'utf8').trim();
 
 /**
- * Test builds only: adds the test hooks to the viewer entry. This is the single way `src/testing/test-hooks.ts`
- * enters a build, so production modules never reference it and a production build never contains it.
+ * Test builds only: adds the test hooks to the viewer entry, and the Claude base-URL hook (contract addition A7) to the
+ * entries that may call Anthropic: the viewer, and the Settings page once it exists. These are the only ways
+ * `src/testing/*.ts` enters a build, so production modules never reference them and a production build never contains them.
  */
 function sopTestHooks() {
+  const entry = (id: string, name: string) => (id.split('?')[0] ?? id).replaceAll('\\', '/').endsWith(`/src/entrypoints/${name}/main.tsx`);
   return {
     name: 'sop-test-hooks',
     enforce: 'pre' as const,
     transform(code: string, id: string) {
-      if (!id.split('?')[0].replaceAll('\\', '/').endsWith('/src/entrypoints/viewer/main.tsx')) return null;
-      return { code: `import '@/testing/test-hooks';\n${code}`, map: null };
+      const imports: string[] = [];
+      if (entry(id, 'viewer')) imports.push("import '@/testing/test-hooks';");
+      if (entry(id, 'viewer') || entry(id, 'settings')) imports.push("import '@/testing/claude-base-url';");
+      if (imports.length === 0) return null;
+      return { code: `${imports.join('\n')}\n${code}`, map: null };
     },
   };
 }

@@ -1,0 +1,13 @@
+{
+ "description": "HTTP 500.",
+ "synthetic": true,
+ "steps": [
+  {
+   "status": 500,
+   "error": {
+    "type": "api_error",
+    "message": "Internal server error"
+   }
+  }
+ ]
+}
