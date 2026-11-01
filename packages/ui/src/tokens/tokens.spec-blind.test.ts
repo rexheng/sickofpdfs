@@ -28,7 +28,10 @@ function normaliseHex(value: string): string {
   return short ? `#${short[1]}${short[1]}${short[2]}${short[2]}${short[3]}${short[3]}` : s;
 }
 
-const isLightBlock = (selector: string): boolean => !selector.includes('data-theme');
+// The light block is the one whose selector list includes exactly :root (for example ":root, [data-theme='light']").
+// The block regex can pull a preceding @import line into the selector, so split on ';' as well as ','.
+const isLightBlock = (selector: string): boolean =>
+  selector.split(/[,;]/).some((part) => part.trim() === ':root');
 
 // Spec "Colours" table and research 02 section 3.1 (light set), the four most visible roles.
 const KEY_LIGHT_COLOURS: Array<[role: string, hex: string]> = [
