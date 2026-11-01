@@ -617,8 +617,13 @@ export async function waitForBackup(page: Page, folder: string, o: { after?: num
 export async function backupFilesMentioning(page: Page, folder: string, needle: string): Promise<string[]> {
   const hits: string[] = [];
   for (const f of await folderFiles(page, folder)) {
-    const bytes = await readFolderFile(page, folder, f.path);
-    if (bytes.includes(Buffer.from(needle, 'utf8'))) hits.push(f.path);
+    // Triage (p3s13b): the writer removes files while a test polls, so a file listed a moment ago may be gone by the time it is read (a wrong
+    // guess that the folder stands still). A file that is gone does not mention anything.
+    const bytes = await readFolderFile(page, folder, f.path).catch((e: unknown) => {
+      if (/NotFoundError|could not be found/i.test(String(e))) return null;
+      throw e;
+    });
+    if (bytes !== null && bytes.includes(Buffer.from(needle, 'utf8'))) hits.push(f.path);
   }
   return hits;
 }

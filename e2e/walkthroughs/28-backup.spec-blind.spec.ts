@@ -160,8 +160,13 @@ test('forgetting a PDF removes it from the backup: its copy, its notes and its r
   let forgot = { asked: false, text: '' };
   if (await fileMenuHas(page, /forget this pdf/i)) forgot = await forgetThisPdf(page);
   else {
-    note(testInfo, 'forget', 'the File menu has no "Forget this PDF" yet: the store was asked directly');
+    note(testInfo, 'forget', 'the File menu has no "Forget this PDF" yet: the library forgot it and the backup was told, as the Forget flow does (R75)');
     await storeOf(page).call('forgetDocument', s.resnetId);
+    // Triage (p3s13b): the Forget flow is "the library forgets, then the backup scrub hook" (R75). Asking the store alone is not that flow, and the
+    // spec does not say that a plain backup run rewrites old snapshots (see p3s13-triage.md, spec gap 1), so the stand-in calls the hook too.
+    // The hook is only on the library pages in a test build (`__sopBackup`), so it is called from the Settings page.
+    const hookReply = await s.settings.evaluate((id) => (globalThis as unknown as { __sopBackup: { forget(id: string): Promise<{ status: string }> } }).__sopBackup.forget(id), s.resnetId);
+    note(testInfo, 'the backup scrub answered', hookReply.status);
   }
   note(testInfo, 'the Forget dialog said', forgot.asked ? forgot.text : '(it did not ask)');
   if (forgot.asked) expect(forgot.text, 'the dialog says it also clears the backups').toMatch(/backup/i);

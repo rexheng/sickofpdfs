@@ -57,9 +57,33 @@ function testTarget(stored: TestFolderTarget, handles: HandleStore): BackupTarge
   };
 }
 
+/**
+ * Test builds only. A picked folder that reports the permission a test set (`testPermission`, written by `__sopBackup.setPermission`),
+ * as the stand-in folder does: the backup runs in a worker, and a worker's `queryPermission` cannot be patched from a page. Asking again
+ * wins the permission back only inside a click, as Chrome insists (Phase 0, P0-8c).
+ */
+function withTestPermission(real: BackupTarget, handles: HandleStore): BackupTarget {
+  return {
+    ...real,
+    async queryPermission() {
+      const current = await handles.getTarget();
+      return current?.kind === 'folder' && current.testPermission !== undefined ? current.testPermission : real.queryPermission();
+    },
+    async requestPermission() {
+      const current = await handles.getTarget();
+      if (current?.kind !== 'folder' || current.testPermission !== 'prompt') return real.requestPermission();
+      if (typeof navigator.userActivation !== 'undefined' && !navigator.userActivation.isActive) {
+        throw new DOMException('A click is needed to ask for permission.', 'SecurityError');
+      }
+      await handles.setTarget({ ...current, testPermission: 'granted' });
+      return 'granted';
+    },
+  };
+}
+
 /** The target for a stored one, or null when this build cannot use it (a test folder in a production build). */
 export function targetFrom(stored: StoredTarget, handles: HandleStore): BackupTarget | null {
-  if (stored.kind === 'folder') return folderTarget(stored);
+  if (stored.kind === 'folder') return import.meta.env.MODE === 'test' ? withTestPermission(folderTarget(stored), handles) : folderTarget(stored);
   return import.meta.env.MODE === 'test' ? testTarget(stored, handles) : null;
 }
 

@@ -25,6 +25,11 @@ export interface FolderTarget {
   /** The folder's name, for Settings. */
   name: string;
   pickedAt: number;
+  /**
+   * Test builds only (the hooks boundary, test-hooks.ts): what the folder says about permission instead of what Chrome says. A worker cannot be
+   * reached by patching a page's `queryPermission`, so a test sets this next to the target. Production builds never read it.
+   */
+  testPermission?: PermissionState;
 }
 
 /** Test builds only: an OPFS folder that stands in for the picked one (the picker cannot be driven headless). */
@@ -85,7 +90,9 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 function asTarget(v: unknown): StoredTarget | null {
   if (!isRecord(v)) return null;
   if (v.kind === 'folder' && isRecord(v.handle) && typeof v.name === 'string') {
-    return { kind: 'folder', handle: v.handle as unknown as FileSystemDirectoryHandle, name: v.name, pickedAt: typeof v.pickedAt === 'number' ? v.pickedAt : 0 };
+    const folder: FolderTarget = { kind: 'folder', handle: v.handle as unknown as FileSystemDirectoryHandle, name: v.name, pickedAt: typeof v.pickedAt === 'number' ? v.pickedAt : 0 };
+    if (v.testPermission === 'prompt' || v.testPermission === 'granted' || v.testPermission === 'denied') folder.testPermission = v.testPermission;
+    return folder;
   }
   if (v.kind === 'test-opfs' && typeof v.folder === 'string' && typeof v.name === 'string') {
     return {

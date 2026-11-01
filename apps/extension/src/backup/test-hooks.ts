@@ -5,8 +5,8 @@
 //
 //   useFolder(name)      Makes the OPFS folder `name` the backup folder, as picking a folder does, and waits for the first backup (its result).
 //                        { start: false } only chooses the folder.
-//   useHandle(name)      Like useFolder, but stores the OPFS folder's own handle as the picked folder (the code path a real pick takes). No setPermission.
-//   setPermission(p)     Makes the folder report 'prompt' (what Chrome says after a restart: the badge shows) or 'granted'.
+//   useHandle(name)      Like useFolder, but stores the OPFS folder's own handle as the picked folder (the code path a real pick takes).
+//   setPermission(p)     Makes the folder (a stand-in, or one picked through a faked picker) report 'prompt' (what Chrome says after a restart: the badge shows) or 'granted'.
 //   allow()              What a click on "Allow" does. The stand-in folder is granted at once, as a granted prompt would.
 //   run({ now, force })  Runs a backup now and waits for it. `now` is the time the run pretends it is (snapshots are named by its day).
 //   status()             The status record: phase, last backup, size, counts, message.
@@ -100,8 +100,9 @@ export function installBackupTestHooks(client: BackupClient): void {
       const h = await openHandleStore();
       try {
         const cur = await h.getTarget();
-        if (cur?.kind !== 'test-opfs') throw new Error('the backup folder is not a test folder');
-        await h.setTarget({ ...cur, permission });
+        if (cur === null) throw new Error('no backup folder is chosen');
+        // A stand-in folder keeps its answer in `permission`; a folder picked through a faked picker keeps it in `testPermission`.
+        await h.setTarget(cur.kind === 'test-opfs' ? { ...cur, permission } : { ...cur, testPermission: permission });
       } finally {
         h.close();
       }

@@ -24,12 +24,10 @@ import {
   PICKER_FOLDER,
   backUpNowButton,
   backupFilesMentioning,
-  fakePermissionInHiddenDocument,
   findBackup,
   libraryUrl,
   note,
   openLibrary,
-  setFolderPermission,
   shotOf,
   waitForBackup,
   waitForStore,
@@ -37,6 +35,11 @@ import {
 
 test.skip(!BACKUP_WRITER, NO_BACKUP);
 test.setTimeout(480_000);
+
+/** The test build's switch for what the picked folder says about permission (see `backup/test-hooks.ts`). */
+async function setBackupPermission(page: Page, state: 'prompt' | 'granted'): Promise<void> {
+  await page.evaluate((st) => (globalThis as unknown as { __sopBackup: { setPermission(p: string): Promise<void> } }).__sopBackup.setPermission(st), state);
+}
 
 const NOTE_LATER = 'A note made while the folder was waiting for permission';
 const ALLOW = /allow/i;
@@ -57,8 +60,10 @@ test('when Chrome wants the folder allowed again the icon shows a badge, one cli
   expect(await sw.evaluate(() => chrome.action.getBadgeText({})), 'while the folder is allowed there is no badge').toBe('');
 
   // Chrome forgets the permission (after a restart, say)
-  await setFolderPermission(s.settings, 'prompt');
-  await fakePermissionInHiddenDocument(context, s.settings);
+  // Triage (p3s13b), wrong guess about how the permission is faked: the writer runs in a worker of the hidden document, and patching
+  // `queryPermission` in a page or in the hidden document does not reach a worker (the header says so). The test build's own switch
+  // (`__sopBackup.setPermission`, on the library pages) makes the picked folder say 'prompt' to the worker as well as to the pages.
+  await setBackupPermission(s.settings, 'prompt');
 
   // a new session with a new note
   const page = await openPaper(openViewer, server, ATTENTION_FX);
@@ -88,5 +93,5 @@ test('when Chrome wants the folder allowed again the icon shows a badge, one cli
   expect(mdFiles.join('\n'), 'the backup that completed holds the new note').toContain(NOTE_LATER);
   await expect.poll(() => sw.evaluate(() => chrome.action.getBadgeText({})), { message: 'and the badge goes away', timeout: 60_000 }).toBe('');
   await shotOf(lib, testInfo, '05-backup-done');
-  await setFolderPermission(s.settings, null);
+  await setBackupPermission(s.settings, 'granted');
 });
