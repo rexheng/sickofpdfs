@@ -2,6 +2,8 @@
 // Spec "Visual design", "Type and icons": Google Sans for titles, Google Sans Text for body and rows,
 // Google Sans Flex for menus and buttons; all bundled, nothing loaded from the internet.
 import { beforeAll, describe, expect, it } from 'vitest';
+// Published usage: tokens.css first, then base.css, which reads the token variables.
+import '../tokens/tokens.css';
 import '../base.css';
 import { fontFaceSource, registerFonts } from './register';
 

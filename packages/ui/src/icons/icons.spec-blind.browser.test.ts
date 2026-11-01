@@ -11,7 +11,7 @@ import { ICON_NAMES } from './names';
 
 beforeAll(async () => {
   await registerFonts();
-  await document.fonts.load('24px "Material Symbols Outlined"', 'home');
+  await document.fonts.load('24px "Material Symbols Outlined"', 'info');
 });
 
 describe('Icon', () => {
@@ -20,17 +20,17 @@ describe('Icon', () => {
     expect(new Set(ICON_NAMES).size).toBe(ICON_NAMES.length);
 
     // A name the font does not know shows as its own word, which is much wider than one 24 px glyph.
-    const rendered = ICON_NAMES.map((name) => {
+    const rendered = ICON_NAMES.map((name: string) => {
       const el = render(createElement(Icon, { name, size: 24 }));
       return { name, text: el.textContent?.trim(), width: el.getBoundingClientRect().width };
     });
-    const broken = rendered.filter((r) => r.text !== r.name || Math.abs(r.width - 24) > 2);
+    const broken = rendered.filter((r: { name: string; text: string | undefined; width: number }) => r.text !== r.name || Math.abs(r.width - 24) > 2);
     expect(broken).toEqual([]);
   });
 
   it('is unfilled by default and fills when `filled` is set (Material Symbols FILL axis 0 to 1)', () => {
-    const plain = render(createElement(Icon, { name: 'home', size: 24 }));
-    const filled = render(createElement(Icon, { name: 'home', size: 24, filled: true }));
+    const plain = render(createElement(Icon, { name: 'info', size: 24 }));
+    const filled = render(createElement(Icon, { name: 'info', size: 24, filled: true }));
     const fillOf = (el: HTMLElement): string | null =>
       /['"]FILL['"]\s+(\d)/.exec(getComputedStyle(el).fontVariationSettings)?.[1] ?? null;
 
@@ -44,14 +44,14 @@ describe('FileTypeIcon', () => {
   it('kind "pdf" draws a filled file-pdf-box glyph in Drive\'s PDF red rgb(252, 65, 61) at the requested size', () => {
     const el = render(createElement(FileTypeIcon, { kind: 'pdf', size: 24 }));
     const svg = el.tagName.toLowerCase() === 'svg' ? el : el.querySelector('svg');
-    expect(svg).not.toBeNull();
-    expect(svg!.querySelector('path')?.getAttribute('d')).toBeTruthy();
+    if (!svg) throw new Error('FileTypeIcon rendered no svg');
+    expect(svg.querySelector('path')?.getAttribute('d')).toBeTruthy();
 
     expect(Math.abs(el.getBoundingClientRect().width - 24)).toBeLessThanOrEqual(1);
 
     // "Filled" means the paint is not 'none'. A fill of currentColor takes the colour from the element's color.
-    const fill = getComputedStyle(svg!).fill;
-    const effective = fill === 'none' ? 'none' : fill.startsWith('rgb') ? fill : getComputedStyle(svg!).color;
+    const fill = getComputedStyle(svg).fill;
+    const effective = fill === 'none' ? 'none' : fill.startsWith('rgb') ? fill : getComputedStyle(svg).color;
     expect(effective).toBe('rgb(252, 65, 61)');
   });
 });

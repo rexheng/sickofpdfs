@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // Spec-blind test for Task 13: the Drive token VALUES.
 // Source: spec "Visual design" (colours, shape and layout) and docs/research/02-drive-visual-spec.md section 3.
 // The interface does not fix token names, so each check looks for the value declared in the token file.

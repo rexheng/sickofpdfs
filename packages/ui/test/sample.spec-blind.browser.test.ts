@@ -4,13 +4,21 @@
 import { createElement, type CSSProperties, type ReactElement } from 'react';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { page } from 'vitest/browser';
+// Published usage: tokens.css first, then base.css, which reads the token variables.
+import '../src/tokens/tokens.css';
 import '../src/base.css';
 import { registerFonts } from '../src/fonts/register';
 import { FileTypeIcon } from '../src/icons/FileTypeIcon';
 import { Icon } from '../src/icons/Icon';
-import '../src/tokens/tokens.css';
 import { render } from './render';
 import { tokenNamesWithColour } from './token-probe.spec-blind';
+
+// The body-text line inside a sample; throws if the sample rendered without one.
+function bodyText(sample: Element): Element {
+  const body = sample.querySelector('[data-sample-body]');
+  if (!body) throw new Error('sample has no body text line');
+  return body;
+}
 
 const firstFamily = (el: Element): string =>
   getComputedStyle(el).fontFamily.split(',')[0].replace(/["']/g, '').trim();
@@ -72,11 +80,11 @@ function specimen(dark: boolean): ReactElement {
     createElement(
       'div',
       { style: { display: 'flex', alignItems: 'center', gap: 16, marginTop: 12 } },
-      createElement(Icon, { name: 'home', size: 24 }),
-      createElement(Icon, { name: 'home', size: 24, filled: true }),
-      createElement(Icon, { name: 'search', size: 24 }),
-      createElement(Icon, { name: 'star', size: 24 }),
-      createElement(Icon, { name: 'settings', size: 24 }),
+      createElement(Icon, { name: 'info', size: 24 }),
+      createElement(Icon, { name: 'info', size: 24, filled: true }),
+      createElement(Icon, { name: 'find_in_page', size: 24 }),
+      createElement(Icon, { name: 'toc', size: 24 }),
+      createElement(Icon, { name: 'photo_library', size: 24 }),
       createElement(Icon, { name: 'download', size: 20 }),
       createElement(Icon, { name: 'print', size: 20 }),
       createElement(FileTypeIcon, { kind: 'pdf', size: 18 }),
@@ -96,8 +104,8 @@ describe('light and dark sample for visual review', () => {
     const dark = render(specimen(true));
     await document.fonts.ready;
 
-    expect(firstFamily(light.querySelector('[data-sample-body]')!)).toBe('Google Sans Text');
-    expect(firstFamily(dark.querySelector('[data-sample-body]')!)).toBe('Google Sans Text');
+    expect(firstFamily(bodyText(light))).toBe('Google Sans Text');
+    expect(firstFamily(bodyText(dark))).toBe('Google Sans Text');
     expect(document.fonts.check('14px "Google Sans Text"')).toBe(true);
 
     const lightShot = await page.screenshot({
