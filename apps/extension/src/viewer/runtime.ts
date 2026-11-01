@@ -6,6 +6,7 @@ import type { DocumentId, SaveState } from '@sop/core';
 import type { CharRange, PageBox, PagePoint, PdfBackend, ViewerSnapshot } from '@sop/viewer';
 import type { BlobStore } from '../store/blob-store';
 import type { StoreClient } from '../store/client';
+import type { AnnotationSession } from './annotations/session';
 import type { OpenedDocument } from './open-document';
 
 /** Where opening the PDF stands. A password prompt is still `loading`. */
@@ -46,6 +47,11 @@ export interface ViewerRuntime {
   blobStore: BlobStore | null;
   /** The open PDF's library save (Task 30), once its controller exists. */
   save: SaveHooks;
+  /**
+   * Phase 2: the open document's notes (marks, threads, drafts), as the viewer draws them. Null in Incognito, where
+   * there are no notes, and while no document is open.
+   */
+  annotations: AnnotationSession | null;
 }
 
 /** The save controller as tests (and Phase 2's first mark) drive it. */
@@ -58,10 +64,25 @@ export interface SaveHooks {
 }
 
 let registry: Partial<ViewerRuntime> = {};
+let storeWaiters: ((s: StoreClient | null) => void)[] = [];
 
 /** Merges `p` into the registry. */
 export function publishRuntime(p: Partial<ViewerRuntime>): void {
   registry = { ...registry, ...p };
+  if ('store' in p) {
+    const waiting = storeWaiters;
+    storeWaiters = [];
+    for (const w of waiting) w(p.store ?? null);
+  }
+}
+
+/**
+ * The library store once it is known: it connects after the first page is on screen (use-store.ts). Resolves with null
+ * in Incognito or when the library cannot be reached.
+ */
+export function whenStore(): Promise<StoreClient | null> {
+  if ('store' in registry) return Promise.resolve(registry.store ?? null);
+  return new Promise((resolve) => storeWaiters.push(resolve));
 }
 
 /** A copy of everything published so far. */

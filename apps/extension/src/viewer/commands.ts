@@ -27,7 +27,11 @@ export type ViewerCommandId =
   | 'file.openInChrome' | 'file.download' | 'file.copyLink' | 'file.print' | 'file.saveToLibrary'
   | 'view.fitWidth' | 'view.fitPage' | 'view.zoomIn' | 'view.zoomOut' | 'view.rotateCw' | 'view.rotateCcw'
   | 'view.twoPage' | 'view.presentation' | 'view.darkPages' | 'view.toggleRail'
-  | 'tools.find' | 'tools.goToPage' | 'help.shortcuts' | 'help.about';
+  | 'tools.find' | 'tools.goToPage' | 'help.shortcuts' | 'help.about'
+  // Phase 2 (plan section 7). S13 runs the marks, the menu and undo; S14 the comment commands; S15 the notes ones;
+  // S16 the figure and area ones. P4 adds 'claude.ask' and 'claude.explainFigure'.
+  | 'marks.highlight' | 'marks.underline' | 'marks.bold' | 'marks.strike' | 'marks.comment' | 'marks.documentNote' | 'marks.menu'
+  | 'edit.undo' | 'edit.redo' | 'notes.next' | 'notes.previous' | 'notes.panel' | 'figures.copyImage' | 'tools.area';
 
 export interface ViewerCommand {
   id: ViewerCommandId;
@@ -109,9 +113,27 @@ const SPECS: [ViewerCommandId, CommandSpec][] = [
   ['tools.goToPage', { label: 'Go to page', icon: 'pageview', keys: ['Ctrl+G'] }],
   ['help.shortcuts', { label: 'Keyboard shortcuts', icon: 'keyboard', keys: ['?'] }],
   ['help.about', { label: 'About sickofpdfs', icon: 'info', keys: [] }],
+  // Phase 2. The mark keys act on the selected text. Alt+Shift+5 is matched by position (the number row); the letters
+  // by the character they type. Ctrl+Alt+M is also found on layouts where AltGr turns it into another letter (shortcuts.ts).
+  ['marks.highlight', { label: 'Highlight', icon: 'ink_highlighter', keys: ['H'] }],
+  ['marks.underline', { label: 'Underline', icon: 'format_underlined', keys: ['Ctrl+U'] }],
+  ['marks.bold', { label: 'Bold', icon: 'format_bold', keys: ['Ctrl+B'] }],
+  ['marks.strike', { label: 'Strikethrough', icon: 'format_strikethrough', keys: ['Alt+Shift+Digit5'] }],
+  ['marks.comment', { label: 'Comment', icon: 'add_comment', keys: ['Ctrl+Alt+M'] }],
+  ['marks.documentNote', { label: 'Note on the whole document', icon: 'comment', keys: ['Ctrl+Alt+Shift+M'] }],
+  ['marks.menu', { label: 'Mark-up menu', icon: 'more_vert', keys: ['Shift+F10', 'ContextMenu'] }],
+  ['edit.undo', { label: 'Undo', icon: 'undo', keys: ['Ctrl+Z'] }],
+  ['edit.redo', { label: 'Redo', icon: 'redo', keys: ['Ctrl+Y', 'Ctrl+Shift+Z'] }],
+  ['notes.next', { label: 'Next note', icon: 'keyboard_arrow_down', keys: ['Ctrl+Alt+N'] }],
+  ['notes.previous', { label: 'Previous note', icon: 'keyboard_arrow_up', keys: ['Ctrl+Alt+P'] }],
+  ['notes.panel', { label: 'Notes panel', icon: 'comment', keys: ['Shift+F4'] }],
+  ['figures.copyImage', { label: 'Copy image', icon: 'image', keys: ['Ctrl+C'] }],
+  ['tools.area', { label: 'Area note', icon: 'select', keys: [] }],
 ];
 
-type Behaviour = Pick<ViewerCommand, 'run' | 'enabled'> & Partial<Pick<ViewerCommand, 'checked'>>;
+/** What a command does in this tab. Features (wire.ts) hand these in for the commands they own. */
+export type CommandBehaviour = Pick<ViewerCommand, 'run' | 'enabled'> & Partial<Pick<ViewerCommand, 'checked'>>;
+type Behaviour = CommandBehaviour;
 
 /** A command whose task has not landed yet: shown, greyed out, and its keys do nothing. */
 const LATER: Behaviour = { run: () => {}, enabled: () => false };
@@ -149,13 +171,17 @@ function saveToLibrary(save: SaveController | null): Behaviour {
   return { run: () => void save?.requestSave().catch(() => {}), enabled: () => save !== null && SAVABLE.has(save.state.kind) };
 }
 
-/** The commands for an open document. Rotate, two-page, presentation and find come later. */
-export function createCommands(ctx: ViewerContext): ViewerCommands {
+/**
+ * The commands for an open document. Rotate, two-page, presentation and find come later.
+ * `extra` is what the marks and the registered features (annotations/wire.ts) do for the commands they own.
+ */
+export function createCommands(ctx: ViewerContext, extra: Partial<Record<ViewerCommandId, Behaviour>> = {}): ViewerCommands {
   const pages = () => ctx.pageList.current;
   const source = ctx.params.source;
   const link = linkOf(ctx);
   const scale = () => ctx.store.get().scale;
   return assemble({
+    ...extra,
     'file.openInChrome': { run: () => source !== null && ctx.ui.openInChrome(source), enabled: () => source !== null },
     'file.download': { run: () => downloadOriginal(ctx.opened.loaded.blob, ctx.opened.loaded.displayName), enabled: always },
     'file.copyLink': { run: () => link !== null && ctx.ui.copyLink(link), enabled: () => link !== null },
@@ -194,12 +220,19 @@ export function createIdleCommands(o: { source: string | null; canOpenInChrome: 
 const HIDDEN_KEYS: Partial<Record<ViewerCommandId, KeyCombo[]>> = { 'view.zoomOut': ['Ctrl+_'] };
 
 /**
+ * Commands whose Ctrl keys are editing keys: they act only when they can (text is selected, there is a figure to copy),
+ * and otherwise the key does what it does anyway. In a text field (the note box, the page box) they always type: Ctrl+B
+ * and Ctrl+Z belong to the note box there, and Ctrl+C copies its text (plan section 7).
+ */
+const EDITING_KEYS = new Set<ViewerCommandId>(['marks.underline', 'marks.bold', 'figures.copyImage', 'edit.undo', 'edit.redo']);
+
+/**
  * A Ctrl combo without Alt is the viewer's even while its command is greyed out: it does nothing rather than let
  * Chrome print the viewer page, save it, open its find bar or zoom the browser. Single keys and Ctrl+Alt combos (F4,
- * ?, Ctrl+Alt+S) are left to the browser while their command is greyed out.
+ * ?, Ctrl+Alt+S) are left to the browser while their command is greyed out, and so are the editing keys above.
  */
-function alwaysOurs(combo: KeyCombo): boolean {
-  return combo.startsWith('Ctrl+') && !combo.includes('Alt+');
+function alwaysOurs(id: ViewerCommandId, combo: KeyCombo): boolean {
+  return combo.startsWith('Ctrl+') && !combo.includes('Alt+') && !EDITING_KEYS.has(id);
 }
 
 /** The shortcuts for installShortcuts: every command's keys, in command order. */
@@ -207,10 +240,11 @@ export function commandShortcuts(cmds: ViewerCommands): ShortcutDef[] {
   const defs: ShortcutDef[] = [];
   for (const c of cmds.values()) {
     const keys = [...c.keys, ...(HIDDEN_KEYS[c.id] ?? [])];
-    const ours = keys.filter(alwaysOurs);
-    const others = keys.filter((k) => !alwaysOurs(k));
+    const ours = keys.filter((k) => alwaysOurs(c.id, k));
+    const others = keys.filter((k) => !alwaysOurs(c.id, k));
+    const typing = EDITING_KEYS.has(c.id) ? { whileTyping: 'yield' as const } : {};
     if (ours.length > 0) defs.push({ id: c.id, keys: ours, run: () => c.enabled() && c.run() });
-    if (others.length > 0) defs.push({ id: c.id, keys: others, run: () => c.run(), enabled: () => c.enabled() });
+    if (others.length > 0) defs.push({ id: c.id, keys: others, run: () => c.run(), enabled: () => c.enabled(), ...typing });
   }
   return defs;
 }

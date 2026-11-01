@@ -69,6 +69,7 @@ export function formatCombo(c: KeyCombo): string {
 
 function keyName(key: string): string {
   if (key === '-') return '−';
+  if (key === 'ContextMenu') return 'Menu key';
   if (/^Digit\d$/u.test(key)) return key.slice('Digit'.length);
   if (/^Key[A-Z]$/u.test(key)) return key.slice('Key'.length);
   if (/^Numpad\w+$/u.test(key)) return `Num ${key.slice('Numpad'.length)}`;

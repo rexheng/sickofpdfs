@@ -10,15 +10,17 @@ export interface ShortcutsDialogProps {
   commands: ViewerCommands;
 }
 
-/** The sheet's groups, named as the header's menus. */
-const GROUPS: { title: string; prefix: string }[] = [
+/** The sheet's groups, named as the header's menus, then the marks and notes (Phase 2) and undo. */
+const GROUPS: { title: string; prefix: string; also?: string[] }[] = [
   { title: 'File', prefix: 'file.' },
   { title: 'View', prefix: 'view.' },
   { title: 'Tools', prefix: 'tools.' },
+  { title: 'Marks and notes', prefix: 'marks.', also: ['notes.', 'figures.'] },
+  { title: 'Edit', prefix: 'edit.' },
   { title: 'Help', prefix: 'help.' },
 ];
 
-const inGroup = (id: ViewerCommandId, prefix: string) => id.startsWith(prefix);
+const inGroup = (id: ViewerCommandId, g: (typeof GROUPS)[number]) => [g.prefix, ...(g.also ?? [])].some((p) => id.startsWith(p));
 
 /**
  * "?" and Help → Keyboard shortcuts: every command that has keys, in command order, grouped as the menus are. Each row
@@ -26,7 +28,7 @@ const inGroup = (id: ViewerCommandId, prefix: string) => id.startsWith(prefix);
  */
 export function ShortcutsDialog({ open, onOpenChange, commands }: ShortcutsDialogProps) {
   const withKeys = [...commands.values()].filter((c) => c.keys.length > 0);
-  const groups = GROUPS.map((g) => ({ ...g, rows: withKeys.filter((c) => inGroup(c.id, g.prefix)) })).filter((g) => g.rows.length > 0);
+  const groups = GROUPS.map((g) => ({ ...g, rows: withKeys.filter((c) => inGroup(c.id, g)) })).filter((g) => g.rows.length > 0);
   return (
     <Dialog open={open} title="Keyboard shortcuts" onOpenChange={onOpenChange} actions={[{ label: 'Close', onClick: () => onOpenChange(false) }]}>
       <div className={styles.sheet}>

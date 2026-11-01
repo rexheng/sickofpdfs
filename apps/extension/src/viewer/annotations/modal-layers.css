@@ -1,0 +1,22 @@
+/*
+ * Keeping the mark-up menu quick over a page of text (S13).
+ *
+ * A Radix modal layer (the mark-up menu, the zoom menu) sets two inherited things on <body> when it opens and clears
+ * them when it closes: `pointer-events: none` and the scroll lock's custom property --removed-body-scroll-bar-size.
+ * Each change restyles every element under <body>, and a page's text layer is thousands of spans: on a paper page
+ * that was 60 to 600 ms for each open and each close, between the colour pick and the highlight showing.
+ *
+ * - The custom property is registered as not inherited: nothing in the viewer reads it.
+ * - The text layer keeps its own `pointer-events`. While a menu is open the page text still takes the pointer, as in
+ *   Google Docs: a press on the text outside the menu closes the menu and selects there; a right-click there opens the
+ *   menu again at that point. Dialogs are unaffected: their scrim covers the page.
+ */
+/* eslint-disable-next-line css/use-baseline -- a Chrome-only extension (Chrome has had @property since 85) */
+@property --removed-body-scroll-bar-size {
+  syntax: "*";
+  inherits: false;
+}
+
+.sop-text-layer {
+  pointer-events: auto;
+}

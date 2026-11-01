@@ -3,6 +3,8 @@
 // the PDF there), "Back to page" for an embedded PDF, and the escape hatch to Chrome's own viewer. The chrome around
 // the pages (Task 23) is Drive's: the header with its menus, the toolbar pill, the shortcut sheet and About; all of
 // them run the commands in commands.ts.
+// Phase 2 (S13): each page draws its marks under the text layer, the mark keys and the right-click mark-up menu act on
+// the selection, and the notes features (comments, the notes panel) mount through annotations/wire.ts.
 import '@sop/ui/tokens.css';
 import '@sop/ui/base.css';
 import { registerFonts } from '@sop/ui';
@@ -23,11 +25,13 @@ import {
   type ViewerStore,
   type ZoomMode,
 } from '@sop/viewer';
-import { type PageLayerContext, PageList, type PageListApi, TextLayer, TextLayerController } from '@sop/viewer/react';
-import { memo, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { MarkLayer, type PageLayerContext, PageList, type PageListApi, TextLayer, TextLayerController } from '@sop/viewer/react';
+import { memo, type RefObject, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { sendRuntimeMessage } from '../shared/send-message';
 import { parseViewerUrl, type ViewerParams } from '../shared/viewer-url';
 import { copyLink } from './actions/copy-link';
+import { MarkupMenu } from './annotations/MarkupMenu';
+import { createNotes, type Notes, viewerFeatures } from './annotations/wire';
 import styles from './App.module.css';
 import { backTarget, goBackToPage } from './back-to-page';
 import { AboutDialog } from './chrome/AboutDialog';
@@ -74,6 +78,9 @@ import { useStore } from './use-store';
  * frame, where the viewer never opens a PDF.
  */
 const backend = createEmbedPdfBackend(engineAssets((p) => chrome.runtime.getURL(p)), { workers: ENGINE_WORKERS, startNow: window.top === window });
+
+// Phase 2 features mount here, one line each: registerViewerFeature(<feature>) from './annotations/wire' (S14 comments,
+// S15 the notes panel, S16 figures). Each gets the open document's notes (NotesHost) and draws beside or on the pages.
 
 /** Where the reader was when the engine stopped, so the document opens again at the same place. */
 type Resume = Pick<ViewerSnapshot, 'zoom' | 'currentPage' | 'viewRotation' | 'spread' | 'railOpen'>;
@@ -393,6 +400,8 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   useRailFitsWindow(store);
   // Find jumps through the same history as links, so Back returns from each jump to a hit (Task 25).
   const find = useReaderFind({ backend, doc, store, api, pageText, textLayers, jumps: nav.jumps, root: rootRef });
+  // The document's notes: marks, comments and drafts (Phase 2). Null in Incognito, which has none.
+  const notes = useNotes(doc, pageText, store, api, textLayers);
   const commands = useMemo(() => {
     const ctx: ViewerContext = {
       params,
@@ -408,8 +417,8 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       pageList: api,
       ui,
     };
-    return createCommands(ctx);
-  }, [params, doc, store, scheduler, rootRef, ui, save, nav.jumps, find.controller, find.open]);
+    return createCommands(ctx, notes?.behaviours() ?? {});
+  }, [params, doc, store, scheduler, rootRef, ui, save, nav.jumps, find.controller, find.open, notes]);
   useEffect(() => {
     onChrome({ commands, store });
     return () => onChrome(null);
@@ -425,18 +434,22 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       }),
     [store, scans, textLayers],
   );
-  // Each page's layers: find's highlights under the text layer (Task 25), and the links above it (Task 24).
+  // Each page, bottom to top: its marks (and bold) and the features' page layers (Phase 2), find's highlights (Task 25),
+  // the selection and the text layer, then the links (Task 24).
   const findLayer = find.pageLayer;
   const linksFor = nav.renderPage;
+  const bold = useMemo(() => ({ backend, doc: doc.open.doc, text: pageText }), [doc, pageText]);
   const renderPage = useCallback(
     (box: PageBox, ctx: PageLayerContext) => (
       <>
+        {notes !== null && <MarkLayer source={notes.layer} box={box} ctx={ctx} page={doc.open.pages[box.index]} bold={bold} />}
+        {notes !== null && viewerFeatures().map((f) => f.PageLayer && <f.PageLayer key={f.id} host={notes.host} box={box} ctx={ctx} />)}
         {findLayer(box, ctx)}
         <TextLayer controller={textLayers} box={box} ctx={ctx} />
         {linksFor(box)}
       </>
     ),
-    [textLayers, findLayer, linksFor],
+    [textLayers, findLayer, linksFor, notes, doc, bold],
   );
   // Every render still waiting fails at once when the engine stops: the first one tells the viewer, the rest are quiet.
   const stopped = useRef(false);
@@ -478,9 +491,39 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
         <PageList backend={backend} doc={doc} store={store} scheduler={scheduler} apiRef={api} renderPage={renderPage} onError={onDrawError} />
       </NavRail>
       {find.view}
+      {notes !== null && viewerFeatures().map((f) => f.View && <f.View key={f.id} host={notes.host} />)}
+      {notes !== null && <MarkupMenu input={notes.input} commands={commands} />}
     </>
   );
 });
+
+const noLayout = () => () => {};
+
+/**
+ * The open document's notes, made once the page list is up and disposed with the document. In Incognito there are none
+ * (null). Published to the test hooks as `annotations`.
+ */
+function useNotes(
+  doc: OpenedDocument,
+  pageText: ReturnType<typeof createPageTextProvider>,
+  view: ViewerStore,
+  pageList: RefObject<PageListApi | null>,
+  textLayers: TextLayerController,
+): Notes | null {
+  const [notes, setNotes] = useState<Notes | null>(null);
+  useEffect(() => {
+    // ViewerContext.save is null until Task 30; wire.ts's notesSaveGate is where saving is decided.
+    const made = createNotes({ backend, opened: doc, pageText, view, pageList, selection: () => textLayers.selectionRanges(), save: null });
+    setNotes(made);
+    publishRuntime({ annotations: made?.host.session ?? null });
+    return () => {
+      made?.dispose();
+      setNotes(null);
+      publishRuntime({ annotations: null });
+    };
+  }, [doc, pageText, view, pageList, textLayers]);
+  return notes;
+}
 
 /** The text layer's font: the engine's bundled Noto Sans (the spike measured canvas and DOM widths within 0.02 px with it). */
 const TEXT_LAYER_FONT = 'pdf/NotoSans-Regular.ttf';

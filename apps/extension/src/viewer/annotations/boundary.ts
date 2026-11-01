@@ -10,8 +10,7 @@
  *    presence), S2 and Task 28 (the store), Task 22 (CharRange), Task 23 and 30 (the save controller). Each one is
  *    copied word for word from docs/superpowers/contracts/2026-11-01-cross-phase-contracts.md or the plan, and names
  *    its owner. When the owner merges, replace the copy with an import from the owner and delete the copy.
- * 3. `planStyle` and `resolveAnchor`. The session calls them as functions, but S3 has not merged. Until it does, the
- *    two functions below throw (see the note above them). The session also takes optional `planStyle` and
+ * 3. `planStyle` and `resolveAnchor`, re-exported from S3 (@sop/core). The session also takes optional `planStyle` and
  *    `resolveAnchor` in its dependencies, so tests and the wiring can pass any version.
  *
  * Nothing in this file has behaviour of its own.
@@ -120,23 +119,8 @@ export type PlanStyleFn = (
 ) => StylePlan;
 export type ResolveAnchorFn = (a: Anchor, ctx: AnchorContext) => Promise<Resolution>;
 
-// S3 is not merged on this branch, so its two functions cannot be imported yet. Vite resolves these globs at build
-// time: while the files are missing they find nothing and the functions below throw; once S3 lands at the planned
-// paths they are found with no edit here. When S3 has merged, delete the globs and write
-// `export { planStyle, resolveAnchor } from '@sop/core'`.
-const marksModule = import.meta.glob<{ planStyle: PlanStyleFn }>('../../../../../packages/core/src/annotations/marks.ts', { eager: true });
-const reanchorModule = import.meta.glob<{ resolveAnchor: ResolveAnchorFn }>('../../../../../packages/core/src/anchoring/reanchor.ts', { eager: true });
-
-export const planStyle: PlanStyleFn = (...args) => {
-  const found = Object.values(marksModule)[0];
-  if (!found) throw new Error('planStyle (S3) is not merged: pass `planStyle` to createAnnotationSession');
-  return found.planStyle(...args);
-};
-export const resolveAnchor: ResolveAnchorFn = (...args) => {
-  const found = Object.values(reanchorModule)[0];
-  if (!found) return Promise.reject(new Error('resolveAnchor (S3) is not merged: pass `resolveAnchor` to createAnnotationSession'));
-  return found.resolveAnchor(...args);
-};
+// S3 has merged: its two functions come from @sop/core (the S13 wiring also passes them to createAnnotationSession).
+export { planStyle, resolveAnchor } from '@sop/core';
 
 // ---------------------------------------------------------------- S2 and Task 28 (the store)
 

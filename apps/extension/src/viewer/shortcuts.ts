@@ -3,6 +3,12 @@
 // Global constraints: "Single-key and Ctrl+Alt shortcuts never fire while you are typing." Letters are matched by the
 // character they type (so Polish AltGr+S, which types "ś" with Ctrl and Alt down, is not Ctrl+Alt+S); only the number
 // row is matched by position (`Alt+Shift+Digit5`).
+//
+// One exception (Phase 2 plan, section 7 risks): on a German keyboard on Windows, Ctrl+Alt+M arrives as "µ", because
+// Windows treats Ctrl+Alt as AltGr. The comment key would be out of reach. So when a Ctrl+Alt letter combo matches no
+// character, installShortcuts also tries the letter the physical key has in the current layout
+// (navigator.keyboard.getLayoutMap), unless the browser says the AltGr key itself is down (then it is typing a
+// character, as with Polish AltGr+S). `matchesCombo` alone stays strict: by the character only.
 
 /**
  * `Ctrl+=`, `Ctrl+Alt+S`, `Alt+Shift+Digit5`, `F4`, `Shift+F4`, `?`. Modifiers are Ctrl, Alt, Shift and Meta (Ctrl is
@@ -17,6 +23,11 @@ export interface ShortcutDef {
   run(e: KeyboardEvent): void;
   /** When it returns false the shortcut is ignored and the key does what it would do anyway. */
   enabled?(): boolean;
+  /**
+   * In a text field: 'yield' leaves the key to the field (Ctrl+B, Ctrl+Z and Ctrl+C belong to the note box there).
+   * Default: single keys and Ctrl+Alt combos yield, other Ctrl combos run (Ctrl+= zooms from the page box too).
+   */
+  whileTyping?: 'yield' | 'default';
 }
 
 interface Parsed {
@@ -31,7 +42,7 @@ interface Parsed {
 const MODIFIERS = new Set(['Ctrl', 'Alt', 'Shift', 'Meta']);
 const NAMED_KEYS = new Set([
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home', 'End', 'Space', 'Enter', 'Escape',
-  'Tab', 'Backspace', 'Delete', 'Insert',
+  'Tab', 'Backspace', 'Delete', 'Insert', 'ContextMenu',
 ]);
 const CODE = /^(Digit\d|Key[A-Z]|Numpad\w+)$/;
 const NON_TEXT_INPUTS = new Set(['button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio', 'range', 'reset', 'submit']);
@@ -104,6 +115,43 @@ function yieldsToTyping(combo: KeyCombo): boolean {
   return !(p.ctrl || p.meta) || (p.ctrl && p.alt);
 }
 
+/** The Keyboard API's layout map: physical key code → the character the key types in the current layout, unshifted. */
+interface KeyboardLayoutApi {
+  getLayoutMap?(): Promise<ReadonlyMap<string, string>>;
+}
+
+let layoutMap: ReadonlyMap<string, string> | null = null;
+let layoutLoading = false;
+
+/** Reads the layout map (once, and again when the window comes back into focus: the layout may have changed). */
+function loadLayoutMap(): void {
+  const kb = (typeof navigator !== 'undefined' ? (navigator as Navigator & { keyboard?: KeyboardLayoutApi }).keyboard : undefined) ?? null;
+  if (layoutLoading || typeof kb?.getLayoutMap !== 'function') return;
+  layoutLoading = true;
+  kb.getLayoutMap().then(
+    (m) => {
+      layoutMap = m;
+      layoutLoading = false;
+    },
+    () => {
+      layoutLoading = false;
+    },
+  );
+}
+
+/**
+ * The AltGr layouts' way in to a Ctrl+Alt letter combo (see the file comment): Ctrl and Alt down, the AltGr key itself
+ * not reported, and the physical key's letter in this layout is the combo's letter.
+ */
+function matchesOnLayout(e: KeyboardEvent, combo: KeyCombo): boolean {
+  const p = parse(combo);
+  if (p.kind !== 'letter' || !p.ctrl || !p.alt || layoutMap === null) return false;
+  if (!e.ctrlKey || !e.altKey || Boolean(e.metaKey) !== p.meta || Boolean(e.shiftKey) !== p.shift) return false;
+  if (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph')) return false;
+  const base = typeof e.code === 'string' ? layoutMap.get(e.code) : undefined;
+  return base !== undefined && base.toLowerCase() === p.key.toLowerCase();
+}
+
 /**
  * Listens for keydown in the capture phase on `target` (default: window). The first enabled shortcut with a matching
  * combo runs, and the key's default action is prevented (so Ctrl+= zooms the pages, not the browser). Returns the
@@ -111,21 +159,31 @@ function yieldsToTyping(combo: KeyCombo): boolean {
  */
 export function installShortcuts(defs: ShortcutDef[], target: Window = window): () => void {
   for (const def of defs) for (const combo of def.keys) parse(combo); // a typo throws now, not on the first key press
+  loadLayoutMap();
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.isComposing) return;
     const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
     const typing = isTypingTarget(path[0] ?? e.target);
-    for (const def of defs) {
-      for (const combo of def.keys) {
-        if (!matchesCombo(e, combo)) continue;
-        if (typing && yieldsToTyping(combo)) continue;
-        if (def.enabled && !def.enabled()) continue;
-        e.preventDefault();
-        def.run(e);
-        return;
+    // By the character first, everywhere; only then by the physical key (AltGr layouts), so a combo that really typed
+    // its letter always wins.
+    for (const match of [matchesCombo, matchesOnLayout]) {
+      for (const def of defs) {
+        for (const combo of def.keys) {
+          if (!match(e, combo)) continue;
+          if (typing && (def.whileTyping === 'yield' || yieldsToTyping(combo))) continue;
+          if (def.enabled && !def.enabled()) continue;
+          e.preventDefault();
+          def.run(e);
+          return;
+        }
       }
     }
   };
+  const onFocus = () => loadLayoutMap();
   target.addEventListener('keydown', onKeyDown, { capture: true });
-  return () => target.removeEventListener('keydown', onKeyDown, { capture: true });
+  target.addEventListener('focus', onFocus);
+  return () => {
+    target.removeEventListener('keydown', onKeyDown, { capture: true });
+    target.removeEventListener('focus', onFocus);
+  };
 }
