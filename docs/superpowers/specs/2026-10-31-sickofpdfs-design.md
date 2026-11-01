@@ -207,7 +207,7 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 | Select a figure | Click | Reading |
 | Copy a figure as an image | Ctrl+C | A figure is selected |
 
-Jumps inside a document (links, search results, next note) are kept in the page's history state and collapsed, so Back returns to where you were without needing many presses to leave.
+Jumps inside a document (links, search results, next note) are kept in the page's history state and collapsed, so Back returns to where you were without needing many presses to leave. A run of jumps (stepping through Find hits, say) is one Back step, even if you scroll by hand between them: Back returns to where the first jump started.
 
 **Export and import.** Release 1: "Export notes" writes Markdown with quotes, page numbers and links back, and annotations already inside a PDF always display. Release 3: "Download with notes" writes standard PDF annotations (highlights, underlines, strikethroughs, bold marks as square annotations with their own appearance, labelled Bold, comments and reply threads) using PDFium's incremental save. Existing annotations then import as editable notes, de-duplicated by their PDF ids, so re-opening an exported copy never doubles notes. Your original file is never modified.
 
