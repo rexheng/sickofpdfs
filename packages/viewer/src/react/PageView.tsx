@@ -22,7 +22,8 @@ export interface PageViewProps {
   renderPage?: (box: PageBox, ctx: PageLayerContext) => ReactNode;
 }
 
-const snap = (v: number, dpr: number) => Math.round(v * dpr) / dpr;
+/** A CSS length on a whole device pixel: where PageView puts a page box's edges. */
+export const snapToDevice = (v: number, dpr: number) => Math.round(v * dpr) / dpr;
 
 /**
  * One page: a box in the placeholder colour with the page shadow, holding (bottom to top) the preview canvas, the full
@@ -44,8 +45,8 @@ export const PageView = memo(function PageView({ box, device, dpr, driver, rende
     return () => driver.detach(slot);
   }, [driver, index]);
 
-  const left = snap(box.left, dpr);
-  const top = snap(box.top, dpr);
+  const left = snapToDevice(box.left, dpr);
+  const top = snapToDevice(box.top, dpr);
   return (
     <div
       ref={root}

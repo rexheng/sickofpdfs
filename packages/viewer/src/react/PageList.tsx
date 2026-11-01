@@ -11,7 +11,7 @@ import { PAGE_GAP, pageDeviceSize, resolveScale, rowsOf, type Spread, stepZoom, 
 import type { RenderScheduler } from '../render/scheduler';
 import { PageDriver } from './page-driver';
 import styles from './PageList.module.css';
-import { type PageLayerContext, PageView } from './PageView';
+import { type PageLayerContext, PageView, snapToDevice } from './PageView';
 import { useViewerState, type ViewerStore } from './viewer-state';
 
 /** What the page list needs of an opened document (the extension's OpenedDocument has it). */
@@ -128,9 +128,9 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef }: PageList
     () => (viewport ? computeLayout(pages, { scale, viewRotation, spread, viewportWidth: viewport.width }) : null),
     [pages, scale, viewRotation, spread, viewport],
   );
-  const latest = useRef({ layout, viewport, scale, viewRotation, spread });
+  const latest = useRef({ layout, viewport, scale, viewRotation, spread, dpr });
   useLayoutEffect(() => {
-    latest.current = { layout, viewport, scale, viewRotation, spread };
+    latest.current = { layout, viewport, scale, viewRotation, spread, dpr };
   });
 
   /** The page point at a client point (or at the viewport centre), to keep in place across a re-layout. */
@@ -230,6 +230,8 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef }: PageList
 
   const api = useMemo<PageListApi>(() => {
     const el = () => scrollerRef.current;
+    // Where a page is drawn: PageView puts its box on whole device pixels, up to half a device pixel from the layout's.
+    const drawn = (b: PageBox): PageBox => ({ ...b, left: snapToDevice(b.left, latest.current.dpr), top: snapToDevice(b.top, latest.current.dpr) });
     const moved = () => driver.onScroll(true);
     const neighbour = (dir: 1 | -1) => {
       const rows = rowsOf(pages.length, latest.current.spread);
@@ -315,7 +317,7 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef }: PageList
         const rect = s.getBoundingClientRect();
         const c = { x: x - rect.left + s.scrollLeft, y: y - rect.top + s.scrollTop };
         const i = nearestPage(l, c);
-        const b = l.boxes[i];
+        const b = drawn(l.boxes[i]);
         if (c.x < b.left || c.x > b.left + b.width || c.y < b.top || c.y > b.top + b.height) return null;
         return { pageIndex: i, ...contentPointToPage(b, pages[i], c) };
       },
@@ -325,7 +327,7 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef }: PageList
         const b = l?.boxes[p.pageIndex];
         if (!s || !b) return { x: NaN, y: NaN };
         const rect = s.getBoundingClientRect();
-        const c = pagePointToContent(b, pages[p.pageIndex], p);
+        const c = pagePointToContent(drawn(b), pages[p.pageIndex], p);
         return { x: c.x - s.scrollLeft + rect.left, y: c.y - s.scrollTop + rect.top };
       },
     };
