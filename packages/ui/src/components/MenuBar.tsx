@@ -1,6 +1,7 @@
 import { Menubar as RadixMenubar } from 'radix-ui';
 import { useCallback, useRef } from 'react';
 import { cx } from './classes';
+import { lastInputWasPointer } from './input-modality';
 import { isCompact, type MenuDef, type MenuItemDef, MenuItems } from './Menu';
 import menuStyles from './Menu.module.css';
 import styles from './MenuBar.module.css';
@@ -8,6 +9,12 @@ import { useInheritedTheme } from './theme';
 
 export interface MenuBarProps {
   menus: MenuDef[];
+  /**
+   * Where the focus goes when the bar's menu was closed with the pointer (an item clicked, or a click outside), instead
+   * of back to its button: no focus ring is left on "File", and Space and the arrows move the pages again. Closed from
+   * the keyboard (Escape, Enter), the button keeps the focus, with its ring.
+   */
+  returnFocus?: () => void;
 }
 
 /** How long after its menu has gone an action waits for Radix's close focus event before it runs anyway. */
@@ -23,9 +30,11 @@ const LATE_ACTION_MS = 250;
  * action that moves the focus (Tools → Go to page focuses the page box; Help opens a dialog, which then gives the
  * focus back to that button when it closes) keeps it.
  */
-export function MenuBar({ menus }: MenuBarProps) {
+export function MenuBar({ menus, returnFocus }: MenuBarProps) {
   const { ref, theme, refresh } = useInheritedTheme<HTMLDivElement>();
   const pending = useRef<(() => void) | null>(null);
+  // The open menu's id, '' when none: moving from File to View closes File's menu too, but the bar stays open.
+  const openMenu = useRef('');
   const runPending = useCallback(() => {
     const action = pending.current;
     pending.current = null;
@@ -50,7 +59,15 @@ export function MenuBar({ menus }: MenuBarProps) {
         : i,
     );
   return (
-    <RadixMenubar.Root ref={ref} className={styles.bar} loop onValueChange={(value) => value !== '' && refresh()}>
+    <RadixMenubar.Root
+      ref={ref}
+      className={styles.bar}
+      loop
+      onValueChange={(value) => {
+        openMenu.current = value;
+        if (value !== '') refresh();
+      }}
+    >
       {menus.map((menu) => (
         <RadixMenubar.Menu key={menu.id} value={menu.id}>
           <RadixMenubar.Trigger className={styles.trigger}>{menu.label}</RadixMenubar.Trigger>
@@ -63,8 +80,10 @@ export function MenuBar({ menus }: MenuBarProps) {
               sideOffset={0}
               collisionPadding={8}
               loop
-              // Radix's own handler (after this one) focuses the menu's button; the action runs after that.
+              // Radix's own handler (after this one) focuses the menu's button. Closed with the pointer, the focus then
+              // moves on to returnFocus's place; the chosen action runs after that, so it can move the focus itself.
               onCloseAutoFocus={() => {
+                if (returnFocus !== undefined && openMenu.current === '' && lastInputWasPointer()) queueMicrotask(returnFocus);
                 if (pending.current !== null) queueMicrotask(runPending);
               }}
             >

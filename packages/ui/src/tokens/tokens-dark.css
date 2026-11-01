@@ -55,7 +55,9 @@
   --menu-row-h: var(--menu-dark-item-h);                       /* 36px, ruling R15 */
   --menu-min-w: var(--menu-dark-w);                            /* 288px [live] */
   --menubar-open-bg: var(--gm3-sys-color-surface-bright);      /* #37393b open File button [live] */
-  --icon-btn-hover: var(--viewer-icon-hover);                  /* #3e4041 [px] */
+  /* An 8% layer, as Drive draws it on any surface: #3e4041 over the #333537 pill [px], #212221 over Drive's #141414
+     header [live-15], so the header and the rail get a light hover, not the pill's measured grey. */
+  --icon-btn-hover: color-mix(in srgb, var(--gm3-sys-color-on-surface-variant) 8%, transparent);
   --dialog-bg: var(--gm3-sys-color-surface-container-high);
   --sop-card-bg: var(--gm3-sys-color-surface-container-high);    /* #282a2c, the dark menu's surface, on the #1b1b1b canvas */
   --sop-notes-panel-bg: var(--gm3-sys-color-surface-container);  /* #1e1f20; its cards sit on --sop-card-bg (#282a2c) */

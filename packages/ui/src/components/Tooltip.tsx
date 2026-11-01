@@ -9,6 +9,8 @@ export interface TooltipProps {
   shortcut?: string;
   /** One element that can hold a ref and take event props: a button, or a component that passes them on. */
   children: ReactElement;
+  /** Where it shows: under the anchor (Drive's toolbars), or beside it (a menu row). It flips when there is no room. */
+  side?: 'bottom' | 'right';
 }
 
 /** Gap between the anchor and the tooltip, as measured in Drive (02 section 4.9: "about 4 px below the anchor"). */
@@ -19,7 +21,7 @@ const SIDE_OFFSET = 4;
  * get #303030 with #f2f2f2 text; the dark viewer chrome gets #e3e3e3 with #303030 text. It shows on hover and on
  * keyboard focus, and hides on Escape.
  */
-export function Tooltip({ label, shortcut, children }: TooltipProps) {
+export function Tooltip({ label, shortcut, children, side = 'bottom' }: TooltipProps) {
   const { ref, theme, refresh } = useInheritedTheme<HTMLElement>();
   const text = shortcut === undefined ? label : `${label} (${shortcut})`;
   return (
@@ -32,7 +34,7 @@ export function Tooltip({ label, shortcut, children }: TooltipProps) {
           <RadixTooltip.Content
             className={styles.tooltip}
             data-theme={theme}
-            side="bottom"
+            side={side}
             sideOffset={SIDE_OFFSET}
             collisionPadding={8}
           >

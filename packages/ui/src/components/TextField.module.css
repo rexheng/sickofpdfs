@@ -46,5 +46,5 @@
 }
 
 .field:disabled {
-  opacity: var(--gm3-state-disabled-content);
+  opacity: var(--sop-disabled-content);
 }

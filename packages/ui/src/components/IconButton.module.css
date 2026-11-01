@@ -3,6 +3,7 @@
  * header and the rail. Icons are on-surface-variant (#c4c7c5 dark, #444746 light).
  * Hover: an 8% on-surface-variant state layer. In the dark chrome that is --viewer-icon-hover (#3e4041, measured over
  * the #333537 pill); in the light theme it is translucent, so it works on any light surface.
+ * While the pointer presses it: GM3's 10% pressed layer on top of the hover layer (18% in all), so a click shows.
  * Pressed (aria-pressed="true"): the GM3 tonal selected state, secondary-container with a filled icon.
  */
 .button {
@@ -36,6 +37,14 @@
   background-color: var(--icon-btn-hover);
 }
 
+.button:active:not(:disabled) {
+  background-color: color-mix(
+    in srgb,
+    var(--gm3-sys-color-on-surface-variant) calc((var(--gm3-state-hover) + var(--gm3-state-pressed)) * 100%),
+    transparent
+  );
+}
+
 .button[aria-pressed='true'] {
   background-color: var(--gm3-sys-color-secondary-container);
   color: var(--gm3-sys-color-on-secondary-container);
@@ -49,6 +58,14 @@
   );
 }
 
+.button[aria-pressed='true']:active:not(:disabled) {
+  background-color: color-mix(
+    in srgb,
+    var(--gm3-sys-color-on-secondary-container) calc((var(--gm3-state-hover) + var(--gm3-state-pressed)) * 100%),
+    var(--gm3-sys-color-secondary-container)
+  );
+}
+
 .button:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);
@@ -56,5 +73,5 @@
 
 .button:disabled {
   cursor: default;
-  opacity: var(--gm3-state-disabled-content);
+  opacity: var(--sop-disabled-content);
 }

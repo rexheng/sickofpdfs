@@ -86,6 +86,12 @@
   --gm3-state-focus: 0.10;   /* [inf] GM3 default */
   --gm3-state-pressed: 0.10; /* [inf] GM3 default */
   --gm3-state-disabled-content: 0.38; /* [live] disabled menu item opacity */
+  /*
+   * What this product draws disabled content at: 50%, not Drive's 38%, so greyed text keeps at least 3:1 contrast on
+   * every surface it sits on (the owner's bar, TB1 critics): 4.0:1 in the dark menu, 3.2:1 in the light one, 3.0:1 for
+   * an icon on the dark pill.
+   */
+  --sop-disabled-content: 0.5;
 
   /* File-type icon colours (Drive 2025–26 set) [live] */
   --filetype-pdf: #FC413D;
@@ -132,6 +138,7 @@
   --type-wordmark: 400 22px/48px var(--font-wordmark);  /* "Drive" next to the logo */
   --type-menu-item: 400 14px/20px var(--font-flex);
   --type-menu-shortcut: 500 11px/16px var(--font-display); /* letter-spacing .1px [live] */
+  --sop-menu-shortcut-size: 12px; /* the keys in a menu row, one size up from Drive's 11 px so they can be read */
   --type-text-button: 500 14px/20px var(--font-flex);   /* "Sort", row "Download" */
   --type-button-gs: 500 14px/36px var(--font-display);  /* "Download all"; letter-spacing .14px [live] */
   --type-tooltip: 400 12px/16px var(--font-text);       /* letter-spacing .1px [live] */
@@ -182,6 +189,7 @@
   --icon-btn: 32px;
   --icon-btn-lg: 40px;
   --menubar-btn-h: 24px;
+  --menubar-btn-target-h: 32px; /* the File / View / Tools / Help hit area: 4 px above and below the 24 px button */
   --menu-dark-w: 288px;
   --menu-dark-item-h: 36px; /* Drive's measured dark viewer menu; the 32px row below is the light library menu */
   --menu-item-h: 32px;
@@ -193,7 +201,7 @@
 
   /* Viewer colours */
   --viewer-page-placeholder: rgba(68,71,70,.2);
-  --viewer-icon-hover: #3e4041; /* 8% #c4c7c5 over #333537 */
+  --viewer-icon-hover: #3e4041; /* 8% #c4c7c5 over #333537 (the rail's selected toggle uses it as a solid colour) */
   --viewer-focus: #a8c7fa;
   /* The text selection on a PDF page: Drive's blue (#0b57d0) at 30%, painted as one band a line (Task 22, R44) */
   --text-selection: rgba(11,87,208,.3);

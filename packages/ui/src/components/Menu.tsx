@@ -3,8 +3,10 @@ import type { ReactElement } from 'react';
 import { Icon } from '../icons/Icon';
 import type { IconName } from '../icons/names';
 import { cx } from './classes';
+import { lastInputWasPointer } from './input-modality';
 import styles from './Menu.module.css';
 import { useInheritedTheme } from './theme';
+import { Tooltip } from './Tooltip';
 
 export type MenuItemDef =
   | {
@@ -15,8 +17,18 @@ export type MenuItemDef =
       /** Right-aligned and muted, as Drive writes them: "Ctrl+S", "Ctrl+P", "D". */
       shortcut?: string;
       disabled?: boolean;
-      /** Set it (true or false) to make a checkbox item: the icon slot shows a check when true and is empty when false. */
+      /**
+       * Why the item is greyed out, when it is for a real reason ("400% is the largest size"). Hovering the row shows
+       * "Zoom in: 400% is the largest size", and screen readers read it as the row's description.
+       */
+      disabledReason?: string;
+      /**
+       * Set it (true or false) to make a checkbox item: the icon slot shows a check when true, and the item's icon (or
+       * nothing) when false.
+       */
       checked?: boolean;
+      /** The current choice in a short list of labels (the zoom level now): its label is drawn in the primary colour. */
+      selected?: boolean;
       onSelect: () => void;
     }
   | { kind: 'separator' };
@@ -71,8 +83,8 @@ export function MenuItems({ items, kind }: { items: readonly MenuItemDef[]; kind
   const iconColumn = rows.some((i) => i.kind === 'item' && (i.icon !== undefined || i.checked !== undefined));
   return rows.map((item, index) => {
     if (item.kind === 'separator') return <Separator key={`separator-${index}`} className={styles.separator} />;
-    // A checkbox item uses the icon slot for its check only (empty when unchecked), as in Docs' View menu.
-    const leading = item.checked === undefined ? item.icon : item.checked ? 'check' : undefined;
+    // A checkbox item shows its check in the icon slot while on, and its own icon (if any) while off.
+    const leading = item.checked === true ? 'check' : item.icon;
     const body = (
       <>
         {iconColumn && (
@@ -86,21 +98,32 @@ export function MenuItems({ items, kind }: { items: readonly MenuItemDef[]; kind
         )}
       </>
     );
+    const why = item.disabled === true ? item.disabledReason : undefined;
     const shared = {
-      className: styles.item,
+      className: cx(styles.item, item.selected === true && styles.selected),
       disabled: item.disabled === true,
       textValue: item.label,
       'aria-keyshortcuts': item.shortcut === undefined ? undefined : ariaShortcut(item.shortcut),
+      'aria-description': why,
+      'aria-current': item.selected === true ? ('true' as const) : undefined,
       onSelect: () => item.onSelect(),
     };
-    return item.checked === undefined ? (
-      <Item key={item.id} {...shared}>
-        {body}
-      </Item>
+    const row =
+      item.checked === undefined ? (
+        <Item key={item.id} {...shared}>
+          {body}
+        </Item>
+      ) : (
+        <CheckboxItem key={item.id} {...shared} checked={item.checked}>
+          {body}
+        </CheckboxItem>
+      );
+    return why === undefined ? (
+      row
     ) : (
-      <CheckboxItem key={item.id} {...shared} checked={item.checked}>
-        {body}
-      </CheckboxItem>
+      <Tooltip key={item.id} label={`${item.label}: ${why}`} side="right">
+        {row}
+      </Tooltip>
     );
   });
 }
@@ -110,6 +133,12 @@ export interface DropdownMenuProps {
   trigger: ReactElement;
   items: MenuItemDef[];
   align?: 'start' | 'end';
+  /**
+   * Where the focus goes when the menu was closed with the pointer (an item clicked, or a click outside), instead of
+   * back to its button: the viewer passes its pages, so no focus ring is left on the button and the reading keys
+   * (Space, the arrows) move the pages again. Closed from the keyboard, the button keeps the focus, with its ring.
+   */
+  returnFocus?: () => void;
 }
 
 /** Gap between a dropdown and its trigger. Menu-bar menus sit flush under their button instead. */
@@ -119,7 +148,7 @@ const DROPDOWN_OFFSET = 4;
  * A Drive menu opened from a button: light library menus are #f0f4f9 with 32 px rows and at least 320 px wide; the
  * dark viewer menus are #282a2c with 36 px rows and at least 288 px wide (02 sections 4.9 and 4.10, ruling R15).
  */
-export function DropdownMenu({ trigger, items, align = 'start' }: DropdownMenuProps) {
+export function DropdownMenu({ trigger, items, align = 'start', returnFocus }: DropdownMenuProps) {
   const { ref, theme, refresh } = useInheritedTheme<HTMLElement>();
   return (
     <RadixDropdownMenu.Root onOpenChange={(open) => open && refresh()}>
@@ -134,6 +163,10 @@ export function DropdownMenu({ trigger, items, align = 'start' }: DropdownMenuPr
           sideOffset={DROPDOWN_OFFSET}
           collisionPadding={8}
           loop
+          // Radix's own handler (after this one) focuses the button; the pointer's case moves it on from there.
+          onCloseAutoFocus={() => {
+            if (returnFocus !== undefined && lastInputWasPointer()) queueMicrotask(returnFocus);
+          }}
         >
           <MenuItems items={items} kind="dropdown" />
         </RadixDropdownMenu.Content>

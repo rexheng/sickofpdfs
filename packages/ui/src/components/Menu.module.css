@@ -4,8 +4,9 @@
  *   light library menu: #f0f4f9, 32 px rows, at least 320 px wide;
  *   dark viewer menu:   #282a2c, 36 px rows, at least 288 px wide (ruling R15).
  * Both: radius 4, 8 px top and bottom padding, elevation 2. Rows: 20 px icon 12 px in, label 48 px in
- * (Google Sans Flex 14/20), shortcut right-aligned 12 px from the edge (Google Sans 11/16 500, .1px tracking, muted).
- * Separator: 8 px + 1 px outline-variant + 8 px = 17 px. Disabled rows: content at 38%.
+ * (Google Sans Flex 14/20), shortcut right-aligned 12 px from the edge (Google Sans 500, .1px tracking, muted; 12 px
+ * here, one up from Drive's 11, so the keys can be read). Separator: 8 px + 1 px outline-variant + 8 px = 17 px.
+ * Disabled rows: content at --sop-disabled-content (at least 3:1 contrast).
  */
 .content {
   z-index: var(--z-menu);
@@ -70,7 +71,12 @@
 
 .item[data-disabled] > * {
   color: var(--gm3-sys-color-on-surface);
-  opacity: var(--gm3-state-disabled-content);
+  opacity: var(--sop-disabled-content);
+}
+
+/* The current choice in a short list of labels (the zoom level now). */
+.selected .label {
+  color: var(--gm3-sys-color-primary);
 }
 
 .icon {
@@ -93,6 +99,7 @@
   margin-inline-start: var(--space-6);
   color: var(--gm3-sys-color-on-surface-variant);
   font: var(--type-menu-shortcut);
+  font-size: var(--sop-menu-shortcut-size);
   letter-spacing: var(--tracking-tight);
 }
 

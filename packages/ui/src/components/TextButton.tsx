@@ -10,18 +10,20 @@ export interface TextButtonProps extends Omit<ComponentPropsWithRef<'button'>, '
   icon?: IconName;
   onClick?: () => void;
   disabled?: boolean;
+  /** `tonal`: the main way forward among several (a filled tonal button). Default: a plain text button. */
+  variant?: 'text' | 'tonal';
 }
 
 /**
  * GM3 text button as Drive draws it: 40 px pill, Google Sans Flex 14/20 500 in the primary colour (#0b57d0 light,
  * #a8c7fa dark). It passes other button props and its ref on, so it can be a DropdownMenu trigger.
  */
-export function TextButton({ label, icon, onClick, disabled = false, className, ...rest }: TextButtonProps) {
+export function TextButton({ label, icon, onClick, disabled = false, variant = 'text', className, ...rest }: TextButtonProps) {
   return (
     <button
       type="button"
       {...rest}
-      className={cx(styles.button, icon !== undefined && styles.withIcon, className)}
+      className={cx(styles.button, icon !== undefined && styles.withIcon, variant === 'tonal' && styles.tonal, className)}
       disabled={disabled}
       onClick={onClick}
     >

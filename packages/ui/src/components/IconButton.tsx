@@ -22,21 +22,28 @@ export interface IconButtonProps extends Omit<ComponentPropsWithRef<'button'>, '
   disabled?: boolean;
   /** Shown in the tooltip: "Download (Ctrl+S)". */
   shortcut?: string;
+  /**
+   * Why the button is off, when it is off for a real reason ("400% is the largest size"). The tooltip then says
+   * "Zoom in: 400% is the largest size" instead of the shortcut, and screen readers read it as the description.
+   */
+  disabledReason?: string | undefined;
 }
 
 /**
  * Drive's round icon button (02 section 4.10), with a tooltip. It passes other button props and its ref on to the
  * <button>, so it can be the trigger of a DropdownMenu.
  */
-export function IconButton({ icon, label, onClick, size = 32, iconSize, pressed, disabled = false, shortcut, className, ...rest }: IconButtonProps) {
+export function IconButton({ icon, label, onClick, size = 32, iconSize, pressed, disabled = false, shortcut, disabledReason, className, ...rest }: IconButtonProps) {
+  const why = disabled && disabledReason !== undefined ? disabledReason : undefined;
   return (
-    <Tooltip label={label} shortcut={shortcut}>
+    <Tooltip label={why === undefined ? label : `${label}: ${why}`} {...(why === undefined && shortcut !== undefined ? { shortcut } : {})}>
       <button
         type="button"
         {...rest}
         className={cx(styles.button, size === 40 ? styles.s40 : styles.s32, className)}
         aria-label={label}
         aria-pressed={pressed}
+        aria-description={why}
         disabled={disabled}
         onClick={onClick}
       >

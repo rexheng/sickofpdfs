@@ -60,6 +60,8 @@ export const ICON_NAMES = [
   'select', // the area tool: a dashed rectangle
   'keep', // a pin (Material Symbols' push pin)
   'person', // the owner's avatar on comment cards (S5)
+  // TB1 chrome polish: Go to page (not 'pageview', which looked like Find's icon beside it)
+  'move_down',
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

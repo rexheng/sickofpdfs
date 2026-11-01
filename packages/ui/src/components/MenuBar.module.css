@@ -1,6 +1,7 @@
 /*
  * Menu-bar buttons [live]: 24 px tall, padding 0 9px, Google Sans Flex 14 400 in on-surface, no gap between them.
  * The open one: --menubar-open-bg (#37393b in the dark chrome) with radius 4px 4px 0 0, so it joins the menu below.
+ * Each takes the pointer 4 px above and below what it draws, a 32 px tall target (TB1 critics), without moving it.
  */
 .bar {
   display: flex;
@@ -24,6 +25,13 @@
   cursor: pointer;
   outline: none;
   -webkit-tap-highlight-color: transparent;
+  position: relative;
+}
+
+.trigger::before {
+  position: absolute;
+  inset: calc((var(--menubar-btn-h) - var(--menubar-btn-target-h)) / 2) 0;
+  content: "";
 }
 
 .trigger:hover {

@@ -36,6 +36,32 @@
   background-color: color-mix(in srgb, currentColor calc(var(--gm3-state-hover) * 100%), transparent);
 }
 
+.button:active:not(:disabled) {
+  background-color: color-mix(in srgb, currentColor calc((var(--gm3-state-hover) + var(--gm3-state-pressed)) * 100%), transparent);
+}
+
+/* Tonal: the main way forward on a card (GM3 filled tonal button), secondary-container with its own text colour. */
+.tonal {
+  background-color: var(--gm3-sys-color-secondary-container);
+  color: var(--gm3-sys-color-on-secondary-container);
+}
+
+.tonal:hover:not(:disabled) {
+  background-color: color-mix(
+    in srgb,
+    var(--gm3-sys-color-on-secondary-container) calc(var(--gm3-state-hover) * 100%),
+    var(--gm3-sys-color-secondary-container)
+  );
+}
+
+.tonal:active:not(:disabled) {
+  background-color: color-mix(
+    in srgb,
+    var(--gm3-sys-color-on-secondary-container) calc((var(--gm3-state-hover) + var(--gm3-state-pressed)) * 100%),
+    var(--gm3-sys-color-secondary-container)
+  );
+}
+
 .button:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);
@@ -43,5 +69,5 @@
 
 .button:disabled {
   cursor: default;
-  opacity: var(--gm3-state-disabled-content);
+  opacity: var(--sop-disabled-content);
 }
