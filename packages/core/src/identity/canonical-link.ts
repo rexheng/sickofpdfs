@@ -2,10 +2,13 @@
 // every rule is narrow: it applies only to the exact host and path shape it was written for, and leaves the rest
 // of the link as the user gave it. Anything that is not an http(s) URL comes back unchanged.
 
-/** Query keys that never choose a document: ads, analytics, "force download" and expiring signed-URL parts. */
+/**
+ * Query keys that never choose a document: ads, analytics, "force download", expiring signed-URL parts and session
+ * keys (Moodle's `sesskey`: a live key that must never be stored or synced).
+ */
 const REMOVED_KEYS = new Set([
   'fbclid', 'gclid', 'dclid', 'msclkid', 'mc_cid', 'mc_eid', '_ga', '_gl', 'igshid', 'yclid', 'twclid', 'ttclid',
-  'ref_src', 'refreqid', 'forcedownload', 'token', 'access_token', 'id_token',
+  'ref_src', 'refreqid', 'forcedownload', 'token', 'access_token', 'id_token', 'sesskey',
   'googleaccessid', 'expires', 'signature', 'key-pair-id', 'policy',
 ]);
 const REMOVED_PREFIXES = ['utm_', 'x-amz-', 'x-goog-'];
@@ -16,6 +19,9 @@ const PROXY_HOST = /(^|\.)(ezproxy|libproxy|ezp|proxy|eresources)\.|\.idm\.oclc\
 const ARXIV_PATH = /^\/(?:abs|pdf)\/(\d{4}\.\d{4,5}|[a-z]+(?:-[a-z]+)*(?:\.[A-Za-z]{2})?\/\d{7})(?:v\d+)?(?:\.pdf)?$/;
 const DOI_PATH = /^\/(10\.\d{4,9}(?:\.\d+)*\/.+)$/;
 const MOODLE_REVISION = /(\/pluginfile\.php\/\d+\/mod_(?:resource|folder|page|book)\/content\/)\d+\//;
+// the same path inside a `file=` value (`/123/mod_resource/content/7/a.pdf`), whose slashes may be written as %2F
+const SLASH = '(?:/|%2[Ff])';
+const MOODLE_FILE_REVISION = new RegExp(`(${SLASH}\\d+${SLASH}mod_(?:resource|folder|page|book)${SLASH}content${SLASH})\\d+(?=${SLASH})`);
 
 /** How many proxy login wrappers one link may be unwrapped through. */
 const MAX_UNWRAP = 8;
@@ -161,6 +167,21 @@ function moodlePath(pathname: string): string {
   return plain.replace(MOODLE_REVISION, (_, head: string) => `${head}0/`);
 }
 
+/**
+ * Moodle's older link form `pluginfile.php?file=/<context>/mod_resource/content/<revision>/a.pdf`: the revision
+ * becomes 0 inside the `file` value, as it does in the path form. Only that one `/content/<digits>/` segment changes,
+ * and the value keeps its own spelling (encoded slashes stay encoded).
+ */
+function moodleFileSearch(pathname: string, search: string): string {
+  if (search === '' || !/\/pluginfile\.php$/.test(pathname)) return search;
+  const pairs = search.slice(1).split('&').map((pair) => {
+    const eq = pair.indexOf('=');
+    if (eq < 0 || decodeKey(pair.slice(0, eq)) !== 'file') return pair;
+    return pair.slice(0, eq + 1) + pair.slice(eq + 1).replace(MOODLE_FILE_REVISION, (_, head: string) => `${head}0`);
+  });
+  return `?${pairs.join('&')}`;
+}
+
 function canonicalize(input: string, unwrapped: number): string {
   const url = parseWeb(input);
   if (url === null) return input;
@@ -202,6 +223,7 @@ function canonicalize(input: string, unwrapped: number): string {
 
   // 6. Moodle
   url.pathname = moodlePath(url.pathname);
+  url.search = moodleFileSearch(url.pathname, url.search);
   return url.href;
 }
 
