@@ -16,7 +16,7 @@ export {
 } from './TextLayer';
 export { FindBar, type FindBarProps } from './FindBar';
 export { FindHighlights, type FindHighlightsProps } from './FindHighlights';
-export { MarkLayer, type MarkLayerItem, type MarkLayerPage, type MarkLayerProps, type MarkLayerSource, type MarkLayerStyle } from './MarkLayer';
-export { BoldLayer, type BoldLayerProps, type BoldRange } from '../marks/BoldLayer';
+export { MarkLayer, markPaths, type MarkLayerItem, type MarkLayerPage, type MarkLayerProps, type MarkLayerSource, type MarkLayerStyle, type MarkPath } from './MarkLayer';
+export { BoldLayer, displayMatrix, drawBoldRange, STRONG_UNDERLINE_EM, type BoldLayerProps, type BoldRange, type BoldTextSource, type DrawnRange } from '../marks/BoldLayer';
 export { FigureLayer, type FigureLayerNote, type FigureLayerPage, type FigureLayerProps, type FigureLayerSource } from './FigureLayer';
 export { FiguresTab, type FiguresTabItem, type FiguresTabProps } from './FiguresTab';

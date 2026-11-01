@@ -18,6 +18,7 @@ import type { ViewerParams } from '../shared/viewer-url';
 import { downloadOriginal } from './actions/download';
 import type { OpenedDocument } from './open-document';
 import { printDocument } from './print/print';
+import type { PrintMarks } from './print/print-marks';
 import { isTypingTarget, type KeyCombo, type ShortcutDef } from './shortcuts';
 
 export { buildMenus, formatCombo } from './chrome/menus';
@@ -72,6 +73,11 @@ export interface ViewerUi {
   copyLink(source: string): void;
   /** Shows the "Preparing to print…" dialog with how far the pages are; null closes it. `cancel` stops the work. */
   printProgress(progress: { done: number; total: number; cancel: () => void } | null): void;
+  /**
+   * Asks whether the marks print too (the document has some): 'with', 'without', or null when the reader cancels. Only
+   * one question is open at a time.
+   */
+  askPrintMarks(): Promise<'with' | 'without' | null>;
   /** A short note at the bottom of the window (a snackbar). */
   showNote(text: string): void;
 }
@@ -94,6 +100,8 @@ export interface ViewerContext {
   save: SaveController | null;
   /** The page list's zoom and scroll moves, while it is mounted. */
   pageList: RefObject<PageListApi | null>;
+  /** The marks as the screen draws them, for Print (S17). Null in Incognito and while there are no notes. */
+  printMarks?: PrintMarks | null;
   ui: ViewerUi;
 }
 

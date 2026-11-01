@@ -1,13 +1,15 @@
 // Print (Ctrl+P). Chrome would print the viewer's own page, so Ctrl+P prints a copy instead: every page is drawn by
 // PDFium at 200 dpi into an image, and the images go into a print-only element (#sop-print-root) that print.css shows
 // in place of the viewer. Each sheet has the size and orientation of its own page (CSS named pages), so a deck with an
-// A4 landscape page and a rotated page prints as it is. Marks are not in the copy yet (Phase 2 adds them to the sheets).
+// A4 landscape page and a rotated page prints as it is. When the document has marks, Ctrl+P first asks whether they
+// print too; if so print-marks.ts paints them on each page's picture before it is saved (S17).
 //
 // Memory: pages are drawn one at a time. Each becomes a blob behind an object URL, so no more than two full bitmaps are
 // alive at once, and the URLs are revoked when the copy is disposed (after printing, or on Cancel). A page is a PNG, so
 // text stays crisp, except a scan (one picture over the page), which is a JPEG: a scan's PNG is 1 to 2 MB.
 import type { DocHandle, PageSize, PdfBackend } from '@sop/viewer';
 import type { ViewerContext } from '../commands';
+import { createMarkPainter, type MarkPainter, type MarksToPrint, marksToPrint } from './print-marks';
 
 /** The resolution of the print copy. */
 export const PRINT_DPI = 200;
@@ -83,6 +85,8 @@ export interface PrintOptions {
   signal: AbortSignal;
   /** Called after each page is ready, with the number of pages ready and the total. */
   onProgress(done: number, total: number): void;
+  /** The marks to paint on the pages (print-marks.ts). Without it the copy is the plain pages. */
+  marks?: MarksToPrint | null;
 }
 
 const abortError = () => new DOMException('Printing was cancelled.', 'AbortError');
@@ -106,6 +110,7 @@ async function isScan(backend: PdfBackend, doc: DocHandle, index: number, page: 
 interface DrawnPage {
   bitmap: ImageBitmap;
   scan: boolean;
+  index: number;
 }
 
 /** Page `index` drawn upright (the page's own /Rotate, no view rotation) with its annotations, and whether it is a scan. */
@@ -113,19 +118,21 @@ function drawPage(backend: PdfBackend, doc: DocHandle, index: number, page: Page
   const drawn = (async () => {
     const scan = await isScan(backend, doc, index, page);
     const bitmap = await backend.renderTile(doc, { pageIndex: index, scale: printScale(size, o.dpi), viewRotation: 0, withAnnotations: true }, o.signal);
-    return { bitmap, scan };
+    return { bitmap, scan, index };
   })();
   drawn.catch(() => {}); // the loop awaits it and handles a failure; this only stops an early one being reported as unhandled
   return drawn;
 }
 
-/** The page as a PNG, or as a JPEG for a scan. The bitmap is closed. */
-async function encodePage({ bitmap, scan }: DrawnPage): Promise<Blob> {
+/** The page as a PNG, or as a JPEG for a scan, with its marks painted on when there is a painter. The bitmap is closed as soon as the canvas holds it. */
+async function encodePage({ bitmap, scan, index }: DrawnPage, marks: MarkPainter | null): Promise<Blob> {
   try {
     const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
     const context = canvas.getContext('2d');
     if (context === null) throw new Error('The canvas has no 2d context.');
     context.drawImage(bitmap, 0, 0);
+    bitmap.close(); // the canvas holds the page now; the bitmap is not kept through the marks and the encoding
+    await marks?.paint(index, context, canvas);
     return await canvas.convertToBlob(scan ? { type: 'image/jpeg', quality: SCAN_JPEG_QUALITY } : { type: 'image/png' });
   } finally {
     bitmap.close();
@@ -157,12 +164,13 @@ export async function preparePrintCopy(backend: PdfBackend, doc: DocHandle, page
   const sizes = pages.map(printedSize);
   const root = document.createElement('div');
   root.id = PRINT_ROOT_ID;
+  const marks = o.marks ? createMarkPainter({ backend, doc, pages, marks: o.marks, signal: o.signal }) : null;
   let drawing: Promise<DrawnPage> | null = pages.length > 0 ? drawPage(backend, doc, 0, pages[0], sizes[0], o) : null;
   try {
     for (const [index, size] of sizes.entries()) {
       const drawn = await drawing!;
       drawing = index + 1 < pages.length ? drawPage(backend, doc, index + 1, pages[index + 1], sizes[index + 1], o) : null;
-      const url = URL.createObjectURL(await encodePage(drawn));
+      const url = URL.createObjectURL(await encodePage(drawn, marks));
       urls.push(url);
       const image = new Image();
       image.alt = '';
@@ -186,6 +194,8 @@ export async function preparePrintCopy(backend: PdfBackend, doc: DocHandle, page
     // The page being drawn ahead is not wanted: close its bitmap when it arrives.
     void drawing?.then((next) => next.bitmap.close(), () => {});
     throw error;
+  } finally {
+    marks?.dispose();
   }
   const style = document.createElement('style');
   style.id = PRINT_STYLE_ID;
@@ -220,8 +230,8 @@ function disposeActive(): void {
 }
 
 /**
- * Ctrl+P and File → Print: the progress dialog, then the pages, then Chrome's print dialog. The copy is removed when
- * printing is over (afterprint), or when the next one starts.
+ * Ctrl+P and File → Print: the question about marks (only when the document has some), the progress dialog, then the
+ * pages, then Chrome's print dialog. The copy is removed when printing is over (afterprint), or when the next one starts.
  */
 export async function printDocument(ctx: ViewerContext): Promise<void> {
   if (preparing) return;
@@ -229,19 +239,27 @@ export async function printDocument(ctx: ViewerContext): Promise<void> {
   disposeActive();
   const { pageCount, pages, doc } = ctx.opened.open;
   const controller = new AbortController();
-  const cancel = () => {
-    controller.abort();
-    ctx.ui.printProgress(null); // the dialog goes at once, not when the page being drawn is done
-  };
-  const progress = (done: number) => {
-    if (!controller.signal.aborted) ctx.ui.printProgress({ done, total: pageCount, cancel });
-  };
-  progress(0);
+  let withMarks = false;
   try {
+    const found = ctx.printMarks ? marksToPrint(ctx.printMarks, pageCount) : null;
+    if (found !== null) {
+      const answer = await ctx.ui.askPrintMarks();
+      if (answer === null) return; // Cancel, Escape or a click away: nothing is printed
+      withMarks = answer === 'with';
+    }
+    const cancel = () => {
+      controller.abort();
+      ctx.ui.printProgress(null); // the dialog goes at once, not when the page being drawn is done
+    };
+    const progress = (done: number) => {
+      if (!controller.signal.aborted) ctx.ui.printProgress({ done, total: pageCount, cancel });
+    };
+    progress(0);
     const copy = await preparePrintCopy(ctx.backend, doc, pages, {
       dpi: PRINT_DPI,
       signal: controller.signal,
       onProgress: progress,
+      marks: withMarks ? found : null,
     });
     const onAfterPrint = () => disposeActive();
     window.addEventListener('afterprint', onAfterPrint, { once: true });
@@ -258,7 +276,7 @@ export async function printDocument(ctx: ViewerContext): Promise<void> {
   } catch {
     ctx.ui.printProgress(null);
     // Cancel is the person's choice: nothing to say.
-    if (!controller.signal.aborted) ctx.ui.showNote('Couldn’t get the pages ready to print. Try again.');
+    if (!controller.signal.aborted) ctx.ui.showNote(withMarks ? 'Couldn’t get the pages ready to print. Try again, or print without marks.' : 'Couldn’t get the pages ready to print. Try again.');
   } finally {
     preparing = false;
   }

@@ -65,6 +65,7 @@ import type { SaveControllerImpl } from './save/save-controller';
 import { SaveAskDialog } from './save/SaveAskDialog';
 import { StatusChip, useSaveView } from './save/StatusChip';
 import { useSave } from './save/use-save';
+import { PrintMarksDialog } from './print/PrintMarksDialog';
 import { PrintProgressDialog } from './print/PrintProgressDialog';
 import { installShortcuts, type ShortcutDef } from './shortcuts';
 import { EngineStoppedCard } from './ui/EngineStoppedCard';
@@ -261,6 +262,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
   const [dialog, setDialog] = useState<'shortcuts' | 'about' | null>(null);
   const [note, setNote] = useState<{ text: string } | null>(null);
   const [printing, setPrinting] = useState<{ done: number; total: number; cancel: () => void } | null>(null);
+  const [printAsk, setPrintAsk] = useState<{ answer(this: void, choice: 'with' | 'without' | null): void } | null>(null);
   const ui = useMemo<ViewerUi>(
     () => ({
       openInChrome: escape,
@@ -272,6 +274,15 @@ function TabViewer({ params }: { params: ViewerParams }) {
       showAbout: () => setDialog('about'),
       copyLink: (link) => void copyLink(link).then((ok) => setNote({ text: ok ? 'Link copied' : 'Couldn’t copy the link. Try again.' })),
       printProgress: setPrinting,
+      askPrintMarks: () =>
+        new Promise((resolve) =>
+          setPrintAsk({
+            answer: (choice) => {
+              setPrintAsk(null);
+              resolve(choice);
+            },
+          }),
+        ),
       showNote: (text) => setNote({ text }),
     }),
     [escape],
@@ -363,6 +374,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
       <ShortcutsDialog open={dialog === 'shortcuts'} onOpenChange={(open) => !open && setDialog(null)} commands={commands} />
       <AboutDialog open={dialog === 'about'} onOpenChange={(open) => !open && setDialog(null)} />
       <SaveAskDialog save={save} />
+      {printAsk !== null && <PrintMarksDialog onAnswer={printAsk.answer} />}
       {printing !== null && <PrintProgressDialog done={printing.done} total={printing.total} onCancel={printing.cancel} />}
       <Snackbar note={note} />
     </div>
@@ -530,10 +542,11 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       openFind: find.open,
       save,
       pageList: api,
+      printMarks: notes === null ? null : { layer: notes.layer, text: pageText },
       ui,
     };
     return createCommands(ctx, notes?.behaviours() ?? {});
-  }, [params, doc, store, scheduler, rootRef, ui, save, nav.jumps, find.controller, find.open, notes]);
+  }, [params, doc, store, scheduler, rootRef, ui, save, nav.jumps, find.controller, find.open, notes, pageText]);
   useEffect(() => {
     onChrome({ commands, store });
     return () => onChrome(null);

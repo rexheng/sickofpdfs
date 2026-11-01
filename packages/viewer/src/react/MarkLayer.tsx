@@ -15,7 +15,7 @@
 // The layer only draws. What is on a page comes from a MarkLayerSource (the extension's annotation wiring).
 import type { MarkColor, NormRect } from '@sop/core';
 import { type CSSProperties, memo, useId, useLayoutEffect, useSyncExternalStore, type JSX } from 'react';
-import type { PageSize } from '../backend/types';
+import type { PageSize, Rotation } from '../backend/types';
 import type { PageBox } from '../layout/page-layout';
 import { cssPerPoint } from '../layout/page-space';
 import { PT_TO_CSS } from '../layout/zoom';
@@ -79,7 +79,8 @@ function lineWidthAt100(): number {
   return lineWidthToken;
 }
 
-interface Group {
+/** One path of a page: a style and colour, with the CSS that paints it (tokens as var(--…)). */
+export interface MarkPath {
   key: string;
   d: string;
   style: CSSProperties;
@@ -91,7 +92,7 @@ function fillOf(color: MarkColor | null, active: boolean): string {
 }
 
 /** The paths of a page: the open comment's passage, highlights (inactive, then active), areas, underlines, strikes, dotted underlines. */
-function groupsOf(items: readonly MarkLayerItem[], toCss: (n: NormRect) => Box, o: PathOptions, line: number, dot: number): Group[] {
+function groupsOf(items: readonly MarkLayerItem[], toCss: (n: NormRect) => Box, o: PathOptions, line: number, dot: number): MarkPath[] {
   const buckets = new Map<string, { style: MarkLayerStyle; color: MarkColor | null; active: boolean; boxes: Box[] }>();
   for (const it of items) {
     const active = it.style === 'highlight' && it.active === true;
@@ -103,7 +104,7 @@ function groupsOf(items: readonly MarkLayerItem[], toCss: (n: NormRect) => Box, 
   const order: Record<MarkLayerStyle, number> = { passage: -1, highlight: 0, area: 2, underline: 3, strike: 4, dotted: 5 };
   return [...buckets.entries()]
     .sort(([, a], [, b]) => order[a.style] + (a.active ? 1 : 0) - (order[b.style] + (b.active ? 1 : 0)) || (a.color ?? 0) - (b.color ?? 0))
-    .map(([key, b]): Group => {
+    .map(([key, b]): MarkPath => {
       switch (b.style) {
         case 'highlight':
           return { key, d: highlightPath(b.boxes, o), style: { fill: fillOf(b.color, b.active), mixBlendMode: 'var(--sop-mark-blend)' as CSSProperties['mixBlendMode'] } };
@@ -121,6 +122,23 @@ function groupsOf(items: readonly MarkLayerItem[], toCss: (n: NormRect) => Box, 
     });
 }
 
+/**
+ * The paths a page's items make when the page is drawn at `k` CSS px a point, turned by `rotation`, on a screen of pixel
+ * ratio `dpr`. The mark layer draws them as SVG; print (S17) paints the very same ones on the page's bitmap, with `k`
+ * the bitmap's pixels a point and `dpr` 1, so line widths and shapes match the screen.
+ */
+export function markPaths(items: readonly MarkLayerItem[], o: { page: PageSize; k: number; rotation: Rotation; dpr: number }): MarkPath[] {
+  const zoom = o.k / PT_TO_CSS;
+  const minLine = 1 / Math.max(1, o.dpr);
+  return groupsOf(
+    items,
+    (n) => normToCss(n, o.page, o.k, o.rotation),
+    { pixelRatio: o.dpr, rotation: o.rotation },
+    Math.max(minLine, lineWidthAt100() * zoom),
+    Math.max(minLine, DOT_W_AT_100 * zoom),
+  );
+}
+
 /** One page's marks. See the file comment. */
 export const MarkLayer = memo(function MarkLayer({ source, box, ctx, page, bold }: MarkLayerProps): JSX.Element {
   const index = box.index;
@@ -134,10 +152,8 @@ export const MarkLayer = memo(function MarkLayer({ source, box, ctx, page, bold 
   const k = cssPerPoint(box, page);
   const rotation = box.rotation;
   const toCss = (n: NormRect): Box => normToCss(n, page, k, rotation);
-  const zoom = k / PT_TO_CSS;
-  const minLine = 1 / Math.max(1, ctx.dpr);
   const opts: PathOptions = { pixelRatio: ctx.dpr, rotation };
-  const groups = groupsOf(model.items, toCss, opts, Math.max(minLine, lineWidthAt100() * zoom), Math.max(minLine, DOT_W_AT_100 * zoom));
+  const groups = markPaths(model.items, { page, k, rotation, dpr: ctx.dpr });
 
   // The ring: a 4 px stroke on the mark's outline, masked to what lies outside the mark, so 2 px show all round and
   // the lines between the rects of a multi-line mark do not.

@@ -7,14 +7,15 @@
 //
 // One <svg> per page, absolutely placed over the page box (its parent), in the page's displayed orientation. Its user
 // units are points: outlines are in unrotated page space and a <g> turns them by the page's /Rotate plus the view's
-// rotation. Glyphs that share a paint share one <path>. S13 mounts it in the page's mark layer; S17 draws it on print pages.
+// rotation. Glyphs that share a paint share one <path>. S13 mounts it in the page's mark layer; S17 (print) reads the same
+// outlines with drawBoldRange and paints them on the page's bitmap.
 import { useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react';
 import type { DocHandle, Glyph, GlyphOutline, PageGlyphs, PageSize, PdfBackend, PdfColor, PdfRect, Rotation } from '../backend/types';
 
 /** The bold stroke, in ems of the glyph's effective font size, as a unitless number of points (P0-5). */
 export const BOLD_STROKE_EM = 0.03;
 /** The strong style's underline, in ems of the line's height. */
-const STRONG_UNDERLINE_EM = 0.08;
+export const STRONG_UNDERLINE_EM = 0.08;
 
 /** A bold range on the page: PDFium char indices, `end` exclusive. */
 export interface BoldRange {
@@ -49,7 +50,7 @@ export interface BoldLayerProps {
  * rects. A passage in one colour and size is one path: a whole page in bold is a few DOM nodes, not thousands, and
  * where translucent glyphs overlap they are painted once.
  */
-interface DrawnRange {
+export interface DrawnRange {
   glyphs: { d: string; fill: string; stroke: string; width: number }[];
   strong: PdfRect[];
 }
@@ -59,19 +60,28 @@ const NOTHING_DRAWN: ReadonlyMap<string, DrawnRange> = new Map();
 
 const css = ([r, g, b, a]: PdfColor) => (a >= 255 ? `rgb(${r},${g},${b})` : `rgba(${r},${g},${b},${Math.round((a / 255) * 1000) / 1000})`);
 
-/** The <g> transform from unrotated page space (points, top-left origin) to the page as displayed. */
-export function displayTransform(page: PageSize, viewRotation: Rotation): { transform: string; width: number; height: number } {
+/**
+ * The turn from unrotated page space (points, top-left origin) to the page as displayed, as the six numbers of an SVG
+ * or canvas matrix (a b c d e f), or null for no turn. `width` and `height` are the displayed page, in points.
+ */
+export function displayMatrix(page: PageSize, viewRotation: Rotation): { matrix: [number, number, number, number, number, number] | null; width: number; height: number } {
   const { width: w, height: h } = page;
   switch (((page.rotation + viewRotation) % 360) as Rotation) {
     case 90:
-      return { transform: `matrix(0 1 -1 0 ${h} 0)`, width: h, height: w };
+      return { matrix: [0, 1, -1, 0, h, 0], width: h, height: w };
     case 180:
-      return { transform: `matrix(-1 0 0 -1 ${w} ${h})`, width: w, height: h };
+      return { matrix: [-1, 0, 0, -1, w, h], width: w, height: h };
     case 270:
-      return { transform: `matrix(0 -1 1 0 0 ${w})`, width: h, height: w };
+      return { matrix: [0, -1, 1, 0, 0, w], width: h, height: w };
     default:
-      return { transform: '', width: w, height: h };
+      return { matrix: null, width: w, height: h };
   }
+}
+
+/** The <g> transform from unrotated page space to the page as displayed (displayMatrix, as SVG text). */
+export function displayTransform(page: PageSize, viewRotation: Rotation): { transform: string; width: number; height: number } {
+  const { matrix, width, height } = displayMatrix(page, viewRotation);
+  return { transform: matrix === null ? '' : `matrix(${matrix.join(' ')})`, width, height };
 }
 
 /**
@@ -103,7 +113,8 @@ export function undrawnRuns(glyphs: readonly Glyph[], start: number, end: number
   return runs;
 }
 
-async function drawRange(p: Pick<BoldLayerProps, 'backend' | 'doc' | 'pageIndex' | 'text'>, r: BoldRange): Promise<DrawnRange> {
+/** Reads one bold range's outlines and strong-style rects. BoldLayer draws them as SVG; print paints the same ones on a canvas. */
+export async function drawBoldRange(p: Pick<BoldLayerProps, 'backend' | 'doc' | 'pageIndex' | 'text'>, r: BoldRange): Promise<DrawnRange> {
   const count = Math.max(0, r.end - r.start);
   const [outlines, page] = await Promise.all([p.backend.getGlyphOutlines(p.doc, p.pageIndex, r.start, count), p.text.glyphs(p.pageIndex)]);
   const byPaint = new Map<string, DrawnRange['glyphs'][number]>();
@@ -160,7 +171,7 @@ export function BoldLayer(props: BoldLayerProps): JSX.Element {
     void Promise.all(
       missing.map(async (k) => {
         const [start, end] = k.split(':').map(Number) as [number, number];
-        cache.set(k, await drawRange({ backend, doc, pageIndex, text }, { start, end }));
+        cache.set(k, await drawBoldRange({ backend, doc, pageIndex, text }, { start, end }));
       }),
     ).then(
       () => live && show(),
