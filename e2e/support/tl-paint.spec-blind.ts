@@ -168,6 +168,12 @@ export interface LineMeasure {
   left: number;
   right: number;
   fontSize: number;
+  /**
+   * False when the band's thickness cannot be seen: it touches a neighbouring band and the boundary between them is
+   * hidden all along the line (two full lines of a justified paragraph). Its thickness is then the window's, and the
+   * even-height check leaves it out. A run of touching lines between two visible edges counts as one, at its mean.
+   */
+  judged: boolean;
 }
 
 export interface PaintReport {
@@ -217,6 +223,18 @@ export function analyzeSelectionPaint(img: Img, o: PaintOptions): PaintReport {
     return Math.max(0, t) / C.a;
   };
 
+  /** How painted a row is anywhere in columns `cols` (or [a0, a1)), 0 to 1, with no window. */
+  const rowCover = (r: number, cols: number[]): number => {
+    let best = 0;
+    for (const a of cols) {
+      const p = pixel(a, r);
+      const f = p ? fill(p) : null;
+      if (f !== null && f > best) best = f;
+    }
+    return Math.min(best, 1);
+  };
+  const range = (a0: number, a1: number): number[] => Array.from({ length: Math.max(0, a1 - a0) }, (_, k) => a0 + k);
+
   // Lines in the order they run across the page.
   const order = o.lines.map((_, i) => i).sort((p, q) => (frame(o.lines[p]).c0 + frame(o.lines[p]).c1) - (frame(o.lines[q]).c0 + frame(o.lines[q]).c1));
   const centre = (i: number) => (frame(o.lines[i]).c0 + frame(o.lines[i]).c1) / 2;
@@ -242,6 +260,8 @@ export function analyzeSelectionPaint(img: Img, o: PaintOptions): PaintReport {
   });
 
   const measures: LineMeasure[] = [];
+  /** Per measured line: whether its band runs on into a neighbour's, its centre row and its extent (device px). */
+  const edges: { rank: number; upRank: number; downRank: number; touchTop: boolean; touchBottom: boolean; centreRow: number; minA: number; maxA: number }[] = [];
   let doubleBlend = 0;
   const colourCount = new Map<number, number>();
 
@@ -314,13 +334,39 @@ export function analyzeSelectionPaint(img: Img, o: PaintOptions): PaintReport {
     while (top > 0 && cov[top - 1] > 0.04) top--;
     let bottom = seed;
     while (bottom < cov.length - 1 && cov[bottom + 1] > 0.04) bottom++;
-    const topEdge = (r0 + top + (cov[top] >= 0.98 ? 0 : 1 - cov[top])) / dpr;
-    const bottomEdge = (r0 + bottom + (cov[bottom] >= 0.98 ? 1 : cov[bottom])) / dpr;
     for (let r = top + 1; r < bottom; r++) {
       if (cov[r] < 0.9) problems.push(`line ${rank + 1}: the band has a hole in it (row ${r0 + r} is ${(cov[r] * 100).toFixed(0)}% painted)`);
     }
-    // The extent along the line, from rows well inside the band (the edge rows may hold a neighbour's anti-aliasing).
-    for (let r = top + 1; r <= bottom - 1; r++) {
+    // The band's edges. The window is cut half way between the line rectangles' centres, which follow the ink, not the
+    // band, so a band may run past it. Each edge is found by following the paint out from the line's middle, past the
+    // window if need be, as far as the middle of the nearest line above or below that shares part of its length. Paint
+    // that goes on that far runs into that line's band: the two touch (as Chrome's viewer paints a paragraph), and this
+    // side has no edge of its own to measure.
+    const scan = range(aLo, aHi);
+    const overlapsAlong = (j: number) => Math.min(frame(o.lines[j]).a1, lf.a1) - Math.max(frame(o.lines[j]).a0, lf.a0) > 0.5;
+    let up = rank - 1;
+    while (up >= 0 && !overlapsAlong(order[up])) up--;
+    let dn = rank + 1;
+    while (dn < order.length && !overlapsAlong(order[dn])) dn++;
+    const reach = Math.ceil(2 * (lf.c1 - lf.c0) * dpr);
+    const upLimit = up >= 0 ? Math.round(centre(order[up]) * dpr) : r0 + seed - reach;
+    const downLimit = dn < order.length ? Math.round(centre(order[dn]) * dpr) : r0 + seed + reach;
+    let t = r0 + seed;
+    while (t - 1 > upLimit && rowCover(t - 1, scan) > 0.04) t--;
+    let b = r0 + seed;
+    while (b + 1 < downLimit && rowCover(b + 1, scan) > 0.04) b++;
+    const touchTop = up >= 0 && t - 1 === upLimit && rowCover(upLimit, scan) > 0.04;
+    const touchBottom = dn < order.length && b + 1 === downLimit && rowCover(downLimit, scan) > 0.04;
+    const ft = rowCover(t, scan);
+    const fb = rowCover(b, scan);
+    const topEdge = touchTop ? (r0 + top) / dpr : (t + (ft >= 0.98 ? 0 : 1 - ft)) / dpr;
+    const bottomEdge = touchBottom ? (r0 + bottom + 1) / dpr : (b + (fb >= 0.98 ? 1 : fb)) / dpr;
+    // The extent along the line, from rows well inside the band (the edge rows may hold a neighbour's anti-aliasing). On a
+    // side where the band runs into a neighbour's, only the rows of the line's own text count (its engine rectangle):
+    // nearer the boundary the paint may be the neighbour's (the first line of an indented paragraph sits on a longer one).
+    const ownTop = touchTop ? Math.max(top + 1, Math.ceil(lf.c0 * dpr) + 1 - r0) : top + 1;
+    const ownBottom = touchBottom ? Math.min(bottom - 1, Math.floor(lf.c1 * dpr) - 1 - r0) : bottom - 1;
+    for (let r = ownTop; r <= ownBottom; r++) {
       if ((rowMinA[r] ?? Infinity) < minA && cov[r] >= 0.9) minA = rowMinA[r]!;
       if ((rowMaxA[r] ?? -Infinity) > maxA && cov[r] >= 0.9) maxA = rowMaxA[r]!;
     }
@@ -331,7 +377,8 @@ export function analyzeSelectionPaint(img: Img, o: PaintOptions): PaintReport {
     const gs = (glyphLine.get(li) ?? []).map((gi) => o.glyphs[gi]);
     const sizes = gs.map((g) => g.fontSize).sort((p, q) => p - q);
     const fontSize = sizes.length ? sizes[Math.floor(sizes.length / 2)] : 0;
-    measures.push({ line: li, top: topEdge, bottom: bottomEdge, thickness: bottomEdge - topEdge, left: minA / dpr, right: (maxA + 1) / dpr, fontSize });
+    measures.push({ line: li, top: topEdge, bottom: bottomEdge, thickness: bottomEdge - topEdge, left: minA / dpr, right: (maxA + 1) / dpr, fontSize, judged: true });
+    edges.push({ rank, upRank: up, downRank: dn, touchTop, touchBottom, centreRow: Math.round(c * dpr), minA, maxA });
 
     // Colour census and double-paint scan inside the band.
     for (let r = r0 + top; r <= r0 + bottom; r++) {
@@ -374,14 +421,86 @@ export function analyzeSelectionPaint(img: Img, o: PaintOptions): PaintReport {
       const inks = main.map((g) => frame(g.tight));
       const inkTop = Math.min(...inks.map((f) => f.c0));
       const inkBottom = Math.max(...inks.map((f) => f.c1));
-      if (topEdge > inkTop + 1) problems.push(`line ${rank + 1}: the highlight starts ${(topEdge - inkTop).toFixed(1)} px below the top of the letters`);
-      if (bottomEdge < inkBottom - 1) problems.push(`line ${rank + 1}: the highlight stops ${(inkBottom - bottomEdge).toFixed(1)} px above the bottom of the letters`);
+      // A side that runs on into the next band is painted past the letters by definition.
+      if (!touchTop && topEdge > inkTop + 1) problems.push(`line ${rank + 1}: the highlight starts ${(topEdge - inkTop).toFixed(1)} px below the top of the letters`);
+      if (!touchBottom && bottomEdge < inkBottom - 1) problems.push(`line ${rank + 1}: the highlight stops ${(inkBottom - bottomEdge).toFixed(1)} px above the bottom of the letters`);
     }
   });
 
-  // Same font size, same height.
+  // Lines whose bands touch. The boundary between two of them shows only where one of the two lines runs on past the
+  // other (an indented first line, a short last line); there it is measured. Where it shows nowhere, the run of lines
+  // between two visible edges is judged as one, by its mean thickness: what the reader sees there is one even block.
+  const known = measures.map((m, k) => ({ top: edges[k].touchTop ? null : m.top, bottom: edges[k].touchBottom ? null : m.bottom }));
+  const byRank = new Map(edges.map((e, k) => [e.rank, k]));
+  /** The line whose band the band of line k runs into below, or null. */
+  const nextOf = (k: number): number | null => {
+    const e = edges[k];
+    const j = e.touchBottom ? byRank.get(e.downRank) : undefined;
+    return j !== undefined && edges[j].touchTop && edges[j].upRank === e.rank ? j : null;
+  };
+  for (let k = 0; k < measures.length; k++) {
+    const j = nextOf(k);
+    if (j === null) continue;
+    const u = edges[k];
+    const d = edges[j];
+    const margin = Math.ceil(3 * dpr);
+    const outside = (a0: number, a1: number, b0: number, b1: number) => range(a0, a1 + 1).filter((a) => a < b0 - margin || a > b1 + margin);
+    const found: number[] = [];
+    // A row goes on the band while it is painted, or covered by letters in every one of these columns.
+    const onBand = (r: number, cols: number[]) => rowCover(r, cols) > 0.04 || !cols.some((a) => (pixel(a, r) ?? [0, 0, 0]).every((v) => v >= 250));
+    // Where only the upper line is painted: its bottom edge, walking down from its middle.
+    const upOnly = outside(u.minA, u.maxA, d.minA, d.maxA);
+    if (upOnly.length >= 3) {
+      let r = u.centreRow;
+      while (r < d.centreRow && onBand(r + 1, upOnly)) r++;
+      const f = rowCover(r, upOnly);
+      if (r < d.centreRow) found.push((r + (f >= 0.98 ? 1 : f)) / dpr);
+    }
+    // Where only the lower line is painted: its top edge, walking up from its middle.
+    const downOnly = outside(d.minA, d.maxA, u.minA, u.maxA);
+    if (downOnly.length >= 3) {
+      let r = d.centreRow;
+      while (r > u.centreRow && onBand(r - 1, downOnly)) r--;
+      const f = rowCover(r, downOnly);
+      if (r > u.centreRow) found.push((r + (f >= 0.98 ? 0 : 1 - f)) / dpr);
+    }
+    if (found.length === 0) continue;
+    const at = found.reduce((p, q) => p + q, 0) / found.length;
+    known[k].bottom = at;
+    known[j].top = at;
+  }
+  const leadsInto = new Set<number>();
+  for (let k = 0; k < measures.length; k++) {
+    const j = nextOf(k);
+    if (j !== null) leadsInto.add(j);
+  }
+  const runs: LineMeasure[] = [];
+  for (let k = 0; k < measures.length; k++) {
+    // A run starts at a line no touching line leads into, or right after a boundary that shows.
+    if (leadsInto.has(k) && known[k].top === null) continue;
+    const members = [k];
+    for (let cur = k, next = nextOf(cur); known[cur].bottom === null && next !== null; cur = next, next = nextOf(cur)) members.push(next);
+    const group = members.map((q) => measures[q]);
+    const top = known[k].top;
+    const bottom = known[members[members.length - 1]].bottom;
+    const oneSize = group.every((g) => Math.abs(g.fontSize - group[0].fontSize) <= 0.25);
+    if (top !== null && bottom !== null && oneSize) {
+      const mean = (bottom - top) / group.length;
+      for (const g of group) g.thickness = mean;
+      group[0].top = top;
+      group[group.length - 1].bottom = bottom;
+      runs.push({ ...group[0], bottom: top + mean, thickness: mean });
+    } else {
+      members.forEach((q) => {
+        if (edges[q].touchTop || edges[q].touchBottom) measures[q].judged = false;
+        else runs.push(measures[q]);
+      });
+    }
+  }
+
+  // Same font size, same height (a run of touching lines counts once, at its mean).
   const bySize = new Map<number, LineMeasure[]>();
-  for (const m of measures) {
+  for (const m of runs) {
     if (m.fontSize <= 0) continue;
     const key = Math.round(m.fontSize * 2) / 2;
     bySize.set(key, [...(bySize.get(key) ?? []), m]);
@@ -393,15 +512,22 @@ export function analyzeSelectionPaint(img: Img, o: PaintOptions): PaintReport {
     if (spread > 1.0) problems.push(`lines in ${size} pt text have uneven heights: ${Math.min(...ts).toFixed(1)} to ${Math.max(...ts).toFixed(1)} px (limit 1 px apart)`);
   }
   // A band tall enough for its text, and no taller than a sane line.
-  for (const m of measures) {
+  for (const m of runs) {
     if (m.fontSize <= 0) continue;
     const em = m.fontSize * o.pxPerPt;
     if (m.thickness < 0.7 * em) problems.push(`a ${m.fontSize} pt line is painted only ${m.thickness.toFixed(1)} px thick (less than the text itself, ${em.toFixed(1)} px)`);
     if (m.thickness > 1.8 * em) problems.push(`a ${m.fontSize} pt line is painted ${m.thickness.toFixed(1)} px thick (far more than the text, ${em.toFixed(1)} px)`);
   }
-  // Neighbouring bands do not overlap.
+  // Neighbouring bands do not overlap. Bands that run into each other share their boundary; paint laid twice there would
+  // show as darker pixels, which the double-paint scan counts.
+  const touching = new Set<string>();
+  for (let k = 0; k < measures.length; k++) {
+    const j = nextOf(k);
+    if (j !== null) touching.add(`${measures[k].line}:${measures[j].line}`);
+  }
   const sorted = [...measures].sort((p, q) => p.top - q.top);
   for (let i = 1; i < sorted.length; i++) {
+    if (touching.has(`${sorted[i - 1].line}:${sorted[i].line}`)) continue;
     const overlap = sorted[i - 1].bottom - sorted[i].top;
     if (overlap > 0.75) problems.push(`two neighbouring lines overlap by ${overlap.toFixed(1)} px`);
   }

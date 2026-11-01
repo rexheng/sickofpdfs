@@ -108,6 +108,46 @@ describe('the painting judge (R44)', () => {
     }
   });
 
+  // Chrome's viewer, and an R44 painter, tile the lines of a paragraph: each band runs into the next with no gap. The
+  // boundary between two such bands shows only where one line runs on past the other (an indented first line, a short
+  // last one). Line rectangles follow the ink, so their centres sit 2 px above the bands' centres here, as on real pages.
+  function touching(mutate?: (bands: Box[]) => void): { img: Img; options: PaintOptions } {
+    const img = blank(400, 140);
+    const centres = [40, 56, 72];
+    const extents: [number, number][] = [[40, 360], [20, 360], [20, 200]];
+    const bands: Box[] = centres.map((c, i) => ({ left: extents[i][0], right: extents[i][1], top: c - 8, bottom: c + 8 }));
+    const lines: Box[] = centres.map((c, i) => ({ left: extents[i][0], right: extents[i][1], top: c - 7.5, bottom: c + 3.5 }));
+    const glyphs: PaintGlyph[] = [];
+    centres.forEach((c, i) => {
+      const [l, r] = extents[i];
+      for (const [x0, x1] of [[l + 2, l + 38], [r - 38, r - 2]] as const) {
+        glyphs.push({ tight: { left: x0, right: x1, top: c - 6, bottom: c + 4 }, loose: { left: x0 - 1, right: x1 + 1, top: c - 8, bottom: c + 6 }, fontSize: 10 });
+      }
+    });
+    mutate?.(bands);
+    for (const b of bands) paint(img, b);
+    for (const g of glyphs) ink(img, { left: g.tight.left + 3, right: g.tight.left + 5, top: g.tight.top + 1, bottom: g.tight.bottom - 1 });
+    return { img, options: { orientation: 'h', dpr: 1, pxPerPt: 96 / 72, lines, glyphs, colour: TOKEN } };
+  }
+
+  const touchingRows: [string, (b: Box[]) => void, RegExp | null][] = [
+    ['a paragraph whose bands touch passes, each line as thick as the others', () => {}, null],
+    ['the first line 3 px taller above', (b) => void (b[0] = { ...b[0], top: b[0].top - 3 }), /uneven heights/],
+    ['the last line 3 px taller below', (b) => void (b[2] = { ...b[2], bottom: b[2].bottom + 3 }), /uneven heights/],
+    ['the middle line 3 px thinner where its boundary shows', (b) => void (b[1] = { ...b[1], bottom: b[1].bottom - 3 }), /uneven heights|hole/],
+  ];
+  it.each(touchingRows)('%s', (_name, mutate, expected) => {
+    const s = touching(mutate);
+    const report = analyzeSelectionPaint(s.img, s.options);
+    if (expected === null) {
+      expect(report.problems).toEqual([]);
+      expect(report.lines).toHaveLength(3);
+      for (const l of report.lines) expect(l.thickness).toBeCloseTo(16, 0);
+    } else {
+      expect(report.problems.join('\n')).toMatch(expected);
+    }
+  });
+
   it('judges lines that run down the screen (a page turned by 90 degrees) the same way', () => {
     const s = scene();
     const turned: PaintOptions = { ...s.options, orientation: 'v', lines: s.options.lines.map(flip), glyphs: s.options.glyphs.map((g) => ({ ...g, tight: flip(g.tight), loose: flip(g.loose) })) };

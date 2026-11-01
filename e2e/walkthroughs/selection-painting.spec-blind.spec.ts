@@ -99,7 +99,10 @@ test('the browser\'s own ::selection is invisible while the DOM selection is kep
     return { background: own.backgroundColor, rules };
   });
   const transparent = /^(transparent|rgba\(0, 0, 0, 0\))$/u;
-  expect(css.rules.some((r) => transparent.test(r.background)), `a ::selection rule sets the background to transparent (rules seen: ${JSON.stringify(css.rules)})`).toBe(true);
+  // Triage (TB1): the build's CSS minifier writes `background: transparent` as `background: 0 0`, whose colour is `initial`,
+  // which is transparent. The computed check below is the one that matters.
+  const transparentRule = /^(transparent|rgba\(0, 0, 0, 0\)|initial)$/u;
+  expect(css.rules.some((r) => transparentRule.test(r.background)), `a ::selection rule sets the background to transparent (rules seen: ${JSON.stringify(css.rules)})`).toBe(true);
   expect(css.background, 'the computed ::selection background on a text span').toMatch(transparent);
 });
 
