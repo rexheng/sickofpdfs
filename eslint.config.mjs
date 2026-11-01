@@ -23,17 +23,9 @@ const needTask28 = existsSync(new URL('./apps/extension/src/store/store-api.ts',
       'apps/extension/src/store/{documents,identity,search-forget}.spec-blind.test.ts',
       'apps/extension/src/store/{forget-file,client}.spec-blind.browser.test.ts',
       'apps/extension/src/store/forget-file.spec-blind.worker.ts',
+      'apps/extension/src/store/device-id.spec-blind.{browser.test,worker}.ts',
     ];
 
-// Task 29's spec-blind tests import its files (the blob store, the device id, the secrets store). Linted again by themselves once
-// local-only/secrets-store.ts is there. Delete this block when Task 29 has merged.
-const needTask29 = existsSync(new URL('./apps/extension/src/local-only/secrets-store.ts', import.meta.url))
-  ? []
-  : [
-      'apps/extension/src/store/{blob-store,device-id}.spec-blind.browser.test.ts',
-      'apps/extension/src/store/device-id.spec-blind.worker.ts',
-      'apps/extension/src/local-only/secrets-store.spec-blind.{browser.test,worker}.ts',
-    ];
 
 const LOCAL_ONLY_MESSAGE = 'The local-only store holds secrets. Only viewer and settings code may import it (ruling R14).';
 const LOCAL_ONLY_IMPORT_PATTERN = { group: ['**/local-only', '**/local-only/**'], message: LOCAL_ONLY_MESSAGE };
@@ -47,7 +39,6 @@ const LOCAL_ONLY_SYNTAX = [
 export default defineConfig(
   globalIgnores([
     ...needTask28,
-    ...needTask29,
     '**/dist/**',
     '**/.output/**',
     '**/.wxt/**',

@@ -34,11 +34,7 @@
     "src/store/forget-file.spec-blind.browser.test.ts",
     "src/store/forget-file.spec-blind.worker.ts",
     "src/store/client.spec-blind.browser.test.ts",
-    // Task 29's (delete these when Task 29 has merged)
-    "src/store/blob-store.spec-blind.browser.test.ts",
     "src/store/device-id.spec-blind.browser.test.ts",
-    "src/store/device-id.spec-blind.worker.ts",
-    "src/local-only/secrets-store.spec-blind.browser.test.ts",
-    "src/local-only/secrets-store.spec-blind.worker.ts"
+    "src/store/device-id.spec-blind.worker.ts"
   ]
 }

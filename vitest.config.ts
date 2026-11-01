@@ -18,20 +18,12 @@ const needTask28 = existsSync(new URL('./apps/extension/src/store/store-api.ts',
       '**/viewer/annotations/edit-draft.spec-blind.test.ts',
       '**/store/{documents,identity,search-forget}.spec-blind.test.ts',
       '**/store/{forget-file,client}.spec-blind.browser.test.ts',
+      '**/store/device-id.spec-blind.browser.test.ts',
     ];
 
-// The same for Task 29's tests (the OPFS blob store, the device id, the secrets store and the import boundary): they switch on by themselves
-// the moment local-only/secrets-store.ts is there. Delete this block when Task 29 has merged.
-const needTask29 = existsSync(new URL('./apps/extension/src/local-only/secrets-store.ts', import.meta.url))
-  ? []
-  : [
-      '**/store/{blob-store,device-id}.spec-blind.browser.test.ts',
-      '**/local-only/secrets-store.spec-blind.browser.test.ts',
-      '**/local-only/import-boundary.spec-blind.test.ts',
-    ];
 
 // Never collected, by either project. spikes/** is the throwaway Phase 0 package with its own Playwright suite.
-const exclude = [...needTask28, ...needTask29, ...configDefaults.exclude, '**/.output/**', '**/.wxt/**', 'test-assets/**', 'spikes/**'];
+const exclude = [...needTask28, ...configDefaults.exclude, '**/.output/**', '**/.wxt/**', 'test-assets/**', 'spikes/**'];
 
 export default defineConfig({
   test: {
