@@ -33,7 +33,7 @@ describe('hasFillableFields', () => {
   // Spec ("Forms"): real fillable fields (text boxes, choices, checkboxes) or XFA make a form; the link boxes LaTeX adds do not.
   // Phase 0 P0-7: hyperref papers read as `acroform` with no fillable page; an XFA form is never walked, so its first
   // fillable page stays null, and it still counts.
-  const CASES: { name: string; info: FormInfo; expected: boolean }[] = [
+  const CASES: { name: string; info: Pick<FormInfo, 'formType' | 'firstFillablePage'>; expected: boolean }[] = [
     { name: 'no /AcroForm at all', info: { formType: 'none', firstFillablePage: null }, expected: false },
     { name: 'an empty /AcroForm (hyperref)', info: { formType: 'acroform', firstFillablePage: null }, expected: false },
     { name: 'a text field on the first page (page index 0 is a page, not "none")', info: { formType: 'acroform', firstFillablePage: 0 }, expected: true },
