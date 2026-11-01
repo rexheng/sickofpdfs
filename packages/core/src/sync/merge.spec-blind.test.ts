@@ -497,6 +497,19 @@ describe('what the server refuses', () => {
     expect(s.snapshot()).toBe(before);
   });
 
+  // From a bug report (P3 S5): `claude.apiKey` was let through, because the check split camel case into `api.Key` and then
+  // looked for `api_key`. A key that says secret is refused whatever its case or separators; ordinary keys still sync.
+  it.each([
+    ...['claude.apiKey', 'claude.api_key', 'claude.api-key', 'claude.APIKey', 'CLAUDE_API_KEY', 'claude.apikey', 'anthropicApiKey', 'x-api-key', 'apiKeys'].map((key) => ({ key, ok: false })),
+    ...['cloud_token', 'cloudToken', 'cloud.refresh-token', 'ACCESS_TOKEN', 'sync.secret', 'clientSecret', 'backup.password', 'Password', 'filterSalt'].map((key) => ({ key, ok: false })),
+    ...['library.layout', 'lookups.online', 'shortcuts.overrides', 'claude.model.default', 'reader.tokenizer', 'apiary.keyboard'].map((key) => ({ key, ok: true })),
+  ])('the setting $key syncs: $ok', ({ key, ok }) => {
+    const s = new FakeServer();
+    const r = s.push(A, entry('settings', key, 0, stamp(T0 + MIN, 0, A), { key, value: 'some value' }));
+    if (ok) expect(r.kind).toBe('apply');
+    else expectRejected(r, false);
+  });
+
   const STRANGER = hex64('ee');
   it.each([
     { table: 'comments' as const, e: () => entry('comments', uuid(30), 0, stamp(T0 + MIN, 0, A), commentRow({ id: uuid(30), body: 'note', documentId: STRANGER })) },

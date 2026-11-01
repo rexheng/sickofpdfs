@@ -116,8 +116,8 @@ function indexBy(rows: readonly unknown[] | undefined, key: string): Map<string,
 
 const byKey = (key: string) => (a: Row, b: Row): number => cmpText(str(a[key]), str(b[key]));
 
-/** A setting that may come back: not one the sync rules keep out, and not one named like an API key in camel case (`x.apiKey`). */
-const restorableSetting = (key: string): boolean => isSyncableSetting(key) && !/api[._-]?key/i.test(key);
+/** A setting that may come back: the sync rule, so a key that says secret (`claude.apiKey`, `cloud_token`) never does. */
+const restorableSetting = (key: string): boolean => isSyncableSetting(key);
 
 function clampStamp(stamp: string, now: number | undefined): string {
   if (now === undefined) return stamp;

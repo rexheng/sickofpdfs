@@ -268,14 +268,31 @@ export function wireIdOf(table: SyncedTable, row: Record<string, unknown>): stri
 // ─── Settings ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * Settings that must never sync, whatever their key: a name that says secret. Secrets live in `sop-local`, outside backup,
- * export and sync; this is a second lock on the door, not the first.
+ * Settings that must never leave the computer, whatever their key: a name that says secret. Secrets live in `sop-local`,
+ * outside backup, export and sync; this is a second lock on the door, not the first.
+ *
+ * The key is read as words, whatever its case or separators: `claude.apiKey`, `claude.api_key`, `claude-api-key`,
+ * `CLAUDE_API_KEY`, `claudeAPIKey` and `claude.apikey` all say "api key". Sync (`isSyncableSetting`) and restore
+ * (`backup/merge.ts`) both use it.
  */
-const SECRET_KEY = /(^|[._:-])(api[_-]?key|apikey|token|secret|password|passphrase|salt|credential)s?($|[._:-])/i;
+const SECRET_WORDS = new Set(['token', 'secret', 'password', 'passphrase', 'salt', 'credential']);
+
+function keyWords(key: string): string[] {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2') // claudeApiKey -> claude Api Key
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2') // APIKey -> API Key
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w !== '');
+}
+
+export function isSecretSettingKey(key: string): boolean {
+  const words = keyWords(key).map((w) => (w.length > 1 && w.endsWith('s') ? w.slice(0, -1) : w));
+  return words.some((w, i) => SECRET_WORDS.has(w) || w.includes('apikey') || (w === 'api' && words[i + 1] === 'key'));
+}
 
 export function isSyncableSetting(key: string): boolean {
-  // "filterSalt" reads as "filter.salt"
-  return key.length > 0 && key.length <= 256 && !SECRET_KEY.test(key.replace(/([a-z0-9])([A-Z])/g, '$1.$2'));
+  return key.length > 0 && key.length <= 256 && !isSecretSettingKey(key);
 }
 
 const FILTER_LISTS = new Set(['filter.allow', 'filter.deny']);
