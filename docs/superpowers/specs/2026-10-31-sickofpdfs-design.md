@@ -309,8 +309,18 @@ One reference implementation in TypeScript, with its test cases, defines these r
 
 **Notes on a PDF that isn't saved:**
 
-- Your first mark or note on a "not sure" PDF saves it to the library, with an Undo chip.
+- Your first mark or note on a "not sure" PDF saves it to the library.
 - Your first mark on a PDF judged not learning asks: "Save this PDF to keep your notes?" Yes saves it. No keeps the notes in memory only, until the tab closes, and nothing is stored.
+
+**The moment a PDF is saved, or un-saved (R67, 1 Nov 2026):**
+
+- **Only real content saves.** Your first mark saves the PDF, or the first letter you type in a new note. Opening a note box saves nothing. Press Esc on an empty note and nothing is saved or stored. If you type a note, delete it again and close it, the save is taken back.
+- **Nothing is lost while it saves.** Saving a long book takes a few seconds; the chip says "Saving…". What you mark or type then is kept on this computer at once. If the tab closes or crashes before the save is done, the next time you open the PDF the save finishes and your notes are back.
+- **If saving fails**, your notes stay in the tab and on this computer. The chip says "Couldn't save. Try again". Click it to save.
+- **Undo is only for a first mark.** A highlight, underline, bold or strike that saved the PDF shows an Undo chip for 10 seconds. Undo removes the save and that one mark. The chip goes as soon as you do anything else to the PDF: another mark, or a note, in any tab.
+- **A note that saved the PDF has no Undo.** A note is real work, so a quick Undo never deletes it. You can delete the note itself.
+- **Every tab follows an Undo.** Other tabs on the same PDF go back to "Not sure" and drop the undone mark. No tab says "Saved" for a PDF that isn't saved.
+- **Undo leaves no trace.** It removes the PDF from the library and everything kept about it on this computer, including unsent notes and the margin hint.
 
 **When the filter is wrong:**
 

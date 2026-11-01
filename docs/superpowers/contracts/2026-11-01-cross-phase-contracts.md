@@ -143,6 +143,20 @@ export interface ConflictCopyMeta { kind: 'conflict-copy'; v: 1; of: CommentId; 
   - A draft disappears only when it is sent, when an empty new note is cancelled, or when the owner discards it.
   - A tab adopts drafts whose owner tab is gone. Live tabs answer a roll call on BroadcastChannel `sop-tabs` within 200 ms.
   - On a memory-only PDF (Task 30 `memory-only`), drafts stay in memory and nothing is written.
+- **Saving a PDF, and un-saving it (R67, 1 Nov 2026).** The moment a PDF becomes saved, or stops being saved, must never lose a note or say something untrue. Binding:
+  - **(a) Save-pending.** A save takes time: it reads every page's text first, seconds on a long book. Marks and notes made before it lands are kept as *save-pending*.
+    - They are written at once, synchronously, to a save-pending record in the extension's localStorage: `sop-pending:<fingerprint>:<tabId>:<page life>` (`save-pending.ts`). The record holds the writes still waiting, the unsent notes and the unsent edits.
+    - Rows made before the save lands carry the opened file's fingerprint (its SHA-256) as their `documentId`. Never an empty document id: the draft keeper refuses a row without one.
+    - When the save lands, every row and draft is re-stamped with the library id *before* anything is handed on. The drafts go to the keeper (and its journal) under that id; the record keeps only the writes still waiting, and goes once they are written.
+    - A record is written only once a save is really on its way: the owner's mark or note started it, the owner pressed Save or answered Yes, or the filter is saving a learning PDF. Nothing is written while "Save this PDF to keep your notes?" is open, or after No.
+    - If the tab closes or crashes mid-save, the next open of the same fingerprint (or of a stamped copy, once the document exists) takes the record of a tab that is gone. The pending save completes, because the owner's own action started it (`SaveController.resumeSave`), and the notes come back.
+    - If the save fails, the text stays in memory and in the record, and the chip says "Couldn't save. Try again". A click saves.
+  - **(b) Only real content saves.** The first applied mark (highlight, underline, bold, strike, area), or the first real keystroke in a new note, triggers the save. Opening an empty note box never saves. Esc on an empty new note leaves nothing saved and nothing stored. A note that was typed, emptied and closed, with nothing else made in any tab, takes back the save it started (`SaveController.withdraw`). On a PDF judged not learning, Ctrl+Alt+M still asks its question at once (asking is not saving).
+  - **(c) Undo only removes what it promises.** The first-mark Undo chip goes as soon as there is anything else: another mark, an open note box, or a typed note, in any tab. A tab tells the others on BroadcastChannel `sop-save` (`{ type: 'more-content', ids: [fingerprint, documentId?] }`). A save this tab did not create (another tab got there first) has no Undo either. So Undo only ever removes the save and that one mark (R62), and Undo with a note box open is impossible.
+  - **(d) Every open tab follows a forget or Undo.** On a `documents` delete of its own PDF, a tab's save controller goes back to "Not sure", and its session drops the rows the store no longer has. A tab never shows "Saved" for a PDF that isn't saved. Its next mark or keystroke saves again, as a first one.
+  - **(e) Forget clears everything.** Undo and Forget also remove the PDF's localStorage: its drafts-journal entries, its save-pending records, and its `sop:notes.marginAtOpen` hint, under both the library id and the file's fingerprint (`forgetLocalTraces`).
+  - **(f) A save a note started has no Undo chip at all.** A typed note is deliberate work and must never vanish on a quick Undo; the owner can delete the note itself. The chip exists only for a save a mark started, which is cheap to redo.
+  - **Interfaces (normative).** `SaveController.firstMark(o?: { undoable?: boolean })`: `undoable: false` for a note's save, or when more was made before it began. Optional members, so a controller without them still fits: `busy` (`'save' | 'forget' | null`), `endUndo()` (c), `withdraw()` (b), `resumeSave(undoable)` (a). The save machine (`reduceSave`) takes `{ type: 'first-mark', undoable? }` and `{ type: 'resume-save', undoable }`. `SaveControllerImpl.failed` is true after a failed save until something saves the PDF. `SessionDeps` takes `fingerprint` and `pending` (`localPendingSaves()`; none in unit tests). `DraftKeeper.sentEdit?(commentId)`: the edit was sent and its live write is on its way; a new edit of the same note begins a new session, which is journaled at once but reaches the store only after `dropEdit` (the live write closes whatever edit of that tab is open). The session calls `dropEdit` when that write has actually landed, not after a fixed wait.
 - **Phase 2 `StoreApi` additions:**
   - `listAnnotations(documentId): Promise<{ marks: MarkRow[]; threads: ThreadRow[]; comments: CommentRow[] }>`. It returns live, non-draft rows.
   - `writeAnnotations(ops: { table: 'marks' | 'threads' | 'comments'; op: 'upsert' | 'soft-delete' | 'restore'; row: MarkRow | ThreadRow | CommentRow }[]): Promise<void>`. One transaction. Undo and redo are inverse batches.
@@ -198,6 +212,9 @@ CREATE INDEX comment_edits_owner ON comment_edits(document_id, draft_of_tab);
 --   threads outbox triggers: WHEN NEW.draft_of_tab IS NULL (DELETE: OLD.draft_of_tab IS NULL), as v1 already does for comments.
 --   comments -> comments_fts: index only rows with draft_of_tab IS NULL AND deleted_at IS NULL. The UPDATE trigger handles
 --   draft->sent, soft delete and restore. Then rebuild comments_fts once from comments.
+--   R67 minor (1 Nov): the UPDATE trigger is `AFTER UPDATE OF body, draft_of_tab, deleted_at, document_id ...
+--   WHEN OLD.draft_of_tab IS NULL OR NEW.draft_of_tab IS NULL`, so saving a draft never touches the index (its DELETE scans
+--   it). A database already at v2 gets it on open (`refreshCommentsFtsTrigger`): a re-created trigger, no data change.
 ```
 
 - **Comment text in search.** v1's `comments_fts` (`comment_id`, `document_id`, `body`) already covers owner notes and Claude replies, including figure explanations. v2 only fixes which rows are indexed. Figure captions are page text, so `page_text_fts` covers them.
@@ -218,6 +235,7 @@ CREATE INDEX comment_edits_owner ON comment_edits(document_id, draft_of_tab);
   - JSON columns (`anchor`, `meta`, `figures`) keep unknown fields on rewrite, so readers spread rather than rebuild.
   - Each step is idempotent and tested from a filled v1 database.
   - Code that finds `user_version` higher than it knows opens read-only and shows "Update sickofpdfs". It never writes.
+- **The clock after a restart (R67 minor, 1 Nov).** The store's hybrid clock starts past the newest stamp on any stamped row (`documents`, `aliases`, `locations`, `marks`, `threads`, `comments`, `history`, `settings`, `outbox`), not only the outbox's. Sync empties the outbox from Release 2 on, and a draft's stamp can be newer than the outbox's.
 - **Change events** extend Task 28's `StoreChange` without breaking it:
 
 ```ts
