@@ -18,11 +18,15 @@
 // stamps-real-pages.ts). The stamps are written the way the sites print them. Every stamp row is run in both argument orders:
 // a note's document must not depend on which copy was seen first.
 //
+// R59 (contracts §4): `stampedTextSimilarity` is only a score; `isStampAlias(a, b)` decides. It is true only when the page counts
+// match, the letters and digits are identical in order after stamp stripping and folding, the score is at least ALIAS_THRESHOLD
+// and there is real body text. Rows about the alias DECISION assert `isStampAlias`; rows about the score assert the score.
+//
 // Where the spec is silent these tests guess; each guess is marked "GUESS" and listed in the report.
 import { describe, expect, it } from 'vitest';
 import { foldText } from '../anchoring/text-fold';
 import { BOOK_EARLY, BOOK_LATE, PAPER } from '../../test/spec-blind/stamps-real-pages';
-import { ALIAS_THRESHOLD, stampedTextSimilarity, stripStamps } from './stamps';
+import { ALIAS_THRESHOLD, isStampAlias, stampedTextSimilarity, stripStamps } from './stamps';
 
 type Pages = readonly string[];
 
@@ -137,10 +141,17 @@ interface Row {
   b: Pages;
   /** Stripped of stamps the two copies are word for word the same, so the score is exactly 1. */
   exactlyOne?: boolean;
+  /** The score may reach the threshold (R59: it is only a score); only the decision must be false. */
+  scoreMayAlias?: boolean;
 }
 
 function scoresBothWays(r: Row): number[] {
   return [stampedTextSimilarity(r.a, r.b), stampedTextSimilarity(r.b, r.a)];
+}
+
+/** The alias decision (R59), in both orders: a note's document must not depend on which copy was seen first. */
+function decisionsBothWays(r: Row): boolean[] {
+  return [isStampAlias(r.a, r.b), isStampAlias(r.b, r.a)];
 }
 
 // ===============================================================================================================
@@ -172,6 +183,7 @@ describe('same text under a different stamp aliases (identity rule 2)', () => {
   ];
 
   it.each(rows)('$name', (r) => {
+    expect(decisionsBothWays(r)).toEqual([true, true]);
     for (const score of scoresBothWays(r)) {
       expect(score).toBeGreaterThanOrEqual(ALIAS_THRESHOLD);
       expect(score).toBeLessThanOrEqual(1);
@@ -235,6 +247,7 @@ describe('the same paper extracted differently still aliases (PDFium marks and l
   });
 
   it.each(rows)('$name', (r) => {
+    expect(decisionsBothWays(r)).toEqual([true, true]);
     for (const score of scoresBothWays(r)) {
       expect(score).toBeGreaterThanOrEqual(ALIAS_THRESHOLD);
       expect(score).toBeLessThanOrEqual(1);
@@ -287,18 +300,20 @@ describe('a different document never aliases (identity rule 3, the safety rule)'
       b: copyOf(v2Paragraph),
     },
     {
-      // GUESS (likely to disagree): "A different preprint version (arXiv v1 vs v2) must never alias" is read to cover a version
-      // that changes only a few numbers. Three corrected numbers are 6 characters of about 31,000, a score of 0.9998,
-      // which a plain 99.5% cut-off would alias.
+      // "A different preprint version (arXiv v1 vs v2) must never alias" covers a version that changes only a few numbers. Three
+      // corrected numbers are 6 characters of about 31,000, a score near 0.9999. Per R59 the score may stay high; the decision
+      // (`isStampAlias`) must be false because the digits differ.
       name: 'arXiv v2 changes only three numbers in the abstract (85% to 83%, p = 0.006 to 0.009, 69% to 71%)',
       a: copyOf(v1),
       b: copyOf(v2Numbers),
+      scoreMayAlias: true,
     },
     {
-      // GUESS (likely to disagree): as above, and the two copies also carry different stamps.
+      // As above, and the two copies also carry different stamps (R59: score in [0, 1], decision false).
       name: 'the same three changed numbers, with a different library stamp on each copy',
       a: copyOf(v1, { footer: JSTOR_A }),
       b: copyOf(v2Numbers, { footer: JSTOR_B }),
+      scoreMayAlias: true,
     },
     {
       name: 'a later edition: about 6% of the text rewritten on every page, same page count and length',
@@ -321,20 +336,23 @@ describe('a different document never aliases (identity rule 3, the safety rule)'
     expect(foldedLength(edition2)).toBe(foldedLength(v1));
   });
 
-  it.each(exactZero)('$name: the score is 0', (r) => {
+  it.each(exactZero)('$name: the score is 0 and it is not an alias', (r) => {
     expect(scoresBothWays(r)).toEqual([0, 0]);
+    expect(decisionsBothWays(r)).toEqual([false, false]);
   });
 
-  it.each(below)('$name', (r) => {
+  it.each(below)('$name: not an alias', (r) => {
+    expect(decisionsBothWays(r)).toEqual([false, false]);
     for (const score of scoresBothWays(r)) {
       expect(score).toBeGreaterThanOrEqual(0);
-      expect(score).toBeLessThan(ALIAS_THRESHOLD);
+      expect(score).toBeLessThanOrEqual(1);
+      if (!r.scoreMayAlias) expect(score).toBeLessThan(ALIAS_THRESHOLD);
     }
   });
 });
 
 // ===============================================================================================================
-describe('a scan with (almost) no text never aliases on emptiness alone (GUESS: the spec says only "when unsure, do not alias")', () => {
+describe('a scan with (almost) no text never aliases on emptiness alone (interface: "when unsure, do not alias"; R59: real body text is required)', () => {
   const rows: Row[] = [
     { name: 'two blank 120-page scans', a: Array<string>(120).fill(''), b: Array<string>(120).fill('') },
     {
@@ -350,9 +368,12 @@ describe('a scan with (almost) no text never aliases on emptiness alone (GUESS: 
   ];
 
   it.each(rows)('$name', (r) => {
+    expect(decisionsBothWays(r)).toEqual([false, false]);
+    // The score of identical empty text is only a score (R59), but it must be a number from 0 to 1, never NaN (0 / 0).
     for (const score of scoresBothWays(r)) {
-      expect(score).toBeGreaterThanOrEqual(0); // a number, not NaN
-      expect(score).toBeLessThan(ALIAS_THRESHOLD);
+      expect(Number.isNaN(score)).toBe(false);
+      expect(score).toBeGreaterThanOrEqual(0);
+      expect(score).toBeLessThanOrEqual(1);
     }
   });
 });
