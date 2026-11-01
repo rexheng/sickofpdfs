@@ -198,7 +198,10 @@ function setLayerDimensions(div: HTMLElement, { scale, rotation, pageWidth, page
   div.setAttribute('data-main-rotation', String(rotation));
 }
 
-/** Loads the bundled font the layer measures and renders with (TEXT_LAYER_FONT_FAMILY). */
+/**
+ * Loads the bundled font the layer measures and renders with (TEXT_LAYER_FONT_FAMILY). Await it before the
+ * first TextLayer: the font's ascent and descent are cached on first use, and buildTextItems' measurer needs it too.
+ */
 export async function loadTextLayerFont(url: string): Promise<void> {
   const face = new FontFace('sop-text-layer', `url(${url})`);
   await face.load();
