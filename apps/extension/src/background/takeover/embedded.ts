@@ -33,7 +33,7 @@ export async function areEmbedsSuppressed(tabId: number, pageUrl: string): Promi
 export async function openEmbeddedInTab(tabId: number, url: string, pageUrl: string): Promise<void> {
   const { url: source, page } = splitPageFragment(url);
   const seen = findRequest(tabId, source, ['sub_frame', 'object']);
-  await grant(tabId, source, { referer: seen ? seen.referer : defaultReferer(pageUrl, source) });
+  await grant(tabId, source, { referer: seen ? seen.referer : defaultReferer(pageUrl, source), back: pageUrl });
   await suppressEmbeds(tabId, pageUrl);
   await chrome.tabs.update(tabId, { url: buildViewerUrl({ source, back: pageUrl, page }) });
 }

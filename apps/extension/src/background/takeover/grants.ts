@@ -29,9 +29,11 @@ export interface Opened {
   parentFrameId: number;
   /** The Referer of Chrome's own request for it (or what Chrome would send, for an embedded PDF); null for none. */
   referer: string | null;
+  /** The page that embedded it, which "Back to page" returns to; null when it was not opened from an embed. */
+  back: string | null;
 }
 /** The service worker's own navigations are of the whole tab. */
-const WHOLE_TAB: Opened = { frameId: 0, parentFrameId: -1, referer: null };
+const WHOLE_TAB: Opened = { frameId: 0, parentFrameId: -1, referer: null, back: null };
 
 /** Enough for Back and Forward through the PDFs of one tab; the oldest goes first. */
 const MAX_PER_TAB = 10;
@@ -64,8 +66,8 @@ export function grant(tabId: number, url: string, how: Partial<Opened> = {}): Pr
   return inOrder(async () => {
     const target = keyUrl(url);
     if (target === null || tabId < 0) return;
-    const { frameId, parentFrameId, referer } = { ...WHOLE_TAB, ...how };
-    const record: Grant = { url: target, frameId, parentFrameId, referer };
+    const { frameId, parentFrameId, referer, back } = { ...WHOLE_TAB, ...how };
+    const record: Grant = { url: target, frameId, parentFrameId, referer, back };
     const others = (await read(tabId)).filter((g) => g.url !== target);
     await chrome.storage.session.set({ [keyOf(tabId)]: [record, ...others].slice(0, MAX_PER_TAB) });
   });

@@ -25,6 +25,11 @@ export interface OpenedDocument {
    * embedded PDF, what the embedding page sent, which may be its origin only).
    */
   referrer?: string;
+  /**
+   * The page this tab was seen embedding the PDF in (takeover:prepare-fetch's `back`, which "Back to page" returns to),
+   * when there was one. Never the `back` in the viewer's address, which any web page can write.
+   */
+  back?: string;
 }
 
 export type OpenOutcome =
@@ -49,6 +54,8 @@ export interface OpenDocumentDeps {
   askPassword(retry: boolean): Promise<string | null>;
   /** A PDF over the limit is about to open in Chrome's viewer (LargeFileNotice). */
   onLargeFile?(bounce: LargeFileBounce): void;
+  /** The page this tab was seen embedding the PDF in ("Back to page"), as soon as the service worker says; null for none. */
+  onBackPage?(back: string | null): void;
   signal?: AbortSignal;
 }
 
@@ -66,7 +73,8 @@ export const BOUNCE_DELAY_MS = 2000;
 export async function openDocument(p: ViewerParams, deps: OpenDocumentDeps): Promise<OpenOutcome> {
   const url = p.source;
   if (url === null) return { kind: 'error', error: new PdfLoadError('network') };
-  const { known, referer } = await prepareFetch(url);
+  const { known, referer, back } = await prepareFetch(url);
+  deps.onBackPage?.(back);
   if (!known && /^file:/i.test(url)) return { kind: 'refused' };
   const referrer = referer ?? undefined;
   const signedOut = known ? {} : ({ signedOut: true } as const);
@@ -83,7 +91,7 @@ export async function openDocument(p: ViewerParams, deps: OpenDocumentDeps): Pro
     if (err.code === 'file-access' && (await fileAccessAllowed())) return { kind: 'error', error: new PdfLoadError('network') };
     return { kind: 'error', error: err, ...signedOut };
   }
-  return openLoaded(loaded, deps, url, referrer);
+  return openLoaded(loaded, deps, url, { ...(referrer !== undefined ? { referrer } : {}), ...(back !== null ? { back } : {}) });
 }
 
 /** Opens a file the person picked ("Import this PDF", "Choose file"). */
@@ -101,13 +109,13 @@ export async function openPickedFile(file: File, deps: OpenDocumentDeps): Promis
  * The engine open, asking for a password as long as PDFium refuses the one given. `url` is where the file came from
  * (null for a picked file): a file the engine has no memory for moves there, to Chrome's viewer, like one over 1 GB.
  */
-async function openLoaded(loaded: LoadedPdf, deps: OpenDocumentDeps, url: string | null, referrer?: string): Promise<OpenOutcome> {
+async function openLoaded(loaded: LoadedPdf, deps: OpenDocumentDeps, url: string | null, from: Pick<OpenedDocument, 'referrer' | 'back'> = {}): Promise<OpenOutcome> {
   let password: string | null = null;
   for (;;) {
     try {
       // Each try needs its own copy: PdfBackend.open transfers the buffer to the engine.
       const open = await deps.backend.open(await loaded.blob.arrayBuffer(), password === null ? {} : { password });
-      return { kind: 'ready', doc: { loaded, open, password, ...(referrer !== undefined ? { referrer } : {}) } };
+      return { kind: 'ready', doc: { loaded, open, password, ...from } };
     } catch (err) {
       if (err instanceof PdfPasswordError) {
         password = await deps.askPassword(err.wrongPassword);
@@ -157,13 +165,13 @@ const PREPARE_TIMEOUT_MS = 5000;
  * takeover:prepare-fetch: whether this tab really opened `url`, and the Referer the viewer's own fetch will carry
  * (Task 16's sticky rule). No answer in time, or none at all, counts as an address the tab was not seen opening.
  */
-async function prepareFetch(url: string): Promise<{ known: boolean; referer: string | null }> {
+async function prepareFetch(url: string): Promise<{ known: boolean; referer: string | null; back: string | null }> {
   const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), PREPARE_TIMEOUT_MS));
   try {
     const reply = await Promise.race([sendRuntimeMessage({ type: 'takeover:prepare-fetch', url }), timeout]);
-    return { known: reply?.known === true, referer: reply?.referer ?? null };
+    return { known: reply?.known === true, referer: reply?.referer ?? null, back: reply?.back ?? null };
   } catch {
-    return { known: false, referer: null };
+    return { known: false, referer: null, back: null };
   }
 }
 

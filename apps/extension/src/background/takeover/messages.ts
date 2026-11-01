@@ -124,15 +124,17 @@ async function handle(message: RuntimeMessage, sender: Sender, afterReply: (work
   switch (message.type) {
     case 'takeover:prepare-fetch': {
       // Only the viewer that fills the tab loads a PDF; one in a frame never does (frame-escape.ts).
-      if (!fromExtensionPage(sender) || tabId === undefined || sender.frameId !== 0 || !isOpenableUrl(message.url)) return { known: false, referer: null };
+      if (!fromExtensionPage(sender) || tabId === undefined || sender.frameId !== 0 || !isOpenableUrl(message.url)) return { known: false, referer: null, back: null };
       const opened = await findGrant(tabId, message.url);
       const known = opened !== null;
-      if (!/^https?:/.test(message.url)) return { known, referer: null };
+      // "Back to page" goes only to the page this tab was seen embedding this PDF in, never to a `back` in the address.
+      const back = opened?.back ?? null;
+      if (!/^https?:/.test(message.url)) return { known, referer: null, back };
       // The Referer of Chrome's own request for this very PDF, as the tab's record keeps it.
       const referer = opened?.referer ?? null;
       if (referer) await setStickyReferer(tabId, message.url, referer);
       else await clearStickyReferer(tabId);
-      return { known, referer };
+      return { known, referer, back };
     }
 
     case 'takeover:can-take-over': {
@@ -206,7 +208,7 @@ function failureReply(message: RuntimeMessage): Reply {
     case 'takeover:can-take-over':
       return false;
     case 'takeover:prepare-fetch':
-      return { known: false, referer: null };
+      return { known: false, referer: null, back: null };
     case 'takeover:open-in-chrome':
       return { ok: false };
     case 'takeover:embedded':

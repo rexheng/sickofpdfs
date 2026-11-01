@@ -62,24 +62,22 @@ test.describe('A PDF embedded in a page', () => {
     await shot(page, testInfo, 'browser-back-on-the-page');
   });
 
-  test('opened as the only entry in a tab (nothing to go back to in its history): Back to page still returns to the page', async ({ context, sw, server }, testInfo) => {
+  // sec1 (finding 8, ruled by the controller): this test used to expect "Back to page" here, and that button then sent
+  // the owner to whatever page the address named: an open redirect, since any web page can open the viewer with any
+  // back=. "Back to page" now goes only to the page the extension saw embed this PDF in this tab; a tab created straight
+  // on the viewer (restored, duplicated, or opened by a page) has the browser's own Back instead.
+  test('opened straight on a viewer address with a page to go back to that the extension never saw: no Back to page', async ({ context, sw, server }, testInfo) => {
     const pdf = server.url('/h/plain.pdf');
     const pageUrl = server.url('/h/iframe-page?course=EC1A1');
-    // A tab created straight on the viewer, as a restored or duplicated tab is: its history holds this one entry.
     const [tab] = await Promise.all([
       context.waitForEvent('page'),
       sw.evaluate((url) => chrome.tabs.create({ url }), buildViewerUrl({ source: pdf, back: pageUrl, page: null }, OUR_VIEWER)),
     ]);
     await expectOurViewer(tab, pdf, { back: pageUrl });
-    expect(await tab.evaluate(() => history.length), 'set-up check: nothing to go back to').toBe(1);
-    const nav = trackNavigations(tab);
-    await expect(backToPage(tab), 'a "Back to page" button').toBeVisible();
-    await shot(tab, testInfo, 'single-entry-tab-viewer-with-back-to-page');
+    await expect(tab.locator('[role="document"]'), 'the PDF opens').toBeVisible({ timeout: 15_000 });
 
-    await backToPage(tab).click();
-
-    await expectStaysOnPage(tab, pageUrl, nav);
-    await shot(tab, testInfo, 'back-on-the-page');
+    await expect(backToPage(tab), 'no "Back to page" for a page the extension did not see').toHaveCount(0);
+    await shot(tab, testInfo, 'viewer-opened-straight-without-back-to-page');
   });
 
   test('that offers itself as a download (an attachment in an iframe) is left alone: the page stays and no viewer opens', async ({ context, server }, testInfo) => {

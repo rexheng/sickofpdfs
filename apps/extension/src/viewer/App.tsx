@@ -145,6 +145,8 @@ function TabViewer({ params }: { params: ViewerParams }) {
   const [bounce, setBounce] = useState<LargeFileBounce | null>(null);
   const [fileDialogOpen, setFileDialogOpen] = useState(true);
   const [chromeRefused, setChromeRefused] = useState(false);
+  // "Back to page": only the page the service worker saw embed this PDF in this tab (back-to-page.ts).
+  const [backPage, setBackPage] = useState<string | null>(null);
   const attempts = useRef(0);
   const started = useRef(false);
   const restarted = useRef(false);
@@ -171,6 +173,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
           });
         }),
       onLargeFile: setBounce,
+      onBackPage: setBackPage,
     }),
     [],
   );
@@ -225,7 +228,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
     void openInChrome(url).then((ok) => setChromeRefused(!ok));
   }, []);
   const fileAccess = view.kind === 'error' && view.error instanceof PdfLoadError && view.error.code === 'file-access';
-  const back = backTarget(params);
+  const back = backTarget(backPage);
   const source = params.source;
   const name = view.kind === 'ready' ? view.doc.loaded.displayName : displayNameFor(source, null);
 
@@ -274,7 +277,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
     <div ref={root} className={styles.app}>
       <Header
         name={name}
-        onBack={back === null ? null : () => void goBackToPage(params)}
+        onBack={back === null ? null : () => void goBackToPage(back)}
         menus={menus}
         // The error and stopped cards carry their own "Open in Chrome's viewer"; one is enough on screen.
         onOpenInChrome={!canEscape || view.kind === 'error' || view.kind === 'stopped' ? null : () => escape(source)}

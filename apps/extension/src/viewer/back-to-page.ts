@@ -1,14 +1,17 @@
 import { sendRuntimeMessage } from '../shared/send-message';
-import type { ViewerParams } from '../shared/viewer-url';
 
 const isJumpEntry = (state: unknown) => typeof state === 'object' && state !== null && (state as { sopJump?: unknown }).sopJump === true;
 
-/** The page a "Back to page" button may go to: a web or local page, never javascript: or another scheme. */
-export function backTarget(p: ViewerParams): string | null {
-  if (p.back === null) return null;
+/**
+ * The page a "Back to page" button may go to: the one the service worker saw embed this PDF in this tab
+ * (takeover:prepare-fetch's `back`), and only a web or local page, never javascript: or another scheme. The `back` in
+ * the viewer's own address is never used: any web page can write one, and the button would send the owner there.
+ */
+export function backTarget(back: string | null): string | null {
+  if (back === null) return null;
   try {
-    const { protocol } = new URL(p.back);
-    return protocol === 'http:' || protocol === 'https:' || protocol === 'file:' ? p.back : null;
+    const { protocol } = new URL(back);
+    return protocol === 'http:' || protocol === 'https:' || protocol === 'file:' ? back : null;
   } catch {
     return null;
   }
@@ -19,9 +22,7 @@ export function backTarget(p: ViewerParams): string | null {
  * this tab until it goes elsewhere), then the tab goes back in its history to the step before the viewer. A tab that
  * has no earlier step (the viewer was opened on its own) loads the page.
  */
-export async function goBackToPage(p: ViewerParams): Promise<void> {
-  const back = backTarget(p);
-  if (back === null) return;
+export async function goBackToPage(back: string): Promise<void> {
   try {
     await sendRuntimeMessage({ type: 'takeover:suppress-embeds', pageUrl: back });
   } catch {

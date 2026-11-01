@@ -15,14 +15,15 @@ import { createSaveController, type SaveControllerImpl, type SaveLocation } from
 
 /**
  * Where the PDF was opened from: its cleaned link or its file URL, and the course or web page it came from (the page
- * it was embedded in, else the navigation's Referer). Null for a file picked from disk, which has no address of its own.
+ * the service worker saw embed it, else the navigation's Referer; never the `back` in the viewer's address, which any
+ * web page can write). Null for a file picked from disk, which has no address of its own.
  */
 export function saveLocationOf(params: ViewerParams, opened: OpenedDocument): SaveLocation | null {
   const source = params.source;
   if (source === null || opened.loaded.sourceUrl === null) return null;
   const file = /^file:/i.test(source);
   if (!file && !/^https?:/i.test(source)) return null;
-  const via = params.back ?? opened.referrer ?? null;
+  const via = opened.back ?? opened.referrer ?? null;
   return { kind: file ? 'file' : 'url', raw: file ? source : cleanLink(source), viaPage: via === null ? null : canonicalLink(via) };
 }
 
