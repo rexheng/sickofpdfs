@@ -16,6 +16,11 @@ type CallMessage = { id: number; method: string; args: unknown[] };
 
 let native: SpikeNative | null = null;
 
+// The message handler is async, so anything it throws becomes an unhandled rejection, which never
+// reaches the page and may leave a call unanswered. Report it as an uncaught error instead: the
+// page's EngineWorker then fails every pending call.
+self.addEventListener('unhandledrejection', (event) => self.reportError(event.reason));
+
 self.addEventListener('securitypolicyviolation', (event) => {
   const e = event as SecurityPolicyViolationEvent;
   self.postMessage({ type: 'csp', violation: `${e.effectiveDirective} blocked ${e.blockedURI || '(inline)'}` });

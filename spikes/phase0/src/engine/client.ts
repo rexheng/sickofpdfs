@@ -30,6 +30,7 @@ async function fetchPdf(url: string): Promise<ArrayBuffer> {
 class EngineWorker {
   private nextId = 1;
   private readonly pending = new Map<number, { resolve(v: unknown): void; reject(e: Error): void }>();
+  private crashed: Error | null = null;
 
   private constructor(private readonly worker: Worker) {
     worker.addEventListener('message', ({ data }) => {
@@ -40,6 +41,18 @@ class EngineWorker {
       if (data.ok) call.resolve(data.value);
       else call.reject(new Error(data.error));
     });
+    // After an uncaught error in the worker (engine.worker.ts reports unhandled rejections as such) or
+    // a reply that cannot be read, some call may never be answered: fail every pending and later call.
+    worker.addEventListener('error', (e) => this.crash(e.message || 'error event without a message'));
+    worker.addEventListener('messageerror', () => this.crash('a reply could not be deserialised'));
+  }
+
+  private crash(reason: string): void {
+    if (this.crashed) return;
+    this.crashed = new Error(`engine worker crashed: ${reason}`);
+    this.worker.terminate();
+    for (const call of this.pending.values()) call.reject(this.crashed);
+    this.pending.clear();
   }
 
   /** Loads src/engine/engine.worker.ts from its chrome-extension:// file URL and waits for PDFium. */
@@ -52,12 +65,14 @@ class EngineWorker {
         reject(new Error(message));
       };
       const timer = setTimeout(() => fail(`engine worker gave no answer within ${WORKER_START_TIMEOUT_MS} ms`), WORKER_START_TIMEOUT_MS);
-      worker.addEventListener('error', (e) => fail(`engine worker failed to load: ${e.message || 'no message'}`));
+      const onLoadError = (e: ErrorEvent) => fail(`engine worker failed to load: ${e.message || 'no message'}`);
+      worker.addEventListener('error', onLoadError);
       const onInit = ({ data }: MessageEvent) => {
         if (data?.type === 'init-error') fail(`engine worker init failed: ${data.error}`);
         if (data?.type !== 'ready') return;
         clearTimeout(timer);
         worker.removeEventListener('message', onInit);
+        worker.removeEventListener('error', onLoadError); // from here on, EngineWorker handles errors
         resolve(new EngineWorker(worker));
       };
       worker.addEventListener('message', onInit);
@@ -66,6 +81,7 @@ class EngineWorker {
   }
 
   call<T>(method: string, args: unknown[], transfer: Transferable[] = []): Promise<T> {
+    if (this.crashed) return Promise.reject(this.crashed);
     const id = this.nextId++;
     return new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
