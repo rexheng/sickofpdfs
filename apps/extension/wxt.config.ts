@@ -36,10 +36,13 @@ export default defineConfig({
     minimum_chrome_version: '128',
     incognito: 'split',
     icons: { 16: 'icon/16.png', 32: 'icon/32.png', 48: 'icon/48.png', 128: 'icon/128.png' },
-    // Least privilege: each entry is used by the takeover, the store or the viewer. No downloads, scripting,
-    // activeTab, history, clipboard, nativeMessaging or identity.
-    permissions: ['declarativeNetRequestWithHostAccess', 'webRequest', 'webNavigation', 'tabs', 'storage', 'unlimitedStorage', 'offscreen'],
-    host_permissions: ['<all_urls>'],
+    // Least privilege: each entry is used by the takeover, the store or the viewer. No tabs, downloads, scripting,
+    // activeTab, history, clipboard, nativeMessaging or identity. (tabs.update, tabs.create and tabs.onRemoved need no
+    // permission, and Chrome fills a sender's tab.url from the host permission for that page.)
+    permissions: ['declarativeNetRequestWithHostAccess', 'webRequest', 'webNavigation', 'storage', 'unlimitedStorage', 'offscreen'],
+    // The schemes PDFs and the pages that show them come from: the redirect and header rules, the request log and
+    // the content script need no other (no ws, wss or ftp).
+    host_permissions: ['http://*/*', 'https://*/*', 'file:///*'],
     content_security_policy: { extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'" },
     web_accessible_resources: [{ resources: ['viewer.html'], matches: ['<all_urls>'] }],
   },
