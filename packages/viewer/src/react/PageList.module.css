@@ -6,6 +6,8 @@
 .scroller {
   position: absolute;
   inset: 0;
+  /* The page layers' z-indexes stay inside the page list, so the host's notices over it (the form banner) stay clickable. */
+  isolation: isolate;
   overflow: auto;
   /* eslint-disable-next-line css/use-baseline -- a Chrome-only extension (minimum Chrome 128; Chrome has it since 94) */
   scrollbar-gutter: stable;
