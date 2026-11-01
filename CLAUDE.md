@@ -32,9 +32,9 @@ The owner has learning disabilities and is highly intelligent. Write to them pla
    - Each task writes its own results file, so no two tasks edit the same document.
    - The controller cherry-picks finished work in task order.
 4. **Match review effort to risk. Visual quality ranks as high as data safety (owner, 2026-11-01: "visual more important").**
-   - **Data, privacy, security and engine work:** the store, takeover, network, the PDF engine and the loader. These get a real review (sonnet) and fix rounds.
+   - **Data, privacy, security and engine work:** the store, takeover, network, the PDF engine and the loader. These get spec-blind tests (rule 10), a short security read of the diff, and fix rounds.
    - **Visual work:** tokens, components, viewer chrome, menus, toolbars, and anything the owner sees. It gets a screenshot review: the reviewer looks at real screenshots next to the Drive and Chrome reference captures in `docs/research/drive-refs/` and the spec in `docs/research/02-drive-visual-spec.md`. That review uses a strong model with fix rounds. The aim is Drive's aesthetic, not pixel-perfect copying.
-   - **Non-visual UI plumbing:** a quick review (haiku).
+   - **Non-visual UI plumbing:** spec-blind tests only.
    - **Throwaway spike code:** no review.
 5. **Fix it or drop it.** Fix cheap, small issues right away. Delete the rest; don't keep a "deferred" pile. Only requirements that a later task needs are carried, and they are written into that task's brief.
 6. **Use the right-sized model.** Small and medium tasks are implemented on haiku or sonnet. Use opus only for hard ones: the engine port, render scheduling, the text layer, and visual-fidelity work (Drive components and the viewer chrome).
@@ -48,6 +48,17 @@ The owner has learning disabilities and is highly intelligent. Write to them pla
    - **Where the scenarios come from.** They are the spec's walkthroughs ("How it feels to use"), and each feature adds or extends one.
    - **When unit tests are allowed.** Only for logic that is tricky and cheap to test in isolation: anchoring, canonical links, the learning filter, sync merge, export mapping. Use table-driven cases with no trivial tests.
    - **What not to test.** Don't test getters, renders or wiring at unit level. The user test covers those.
+10. **Tests come from a separate, spec-blind author** (owner, 2026-11-01). Tests written by the session that wrote the code assert what the code already does. They pass by construction and prove nothing.
+    - **The implementer writes no committed tests.** It builds the feature and checks it works by hand: run it, take screenshots.
+    - **A separate test author writes the tests.** It works in parallel with the implementer, from the spec, the contracts and the brief's goals and interfaces only. It never sees the implementation, the diff or the brief's example tests. It has to guess the details, the way a reader six months later would.
+    - **The test author works in its own worktree** (`/home/user/wt-testsN`, branch `wt/testsN`), cut from the task's base commit.
+    - **The controller merges both and runs the tests.** First-run failures are the useful part. Each one is triaged as one of three things:
+      - **code bug:** the implementer fixes the code;
+      - **spec gap:** the controller decides, and records the decision in the spec;
+      - **wrong guess on something the spec leaves open:** the test is adjusted, with a one-line note.
+    - **This replaces the per-task code review.** Two kinds of review stay on top of it:
+      - a short security read of the diff for privacy, network and data-loss risk;
+      - the screenshot review for visual work.
 
 ## Standing constraints
 
