@@ -205,7 +205,7 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
   - It sits in the View menu as "Bold word starts", with a check mark, and has a keyboard shortcut that clashes with nothing in Chrome or the viewer.
   - It is listed in the shortcut sheet.
   - It is remembered on this computer for every PDF, and is off until the owner turns it on.
-  - The Settings page (S14) will later add a strength choice (Light, Medium or Strong, where Medium is the rule above).
+  - Settings → Reading → "How bold" sets the weight (Light, Medium or Strong). The letter rule stays the same; only how heavy the bold is changes. Light is 0.5×, Medium 1× and Strong 1.6× the calibrated gain.
 - **Speed.** It is drawn for visible pages first, after the page's own render, so it never delays the first paint or scrolling. It is cached per page and zoom. Turning it on shows bold on the visible pages within 300 ms on the reference laptop.
 
 **R93: Caret browsing (Nov 2, owner request).** A text cursor (caret) for reading and selecting by keyboard, like Chrome's caret browsing and Foxit's text cursor.
