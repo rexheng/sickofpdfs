@@ -47,6 +47,10 @@ The owner has learning disabilities and is highly intelligent. Write to them pla
    - **Security read.** Privacy, network and data-loss work also gets a short security read of the diff.
 8. **The owner's hands-on testing is the main critic.** A test build zip goes to the owner after every round, once a PDF opens. The four critics (visual, experience, code/security, student) run once per test build, on the real extension.
 9. **Only spike what blocks a decision.** Every other check goes inside the feature that needs it.
+10. **Test at the end of each phase, not per slice** (owner, 2026-11-02). This overrides rules 6 and 7 where they ask for more.
+   - No new unit tests, and no spec-blind test author per slice or round. Tests already written stay.
+   - Implementers prove their work with typecheck, lint, a quick run of the feature, and screenshots. They run only the existing walkthroughs that touch their files.
+   - At the end of each phase: the full suite (gates 1–3), the four critics, and one short security read of any privacy, network or notes-safety work in that phase.
 
 ## Standing constraints
 
