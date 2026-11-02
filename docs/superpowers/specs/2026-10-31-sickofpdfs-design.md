@@ -321,6 +321,12 @@ The "+ New" button offers Upload PDF, Open file and Paste link. In an Incognito 
     - **Naming (R92b).** A topic takes the name of the closest subject in a bundled list of about 300 academic subjects, drawn from common university course catalogues: "Machine Learning", "Econometrics", "Microeconomics", "Algorithms", "Programming", "Statistics", "Computer Vision" and so on. The match is by meaning, using the same local model, with the list's vectors made at build time.
     - Only if no subject is close enough does a topic take its two most telling phrases, in their natural order ("Monetary Policy · Inflation").
     - Generic words never name a topic: introduction, lecture, notes, chapter, changes, periods, think, and author names.
+    - **R92c (Nov 2, TB5 critics): topics come from each reading's own subject.**
+      - Each reading takes its own closest subject(s), at most 2, above the threshold. Readings that share a subject form that topic, so names never drift as the library grows: CS231n is Computer Vision, Think Stats is Statistics, XGBoost is Machine Learning.
+      - Clustering names only the readings that match no subject.
+      - Course codes ignore postcodes and ID numbers ("SE-106 91").
+      - The course page the PDF was opened from counts as a course source, on this computer only.
+      - After a burst of saves or a restart, topics refresh once the back-fill ends.
   - At most 3 auto topic tags go on one reading.
 - **How it works.** The bundled MiniLM model (the filter's tie-breaker) turns each saved reading's title and abstract, or its opening text, into a meaning vector. This happens on this computer, in a worker, after the save and off the reading path.
   - The vectors stay local. They are never backed up or synced, and are rebuilt when needed.
@@ -425,6 +431,16 @@ One reference implementation in TypeScript, with its test cases, defines these r
   - Closing a tab whose notes are only in memory brings up the browser's "Leave site?" prompt.
   - A click on a "Not saved" chip asks "This looks like <kind>. Save it to your library anyway?", with Cancel as the default.
   - Report "It's for learning" offers "Save now".
+- **R100 (Nov 2, TB5 critics, privacy): Enter never answers the save question.**
+  - Letters typed while it is open show in it ("Your note: …") and go into the note.
+  - Only a click on a button, or Tab to a button then Enter or Space, answers it. Esc means No.
+  - This holds for every PDF, so a quick note on a receipt can never save it.
+- **R101: Restore never changes a setting that sends or saves more.** Online lookups and the "Always save from" list are never restored. Restore brings back readings, notes, tags and history, and its summary says "Your settings were not changed".
+  - A backup row from this same computer that is newer than the local note keeps both versions, as for another device.
+  - A crash-journal draft older than the note's last edit never overwrites it; it shows as a recovered draft instead.
+  - Tag names are cleaned on restore (no control or direction characters, at most 60 characters).
+  - Course tags of forgotten readings are not restored.
+- **R102: private readings stay out of meaning features.** A reading saved without searchable text (D9) is never in Related readings, in either direction, and never gets topics.
 - **R97: "Never save this file" (from the banner, or ticked in Forget) also keeps a salted text fingerprint** (kept in the never-save list, which is read at open); a plain Forget keeps none, because a later open is judged afresh by the filter.
   Originally: (a hash of the normalised text of the first pages), so a re-download with different bytes is still recognised. It is salted like R88/R89 and never kept as the text itself.
 - **R91 (Nov 2, from the filter's privacy read): the owner's choices can only make the filter more careful, never less.**
