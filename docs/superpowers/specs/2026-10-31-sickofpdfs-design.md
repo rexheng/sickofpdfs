@@ -357,7 +357,14 @@ Everything is written locally first, so reading and noting work offline. Release
   - many readings, or every reading, vanished since the last good run;
   - the note count dropped by at least 20 and by at least half.
 
-  Readings removed on purpose (Forget, purge, Undo of a save) never count as vanished. Settings and the badge then say why, with "Back up anyway".
+  Readings removed on purpose (Forget, purge, Undo of a save) never count as vanished.
+- **R87 (Nov 2): no backup run ever deletes a reading's files unless the reading was removed on purpose.**
+  - "Back up anyway" backs up what the library has now. It keeps the folder's copies of any reading that is missing without having been removed on purpose.
+  - The hold card says: "Some readings are missing from your library, but your backup still has them. To get them back, use Restore from backup. Back up anyway keeps their copies in the folder." "Not now" is the main button.
+- **R88: only Forget and the 30-day Trash purge write the salted forgotten list.**
+  - Restore leaves out what is on that list and says how many it left out.
+  - An Undo of a save never writes that list. If a backup may already hold the reading, Undo queues a removal from the folder, and the queued id is dropped once the removal is done (R67 "Undo leaves no trace" holds once the queue drains).
+  - A queued removal for a folder that no longer exists is dropped, and Settings says so plainly. Raw ids in the queue expire after 30 days. Settings and the badge then say why, with "Back up anyway".
 
 **Sync rules (Release 2):**
 
