@@ -42,7 +42,7 @@ What we learn: whether Chrome keeps the folder allowed after a restart. The desi
 1. **Settings → Backup → Change folder**. Pick `G:\My Drive\sickofpdfs-test`. Chrome may refuse the very top folder of My Drive. If it refuses, pick a sub-folder. Write down what happened.
 2. Wait for the backup. In a browser, open drive.google.com and look in the same folder.
 3. Within 2 minutes you should see `sickofpdfs-backup` with the same files as before. **Write down how long it took.**
-4. Chrome writes a file in two steps, so Drive may briefly show a temporary file ending in `.crswap`. That is harmless. **Write down if one stays after 5 minutes.**
+4. Chrome writes a file in two steps, so Drive may briefly show a temporary file ending in `.crswap` (and a PDF copy may show as `.pdf.part` until it is whole). That is harmless. **Write down if one stays after 5 minutes.** Each backup removes `.crswap` files that are more than a day old, and any `.part` file left by a backup that stopped.
 5. In Drive, open `library.json` (Drive shows it as text). Check it has no sign of your API key (the key starts with `sk-ant`). If you have not entered a key yet, skip this step.
 
 ## Check C (W-B3): a OneDrive folder
@@ -53,11 +53,13 @@ What we learn: whether Chrome keeps the folder allowed after a restart. The desi
 ## Check D: forgetting a PDF removes it from the backup too
 
 1. Open a second PDF, make a note on it, and click **Back up now**. Look in the backup folder: there are now two `.pdf` files under `pdf` and two files under `notes`.
-2. In that PDF's viewer, choose **File → Forget this PDF** and confirm. The dialog should say **Removed from your library and your backups**.
-3. Look in the folder again. The PDF's `.pdf` file and its notes file are gone.
-4. Open the newest file in `snapshots` with Notepad and search for the PDF's title. It must not be there. Do the same in `library.json`.
-5. Now the offline case. In Explorer, rename the backup folder `sickofpdfs-test` to `sickofpdfs-test-away`. Open a third PDF, make a note, click **Back up now**, then **Forget this PDF**. The dialog should say that your backup folder can't be reached yet and that it will be cleaned at the next backup.
-6. Rename the folder back. Open the library and click **Back up now**. The third PDF's files are gone from the folder, and Settings no longer says anything is waiting to be removed.
+2. In that PDF's viewer, choose **File → Forget this PDF** and confirm. The dialog should say **Removed from your library and your backups. Google Drive or OneDrive may keep their own copy in their trash for a while.**
+3. Look in the folder again. The PDF's `.pdf` file and its notes file are gone. The other PDF's files, `library.json` and every file in `snapshots` are still there.
+4. Open **every** file in `snapshots` with Notepad and search for the PDF's title. It must not be in any of them. Do the same in `library.json`. The other PDF's note must still be there.
+5. On drive.google.com (or onedrive.live.com), look in the Trash. **Write down** whether the forgotten PDF's old files are there, and whether Drive keeps older versions of `library.json` (right-click → Manage versions). That is the cloud's own copy, which the dialog warns about.
+6. Now the offline case. In Explorer, rename the backup folder `sickofpdfs-test` to `sickofpdfs-test-away`. Open a third PDF, make a note, click **Back up now**, then **Forget this PDF**. The dialog should say that your backup folder can't be reached yet and that it will be cleaned at the next backup.
+7. Rename the folder back. Open the library and click **Back up now**. The third PDF's files are gone from the folder, and Settings no longer says anything is waiting to be removed.
+8. The change-folder case. Forget a fourth PDF while the folder is renamed away (as in step 6), then **Settings → Backup → Change folder** and pick a new folder. Settings should say **1 removal is waiting for sickofpdfs-test**. Rename the old folder back and click **Try now**. The line goes, and the fourth PDF's files are gone from the old folder.
 
 ## Check E: catching up when a night was missed
 
@@ -84,7 +86,7 @@ What we learn: whether Chrome keeps the folder allowed after a restart. The desi
 This is a safety check. It must not overwrite anything.
 
 1. In the new (empty) profile from Check G, **before** restoring, go to **Settings → Backup → Choose folder** and pick the folder that holds the backup from Check A.
-2. The backup does **not** run. A pill **Backup needs a look** shows at the top. Settings explains that the folder holds a backup that isn't from this library.
+2. The backup does **not** run. A pill **Backup needs a look** shows at the top, and the extension icon shows a red **!**. Hover the icon: it says the backup is on hold and why. Click the pill: a small card explains that the folder holds a backup that isn't from this library, with **Not now** and **Back up anyway**. Click **Not now**.
 3. Look in the folder in Explorer. Every file is as it was. Nothing was removed.
 4. Do not click **Back up anyway** unless you want to replace that backup. Choose **Turn off** instead.
 
@@ -104,6 +106,8 @@ This is a safety check. It must not overwrite anything.
 | D. Forget removed the PDF and notes file | | |
 | D. Forget left nothing in snapshots or `library.json` | | |
 | D. Offline forget cleaned at the next backup | | |
+| D. Drive or OneDrive trash keeps the forgotten files? | | |
+| D. Change folder kept the waiting removal, and Try now finished it | | |
 | E. Caught up in the morning | | |
 | F. Zip opens in Windows and the PDF opens | | |
 | G. Restore brought back readings, notes and PDFs | | |

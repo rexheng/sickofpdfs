@@ -330,6 +330,27 @@ sickofpdfs-backup/
 - **What a backup never holds:** `sop-local` (key, tokens, never-save list, reports), `sop-device`, drafts, FTS tables, `page_text`, `page_figures`, `outbox`, and anything from an unsaved PDF. A test scans every backup for the key.
 - **Versions.** Restore reads any `version` up to the one it knows. It refuses a higher one with "Update sickofpdfs first".
 - **Restore** merges by fingerprint and id. The newer `hlc` wins, and nothing local is deleted. Then text is re-extracted in the background. A forgotten document is removed from the backup at the next run. "Export library" zips the same layout.
+- **Backup safety (secread4 rulings, backupfix, 2 Nov 2026).**
+
+```ts
+// apps/extension/src/store/backup-api.ts (StoreApi extends BackupApi)
+applyRestorePlan(backup: LibraryDump): Promise<RestoreResult>   // was (plan: RestorePlan): Promise<void>. Plans with planRestore against the rows as they are
+                                                                // now and writes, in ONE transaction; never deletes; same backup twice changes nothing
+interface RestoreResult { summary: RestoreSummary; needsPdf: DocumentId[]; forgotten: number /* readings left out */; skipped: number }
+forgottenAmong(ids: readonly string[]): Promise<string[]>        // ≤ 10,000 ids; read-only. Fingerprints that left for good and are not in the library now
+// apps/extension/src/backup/restore-read.ts (S17 uses it)
+readBackupFolder(folder: FileSystemDirectoryHandle): Promise<{ ok: true; manifest; dump; root } | { ok: false; reason: 'no-backup' | 'no-library' | 'too-big' | 'too-new' | 'damaged'; message }>
+openBackupPdf(root, sha, manifest): Promise<File | null>         // caps: manifest 16 MiB, library.json 256 MiB, a PDF 1 GiB and the manifest's size
+```
+
+  - **Forgotten list.** Forget, a Trash purge and an Undo of a save record salted SHA-256 hashes of the reading's fingerprint and its aliases in the store's local tables `forgotten (hash, forgotten_at)` and `local_meta` (`forgottenSalt`), in the same transaction as the delete. Never exported, backed up or synced. A restore leaves those readings out, with everything hanging off them.
+  - **A restore never moves a note.** A mark, thread, comment or location keeps its reading; a comment keeps its thread and author; a new comment must hang off a thread of its own reading. Such rows are dropped before planning (so no conflict copy is made from them) and again when written.
+  - **Scrub (R75, R82).** Removes only the reading's own rows, PDF copy (and `.part`), and notes file. A readable file is rewritten without those rows; another reading's note that mentions the id stays as it is. A file is never deleted to clean it; one that cannot be read is left and named in the status (`unreadable`), and the removal stays pending.
+  - **Queue (R82).** A `documents` delete event queues a removal for the chosen folder; each run drains it first, then asks `forgottenAmong` about readings it wrote that the library no longer has (a lost event). Trash alone does not scrub.
+  - **Holds (R86).** `HeldReason` = `'other-library' | 'unreadable' | 'many-missing' | 'notes-missing'`: a `library.json` that is there but cannot be read; readings this library never wrote; every known reading gone (any count), or ≥ 5 and > a quarter; notes (live marks + comments) down by ≥ 20 and ≥ half since the last good run. Readings on the scrub list or the forgotten list never count. The badge shows "!" for a hold too, with the reason as its tooltip; the library pill "Backup needs a look" opens a card with the reason, "Not now" and "Back up anyway".
+  - **`sop-handles` v2.** `known` holds `{ v: 2, readings: { <id>: <notes at the last good run> } }` (a v1 `string[]` still reads). New store `retired` (auto id): `{ target, scrubs, retiredAt }`, a folder the owner moved away from with removals still waiting. `changeTarget(next, { same })` replaces `clearTarget`: the same folder picked again keeps `known` and its pending list; another folder (or Turn off) moves the pending list to `retired`. "Change folder" and "Turn off" first try to finish the removals (asking Chrome inside the click). Settings says "1 removal is waiting for <folder>" with "Try now" (`backupClient.finishRemovals()`); each run retries.
+  - **PDF copies** are written to `<sha>.pdf.part` and moved into place. Each run removes `*.crswap` older than a day and leftover `*.part` files.
+  - **Forget dialog:** "Removed from your library and your backups. Google Drive or OneDrive may keep their own copy in their trash for a while." (`FORGOTTEN_EVERYWHERE`).
 - **Markdown export** (`exportMarkdown(doc, marks, threads, comments): string`):
   - Front matter: title, authors, DOI or arXiv id, source link, and `sickofpdfs: { documentId, format: 1 }`.
   - Then one `## Page N` section per page. Each item has the quote as a blockquote, a style label, the comment and its replies.
