@@ -4,7 +4,7 @@
 // `protocol.ts` serves `TAGS_API_METHODS`, and `client.ts` proxies them.
 //
 // Two groups of methods:
-// - The owner's: `listTags`, `tagsOf`, `addTag`, `removeTag`, `keepAutoTag`, `renameTag`, `mergeTags`, `deleteTag`, `readingsByTag`,
+// - The owner's: `listTags`, `tagsOf`, `tagsOfMany`, `addTag`, `removeTag`, `keepAutoTag`, `renameTag`, `mergeTags`, `deleteTag`, `readingsByTag`,
 //   `related`, `groupBy`. The library pages and the viewer's menus will call these.
 // - The categoriser's: `categoriseQueue`, `categoriseInput`, `putEmbedding`, `categoriseCorpus`, `categoriseTagged`,
 //   `applyCourseTags`, `applySuggestions`, `applyTopics`. The categoriser worker (categorise/controller.ts) calls these; it never
@@ -122,6 +122,8 @@ export interface TagsApi {
   listTags(): Promise<TagSummary[]>;
   /** A reading's tags: the owner's first, then auto ones; course, tag, topic; then by name. */
   tagsOf(documentId: DocumentId): Promise<ReadingTag[]>;
+  /** `tagsOf` for many readings in one call (the library's rows and cards). A reading with no tags is left out. At most 500 ids. */
+  tagsOfMany(documentIds: DocumentId[]): Promise<Record<string, ReadingTag[]>>;
   /** Gives the reading a tag by name, making the tag when it is new. A tag the reading has as auto becomes the owner's (kept). */
   addTag(documentId: DocumentId, name: string): Promise<ReadingTag>;
   /** Takes a tag off a reading. The categoriser never puts it back there. */
@@ -162,6 +164,7 @@ export interface TagsApi {
 export const TAGS_API_METHODS = [
   'listTags',
   'tagsOf',
+  'tagsOfMany',
   'addTag',
   'removeTag',
   'keepAutoTag',
@@ -185,6 +188,7 @@ export const TAGS_API_METHODS = [
 export const TAGS_READ_METHODS = [
   'listTags',
   'tagsOf',
+  'tagsOfMany',
   'readingsByTag',
   'related',
   'groupBy',
@@ -194,6 +198,8 @@ export const TAGS_READ_METHODS = [
   'categoriseTagged',
 ] as const satisfies readonly (keyof TagsApi)[];
 
+/** The most readings one `tagsOfMany` call answers for. */
+const MAX_TAGS_OF_MANY = 500;
 /** The longest a tag's name is. */
 export const MAX_TAG_CHARS = 60;
 /** The name prefix of a course tag. */
@@ -518,6 +524,23 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
         )
           .map(tagFromRow)
           .sort(byReadingTag);
+      }),
+
+    tagsOfMany: (documentIds) =>
+      attempt(() => {
+        if (!Array.isArray(documentIds) || documentIds.length > MAX_TAGS_OF_MANY) fail('bad-input', `ask for at most ${MAX_TAGS_OF_MANY} readings`);
+        for (const id of documentIds) checkDocId(id);
+        const out: Record<string, ReadingTag[]> = {};
+        if (documentIds.length === 0) return out;
+        const rows = select(
+          `SELECT rt.document_id AS document_id, rt.tag_id AS tag_id, t.name AS name, t.kind AS kind, rt.source AS source
+           FROM reading_tags rt JOIN tags t ON t.id = rt.tag_id
+           WHERE rt.document_id IN (SELECT value FROM json_each(?)) AND t.deleted_at IS NULL`,
+          [JSON.stringify(documentIds)],
+        );
+        for (const r of rows) (out[str(r, 'document_id')] ??= []).push(tagFromRow(r));
+        for (const list of Object.values(out)) list.sort(byReadingTag);
+        return out;
       }),
 
     addTag: (documentId, name) =>

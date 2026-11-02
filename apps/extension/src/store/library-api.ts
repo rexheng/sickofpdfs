@@ -87,6 +87,9 @@ export interface ReadingState {
   /** Page indexes, ascending. */
   pagesVisited: number[];
   openCount: number;
+  /** When it was first and last opened (Unix ms): About this PDF shows them (S18). */
+  firstOpened?: number;
+  lastOpened?: number;
 }
 
 export interface ReadingReport {
@@ -831,7 +834,14 @@ export function createLibraryApi(db: SqlDb, deps: LibraryDeps, readers: RowReade
           // An unreadable spot reads as none: the reading opens at the start.
         }
       }
-      return { lastPosition, readingMs: num(r, 'reading_ms'), pagesVisited: readBits(r.pages_visited), openCount: num(r, 'open_count') };
+      return {
+        lastPosition,
+        readingMs: num(r, 'reading_ms'),
+        pagesVisited: readBits(r.pages_visited),
+        openCount: num(r, 'open_count'),
+        firstOpened: num(r, 'first_opened'),
+        lastOpened: num(r, 'last_opened'),
+      };
     });
 
   // ---- star and Trash ----
