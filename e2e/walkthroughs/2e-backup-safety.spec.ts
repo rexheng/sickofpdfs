@@ -57,9 +57,13 @@ async function openLibrary(context: BrowserContext): Promise<Page> {
   return page;
 }
 
-/** A store-only viewer: any PDF tab publishes the store client on __sopTest.store. */
+/**
+ * A store-only viewer: any PDF tab publishes the store client on __sopTest.store.
+ * Triage (S11, rule 7): with the real filter a learning paper saves itself, which added a fourth reading to these counts; the
+ * store page opens a receipt instead, which is never saved by itself.
+ */
 async function storePage(context: BrowserContext, openViewer: (s: string) => Promise<Page>, server: { url(p: string): string }): Promise<Page> {
-  const page = await openViewer(server.url(`/f/${ATTENTION.file}`));
+  const page = await openViewer(server.url('/f/classifier/not-learning/invoice-aws-sample.pdf'));
   await waitForStore(page);
   await page.waitForFunction(() => (globalThis as unknown as { __sopTest?: { blobStore?: unknown } }).__sopTest?.blobStore != null, undefined, { timeout: 20_000 });
   return page;
