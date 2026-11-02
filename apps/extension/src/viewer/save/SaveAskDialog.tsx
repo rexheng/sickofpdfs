@@ -160,8 +160,23 @@ export function SaveAskDialog({ save }: SaveAskDialogProps) {
   const { state } = useSaveView(save);
   const open = save !== null && state?.kind === 'asking';
   // R96: the question's text takes the focus as it is drawn, before the dialog would give it to its first button (the dialog
-  // only does that when the focus is not inside it yet), so no button has it and no ring is ever drawn on one.
-  const focusText = useCallback((el: HTMLDivElement | null) => el?.focus({ preventScroll: true }), []);
+  // only does that when the focus is not inside it yet), so no button has it and no ring is ever drawn on one. The shared
+  // Dialog does the same for any dialog opened with the mouse; this one does it however it opens, since it usually opens
+  // on a keystroke in the note box.
+  // What had the focus before it opened gets it back after (the pages, after a mark), when no note box waits for it.
+  const opener = useRef<HTMLElement | null>(null);
+  const focusText = useCallback((el: HTMLDivElement | null) => {
+    if (el === null) return;
+    if (document.activeElement instanceof HTMLElement && !el.contains(document.activeElement)) opener.current = document.activeElement;
+    el.focus({ preventScroll: true });
+  }, []);
+  const giveFocusBack = useCallback((): HTMLElement | null => {
+    const box = focusOnClose();
+    if (box !== null) return box;
+    const back = opener.current;
+    opener.current = null;
+    return back?.isConnected === true ? back : null;
+  }, []);
   // Added when the viewer starts, before the page's own key handlers, so it sees a typed-ahead letter first.
   useEffect(() => {
     window.addEventListener('keydown', catchTypedAhead, true);
@@ -208,7 +223,7 @@ export function SaveAskDialog({ save }: SaveAskDialogProps) {
       ]}
       onOpenChange={(o) => !o && answer(false)}
       // A note box waiting for this answer takes the caret back as the question closes (and again, if it is drawn anew).
-      focusOnClose={focusOnClose}
+      focusOnClose={giveFocusBack}
     >
       <div ref={focusText} tabIndex={-1} className={styles.questionBody}>
         <p className={cards.body}>{whyAsking(save.whyNotSaved ?? undefined, save.decision?.ownerSave !== undefined)}</p>
