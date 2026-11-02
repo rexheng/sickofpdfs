@@ -17,7 +17,7 @@
 // Starred", "Move to Trash", "Restore" (Drive's wording); Recent groups by "Today".
 import type { Page } from '@playwright/test';
 import { expect, test, type FixtureServer } from '../support/test';
-import { ATTENTION as ATTENTION_FX, LINES, PLOS as PLOS_FX, PLOS_DOI_PASSAGE, cardWith, openPaper, postNote, saveFirst, waitSaved, type OpenViewer } from './support/marks.spec-blind';
+import { ATTENTION as ATTENTION_FX, LINES, PLOS as PLOS_FX, PLOS_DOI_PASSAGE, cardWith, openPaper, postNote, saveFirst, shutRail, waitSaved, type OpenViewer } from './support/marks.spec-blind';
 import { OUR_VIEWER_RE } from './support/takeover';
 import {
   ATTENTION,
@@ -204,6 +204,8 @@ test('the library tour: list and grid, sort, star, trash and restore, Recent, Ho
   const [opened2] = await Promise.all([context.waitForEvent('page'), rowFor(lib, ATTENTION.rowName).dblclick()]);
   await expect.poll(() => opened2.url(), { message: 'opening a reading shows it in our viewer', timeout: 20_000 }).toMatch(OUR_VIEWER_RE);
   await waitViewerReady(opened2);
+  // Triage (B2, R98): the reading opens with the rail open, where its card folds into a marker; the rail is shut so it shows.
+  await shutRail(opened2);
   await expect(cardWith(opened2, NOTE_ATTENTION), 'with its note in the margin').toBeVisible({ timeout: 15_000 });
   await shotOf(opened2, testInfo, '10-opened-from-the-library');
 });

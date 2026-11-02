@@ -21,6 +21,7 @@ import {
   startNote,
   typeLines,
   saveFirst,
+  shutRail,
 } from './support/marks.spec-blind';
 import { boxTextsIn, draftsIn, lookInside } from '../support/crash';
 import { shot } from './support/takeover';
@@ -140,6 +141,8 @@ test.describe('No lost text', () => {
       await expect.poll(() => owns(page, LINE_1)).toBe(true);
 
       await page.reload();
+      // Triage (B2, R98): after the reload the rail is open again and the card folds into a marker; the rail is shut so the card shows.
+      await shutRail(page);
       await expect.poll(() => owns(page, LINE_1), { timeout: 15_000, message: 'the text is still there after a reload' }).toBe(true);
       await shot(page, testInfo, 'after-reload');
     });
@@ -210,6 +213,8 @@ test.describe('No lost text', () => {
     await a.waitForTimeout(400);
 
     const b = await openViewer(addressOf(server));
+    // Triage (B2, R98): B opens with the rail open, where the cards fold into markers; the rail is shut so they show in the margin.
+    await shutRail(b);
     await expect(b.getByText('Posted from tab A'), 'B shows what A posted').toBeVisible({ timeout: 15_000 });
     await b.waitForTimeout(500);
     expect(await owns(b, 'Still writing in tab A'), "B must not show A's draft").toBe(false);
@@ -240,6 +245,7 @@ test.describe('No lost text', () => {
 
     // Never twice: a tab opened now does not get it either, and nothing was sent in its place.
     const c = await openViewer(addressOf(server));
+    await shutRail(c); // Triage (B2, R98), as for B
     await expect(c.getByText('Posted from tab A'), 'a new tab shows the sent notes').toBeVisible({ timeout: 15_000 });
     await c.waitForTimeout(1500);
     expect(await owns(c, text), 'a new tab never shows the draft that tab A owns').toBe(false);

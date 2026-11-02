@@ -663,6 +663,18 @@ export async function waitStored(page: Page, ok: (a: Annotations) => boolean, me
 }
 
 /** Reload, and wait until the page is back with its text layer. */
+/**
+ * Triage (B2, R98): the rail never closes for the note margin any more, so in a 1280 px window with the rail open the cards
+ * fold into numbered markers (the notes are all there, behind them and in the panel). Shuts the rail (F4), as openFixture
+ * and reloadAndWait do, so the cards show in the margin. Waits for the viewer to be ready first.
+ */
+export async function shutRail(page: Page): Promise<void> {
+  await page.waitForFunction(() => (globalThis as unknown as { __sopTest?: { viewerState?: () => string } }).__sopTest?.viewerState?.() === 'ready', undefined, { timeout: 25_000 });
+  if (!(await hooks(page).eval((h) => h.viewer.snapshot().railOpen))) return;
+  await page.keyboard.press('F4');
+  await page.waitForFunction(() => !(globalThis as unknown as { __sopTest: { viewer: { snapshot(): { railOpen: boolean } } } }).__sopTest.viewer.snapshot().railOpen);
+}
+
 export async function reloadAndWait(page: Page, fx: TlFixture): Promise<void> {
   await page.reload();
   await page.waitForFunction(() => (globalThis as unknown as { __sopTest?: { viewerState?: () => string } }).__sopTest?.viewerState?.() === 'ready', undefined, { timeout: 25_000 });
