@@ -1,8 +1,9 @@
-// Print (Ctrl+P). Chrome would print the viewer's own page, so Ctrl+P prints a copy instead: every page is drawn by
-// PDFium at 200 dpi into an image, and the images go into a print-only element (#sop-print-root) that print.css shows
-// in place of the viewer. Each sheet has the size and orientation of its own page (CSS named pages), so a deck with an
-// A4 landscape page and a rotated page prints as it is. When the document has marks, Ctrl+P first asks whether they
-// print too; if so print-marks.ts paints them on each page's picture before it is saved (S17).
+// Print (Ctrl+P). Chrome would print the viewer's own page, so Ctrl+P prints a copy instead: every chosen page is drawn
+// by PDFium at 200 dpi into an image, and the images go into a print-only element (#sop-print-root) that print.css
+// shows in place of the viewer. Each sheet has the size and orientation of its own page (CSS named pages), so a deck with
+// an A4 landscape page and a rotated page prints as it is. Ctrl+P first asks which pages (All, This page, or Pages such
+// as 3–7) and, when the document has marks, whether they print too (R99); only the chosen pages are drawn, and the
+// marks are painted on each page's picture before it is saved (print-marks.ts, S17).
 //
 // Memory: pages are drawn one at a time. Each becomes a blob behind an object URL, so no more than two full bitmaps are
 // alive at once, and the URLs are revoked when the copy is disposed (after printing, or on Cancel). A page is a PNG, so
@@ -89,6 +90,34 @@ export interface PrintOptions {
   onProgress(done: number, total: number): void;
   /** The marks to paint on the pages (print-marks.ts). Without it the copy is the plain pages. */
   marks?: MarksToPrint | null;
+  /** The pages to print, 0-based, in order (R99: All, This page, or Pages). Without it, every page. */
+  only?: readonly number[];
+}
+
+/** The longest list of pages the Pages box takes ("1-3, 5" has two parts). */
+const MAX_PARTS = 200;
+
+/**
+ * The pages typed in the print step's Pages box (R99), 0-based, in order, each once: "3-7", "3–7", "3 to 7", "1, 4, 9"
+ * and mixes of them, as Chrome's print dialog takes them. An empty box means every page. Null when something in it is
+ * not a page of this document (0, a page past the end, a word), so the step can say so instead of printing the wrong
+ * pages.
+ */
+export function pagesToPrint(text: string, pageCount: number): number[] | null {
+  const parts = text.split(/[,;]/u).map((p) => p.trim()).filter((p) => p !== '');
+  if (parts.length === 0) return Array.from({ length: pageCount }, (_, i) => i);
+  if (parts.length > MAX_PARTS) return null;
+  const chosen = new Set<number>();
+  for (const part of parts) {
+    const m = /^(\d+)(?:\s*(?:-|\u2013|\u2014|to)\s*(\d+))?$/iu.exec(part);
+    if (m === null) return null;
+    const a = Number(m[1]);
+    const b = m[2] === undefined ? a : Number(m[2]);
+    const [from, to] = a <= b ? [a, b] : [b, a];
+    if (from < 1 || to > pageCount) return null;
+    for (let page = from; page <= to; page++) chosen.add(page - 1);
+  }
+  return [...chosen].sort((x, y) => x - y);
 }
 
 const abortError = () => new DOMException('Printing was cancelled.', 'AbortError');
@@ -162,16 +191,20 @@ export async function preparePrintCopy(backend: PdfBackend, doc: DocHandle, page
   const revoke = () => {
     for (const url of urls.splice(0)) URL.revokeObjectURL(url);
   };
-  const { css, pageNames } = printPageRules(pages);
-  const sizes = pages.map(printedSize);
+  // The pages that print (R99): their indices in the document, and their sizes, sheet by sheet.
+  const only = (o.only ?? pages.map((_, i) => i)).filter((i) => i >= 0 && i < pages.length);
+  const chosen = only.map((i) => pages[i]);
+  const { css, pageNames } = printPageRules(chosen);
+  const sizes = chosen.map(printedSize);
   const root = document.createElement('div');
   root.id = PRINT_ROOT_ID;
   const marks = o.marks ? createMarkPainter({ backend, doc, pages, marks: o.marks, signal: o.signal }) : null;
-  let drawing: Promise<DrawnPage> | null = pages.length > 0 ? drawPage(backend, doc, 0, pages[0], sizes[0], o) : null;
+  const draw = (sheet: number) => drawPage(backend, doc, only[sheet], chosen[sheet], sizes[sheet], o);
+  let drawing: Promise<DrawnPage> | null = only.length > 0 ? draw(0) : null;
   try {
     for (const [index, size] of sizes.entries()) {
       const drawn = await drawing!;
-      drawing = index + 1 < pages.length ? drawPage(backend, doc, index + 1, pages[index + 1], sizes[index + 1], o) : null;
+      drawing = index + 1 < only.length ? draw(index + 1) : null;
       const url = URL.createObjectURL(await encodePage(drawn, marks));
       urls.push(url);
       const image = new Image();
@@ -189,7 +222,7 @@ export async function preparePrintCopy(backend: PdfBackend, doc: DocHandle, page
       sheet.append(image);
       root.append(sheet);
       if (o.signal.aborted) throw abortError();
-      o.onProgress(index + 1, pages.length);
+      o.onProgress(index + 1, only.length);
     }
   } catch (error) {
     revoke();
@@ -234,8 +267,9 @@ function disposeActive(): void {
 }
 
 /**
- * Ctrl+P and File → Print: the question about marks (only when the document has some), the progress dialog, then the
- * pages, then Chrome's print dialog. The copy is removed when printing is over (afterprint), or when the next one starts.
+ * Ctrl+P and File → Print: the print step (which pages, and the marks when the document has some: R99), the progress
+ * dialog over the chosen pages only, then Chrome's print dialog. The copy is removed when printing is over
+ * (afterprint), or when the next one starts.
  */
 export async function printDocument(ctx: ViewerContext): Promise<void> {
   if (preparing) return;
@@ -246,17 +280,16 @@ export async function printDocument(ctx: ViewerContext): Promise<void> {
   let withMarks = false;
   try {
     const found = ctx.printMarks ? marksToPrint(ctx.printMarks, pageCount) : null;
-    if (found !== null) {
-      const answer = await ctx.ui.askPrintMarks();
-      if (answer === null) return; // Cancel, Escape or a click away: nothing is printed
-      withMarks = answer === 'with';
-    }
+    const answer = await ctx.ui.askPrint({ pageCount, currentPage: ctx.store.get().currentPage, marks: found !== null });
+    if (answer === null) return; // Cancel, Escape or a click away: nothing is printed
+    withMarks = found !== null && answer.withMarks;
+    const total = answer.pages.length;
     const cancel = () => {
       controller.abort();
       ctx.ui.printProgress(null); // the dialog goes at once, not when the page being drawn is done
     };
     const progress = (done: number) => {
-      if (!controller.signal.aborted) ctx.ui.printProgress({ done, total: pageCount, cancel });
+      if (!controller.signal.aborted) ctx.ui.printProgress({ done, total, cancel });
     };
     progress(0);
     const copy = await preparePrintCopy(ctx.backend, doc, pages, {
@@ -264,6 +297,7 @@ export async function printDocument(ctx: ViewerContext): Promise<void> {
       signal: controller.signal,
       onProgress: progress,
       marks: withMarks ? found : null,
+      only: answer.pages,
     });
     const onAfterPrint = () => disposeActive();
     window.addEventListener('afterprint', onAfterPrint, { once: true });

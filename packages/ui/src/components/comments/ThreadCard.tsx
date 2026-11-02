@@ -34,6 +34,8 @@ export interface ThreadCardProps {
   onDraftEscape?: (body: string) => void;
   /** Blur and Esc in a box: save the draft now (`DraftKeeper.flush`). */
   onDraftFlush?: () => void;
+  /** Cancel in the note box or the reply box: the unsent text is thrown away. Without it the boxes have no Cancel. */
+  onDraftCancel?: () => void;
 
   /** The comment being edited in place, and its text. */
   editing?: { id: CommentId; body: string } | null;
@@ -42,6 +44,8 @@ export interface ThreadCardProps {
   onEditChange?: (body: string) => void;
   onEditSave?: (body: string) => void;
   onEditEscape?: (body: string) => void;
+  /** Cancel in the edit box: the edit is thrown away and the sent text stays. */
+  onEditCancel?: () => void;
   /** "Delete" in a comment's ⋮ menu. On the first comment it deletes the whole note. */
   onDelete?: (id: CommentId) => void;
   /** "Try again" on a Claude reply that stopped with an error. */
@@ -143,7 +147,7 @@ export function ThreadCard(props: ThreadCardProps) {
 }
 
 /** A new note: the owner's name, "Not sent yet", and the note box (active) or the unsent text (inactive). */
-function NewNote({ draft, active, autoFocus, onDraftChange, onDraftSend, onDraftEscape, onDraftFlush }: ThreadCardProps) {
+function NewNote({ draft, active, autoFocus, onDraftChange, onDraftSend, onDraftEscape, onDraftFlush, onDraftCancel }: ThreadCardProps) {
   if (!active) {
     return (
       <>
@@ -164,6 +168,7 @@ function NewNote({ draft, active, autoFocus, onDraftChange, onDraftSend, onDraft
         onSend={(body) => onDraftSend?.(body)}
         onEscape={onDraftEscape}
         onFlush={onDraftFlush}
+        {...(onDraftCancel ? { onCancel: () => onDraftCancel() } : {})}
       />
     </>
   );
@@ -217,6 +222,7 @@ function Thread(props: ThreadCardProps & { root: CommentView; replies: CommentVi
           onSend={(body) => props.onDraftSend?.(body)}
           onEscape={props.onDraftEscape}
           onFlush={props.onDraftFlush}
+          {...(props.onDraftCancel ? { onCancel: () => props.onDraftCancel?.() } : {})}
         />
       )}
     </>
@@ -231,6 +237,7 @@ function editBox(props: ThreadCardProps, body: string) {
     onSend: (value: string) => props.onEditSave?.(value),
     onEscape: props.onEditEscape,
     onFlush: props.onDraftFlush,
+    ...(props.onEditCancel ? { onCancel: () => props.onEditCancel?.() } : {}),
   };
 }
 

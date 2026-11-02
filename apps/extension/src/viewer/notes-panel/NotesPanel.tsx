@@ -22,6 +22,17 @@ export interface NotesPanelProps {
   onDraftChange(this: void, note: NoteEntry, body: string): void;
   onDraftSend(this: void, note: NoteEntry, body: string): void;
   onDraftEscape(this: void, note: NoteEntry, body: string): void;
+  /** Cancel in a note or reply box: its unsent text is thrown away. */
+  onDraftCancel?(this: void, note: NoteEntry): void;
+  /**
+   * The edit box open now (a sent comment being edited), when it belongs to one of these notes: it came from the margin
+   * when the cards folded while it was open (a layout change never closes a box).
+   */
+  editing?: { threadId: ThreadId; id: CommentId; body: string } | null;
+  onEditChange?(this: void, body: string): void;
+  onEditSave?(this: void, body: string): void;
+  onEditEscape?(this: void, body: string): void;
+  onEditCancel?(this: void): void;
   onDelete(this: void, id: CommentId): void;
   /** "Show where it was" on a moved note. */
   onShowOriginal(this: void, note: NoteEntry): void;
@@ -98,6 +109,12 @@ export function NotesPanel(p: NotesPanelProps) {
         onDraftChange={(body) => p.onDraftChange(note, body)}
         onDraftSend={(body) => p.onDraftSend(note, body)}
         onDraftEscape={(body) => p.onDraftEscape(note, body)}
+        {...(p.onDraftCancel ? { onDraftCancel: () => p.onDraftCancel?.(note) } : {})}
+        editing={p.editing?.threadId === note.id ? { id: p.editing.id, body: p.editing.body } : null}
+        {...(p.onEditChange ? { onEditChange: p.onEditChange } : {})}
+        {...(p.onEditSave ? { onEditSave: p.onEditSave } : {})}
+        {...(p.onEditEscape ? { onEditEscape: p.onEditEscape } : {})}
+        {...(p.onEditCancel ? { onEditCancel: p.onEditCancel } : {})}
         onDelete={p.onDelete}
         placement={note.placement === 'unplaced' ? 'placed' : note.placement}
         onShowOriginal={note.placement === 'moved' ? () => p.onShowOriginal(note) : undefined}

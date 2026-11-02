@@ -1,9 +1,17 @@
-/* GM3 snackbar [inf]: inverse surface, 4 px corners, at least 48 px tall, 24 px from the bottom-left corner. */
+/*
+ * GM3 snackbar [inf]: inverse surface, 4 px corners, at least 48 px tall, 24 px up from the bottom, at the bottom left
+ * of the reading area: clear of the rail's 56 px pill when the rail is closed, and beside the rail when it is open, so it
+ * never covers the pill or the thumbnails (TB4 fix round).
+ */
 .region {
   position: fixed;
   inset-block-end: var(--space-6);
-  inset-inline-start: var(--space-6);
+  inset-inline-start: calc(var(--space-4) + var(--space-10) + var(--space-4));
   z-index: var(--z-tooltip);
+}
+
+:root:has([data-nav-rail="open"]) .region {
+  inset-inline-start: calc(var(--rail-w) + var(--space-6));
 }
 
 .snackbar {

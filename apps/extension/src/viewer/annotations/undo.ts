@@ -188,3 +188,32 @@ export function createUndoStack(limit = 200): UndoStack {
     },
   };
 }
+
+/**
+ * What an undo or a redo did, in a few plain words for the snackbar (TB4 fix round: Ctrl+Z after sending a note says what
+ * it undid): "Note removed", "Mark removed", "Reply back". Null when it touched nothing the owner would name.
+ */
+export function describeChange(c: Change, dir: Direction, isReply: (row: CommentRow) => boolean): string | null {
+  // Seen from after the step: a row that is gone now was removed, one that is live now came back, the rest changed.
+  const now = (rc: RowChange) => (dir === 'undo' ? rc.before : rc.after);
+  const was = (rc: RowChange) => (dir === 'undo' ? rc.after : rc.before);
+  const kinds = (pick: (rc: RowChange) => boolean): Set<string> => new Set(c.rows.filter(pick).map((rc) => kindOf(rc, isReply)));
+  const removed = kinds((rc) => now(rc) === null && was(rc) !== null);
+  const back = kinds((rc) => now(rc) !== null && was(rc) === null);
+  const changed = kinds((rc) => now(rc) !== null && was(rc) !== null);
+  const name = (set: Set<string>) => (set.has('note') ? 'Note' : set.has('reply') ? 'Reply' : set.has('mark') ? 'Mark' : null);
+  const gone = name(removed);
+  if (gone !== null) return `${gone} removed`;
+  const came = name(back);
+  if (came !== null) return `${came} back`;
+  const edited = name(changed);
+  return edited === null ? null : edited === 'Mark' ? 'Mark changed back' : `${edited} text changed back`;
+}
+
+/** What a row is to the owner: a mark, a note (a thread or its first comment), or a reply. */
+function kindOf(rc: RowChange, isReply: (row: CommentRow) => boolean): string {
+  if (rc.table === 'marks') return 'mark';
+  if (rc.table === 'threads') return 'note';
+  const row = (rc.after ?? rc.before) as CommentRow | null;
+  return row !== null && isReply(row) ? 'reply' : 'note';
+}

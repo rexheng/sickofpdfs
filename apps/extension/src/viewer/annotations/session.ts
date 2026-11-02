@@ -77,6 +77,7 @@ import type { PendingSave, PendingSaves } from './save-pending';
 import {
   anchorKey,
   createUndoStack,
+  describeChange,
   opsFor,
   rowKey,
   type AnyRow,
@@ -182,6 +183,8 @@ export interface SessionDeps {
   retryMs?: readonly number[];
   /** Told about failures that the session survives (a failed write that will be retried, a placement that threw). */
   onError?(e: unknown, where: string): void;
+  /** Told what an undo or a redo did, in a few plain words ("Note removed", "Mark back"), for the snackbar. */
+  onUndone?(what: string): void;
   /**
    * R67: the opened file's SHA-256. Rows made before the save lands carry it as their document id (never ''), and the
    * save-pending record is kept under it.
@@ -1784,6 +1787,8 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     }
     const change = dir === 'undo' ? undo.takeUndo(read) : undo.takeRedo(read);
     if (!change) return null;
+    // Said before the rows change: whether a comment was a reply is read from the note as it stands now.
+    const said = describeChange(change, dir, isReply);
     const ops = opsFor(change, dir, d.now(), read);
     const back: string[] = [];
     for (const rc of change.rows) {
@@ -1801,7 +1806,14 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     emit();
     const batch = enqueue(ops);
     resolveLater(back);
+    if (said !== null) d.onUndone?.(said);
     return { batch, started };
+  }
+
+  /** A comment that is not the first of its note: an older comment of the same note is live. */
+  function isReply(row: CommentRow): boolean {
+    for (const c of comments.values()) if (c.threadId === row.threadId && c.id !== row.id && c.createdAt < row.createdAt) return true;
+    return false;
   }
 
   /** Waits until nothing is queued or in flight, or writing is not possible right now. */

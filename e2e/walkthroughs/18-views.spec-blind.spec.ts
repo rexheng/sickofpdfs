@@ -13,7 +13,8 @@
 //    scrolls to its pair. Not saved.
 //  - Presentation mode (View menu): fullscreen, on black, one page fit to the screen; no header, toolbar, rail or margin cards; marks show, notes don't.
 //    Arrow right/down, Space, PageDown go forward; arrow left/up, Shift+Space, PageUp go back; Home first page, End last page. A click on the right half
-//    goes forward and on the left half back. The cursor hides after 2 s still. Esc, or leaving fullscreen any way, restores the exact zoom, scroll and page.
+//    goes forward and on the left half back. The cursor hides after 2 s still. Esc, or leaving fullscreen any way, keeps the page reached and
+//    restores the zoom (R99; on the same page the exact scroll).
 //  - Wording: "Rotate clockwise", "Rotate counter-clockwise", "Two-page view", "Presentation mode"; the shortcut sheet lists all of them.
 //  - Speed: a turn of a long PDF finishes in under 300 ms (spec's own budget with SOP_PERF_STRICT=1, looser otherwise).
 //
@@ -976,7 +977,9 @@ test('the cursor hides after 2 s still and comes back when the mouse moves', asy
   expect(await cursorAt(page, at.x + 30, at.y + 20), 'and it hides again after 2 s still').toBe('none');
 });
 
-test('Esc, or leaving fullscreen any other way, restores the exact zoom, scroll and page', async ({ openViewer, server }, testInfo) => {
+// R99: leaving presentation keeps the page the reader reached, and puts back the zoom (and the rail); when the page did not
+// change, the exact scroll too. This replaces "restores the exact page".
+test('Esc, or leaving fullscreen any other way, keeps the page reached and restores the zoom; on the same page, the exact scroll', async ({ openViewer, server }, testInfo) => {
   const page = await openViewer(server.url(BOOK));
   await waitForFirstPage(page);
   const pageBox = page.getByRole('textbox', { name: 'Page', exact: true });
@@ -1032,6 +1035,22 @@ test('Esc, or leaving fullscreen any other way, restores the exact zoom, scroll 
       };
       round += 1;
       await snap(page, testInfo, `18-restore-${round}-before`);
+      // First without moving: everything comes back exactly.
+      await startPresentation(page);
+      await leave();
+      await waitNotFullscreen(page, how);
+      await settleView(page, 700);
+      const stayed = {
+        scale: await rt(page).scale(),
+        scrollTop: await rt(page).scrollTop(),
+        scrollLeft: await page.evaluate(() => document.querySelector('[role="document"]')!.scrollLeft),
+        box: await pageBox.inputValue(),
+      };
+      expect(stayed.scale, `${setup.name}, left with ${how} on the same page: the zoom is the same`).toBeCloseTo(before.scale, 4);
+      expect(Math.abs(stayed.scrollTop - before.scrollTop), `${setup.name}, left with ${how} on the same page: the scroll is the same`).toBeLessThanOrEqual(1);
+      expect(Math.abs(stayed.scrollLeft - before.scrollLeft), `${setup.name}, left with ${how} on the same page: and along`).toBeLessThanOrEqual(1);
+      expect(stayed.box, `${setup.name}, left with ${how} on the same page: the page box says the same`).toBe(before.box);
+
       await startPresentation(page);
       await page.keyboard.press('End'); // go far from where we were
       await expectShown(page, [400], 'the presentation went to the last page');
@@ -1051,10 +1070,10 @@ test('Esc, or leaving fullscreen any other way, restores the exact zoom, scroll 
       };
       expect(after.zoom, `${label}: the zoom setting is the same`).toEqual(before.zoom);
       expect(after.scale, `${label}: the zoom is the same`).toBeCloseTo(before.scale, 4);
-      expect(Math.abs(after.scrollTop - before.scrollTop), `${label}: the scroll is the same (${before.scrollTop.toFixed(1)} -> ${after.scrollTop.toFixed(1)})`).toBeLessThanOrEqual(1);
+      // R99: the page reached in the presentation stays (the last page), at the same place across.
+      expect(after.currentPage, `${label}: the page reached stays`).toBe(399);
+      expect(after.box, `${label}: the page box says the page reached`).toBe('400');
       expect(Math.abs(after.scrollLeft - before.scrollLeft), `${label}: and along (${before.scrollLeft.toFixed(1)} -> ${after.scrollLeft.toFixed(1)})`).toBeLessThanOrEqual(1);
-      expect(after.currentPage, `${label}: the same page`).toBe(before.currentPage);
-      expect(after.box, `${label}: the page box says the same`).toBe(before.box);
       await snap(page, testInfo, `18-restore-${round}-after`);
     }
   }

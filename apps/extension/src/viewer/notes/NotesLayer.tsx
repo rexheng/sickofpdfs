@@ -2,10 +2,15 @@
 // as in Google Docs (spec "The Ctrl+Alt+M flow"; plan section 2, S14).
 //
 // - A PDF with no notes is centred (ruling R79). The first note makes room for the margin: the pages glide left over
-//   about 200 ms, only as far as the cards need, and the line the note is on keeps its height. A note never changes the
-//   zoom (R69): when the pages do not fit with the margin, the thumbnail rail folds away first; if they still do not
-//   fit, the cards fold into the toolbar's Notes button and a note that becomes active opens the notes panel. A PDF that
-//   had notes opens with the room already kept (R60). Once kept, the room stays while the PDF is open.
+//   about 200 ms, only as far as the cards need and never more than 120 px (R98), and the line the note is on keeps its
+//   height. A note never changes the zoom (R69) and never closes the thumbnail rail (R98). When the pages do not fit with
+//   the margin, the cards fold: each note shows a small numbered marker in the page's right margin, level with its line,
+//   and a click on it (or a note that becomes active) opens the notes panel. A PDF that had notes opens with the room
+//   already kept (R60). Once kept, the room stays while the PDF is open.
+// - On slides (a page wider than tall), the notes panel does not cover the page: in a fit zoom the page is fitted beside
+//   the panel (R98).
+// - A layout change never closes or unfocuses an open note box (TB4 fix round): when the cards fold while a box has the
+//   caret, the box moves into the notes panel with its text and caret (box-carry.ts).
 // - The note box sits in the margin, level with its line, so it never covers the text.
 // - Enter sends. Esc, or a click away, sends a new note that has text and cancels an empty one (its highlight goes too).
 //   A reply with text is sent too when its card is left (the controller's ruling, the same in the notes panel). Nothing
@@ -25,13 +30,27 @@ import type { CommentId, CommentRow, Resolution, ThreadId, ThreadRow } from '../
 import { TOO_MUCH_FOR_A_NOTE, tooMuchToMark } from '../annotations/mark-input';
 import type { NotesHost } from '../annotations/wire';
 import { isTypingTarget } from '../shortcuts';
+import { boxOfKind, type CarriedBox, carryBox } from './box-carry';
 import { CARD_ID_PREFIX, CardColumn, type ColumnCard } from './CardColumn';
 import { createCommentFlow, type CommentContext, type NoteTarget } from './comment-flow';
-import { anchorHit, anchorLabel, anchorTop, columnLeft, MARGIN_RESERVE, PANEL_RESERVE, pinAt, rectInContent, shownAnchor } from './margin';
+import {
+  anchorHit,
+  anchorLabel,
+  anchorTop,
+  columnLeft,
+  MARGIN_MAX_SHIFT,
+  MARGIN_RESERVE,
+  PANEL_RESERVE,
+  pinAt,
+  placeMarkers,
+  rectInContent,
+  shownAnchor,
+} from './margin';
 import { keptOf } from './kept';
 import { hadNotes, rememberNotes } from './margin-at-open';
 import { publishNoteCommands, type NoteCommands } from './notes-host';
-import { notesPanel, setCardsFolded, setPanelOverPages, useNotesPanelOpen } from '../notes-panel/panel-state';
+import { listNotes } from '../notes-panel/model';
+import { notesPanel, openEdit, type OpenEdit, setCardsFolded, setPanelOverPages, useNotesPanelOpen, useOpenEdit } from '../notes-panel/panel-state';
 import { useFigureCards } from '../figures/cards';
 import { openSpecialNote } from '../figures/notes-bridge';
 import styles from './NotesLayer.module.css';
@@ -54,12 +73,8 @@ export function NotesLayer({ host }: NotesLayerProps) {
   return <Notes host={host} wiring={wiring} />;
 }
 
-/** The comment being edited in its card, and the text in its editor. */
-interface Editing {
-  id: CommentId;
-  threadId: ThreadId;
-  body: string;
-}
+/** The comment being edited in its card, and the text in its editor (shared with the notes panel). */
+type Editing = OpenEdit;
 
 /** "Show where it was": the passage's stored place, outlined for a moment. */
 interface Ghost {
@@ -68,8 +83,6 @@ interface Ghost {
 }
 
 const GHOST_MS = 2500;
-/** How long the cards count as fitting while the rail folds away for them (the pages move within a frame or two). */
-const RAIL_FOLD_MS = 1000;
 /** How far "Show where it was" and a restored note scroll their passage down from the top of the view. */
 const REVEAL_FROM_TOP = 0.3;
 
@@ -82,10 +95,9 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
   const s = useSyncExternalStore(subscribe, () => session.state());
   const host = useOverlayHost(pages);
   const scroller = host?.closest<HTMLElement>('[role="document"]') ?? null;
-  const layoutTick = useLayoutTick(store, host);
+  const layoutTick = useLayoutTick(store, host, scroller);
   const panelOpen = useNotesPanelOpen();
-  /** The rail is folding away for the margin: the cards count as fitting until the pages have moved. */
-  const [railFolding, setRailFolding] = useState(false);
+  const viewRotation = useViewerState(store, (v) => v.viewRotation);
   /**
    * The margin's room is wanted: the PDF has notes, a note box has opened, or it had notes when last open here (R60, as
    * reserveAtOpen kept it). A PDF with none stays centred (R79). Once wanted it stays, so the page never slides back.
@@ -93,12 +105,9 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
   const [marginWanted, setMarginWanted] = useState(() => hadNotes(notes.opened.loaded.sha256));
   const figureCard = useFigureCards(notes); // S16: a figure or area note's thumbnail and label
 
-  const [editing, setEditingState] = useState<Editing | null>(null);
-  const editingRef = useRef<Editing | null>(null);
-  const setEditing = useCallback((e: Editing | null) => {
-    editingRef.current = e;
-    setEditingState(e);
-  }, []);
+  // The edit box's text lives in panel-state, so it carries over when the cards fold into the notes panel.
+  const editing = useOpenEdit();
+  const setEditing = useCallback((e: Editing | null) => openEdit.set(e), []);
   const [focusThread, setFocusThread] = useState<ThreadId | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ id: CommentId; replies: number } | null>(null);
   const [ghost, setGhost] = useState<Ghost | null>(null);
@@ -143,7 +152,7 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
    * leaving a card sends typed text, in the margin and in the notes panel alike).
    */
   const finishOpen = useCallback(() => {
-    const e = editingRef.current;
+    const e = OPEN_EDIT.current;
     if (e) {
       finishEdit(e);
       setEditing(null);
@@ -189,41 +198,28 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
     },
     [session],
   );
-  /**
-   * The margin is needed but the cards do not fit beside the pages: the thumbnail rail folds away first, if that gives
-   * the room without changing the zoom (spec "Viewer specifics"; R69). The pages slide over (PageListApi.glide).
-   */
-  const foldRailForMargin = useCallback((): boolean => {
-    const a = pages.current;
-    if (!a || notesPanel.isOpen() || a.roomForReserve(MARGIN_RESERVE) || !store.get().railOpen) return false;
-    const rail = scroller ? Math.max(0, scroller.getBoundingClientRect().left) : 0; // 0 when the rail lies over the pages
-    if (rail === 0 || !a.roomForReserve(MARGIN_RESERVE, rail)) return false;
-    setRailFolding(true);
-    setCardsFolded(false); // before the note becomes active, so the notes panel does not open for it
-    a.glide();
-    store.set({ railOpen: false });
-    return true;
-  }, [pages, scroller, store]);
-
   /** Nothing was made. The margin's room, once opened, stays (the page does not slide back), so there is nothing to undo. */
   const nothingOpened = useCallback((target: NoteTarget | null) => void target, []);
 
   /**
-   * Makes room for the margin before the note appears (S14's step, also used by S16), R79: the rail folds first if the
-   * room needs it, then the pages glide left as far as the cards need. `keep` is the point the note is about (client
-   * px): its line keeps its height on screen. The zoom never changes (R69).
+   * Makes room for the margin before the note appears (S14's step, also used by S16), R79 and R98: the pages glide left
+   * as far as the cards need, at most 120 px; when that is not enough they stay, and the cards fold into markers. The
+   * rail never closes for it, and the zoom never changes (R69). `keep` is the point the note is about (client px): its
+   * line keeps its height on screen.
    */
+  /** The room last asked of the page list (its width and how it is kept), so it is asked for once. */
+  const lastRoom = useRef('');
   const openMargin = useCallback(
     (keep?: { clientX: number; clientY: number }) => {
-      foldRailForMargin();
       const a = pages.current;
       if (a && !notesPanel.isOpen() && a.reserveRight() !== MARGIN_RESERVE) {
         a.glide();
-        a.setReserveRight(MARGIN_RESERVE, keep);
+        a.setReserveRight(MARGIN_RESERVE, keep, MARGIN_ROOM);
+        lastRoom.current = roomKey(MARGIN_RESERVE, MARGIN_ROOM);
       }
       setMarginWanted(true);
     },
-    [foldRailForMargin, pages],
+    [pages],
   );
 
   const commands = useMemo<NoteCommands>(() => {
@@ -267,38 +263,32 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
     return () => publishNoteCommands(null);
   }, [commands]);
 
-  // ---------------------------------------------------------------- the margin (R60, R69)
+  // ---------------------------------------------------------------- the margin (R60, R69, R98)
 
   // The room at the right of the pages: the notes panel's while it is open; otherwise the margin's once it is wanted
-  // (R79; openMargin makes it for a first note, keeping the note's line in place). Neither ever changes the zoom. A page
-  // that does not fit beside the panel stays where it is, under the panel, and can be scrolled out from under it.
+  // (R79; openMargin makes it for a first note, keeping the note's line in place). The margin never moves the pages more
+  // than 120 px (R98). Neither changes the zoom, except that slides in a fit zoom are fitted beside the panel (R98). Any
+  // other page that does not fit beside the panel stays where it is, under the panel, and can be scrolled out from under it.
   const [, relaidOut] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
     const a = pages.current;
     if (!a) return;
-    const want = panelOpen ? PANEL_RESERVE : marginWanted ? MARGIN_RESERVE : 0;
-    if (a.reserveRight() === want) return;
+    const slides = panelOpen && isSlide(a.pageBoxes()[store.get().currentPage]);
+    const [px, o] = panelOpen ? [PANEL_RESERVE, { scroll: true, refit: slides }] : marginWanted ? [MARGIN_RESERVE, MARGIN_ROOM] : [0, {}];
+    const key = roomKey(px, o);
+    if (lastRoom.current === key && a.reserveRight() === px) return;
+    lastRoom.current = key;
     a.glide();
-    a.setReserveRight(want, undefined, { scroll: panelOpen });
+    a.setReserveRight(px, undefined, o);
     // The pages may have moved inside a scroll area of the same size, which layoutTick does not see. The page list lays
     // them out once this effect is done, so the cards are placed again just after, before the browser paints.
     queueMicrotask(() => flushSync(relaidOut));
-  }, [panelOpen, marginWanted, pages, host]);
+  }, [panelOpen, marginWanted, pages, host, store, viewRotation]);
 
-  // Whether the cards fit beside the pages at their size, measured after every layout (layoutTick). While the rail is
-  // folding away for them they count as fitting, so a new note does not open the panel in the meantime.
+  // Whether the cards fit beside the pages at their size, moving them no more than 120 px, measured after every layout
+  // (layoutTick). When they do not, each note shows a numbered marker instead (R98).
   void layoutTick;
-  const marginFits = pages.current?.roomForReserve(MARGIN_RESERVE) ?? false;
-  useEffect(() => {
-    if (!railFolding) return;
-    if (marginFits) {
-      setRailFolding(false);
-      return;
-    }
-    const timer = setTimeout(() => setRailFolding(false), RAIL_FOLD_MS);
-    return () => clearTimeout(timer);
-  }, [railFolding, marginFits]);
-  const cardsFit = marginFits || railFolding;
+  const cardsFit = pages.current?.roomForReserve(MARGIN_RESERVE, MARGIN_MAX_SHIFT) ?? false;
   const folded = panelOpen || !cardsFit;
   useLayoutEffect(() => setCardsFolded(!cardsFit), [cardsFit]);
   useLayoutEffect(() => setPanelOverPages(panelOpen && !(pages.current?.roomForReserve(PANEL_RESERVE) ?? false)));
@@ -322,10 +312,8 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
   }, [notes]);
   const hasNotes = s.threads.length > 0;
   useEffect(() => {
-    if (!hasNotes) return;
-    foldRailForMargin();
-    setMarginWanted(true);
-  }, [hasNotes, foldRailForMargin]);
+    if (hasNotes) setMarginWanted(true);
+  }, [hasNotes]);
   // What the next open of this file reserves: only a PDF whose notes are stored is remembered (never an unsaved one).
   useEffect(() => {
     if (!loaded) return;
@@ -333,6 +321,7 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
     else if (s.mode === 'stored') rememberNotes(sha, true);
   }, [loaded, hasNotes, s.mode, sha]);
   useEffect(() => () => pages.current?.setReserveRight(0), [pages]);
+  useEffect(() => () => openEdit.set(null), []); // an edit box goes with the document
 
   // ---------------------------------------------------------------- the pointer, clicks and Esc
 
@@ -375,7 +364,7 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
     // A press anywhere outside the active card (not in a menu or a dialog) is a click away.
     const down = (e: PointerEvent) => {
       const st = session.state();
-      if (st.active === null && editingRef.current === null) return;
+      if (st.active === null && OPEN_EDIT.current === null) return;
       const el = e.target instanceof Element ? e.target : null;
       if (!el || el === scroller) return; // the page list's own scroll bar
       if (el.closest(`[id^="${CARD_ID_PREFIX}"], [data-note-pin]`)) return; // a card or a pin: its own click decides
@@ -418,7 +407,7 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
       focusBoxSoon(t.id); // its box appeared before this effect ran, so it did not take the focus itself
     }
     // A restored edit of a sent note: its editor opens again with the unsent text.
-    if (editingRef.current === null) {
+    if (OPEN_EDIT.current === null) {
       const e = s.editDrafts.find((x) => !handled.current.has(`edit:${x.commentId}`));
       if (e) {
         handled.current.add(`edit:${e.commentId}`);
@@ -497,6 +486,9 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
   const now = Date.now();
   const cards: ColumnCard[] = [];
   const pins: { t: ThreadRow; x: number; y: number }[] = [];
+  const spots: { id: string; n: number; page: number; top: number }[] = [];
+  // R98: the markers count the notes in reading order, as the notes panel does ("Note 3 of 7").
+  const order = useMemo(() => new Map(listNotes(s).placed.map((e, i) => [e.id as string, i + 1])), [s]);
   for (const t of s.threads) {
     const res = s.placement.get(t.id);
     const shown = shownAnchor(t.anchor, res);
@@ -505,7 +497,31 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
     if (top === null) continue;
     if (shown.kind === 'point' && boxes[shown.page]) pins.push({ t, ...pinAt(shown.point, boxes[shown.page]) });
     cards.push({ id: t.id, anchorTop: top, card: cardProps(t, res) });
+    const n = order.get(t.id);
+    if (n !== undefined) spots.push({ id: t.id, n, page: shown.kind === 'text' ? shown.start.page : shown.kind === 'document' ? 0 : shown.page, top });
   }
+  const viewRight = scroller ? scroller.scrollLeft + scroller.clientWidth : Infinity;
+  const markers = folded ? placeMarkers(spots, boxes, viewRight) : [];
+
+  /** A marker was clicked: its note opens in the notes panel (R98). */
+  const openFromMarker = (id: ThreadId) => {
+    activate(id);
+    notesPanel.setOpen(true);
+  };
+
+  /** The cards fold while a note box has the caret: the box moves into the notes panel, caret and all. */
+  const alive = useRef(true);
+  useLayoutEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  const onFold = useCallback((b: CarriedBox) => {
+    if (!alive.current) return; // the document is closing
+    queueMicrotask(() => notesPanel.setOpen(true));
+    carryBox(b, () => boxOfKind(document.getElementById(`${PANEL_CARD_ID_PREFIX}${b.threadId}`), b));
+  }, []);
 
   function threadComments(t: ThreadRow): CommentRow[] {
     return s.comments.filter((c) => c.threadId === t.id);
@@ -551,11 +567,18 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
         focusPages();
       },
       onDraftFlush: () => wiring.flushDrafts(),
+      onDraftCancel: () => {
+        // Cancel throws the unsent text away: a new note goes, with its highlight; a reply box empties.
+        const d = draftOf(t);
+        if (d) void session.cancel(d.id);
+        if (isNew) session.setActive(null);
+        focusPages();
+      },
       editing: edit,
       onEditStart: (id) => {
         const body = session.startEdit(id);
         if (body === null) return;
-        const was = editingRef.current;
+        const was = OPEN_EDIT.current;
         if (was && was.id !== id) {
           finishEdit(was);
           setEditing(null); // finished once: activate() below must not finish it again
@@ -565,22 +588,29 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
         focusEditorSoon(t.id);
       },
       onEditChange: (body) => {
-        const e = editingRef.current;
+        const e = OPEN_EDIT.current;
         if (!e) return;
         setEditing({ ...e, body });
         session.typeEdit(e.id, body);
       },
       onEditSave: (body) => {
-        const e = editingRef.current;
+        const e = OPEN_EDIT.current;
         if (!e) return;
         setEditing(null);
         void session.editComment(e.id, body);
       },
       onEditEscape: (body) => {
-        const e = editingRef.current;
+        const e = OPEN_EDIT.current;
         if (!e) return;
         setEditing(null);
         finishEdit({ ...e, body });
+      },
+      onEditCancel: () => {
+        const e = OPEN_EDIT.current;
+        if (!e) return;
+        setEditing(null);
+        void session.cancelEdit(e.id);
+        focusPages();
       },
       onDelete: (id) => {
         const root = list[0];
@@ -607,7 +637,7 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
           })}
         </div>
       )}
-      {pins.map(({ t, x, y }) => (
+      {pins.map(({ t, x, y }) => markers.length > 0 ? null : (
         <button
           key={t.id}
           type="button"
@@ -622,7 +652,23 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
           <Icon name="comment" size={20} filled className={styles.pinIcon} />
         </button>
       ))}
-      {cards.length > 0 && !folded && <CardColumn cards={cards} left={left} activeId={s.active} animate={animate} band={band} />}
+      {markers.map((m) => (
+        <button
+          key={m.id}
+          type="button"
+          className={styles.marker}
+          data-note-marker=""
+          data-theme="light"
+          data-active={s.active === m.id ? 'true' : 'false'}
+          style={{ left: m.x, top: m.y }}
+          aria-label={`Note ${m.n}. Open it in the notes panel`}
+          title={`Note ${m.n}`}
+          onClick={() => openFromMarker(m.id as ThreadId)}
+        >
+          {m.n}
+        </button>
+      ))}
+      {cards.length > 0 && !folded && <CardColumn cards={cards} left={left} activeId={s.active} animate={animate} band={band} onFold={onFold} />}
     </>
   );
 
@@ -708,8 +754,11 @@ function useOverlayHost(pages: RefObject<PageListApi | null>): HTMLElement | nul
   return host;
 }
 
-/** Changes whenever the pages are laid out again: a zoom, a rotation, a spread, or the scroll area's size. */
-function useLayoutTick(store: ViewerStore, host: HTMLElement | null): string {
+/**
+ * Changes whenever the pages are laid out again: a zoom, a rotation, a spread, or the scroll area's size; and when the
+ * pages are wider than the view and it scrolls sideways (the note markers keep to the view's right edge).
+ */
+function useLayoutTick(store: ViewerStore, host: HTMLElement | null, scroller: HTMLElement | null): string {
   const view = useViewerState(store, (v) => `${v.scale}|${v.viewRotation}|${v.spread}`);
   const [resized, bump] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
@@ -719,6 +768,36 @@ function useLayoutTick(store: ViewerStore, host: HTMLElement | null): string {
     ro.observe(sizer);
     return () => ro.disconnect();
   }, [host]);
-  return `${view}|${resized}`;
+  const [sideways, setSideways] = useState(0);
+  useEffect(() => {
+    if (!scroller) return;
+    const onScroll = () => {
+      if (scroller.scrollWidth > scroller.clientWidth + 1) setSideways(Math.round(scroller.scrollLeft));
+    };
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    return () => scroller.removeEventListener('scroll', onScroll);
+  }, [scroller]);
+  return `${view}|${resized}|${sideways}`;
+}
+
+/** The room the margin keeps (R98): the pages move left for it at most 120 px. */
+const MARGIN_ROOM = { maxShift: MARGIN_MAX_SHIFT };
+
+/** The open edit (panel-state), read like a ref: the margin and the notes panel share it. */
+const OPEN_EDIT = {
+  get current(): OpenEdit | null {
+    return openEdit.get();
+  },
+};
+
+/** A room asked of the page list, as one comparable string. */
+const roomKey = (px: number, o: object): string => `${px}|${JSON.stringify(o)}`;
+
+/** The notes panel's cards (NotesPanel.tsx): each card's element id is this and its thread id. */
+const PANEL_CARD_ID_PREFIX = 'sop-panel-note-';
+
+/** A slide, for the notes panel's room (R98): a page that is wider than it is tall on screen. */
+function isSlide(box: { width: number; height: number } | undefined): boolean {
+  return box !== undefined && box.width > box.height;
 }
 

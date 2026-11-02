@@ -4,22 +4,28 @@
 // margin column scrolls with the pages (it draws into the page list's overlay), so a card placed at a content y stays
 // level with its line however far you scroll.
 import type { Anchor, NormRect } from '@sop/core';
-import { type Box, computeLayout, normToCss, type PageBox, PAGE_GAP, type PageSize, resolveScale, type Rotation, START_ZOOM } from '@sop/viewer';
+import { type Box, normToCss, type PageBox, PAGE_GAP, type Rotation } from '@sop/viewer';
 import type { Resolution } from '../annotations/boundary';
 import { regionNoteHit } from '../figures/anchors';
 
 /** Docs' margin card (02 section 4.11; the card tokens). */
 export const CARD_WIDTH = 282;
-/** From the page's right edge to an inactive card. The active card moves 12 px left, so it sits 24 px from the page. */
-export const CARD_OFFSET = 36;
-/** Space after the cards at the right edge of the window. */
-export const MARGIN_END = 16;
+/** From the page's right edge to an inactive card. The active card moves 12 px left, so it sits 20 px from the page. */
+export const CARD_OFFSET = 32;
+/** Space after the cards, before the scroll bar (which adds its own width beside them). */
+export const MARGIN_END = 8;
 /**
  * The width the page list keeps free at the right of the pages for the margin (PageListApi.setReserveRight), beyond the
  * PAGE_GAP it always keeps there: the cards then end MARGIN_END from the scroll bar. It never changes the zoom (ruling
- * R69): when the pages do not fit beside it at their size, the cards fold into the notes button instead.
+ * R69): when the pages do not fit beside it at their size, the cards fold into numbered markers (R98).
  */
 export const MARGIN_RESERVE = CARD_OFFSET - PAGE_GAP + CARD_WIDTH + MARGIN_END;
+/**
+ * R98: the first note moves the pages no further than this to make room for the margin. When the room needs more, the
+ * pages stay where they are and the notes show as numbered markers on the pages instead (the notes panel opens on a
+ * click). The thumbnail rail is never closed for the margin.
+ */
+export const MARGIN_MAX_SHIFT = 120;
 
 /** The notes panel (S15): 320 px wide, 16 px in from the window's right edge. */
 const PANEL_WIDTH = 320;
@@ -131,26 +137,45 @@ export function anchorLabel(a: Anchor): string | null {
   }
 }
 
+/** A numbered note marker (R98): Docs' collapsed comment, a small bubble in the page's right margin. */
+export const MARKER_SIZE = 24;
+/** Markers on one page never touch: the next one starts this far below the last. */
+const MARKER_GAP = 4;
+/** How far a marker stays from the page's right edge, or from the view's right edge when the page runs past it. */
+const MARKER_INSET = 8;
+
+export interface MarkerPlace {
+  id: string;
+  /** Its number: the note's place in reading order, as the notes panel counts them ("Note 3 of 7"). */
+  n: number;
+  /** Its top-left, content px. */
+  x: number;
+  y: number;
+}
+
 /**
- * At open (R60 with R69): a PDF that had notes last time, in a window where the margin fits beside the pages only with
- * the thumbnail rail folded away, at the same zoom. Then the rail starts folded, so the pages never move once shown.
- * `width` is the page area's width with the rail beside it (scroll bar not counted), `rail` the rail's width.
+ * Where each note's numbered marker goes while the cards are folded (R98): in the page's right margin, level with the
+ * note's line (centred on its top), just inside the page's right edge; when the page runs past the right of the view,
+ * just inside the view's edge, so a marker is always in sight beside its line. Markers that would touch on one page
+ * move down, in order, so each one can be read and clicked. `viewRight` is the right edge of the view in content px.
  */
-export function marginNeedsRailAway(pages: readonly PageSize[], o: { width: number; height: number; rail: number }): boolean {
-  if (pages.length === 0 || o.rail <= 0) return false;
-  const fits = (width: number) => {
-    const scale = resolveScale(START_ZOOM, { width, height: o.height }, [...pages], { viewRotation: 0, spread: 'none' });
-    const l = computeLayout([...pages], { scale, viewRotation: 0, spread: 'none', viewportWidth: width });
-    let left = Infinity;
-    let right = 0;
-    for (const b of l.boxes) {
-      left = Math.min(left, b.left);
-      right = Math.max(right, b.left + b.width);
-    }
-    return { scale, ok: right - left + 2 * PAGE_GAP + MARGIN_RESERVE <= width + 0.5 };
-  };
-  const beside = fits(o.width);
-  if (beside.ok) return false;
-  const without = fits(o.width + o.rail);
-  return without.ok && Math.abs(without.scale - beside.scale) < 1e-6;
+export function placeMarkers(notes: readonly { id: string; n: number; page: number; top: number }[], boxes: readonly PageBox[], viewRight: number): MarkerPlace[] {
+  const out: MarkerPlace[] = [];
+  const sorted = [...notes].sort((a, b) => a.page - b.page || a.top - b.top || a.n - b.n);
+  let lastPage = -1;
+  let lastBottom = -Infinity;
+  let lastX = NaN;
+  for (const m of sorted) {
+    const box = boxes[m.page];
+    if (!box) continue;
+    const right = Math.min(box.left + box.width, viewRight);
+    const x = Math.max(box.left, right - MARKER_INSET - MARKER_SIZE);
+    let y = Math.max(box.top, m.top - MARKER_SIZE / 2);
+    if (m.page === lastPage && x === lastX) y = Math.max(y, lastBottom + MARKER_GAP);
+    out.push({ id: m.id, n: m.n, x, y });
+    lastPage = m.page;
+    lastBottom = y + MARKER_SIZE;
+    lastX = x;
+  }
+  return out;
 }

@@ -42,6 +42,46 @@
   outline-offset: var(--focus-ring-offset);
 }
 
+/*
+ * R98: a note's numbered marker, while the cards are folded (no room beside the pages, the notes panel open, slides).
+ * Docs' collapsed margin comment: a small bubble in the page's right margin, level with the note's line, with the note's
+ * number in reading order. It has the pin's shape and colours (a soft highlight colour with a quiet shadow), so it
+ * reads on a white page and on a dark slide alike; a click opens the note in the notes panel.
+ */
+.marker {
+  /* 24 px: MARKER_SIZE in margin.ts */
+  --_marker: var(--space-6);
+
+  position: absolute;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  inline-size: var(--_marker);
+  block-size: var(--_marker);
+  margin: 0;
+  padding: 0 0 1px;
+  border: 1px solid var(--sop-card-active-bg);
+  border-radius: 50% 50% 50% var(--space-1);
+  background-color: var(--sop-mark-1);
+  box-shadow: var(--shadow-docs-comment-active);
+  color: var(--gm3-sys-color-on-surface); /* data-theme="light": it sits on the page */
+  font: var(--type-sop-chip-sm);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background-color 150ms ease-out;
+}
+
+.marker:hover,
+.marker[data-active="true"] {
+  background-color: var(--sop-mark-1-active);
+}
+
+.marker:focus-visible {
+  outline: var(--focus-ring-width) solid var(--sop-mark-focus);
+  outline-offset: var(--focus-ring-offset);
+}
+
 /* "Show where it was" (contracts D7): the passage's stored place, outlined for a moment, then faded. */
 .ghosts {
   position: absolute;
@@ -68,7 +108,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pin {
+  .pin,
+  .marker {
     transition: none;
   }
 

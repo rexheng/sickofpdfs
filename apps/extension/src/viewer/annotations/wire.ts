@@ -150,15 +150,11 @@ export interface ViewerFeature {
   /** A tab of its own in the navigation rail, after Thumbnails and Outline (S16: Figures). */
   rail?: { icon: IconName; label: string; Panel: ComponentType<{ host: NotesHost }> };
   /**
-   * CSS px the page list keeps free at its right from its very first layout, for this document (ruling R60: a PDF that
-   * already has notes opens with its margin, so the page never narrows late). Read once, before the pages are drawn.
+   * The room the page list keeps free at its right from its very first layout, for this document (ruling R60: a PDF that
+   * already has notes opens with its margin, so the page never narrows late), and how far the pages may move for it
+   * (R98). Read once, before the pages are drawn. The rail is never folded for it (R98).
    */
-  reserveAtOpen?(doc: OpenedDocument): number;
-  /**
-   * True: the navigation rail starts folded for this document, because its notes margin fits beside the pages only
-   * without it (R60 with R69: the pages never move once shown, and a note never changes the zoom). Read once, at open.
-   */
-  foldsRailAtOpen?(doc: OpenedDocument): boolean;
+  reserveAtOpen?(doc: OpenedDocument): { px: number; maxShift?: number } | null;
 }
 
 const features: ViewerFeature[] = [];
@@ -567,6 +563,8 @@ export function createNotes(d: NotesDeps): Notes | null {
     planStyle,
     resolveAnchor,
     onError: logNotesError,
+    // Ctrl+Z and Ctrl+Y say what they did ("Note removed", "Mark back"): a note never vanishes without a word.
+    onUndone: (what) => d.showNote(what),
     // R67: rows made before the save lands carry the file's fingerprint, and are kept as save-pending under it.
     fingerprint: d.opened.loaded.sha256,
     pending: localPendingSaves(),

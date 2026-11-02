@@ -1,8 +1,9 @@
 /*
- * The rail's Figures tab, in the outline's width (02 section 4.10; research 06 section 4): one row per figure, a
- * 64 px thumbnail (a piece of the white page, 4 px corners) beside its label in Google Sans Text 14/20 500 and its
- * page in 12/16 on-surface-variant. Rows take the dark chrome's hover layer and focus ring; the figure that is
- * selected on the pages keeps the selected toggle's disc colour.
+ * The rail's Figures tab, in the thumbnails' width, so switching tabs never moves the pages (02 section 4.10; research
+ * 06 section 4; TB4 fix round): one row per figure, a 64 px thumbnail (a piece of the white page, 4 px corners) with
+ * its label in Google Sans Text 14/20 500 and its page in 12/16 on-surface-variant under it, as the page thumbnails
+ * carry their number. Rows take the dark chrome's hover layer and focus ring; the figure that is selected on the pages
+ * keeps the selected toggle's disc colour.
  */
 .tab {
   box-sizing: border-box;
@@ -31,7 +32,8 @@
 
 .row {
   display: flex;
-  gap: var(--space-3);
+  flex-direction: column;
+  gap: var(--space-1);
   align-items: center;
   box-sizing: border-box;
   inline-size: 100%;
@@ -73,9 +75,11 @@
 
 .text {
   display: flex;
-  flex: 1 1 auto;
   flex-direction: column;
+  align-items: center;
+  max-inline-size: 100%;
   min-inline-size: 0;
+  text-align: center;
 }
 
 .label {

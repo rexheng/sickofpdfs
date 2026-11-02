@@ -30,6 +30,11 @@ export interface NoteBoxProps {
   onEscape?: (value: string) => void;
   /** Save the draft now: called on blur, on Esc and when the box goes away. Wire it to `DraftKeeper.flush()`. */
   onFlush?: () => void;
+  /**
+   * The Cancel button, as Docs' comment box has: the caller throws the text away (a new note goes with its highlight, a
+   * reply box empties, an edit keeps the sent text). Without it there is no Cancel button.
+   */
+  onCancel?: (value: string) => void;
   /** note: the first comment of a new note. reply: the reply box at the foot of an active card. edit: a sent comment. */
   variant?: 'note' | 'reply' | 'edit';
   placeholder?: string;
@@ -52,9 +57,10 @@ const DEFAULTS = {
 
 /**
  * The note box, as Google Docs' comment box (02 section 4.11), with the keys of the spec's "Writing a note" row:
- * Enter or Ctrl+Enter sends, Shift+Enter makes a new line, Esc closes without losing text. Ctrl+B and Ctrl+I wrap the
- * selection in Markdown bold and italic, and Ctrl+Z and Ctrl+Y undo and redo inside the box only. The box grows with
- * the text up to about 8 lines, then scrolls.
+ * Enter or Ctrl+Enter sends, Shift+Enter makes a new line, Esc closes without losing text, and Cancel (a text button
+ * beside Send) throws the text away. A note is plain text for now (TB4 fix round): Ctrl+B and Ctrl+I do nothing in the
+ * box, so no Markdown stars are typed, and they never bold the page either. Ctrl+Z and Ctrl+Y undo and redo inside the
+ * box only. The box grows with the text up to about 8 lines, then scrolls.
  *
  * While the box has focus, no key reaches the viewer's shortcuts except Ctrl or Cmd with a key the box does not use
  * (Ctrl+F, Ctrl+P): single keys (H, 1–5, Delete) and Ctrl+Alt keys (AltGr on German and Polish keyboards) stay in
@@ -66,6 +72,7 @@ export function NoteBox({
   onSend,
   onEscape,
   onFlush,
+  onCancel,
   variant = 'note',
   placeholder,
   sendLabel,
@@ -132,13 +139,8 @@ export function NoteBox({
       return;
     }
     if (!ctrl || event.altKey) return;
-    const el = event.currentTarget;
-    if (letter === 'b' && !event.shiftKey) {
-      event.preventDefault();
-      toggleWrap(el, '**');
-    } else if (letter === 'i' && !event.shiftKey) {
-      event.preventDefault();
-      toggleWrap(el, '*');
+    if ((letter === 'b' || letter === 'i') && !event.shiftKey) {
+      event.preventDefault(); // plain text for now: no Markdown stars, and the page's Ctrl+B never sees it
     } else if (letter === 'y' || (letter === 'z' && event.shiftKey)) {
       event.preventDefault();
       document.execCommand('redo');
@@ -170,20 +172,35 @@ export function NoteBox({
         placeholder={placeholder ?? defaults.placeholder}
         aria-label={label ?? defaults.label}
         aria-describedby={hintId}
-        aria-keyshortcuts="Enter Shift+Enter Escape Control+B Control+I"
+        aria-keyshortcuts="Enter Shift+Enter Escape"
         spellCheck
         onChange={(event) => onChange(event.currentTarget.value)}
         onKeyDown={onKeyDown}
       />
       <div className={styles.actions} hidden={!open}>
-        {/* A quiet hint while typing: "Enter to send · Shift+Enter for a new line", on two short lines beside the button. */}
+        {/* A quiet hint while typing, on its own line over the buttons: "Enter to send · Shift+Enter for a new line". */}
         <span id={hintId} className={styles.hint}>
           <span className={styles.hintLine}>
             {defaults.enter}
+            <span aria-hidden="true"> ·</span>
             <span className={styles.srOnly}>.</span>
           </span>
           <span className={styles.hintLine}>Shift+Enter for a new line</span>
         </span>
+        {onCancel !== undefined && (
+          <button
+            type="button"
+            className={styles.cancel}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onFlush?.();
+              onCancel(field.current?.value ?? value);
+            }}
+          >
+            Cancel
+          </button>
+        )}
         <button
           type="button"
           className={styles.send}
@@ -223,38 +240,4 @@ function keyLetter(event: globalThis.KeyboardEvent): string {
   if (/^[a-z]$/iu.test(event.key)) return event.key.toLowerCase();
   if (/^\p{L}$/u.test(event.key) && /^Key[A-Z]$/u.test(event.code)) return event.code.slice(3).toLowerCase();
   return '';
-}
-
-/**
- * Wraps the selection in a Markdown mark (`**` bold, `*` italic), or unwraps it when it is already wrapped. It edits
- * through execCommand('insertText'), so the change joins the box's own undo history and fires a normal input event.
- */
-function toggleWrap(el: HTMLTextAreaElement, mark: string) {
-  const { selectionStart: start, selectionEnd: end, value } = el;
-  const selected = value.slice(start, end);
-  const before = value.slice(start - mark.length, start);
-  const after = value.slice(end, end + mark.length);
-  // For italic, a star that is half of a bold pair (**) is not an italic mark.
-  const lone = (at: number) => mark !== '*' || value[at] !== '*';
-  const boldInside = mark === '*' && selected.startsWith('**') && !selected.startsWith('***');
-  if (before === mark && after === mark && lone(start - mark.length - 1) && lone(end + mark.length)) {
-    el.setSelectionRange(start - mark.length, end + mark.length);
-    insertText(el, selected);
-    el.setSelectionRange(start - mark.length, end - mark.length);
-  } else if (!boldInside && selected.length > mark.length * 2 && selected.startsWith(mark) && selected.endsWith(mark)) {
-    insertText(el, selected.slice(mark.length, -mark.length));
-    el.setSelectionRange(start, end - mark.length * 2);
-  } else {
-    insertText(el, `${mark}${selected}${mark}`);
-    el.setSelectionRange(start + mark.length, end + mark.length);
-  }
-}
-
-function insertText(el: HTMLTextAreaElement, text: string) {
-  el.focus();
-  // execCommand keeps the native undo stack; the fallback (no undo) is for browsers without it.
-  if (!document.execCommand('insertText', false, text)) {
-    el.setRangeText(text, el.selectionStart, el.selectionEnd, 'end');
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-  }
 }

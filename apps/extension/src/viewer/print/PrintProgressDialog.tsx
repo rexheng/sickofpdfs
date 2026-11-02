@@ -11,12 +11,13 @@ export interface PrintProgressDialogProps {
 }
 
 /**
- * "Preparing to print…": shown while the pages are drawn for the print copy (print.ts), with how far it is and a Cancel.
- * (It also loads print.css, which shows the copy and hides the viewer when the page is printed.)
+ * "Preparing to print…": shown while the chosen pages are drawn for the print copy (print.ts), with how far it is and a
+ * Cancel. The focus is on the dialog itself, not on Cancel, so an Enter pressed out of habit never cancels the print
+ * (R99); Tab reaches Cancel. (It also loads print.css, which shows the copy and hides the viewer when the page is printed.)
  */
 export function PrintProgressDialog({ done, total, onCancel }: PrintProgressDialogProps) {
   return (
-    <Dialog open title="Preparing to print…" actions={[{ label: 'Cancel', onClick: onCancel }]} onOpenChange={(open) => !open && onCancel()}>
+    <Dialog open focusSurface title="Preparing to print…" actions={[{ label: 'Cancel', onClick: onCancel }]} onOpenChange={(open) => !open && onCancel()}>
       <p className={styles.line}>
         {done} of {total} {total === 1 ? 'page' : 'pages'} ready
       </p>

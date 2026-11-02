@@ -6,6 +6,7 @@
 //   toolbar, and a note that becomes active opens the panel. Spec "Viewer specifics": at narrow widths "the thumbnail
 //   rail collapses first, then cards fold into the notes panel"; ruling R69: the zoom never changes to make room.
 //   The margin (notes/NotesLayer.tsx) measures this and publishes it here.
+import type { CommentId, ThreadId } from '@sop/core';
 import { useSyncExternalStore } from 'react';
 
 function createFlag(initial: boolean) {
@@ -94,4 +95,38 @@ function subscribeNotesButton(cb: () => void): () => void {
 /** The notes button's state, or null while no document's notes are up (Incognito, or still opening). */
 export function useNotesButton(): NotesButtonState | null {
   return useSyncExternalStore(subscribeNotesButton, () => button);
+}
+
+// ---------------------------------------------------------------- the open edit, shared by the margin and the panel
+
+/** A sent comment being edited, and the text in its edit box. One at a time per tab. */
+export interface OpenEdit {
+  id: CommentId;
+  threadId: ThreadId;
+  body: string;
+}
+
+let edit: OpenEdit | null = null;
+const editListeners = new Set<() => void>();
+
+/**
+ * The edit box open now, wherever it is drawn: the margin card's, or the notes panel's when the cards fold while it is
+ * open (a layout change never closes a box; TB4 fix round). Both read and write this one value.
+ */
+export const openEdit = {
+  get: (): OpenEdit | null => edit,
+  set: (next: OpenEdit | null): void => {
+    if (next === edit) return;
+    edit = next;
+    for (const cb of [...editListeners]) cb();
+  },
+  subscribe: (cb: () => void): (() => void) => {
+    editListeners.add(cb);
+    return () => editListeners.delete(cb);
+  },
+};
+
+/** Re-renders when an edit box opens, changes or closes. */
+export function useOpenEdit(): OpenEdit | null {
+  return useSyncExternalStore(openEdit.subscribe, openEdit.get);
 }

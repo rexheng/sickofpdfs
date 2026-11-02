@@ -20,6 +20,7 @@ import { downloadOriginal } from './actions/download';
 import { palette } from '../shared/palette/state';
 import type { OpenedDocument } from './open-document';
 import { enterPresentation } from './presentation';
+import type { PrintAsk, PrintChoice } from './print/PrintDialog';
 import { printDocument } from './print/print';
 import type { PrintMarks } from './print/print-marks';
 import { keysFor, readOverrides } from '../shortcuts/overrides';
@@ -79,10 +80,10 @@ export interface ViewerUi {
   /** Shows the "Preparing to print…" dialog with how far the pages are; null closes it. `cancel` stops the work. */
   printProgress(progress: { done: number; total: number; cancel: () => void } | null): void;
   /**
-   * Asks whether the marks print too (the document has some): 'with', 'without', or null when the reader cancels. Only
-   * one question is open at a time.
+   * Ctrl+P's first step (R99): which pages print, and whether the marks print too when the document has some. Null when
+   * the reader cancels. Only one question is open at a time.
    */
-  askPrintMarks(): Promise<'with' | 'without' | null>;
+  askPrint(ask: PrintAsk): Promise<PrintChoice | null>;
   /** A short note at the bottom of the window (a snackbar), with an optional button ("Forget"). */
   showNote(text: string, action?: NoteAction): void;
 }

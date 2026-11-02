@@ -6,12 +6,17 @@
 //   reading keys need nothing of their own here. A click on the right half of the screen goes forward, on the left
 //   half back, and a turn of the wheel steps one page.
 // - Every other command is off while presenting (commands.ts), and every other listener of the page is kept from the
-//   pointer and the keys, so nothing opens behind the black screen. The rest of the viewer is hidden and inert.
+//   pointer and the keys, so nothing opens behind the black screen. The rest of the viewer is hidden and inert, and so
+//   is anything that appears while it runs (the "not sure" banner, a snackbar); a dialog that appears (a question
+//   that needs an answer) ends the presentation, so it is never answered blind.
 // - The cursor hides after 2 s without moving.
-// - Esc, or leaving full screen any other way (F11, the browser's own Esc, another window), ends it and puts back the
-//   zoom, the scroll position and the page exactly as they were. Nothing of it is saved.
-// - Where the browser refuses full screen, it presents inside the window the same way.
-import type { ViewerSnapshot, ViewerStore } from '@sop/viewer';
+// - Esc, or leaving full screen any other way (F11, the browser's own Esc, another window), ends it on the page the
+//   reader reached (R99), and puts back the zoom and the rail; on the page it started on, the exact scroll position too.
+//   The focus goes back where it was. Nothing of it is saved.
+// - Where the browser refuses full screen, presentation mode does not start, and a note says so.
+import { PAGE_GAP, type ViewerSnapshot, type ViewerStore } from '@sop/viewer';
+import type { PageListApi } from '@sop/viewer/react';
+import type { RefObject } from 'react';
 import { flushSync } from 'react-dom';
 import './presentation.css';
 
@@ -35,7 +40,14 @@ const PAGE_PX = 800;
 export interface PresentationContext {
   store: ViewerStore;
   root: HTMLElement;
+  /** The page list, to show the page the reader reached when it ends (R99). */
+  pageList?: RefObject<PageListApi | null>;
+  /** The snackbar, for "full screen was refused". */
+  ui?: { showNote(this: void, text: string): void };
 }
+
+/** Said when the browser refuses full screen: presentation mode does not start. */
+export const FULLSCREEN_REFUSED = 'Presentation mode needs full screen, and this window can’t go full screen.';
 
 /** Where the reader was, put back exactly when the presentation ends. */
 interface Before {
@@ -66,23 +78,42 @@ export function settlePresentation(): void {
  * the full screen (or the window, where full screen was refused). Their layout is kept, so leaving puts the pages back
  * exactly. Returns the function that shows them again.
  */
-function hideAllBut(area: HTMLElement): () => void {
+function hideAllBut(area: HTMLElement, onDialog: () => void): () => void {
   const hidden: { el: HTMLElement; inert: boolean }[] = [];
-  for (let el: HTMLElement = area; el.parentElement && el !== document.body; el = el.parentElement) {
-    for (const other of el.parentElement.children) {
-      if (other === el || !(other instanceof HTMLElement)) continue;
-      hidden.push({ el: other, inert: other.inert });
-      other.inert = true;
-      other.setAttribute('data-presenting-hidden', '');
+  const hide = (other: Element) => {
+    if (!(other instanceof HTMLElement) || other.hasAttribute('data-presenting-hidden')) return;
+    hidden.push({ el: other, inert: other.inert });
+    other.inert = true;
+    other.setAttribute('data-presenting-hidden', '');
+  };
+  // What appears later beside the page area (the "not sure" banner after 20 s, a snackbar, a dialog's portal) is hidden
+  // too; in a window that is not full screen it would otherwise show over the black screen and swallow its clicks.
+  const later = new MutationObserver((records) => {
+    let dialog = false;
+    for (const r of records) {
+      for (const node of r.addedNodes) {
+        if (!(node instanceof Element)) continue;
+        hide(node);
+        dialog ||= node.matches(DIALOGS) || node.querySelector(DIALOGS) !== null;
+      }
     }
+    if (dialog) onDialog();
+  });
+  for (let el: HTMLElement = area; el.parentElement && el !== document.body; el = el.parentElement) {
+    for (const other of el.parentElement.children) if (other !== el) hide(other);
+    later.observe(el.parentElement, { childList: true });
   }
   return () => {
+    later.disconnect();
     for (const h of hidden) {
       h.el.inert = h.inert;
       h.el.removeAttribute('data-presenting-hidden');
     }
   };
 }
+
+/** A question that needs an answer: it ends the presentation rather than wait, unseen, behind it. */
+const DIALOGS = '[role="dialog"], [role="alertdialog"]';
 
 /** The page area: `root` itself when it is the page list's scroller, else the one inside it. */
 function pageArea(root: HTMLElement): HTMLElement | null {
@@ -101,6 +132,7 @@ export async function enterPresentation(ctx: PresentationContext): Promise<() =>
   if (running?.area === area) return running.exit;
   running?.finish(); // a presentation of a document that has gone (the engine was started again under it)
   const s = store.get();
+  const focusBefore = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
   const before: Before = {
     zoom: s.zoom,
     scale: s.scale,
@@ -130,7 +162,8 @@ export async function enterPresentation(ctx: PresentationContext): Promise<() =>
     cursorTimer = setTimeout(() => area.setAttribute('data-cursor-hidden', ''), CURSOR_HIDE_MS);
   };
 
-  const showAll = hideAllBut(area);
+  // A dialog that appears while presenting ends it (exit is defined below; the observer only calls it later).
+  const showAll = hideAllBut(area, () => exit());
   const finish = () => {
     if (ended) return;
     ended = true;
@@ -139,9 +172,13 @@ export async function enterPresentation(ctx: PresentationContext): Promise<() =>
     clearTimeout(cursorTimer);
     area.removeAttribute('data-cursor-hidden');
     showAll();
+    // R99: the page the reader reached stays; the zoom (and the rail, shown again) are put back.
+    const reached = store.get().presenting?.page ?? before.page;
     // The page list lays the pages out at the old size in this same call (it measures its area when presenting ends).
     flushSync(() => store.set({ presenting: null, zoom: before.zoom }));
-    holdPlace(area, store, before);
+    holdPlace(area, store, before, reached === before.page ? null : { page: reached, pageList: ctx.pageList });
+    // The focus goes back where it was before (the pages, or the button that started it), if it is still there.
+    if (focusBefore?.isConnected === true && !focusBefore.closest('[inert]')) focusBefore.focus({ preventScroll: true });
   };
 
   const exit = () => {
@@ -226,34 +263,45 @@ export async function enterPresentation(ctx: PresentationContext): Promise<() =>
     await area.requestFullscreen({ navigationUI: 'hide' });
     wasFullscreen = document.fullscreenElement === area;
   } catch {
-    // Refused (no click to ask with, or not allowed here): the presentation goes on inside the window.
+    // Refused (no click or key to ask with, or not allowed here): it does not start. Nothing is left behind, and the
+    // reader is told, rather than given a black window with hidden notices over it.
+    finish();
+    ctx.ui?.showNote(FULLSCREEN_REFUSED);
   }
   return exit;
 }
 
 /**
- * Puts the reader back where they were: the scroll position, once the page area is back at its old size and the pages
- * at their old scale. The page list lays itself out again as the window settles (the browser shows its toolbars again
+ * Puts the reader back: once the page area is back at its old size and the pages at their old scale, at the old scroll
+ * position, or, when the presentation moved on (`reached`), at the top of the page it reached, keeping the old sideways
+ * position (R99). The page list lays itself out again as the window settles (the browser shows its toolbars again
  * after full screen), so the place is checked each frame and put back if anything moved it, until it has held for
  * STABLE_FRAMES frames, the reader moves the pages, or RESTORE_WINDOW_MS has passed.
  */
-function holdPlace(area: HTMLElement, store: ViewerStore, before: Before): void {
+function holdPlace(area: HTMLElement, store: ViewerStore, before: Before, reached: { page: number; pageList: RefObject<PageListApi | null> | undefined } | null): void {
   const until = performance.now() + RESTORE_WINDOW_MS;
   const stop = new AbortController();
   for (const type of ['wheel', 'keydown', 'pointerdown'] as const) window.addEventListener(type, () => stop.abort(), { capture: true, passive: true, signal: stop.signal });
   let stable = 0;
   /** True when the view is the old one and the old place is on screen. */
+  /** Where the view goes: the old place, or the top of the page the presentation reached. */
+  const target = (): { top: number; left: number } | null => {
+    if (reached === null) return before;
+    const box = reached.pageList?.current?.pageBoxes()[reached.page];
+    return box ? { top: Math.min(Math.ceil(box.top - PAGE_GAP), area.scrollHeight - area.clientHeight), left: before.left } : null;
+  };
   const put = (): boolean => {
     const sameView = area.clientWidth === before.width && area.clientHeight === before.height && Math.abs(store.get().scale - before.scale) < 1e-9;
-    if (!sameView) return false;
-    if (area.scrollTop !== before.top || area.scrollLeft !== before.left) {
-      area.scrollTop = before.top;
-      area.scrollLeft = before.left;
+    const to = sameView ? target() : null;
+    if (to === null) return false;
+    if (area.scrollTop !== to.top || area.scrollLeft !== to.left) {
+      area.scrollTop = to.top;
+      area.scrollLeft = to.left;
       // The page list reads its scroll position on scroll events; this one is told now, so the page in view (and the
       // page box) is right at once, not a frame later.
       area.dispatchEvent(new Event('scroll'));
     }
-    return area.scrollTop === before.top && area.scrollLeft === before.left;
+    return area.scrollTop === to.top && area.scrollLeft === to.left;
   };
   put();
   const frame = () => {

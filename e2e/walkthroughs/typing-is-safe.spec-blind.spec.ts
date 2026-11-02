@@ -96,7 +96,7 @@ test('typing H, 1 to 5, Delete and Ctrl+Alt+M in the note box and the reply box 
   expect(isPlain((await paintOfSelection(page, elsewhere)).paint), 'no other words were marked by the typing').toBe(true);
 });
 
-test('in the note box Ctrl+B formats the note (Markdown bold), Ctrl+I italic, and Ctrl+U, Ctrl+B and Ctrl+Z leave the page alone', async ({ openViewer, server }, testInfo) => {
+test('in the note box Ctrl+B and Ctrl+I type no Markdown stars (plain text for now), and Ctrl+U, Ctrl+B and Ctrl+Z leave the page alone', async ({ openViewer, server }, testInfo) => {
   const page = await openPaper(openViewer, server, ATTENTION);
   const tokens = await markTokens(page);
   const sel = await selectPassage(page, ATTENTION, LINES.l7);
@@ -106,12 +106,13 @@ test('in the note box Ctrl+B formats the note (Markdown bold), Ctrl+I italic, an
   await page.keyboard.type('bold me', { delay: 10 });
   await page.keyboard.press('Control+a');
   await page.keyboard.press('Control+b');
-  expect((await readBox(box)).text, 'Ctrl+B in the box makes the selected text Markdown bold').toBe('**bold me**');
+  // TB4 fix brief B2.8: a note is plain text for now; Ctrl+B and Ctrl+I in the box type no Markdown stars.
+  expect((await readBox(box)).text, 'Ctrl+B in the box leaves the text as it is').toBe('bold me');
   await page.keyboard.press('Control+a');
   await page.keyboard.type('italic me', { delay: 10 });
   await page.keyboard.press('Control+a');
   await page.keyboard.press('Control+i');
-  expect((await readBox(box)).text, 'Ctrl+I makes the selected text italic').toBe('*italic me*');
+  expect((await readBox(box)).text, 'Ctrl+I leaves the text as it is too').toBe('italic me');
   await page.keyboard.press('Control+u');
   await page.keyboard.press('Control+b');
   const after = await paintOfSelection(page, sel, { name: 'page-after-box-formatting', testInfo });

@@ -58,21 +58,20 @@ export interface PageListApi {
   clientPointOf(p: PagePoint): { x: number; y: number };
   /**
    * Keeps `px` CSS px free at the right of the pages, beyond the usual PAGE_GAP, for the notes margin or the notes panel
-   * (Phase 2). It never changes the zoom (ruling R69): fit modes still fit the whole width. When the pages fit with that
-   * room beside them, they move left only as far as they must (a page that already has the room stays where it is).
-   * When they do not fit, they stay where they are; with `scroll`, the scroll area grows by the room, so what lies under
-   * the notes panel can be scrolled into view. The page point under `keep` (client px) stays where it is on screen;
-   * without one, the line at the top of the view does.
+   * (Phase 2). It never changes the zoom (ruling R69), except with `refit` (R98): fit modes still fit the whole width.
+   * When the pages fit with that room beside them, they move left only as far as they must (a page that already has the
+   * room stays where it is), and never further than `maxShift`. When they do not fit, they stay where they are; with
+   * `scroll`, the scroll area grows by the room, so what lies under the notes panel can be scrolled into view. The page
+   * point under `keep` (client px) stays where it is on screen; without one, the line at the top of the view does.
    */
-  setReserveRight(px: number, keep?: { clientX: number; clientY: number }, o?: { scroll?: boolean }): void;
+  setReserveRight(px: number, keep?: { clientX: number; clientY: number }, o?: ReserveOptions): void;
   /** The width kept free at the right (setReserveRight). */
   reserveRight(): number;
   /**
-   * Whether `px` CSS px (setReserveRight) fit at the right of the pages at the size they have now, in a view
-   * `extraWidth` CSS px wider than this one (the room the navigation rail would give back). False when that wider view
-   * would change the pages' size (a fit zoom), since the room must never cost a change of zoom.
+   * Whether `px` CSS px (setReserveRight) fit at the right of the pages at the size they have now, moving them left no
+   * further than `maxShift` from where they are without it.
    */
-  roomForReserve(px: number, extraWidth?: number): boolean;
+  roomForReserve(px: number, maxShift?: number): boolean;
   /**
    * The next re-layout that keeps the pages' size, if it comes within about 300 ms (a rail folding away, the reserve
    * changing), slides the pages from where they are on screen now to their new place over about 200 ms, so the eye
@@ -85,6 +84,19 @@ export interface PageListApi {
    * pointer itself; its children take it back. Null until the first layout.
    */
   overlayHost(): HTMLElement | null;
+}
+
+/** How the room at the right of the pages is kept (PageListApi.setReserveRight). */
+export interface ReserveOptions {
+  /** When the pages do not fit beside the room, the scroll area grows by it, so what lies under it can be scrolled to. */
+  scroll?: boolean;
+  /** The farthest the pages may move left for the room (R98: 120 px for the notes margin). Needing more, they stay put. */
+  maxShift?: number;
+  /**
+   * In a fit zoom (fit width, fit page), the pages are fitted to the view less the room, so they sit beside it at a
+   * smaller size instead of under it (R98: a slide beside the notes panel). Other zooms are never changed.
+   */
+  refit?: boolean;
 }
 
 export interface PageListProps {
@@ -106,6 +118,13 @@ export interface PageListProps {
    * notes opens with room for its notes margin, so its pages do not move once shown (R60).
    */
   initialReserveRight?: number;
+  /** How the room kept at open is kept (its `maxShift`, as setReserveRight takes it). */
+  initialReserveOptions?: ReserveOptions;
+  /**
+   * In two-page view, CSS px kept clear at each side of a fitted spread, so the spread is centred in the reading area and
+   * the viewer's floating buttons at the edges (the rail's pill) never sit on a page.
+   */
+  spreadSideClearance?: number;
 }
 
 /** Arrow keys scroll this far (Chromium's viewer). */
@@ -121,6 +140,8 @@ const GLIDE_WINDOW_MS = 300;
 interface Viewport {
   width: number;
   height: number;
+  /** The scroll bar's width beside the view (the reading area is this much wider than the view). */
+  gutter?: number;
 }
 
 interface Anchor {
@@ -131,6 +152,43 @@ interface Anchor {
   dy: number;
   /** A turn's or a spread change's anchor (R81): remembered for the next one (turnAnchor). */
   turn?: boolean;
+  /** The view was at the very top: it stays there (the first page keeps its place under the toolbar). */
+  top?: boolean;
+}
+
+/** The room kept at the right of the pages, and how (setReserveRight). */
+interface Reserve {
+  px: number;
+  scroll: boolean;
+  maxShift: number;
+  refit: boolean;
+}
+
+function reserveOf(px: number, o: ReserveOptions | undefined): Reserve {
+  return { px: Math.max(0, Math.round(px)), scroll: o?.scroll ?? false, maxShift: o?.maxShift ?? Infinity, refit: o?.refit ?? false };
+}
+
+const sameReserve = (a: Reserve, b: Reserve): boolean => a.px === b.px && a.scroll === b.scroll && a.maxShift === b.maxShift && a.refit === b.refit;
+
+/**
+ * The view a fit zoom fits the pages to: narrower by the room kept at the right when it asks to refit (R98), and by the
+ * side clearance of a two-page spread. Other zooms see the whole view.
+ */
+function fitViewport(zoom: ZoomMode, viewport: Viewport, reserve: Reserve, spread: Spread, sideClearance: number): Viewport {
+  if (zoom.kind === 'scale') return viewport;
+  const less = (reserve.refit ? reserve.px : 0) + spreadClearance(viewport, spread, sideClearance).less;
+  return less > 0 ? { width: Math.max(1, viewport.width - less), height: viewport.height } : viewport;
+}
+
+/**
+ * A fitted two-page spread keeps `sideClearance` CSS px clear at each side of the reading area, the scroll bar counted
+ * at the right, so it is centred in what the reader sees: `less` is how much narrower the view is for the fit, and
+ * `shift` how far right the centred pages move.
+ */
+function spreadClearance(viewport: Viewport, spread: Spread, sideClearance: number): { less: number; shift: number } {
+  if (spread !== 'two-page' || sideClearance <= 0) return { less: 0, shift: 0 };
+  const bar = Math.min(viewport.gutter ?? 0, sideClearance);
+  return { less: 2 * sideClearance - bar, shift: bar / 2 };
 }
 
 function scaleFor(zoom: ZoomMode, viewport: Viewport, pages: PageSize[], fitPage: number, viewRotation: Rotation, spread: Spread): number {
@@ -140,13 +198,8 @@ function scaleFor(zoom: ZoomMode, viewport: Viewport, pages: PageSize[], fitPage
   return resolveScale(zoom, viewport, row.map((i) => pages[i]), { viewRotation, spread });
 }
 
-/**
- * The room kept at the right (setReserveRight), applied to a layout without changing its scale (R69). When the pages
- * fit with `reserve` CSS px beside them (beyond PAGE_GAP), every row moves left by the same amount, only as far as the
- * widest row needs. Otherwise nothing moves, and with `scroll` the scroll area grows so the room can be scrolled to.
- */
-function withReserve(l: PageLayout, viewportWidth: number, reserve: number, scroll: boolean): PageLayout {
-  if (reserve <= 0 || l.boxes.length === 0) return l;
+/** How far the pages of `l` must move left for `reserve` CSS px beside them (beyond PAGE_GAP), and whether they can. */
+function reserveShift(l: PageLayout, viewportWidth: number, reserve: number, maxShift = Infinity): { shift: number; fits: boolean; right: number } {
   let left = Infinity;
   let right = 0;
   for (const b of l.boxes) {
@@ -154,9 +207,21 @@ function withReserve(l: PageLayout, viewportWidth: number, reserve: number, scro
     right = Math.max(right, b.left + b.width);
   }
   const shift = right - (viewportWidth - PAGE_GAP - reserve);
+  return { shift, right, fits: l.boxes.length > 0 && (shift <= 0 || (shift <= maxShift + 0.5 && left - shift >= PAGE_GAP - 0.5)) };
+}
+
+/**
+ * The room kept at the right (setReserveRight), applied to a layout without changing its scale (R69). When the pages
+ * fit with `reserve` CSS px beside them (beyond PAGE_GAP), moving no further than `maxShift`, every row moves left by
+ * the same amount, only as far as the widest row needs. Otherwise nothing moves, and with `scroll` the scroll area
+ * grows so the room can be scrolled to.
+ */
+function withReserve(l: PageLayout, viewportWidth: number, r: Reserve): PageLayout {
+  if (r.px <= 0 || l.boxes.length === 0) return l;
+  const { shift, right, fits } = reserveShift(l, viewportWidth, r.px, r.maxShift);
   if (shift <= 0) return l;
-  if (left - shift >= PAGE_GAP - 0.5) return { ...l, boxes: l.boxes.map((b) => ({ ...b, left: b.left - shift })) };
-  return scroll ? { ...l, width: Math.max(l.width, right + PAGE_GAP + reserve) } : l;
+  if (fits) return { ...l, boxes: l.boxes.map((b) => ({ ...b, left: b.left - shift })) };
+  return r.scroll ? { ...l, width: Math.max(l.width, right + PAGE_GAP + r.px) } : l;
 }
 
 /**
@@ -172,18 +237,6 @@ function withSpreadGaps(l: PageLayout, pages: PageSize[], o: { viewRotation: Rot
     boxes[i].left = snapToDevice(before.left, o.dpr) + drawnWidth + PAGE_GAP;
   }
   return { ...l, boxes };
-}
-
-/** Whether the widest row of `l` fits in `width` with `reserve` CSS px beside it (beyond PAGE_GAP on each side). */
-function reserveFits(l: PageLayout, width: number, reserve: number): boolean {
-  if (l.boxes.length === 0) return false;
-  let left = Infinity;
-  let right = 0;
-  for (const b of l.boxes) {
-    left = Math.min(left, b.left);
-    right = Math.max(right, b.left + b.width);
-  }
-  return right - left + 2 * PAGE_GAP + reserve <= width + 0.5;
 }
 
 /** The page whose box holds content point `c`, or the nearest one. */
@@ -209,7 +262,17 @@ function nearestPage(layout: PageLayout, c: { x: number; y: number }): number {
  * The document's pages, at the store's zoom and rotation. The zoom starts as the store's (fit width by default), and
  * the list opens at the store's currentPage.
  */
-export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, initialReserveRight = 0 }: PageListProps): JSX.Element {
+export function PageList({
+  doc,
+  store,
+  scheduler,
+  renderPage,
+  apiRef,
+  onError,
+  initialReserveRight = 0,
+  initialReserveOptions,
+  spreadSideClearance = 0,
+}: PageListProps): JSX.Element {
   const pages = doc.open.pages;
   const scrollerRef = useRef<HTMLDivElement>(null);
   const zoom = useViewerState(store, (s) => s.zoom);
@@ -219,7 +282,7 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
   const presentingOn = presenting !== null;
   const [viewport, setViewport] = useState<Viewport | null>(null);
   // CSS px kept free at the right for the notes margin or panel; it moves the pages, never resizes them (setReserveRight).
-  const [reserve, setReserve] = useState(() => ({ px: Math.max(0, Math.round(initialReserveRight)), scroll: false }));
+  const [reserve, setReserve] = useState(() => reserveOf(initialReserveRight, initialReserveOptions));
   const sizerRef = useRef<HTMLDivElement>(null);
   /** A glide asked for (PageListApi.glide): where the page in view was on screen, until when, and at what scale. */
   const glideFrom = useRef<{ index: number; clientX: number; scale: number; until: number; base: number | null } | null>(null);
@@ -235,7 +298,6 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
    * sideways clamp left at the centre) while the reader has not moved the pages since, so turns in a row never drift.
    */
   const turnAnchor = useRef<{ anchor: Anchor; top: number; left: number } | null>(null);
-  const reserveMode = useRef(false);
   const opened = useRef(false);
   const reportError = useRef(onError);
   useLayoutEffect(() => {
@@ -246,21 +308,27 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
     ? store.get().scale
     : presenting
       ? presentationScale(pages, presenting.page, viewport, viewRotation)
-      : scaleFor(zoom, viewport, pages, fitPage.current, viewRotation, spread);
+      : scaleFor(zoom, fitViewport(zoom, viewport, reserve, spread, spreadSideClearance), pages, fitPage.current, viewRotation, spread);
   const spreadLayout = (l: PageLayout) => (spread === 'two-page' ? withSpreadGaps(l, pages, { viewRotation, scale, dpr }) : l);
-  const layout = useMemo(
-    () =>
-      !viewport
-        ? null
-        : presentingOn
-          ? presentationLayout(pages, { scale, viewRotation, viewport })
-          : withReserve(spreadLayout(computeLayout(pages, { scale, viewRotation, spread, viewportWidth: viewport.width })), viewport.width, reserve.px, reserve.scroll),
+  /** The layout before the room at the right moves the pages (roomForReserve measures the move from it). */
+  const base = useMemo(
+    () => {
+      if (!viewport || presentingOn) return null;
+      const l = spreadLayout(computeLayout(pages, { scale, viewRotation, spread, viewportWidth: viewport.width }));
+      // A fitted spread is centred in the whole reading area, the scroll bar's strip included (spreadClearance).
+      const { shift } = zoom.kind === 'scale' ? { shift: 0 } : spreadClearance(viewport, spread, spreadSideClearance);
+      return shift > 0 ? { ...l, boxes: l.boxes.map((b) => ({ ...b, left: b.left + shift })) } : l;
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- spreadLayout reads spread, scale, viewRotation and dpr, listed here
-    [pages, scale, viewRotation, spread, viewport, reserve, presentingOn, dpr],
+    [pages, scale, viewRotation, spread, viewport, presentingOn, dpr, zoom.kind, spreadSideClearance],
   );
-  const latest = useRef({ layout, viewport, scale, viewRotation, spread, dpr, reserve: reserve.px, presenting: presentingOn });
+  const layout = useMemo(
+    () => (!viewport ? null : presentingOn ? presentationLayout(pages, { scale, viewRotation, viewport }) : base && withReserve(base, viewport.width, reserve)),
+    [pages, scale, viewRotation, viewport, reserve, presentingOn, base],
+  );
+  const latest = useRef({ layout, base, viewport, scale, viewRotation, spread, dpr, reserve, presenting: presentingOn, sideClearance: spreadSideClearance });
   useLayoutEffect(() => {
-    latest.current = { layout, viewport, scale, viewRotation, spread, dpr, reserve: reserve.px, presenting: presentingOn };
+    latest.current = { layout, base, viewport, scale, viewRotation, spread, dpr, reserve, presenting: presentingOn, sideClearance: spreadSideClearance };
   });
 
   /** Where page `index` starts on screen, in client px, with the layout the page list has now (no glide counted). */
@@ -297,7 +365,8 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
         const centre = el ? { dx: el.clientWidth / 2, dy: el.clientHeight / 2 } : null;
         const still = el !== null && kept !== null && centre !== null && el.scrollTop === kept.top && el.scrollLeft === kept.left;
         const a = still ? { ...kept.anchor, ...centre } : anchorAt();
-        pendingAnchor.current = a && { ...a, turn: true };
+        // At the very top of the document, the turned pages start at the top too: the first page stays below the toolbar.
+        pendingAnchor.current = a && { ...a, turn: true, top: el !== null && el.scrollTop <= 0 };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- anchorAt reads refs only
     [store],
@@ -323,9 +392,9 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
   useLayoutEffect(() => {
     const el = scrollerRef.current!;
     const measure = () => {
-      const next = { width: el.clientWidth, height: el.clientHeight };
+      const next = { width: el.clientWidth, height: el.clientHeight, gutter: Math.max(0, el.offsetWidth - el.clientWidth) };
       const prev = latest.current.viewport;
-      if (prev && prev.width === next.width && prev.height === next.height) return;
+      if (prev && prev.width === next.width && prev.height === next.height && prev.gutter === next.gutter) return;
       if (prev) {
         const rect = el.getBoundingClientRect();
         pendingAnchor.current = anchorAt({ clientX: rect.left + el.clientWidth / 2, clientY: rect.top });
@@ -388,7 +457,7 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
     } else if (a && layout.boxes[a.pageIndex]) {
       const c = pagePointToContent(layout.boxes[a.pageIndex], pages[a.pageIndex], a.point);
       el.scrollLeft = c.x - a.dx;
-      el.scrollTop = c.y - a.dy;
+      el.scrollTop = a.top === true ? 0 : c.y - a.dy;
       turnAnchor.current = a.turn ? { anchor: a, top: el.scrollTop, left: el.scrollLeft } : null;
     } else if (!opened.current) {
       const first = layout.boxes[store.get().currentPage];
@@ -458,7 +527,7 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
           store.set({ zoom: mode });
           return;
         }
-        const next = scaleFor(mode, v.viewport, pages, fitPage.current, v.viewRotation, v.spread);
+        const next = scaleFor(mode, fitViewport(mode, v.viewport, v.reserve, v.spread, v.sideClearance), pages, fitPage.current, v.viewRotation, v.spread);
         if (next !== v.scale) pendingAnchor.current = anchorAt(anchor);
         flushSync(() => store.set({ zoom: mode, scale: next }));
       },
@@ -562,26 +631,21 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
         return { x: c.x - s.scrollLeft + rect.left, y: c.y - s.scrollTop + rect.top };
       },
       setReserveRight(px, keep, o) {
-        const next = { px: Math.max(0, Math.round(px)), scroll: o?.scroll ?? false };
-        if (next.px === latest.current.reserve && next.scroll === reserveMode.current) return;
+        const next = reserveOf(px, o);
+        if (sameReserve(next, latest.current.reserve)) return;
         const s = el();
         if (s && latest.current.layout) {
           const rect = s.getBoundingClientRect();
           pendingAnchor.current = anchorAt(keep ?? { clientX: rect.left + s.clientWidth / 2, clientY: rect.top });
         }
-        latest.current = { ...latest.current, reserve: next.px };
-        reserveMode.current = next.scroll;
+        latest.current = { ...latest.current, reserve: next };
         flushSync(() => setReserve(next));
       },
-      reserveRight: () => latest.current.reserve,
-      roomForReserve(px, extraWidth = 0) {
+      reserveRight: () => latest.current.reserve.px,
+      roomForReserve(px, maxShift = Infinity) {
         const v = latest.current;
-        if (!v.viewport || !v.layout) return false;
-        if (extraWidth === 0) return reserveFits(v.layout, v.viewport.width, px);
-        const wider = { width: v.viewport.width + extraWidth, height: v.viewport.height };
-        const at = scaleFor(store.get().zoom, wider, pages, fitPage.current, v.viewRotation, v.spread);
-        if (Math.abs(at - v.scale) > 1e-6) return false;
-        return reserveFits(computeLayout(pages, { scale: at, viewRotation: v.viewRotation, spread: v.spread, viewportWidth: wider.width }), wider.width, px);
+        if (!v.viewport || !v.base) return false;
+        return reserveShift(v.base, v.viewport.width, px, maxShift).fits;
       },
       glide() {
         const i = store.get().currentPage;

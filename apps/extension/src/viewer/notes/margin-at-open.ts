@@ -2,7 +2,7 @@
 // it appears. The notes come from the library, which connects only after the first page is drawn; so the layout cannot
 // wait for them. Instead this tab remembers, on this computer, which saved PDFs had notes the last time they were
 // open. For those, the page list keeps the margin's room from its first layout (a PDF with no notes opens centred,
-// R79), and the thumbnail rail starts folded when the margin fits only without it (feature.tsx, foldsRailAtOpen).
+// R79). The thumbnail rail is never folded for it (R98): where the margin does not fit, the notes show as markers.
 //
 // What is kept: a short prefix of the file's SHA-256, only for a PDF whose notes are stored in the library (session
 // mode 'stored'), never for a PDF that is not saved. It is dropped as soon as the PDF is open with no notes. It lives

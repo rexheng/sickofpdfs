@@ -49,6 +49,7 @@
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
   align-items: center;
   justify-content: flex-end;
@@ -60,15 +61,16 @@
 
 .hint {
   display: flex;
-  flex: 1;
-  flex-direction: column;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  column-gap: var(--space-1);
   min-inline-size: 0;
   color: var(--gm3-sys-color-on-surface-variant);
   font: var(--type-docs-comment-time);
   letter-spacing: var(--tracking-tight);
 }
 
-/* "Enter to send" over "Shift+Enter for a new line": two short lines, each kept whole when there is room. */
+/* "Enter to send ·" then "Shift+Enter for a new line": one line over Cancel and Send, wrapping between the two. */
 .hintLine {
   overflow: hidden;
   white-space: nowrap;
@@ -87,6 +89,33 @@
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* Cancel: Docs' text button beside the filled one, in the primary colour, 36 px tall. */
+.cancel {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  box-sizing: border-box;
+  block-size: var(--sop-note-btn-h);
+  margin: 0;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--shape-full);
+  background-color: transparent;
+  color: var(--gm3-sys-color-primary);
+  font: var(--type-text-button);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cancel:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-primary) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.cancel:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 
 /* GM3 filled button at Docs' 36 px: primary / on-primary; disabled is on-surface at 12% with a 38% label. */

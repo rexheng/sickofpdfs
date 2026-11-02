@@ -15,6 +15,8 @@ import type { PageListApi } from '@sop/viewer/react';
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { AnnotationSession } from '../annotations/session';
 import { Snackbar } from '../chrome/Snackbar';
+import { boxOfKind, type CarriedBox, carryBox, isEditBox } from '../notes/box-carry';
+import { CARD_ID_PREFIX } from '../notes/CardColumn';
 import { keptOf } from '../notes/kept';
 import { installShortcuts } from '../shortcuts';
 import { createNotesCommands, type NotesCommand } from './commands';
@@ -22,7 +24,7 @@ import { listNotes, type NoteEntry, type NoteSpot, type NotesFilter, spotOf } fr
 import { distanceBelowTop, goToSpot, noteStops, stepNote } from './navigate';
 import { NotesPanel } from './NotesPanel';
 import styles from './NotesPanelMount.module.css';
-import { notesPanel, publishNotesButton, useCardsFolded, useNotesPanelOpen, usePanelOverPages } from './panel-state';
+import { cardsFolded, notesPanel, openEdit, publishNotesButton, useCardsFolded, useNotesPanelOpen, useOpenEdit, usePanelOverPages } from './panel-state';
 
 export interface NotesPanelMountProps {
   /** The tab's annotation session. Null while there is none: then nothing is shown and the keys do nothing. */
@@ -62,6 +64,7 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
   const open = useNotesPanelOpen();
   const folded = useCardsFolded();
   const raised = usePanelOverPages();
+  const editing = useOpenEdit();
   const [filter, setFilter] = useState<NotesFilter>('all');
   const [said, setSaid] = useState('');
   const [note, setNote] = useState<{ text: string } | null>(null);
@@ -88,11 +91,23 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
     goToSpot(spot, { jumps, api, pages, scale: viewer.get().scale });
   }, [jumps, pageList, pages, viewer]);
 
+  /** An open edit is closed: a changed text is sent (Esc and leaving never lose text); otherwise it is cancelled. */
+  const finishEdit = useCallback((body?: string) => {
+    const e = openEdit.get();
+    if (e === null) return;
+    openEdit.set(null);
+    const text = body ?? e.body;
+    const live = session.state().comments.find((c) => c.id === e.id);
+    if (live && text.trim() !== '' && text !== live.body) void session.editComment(e.id, text);
+    else void session.cancelEdit(e.id);
+  }, [session]);
+
   /** Leaving a card: a draft with text is sent; an empty one goes (an empty new note with its highlight). */
   const leave = useCallback((id: ThreadId | null) => {
     if (id === null) return;
+    if (openEdit.get()?.threadId === id) finishEdit();
     for (const d of session.state().drafts) if (d.threadId === id) void (d.body.trim() === '' ? session.cancel(d.id) : session.send(d.id));
-  }, [session]);
+  }, [session, finishEdit]);
 
   const activate = useCallback((id: ThreadId) => {
     const was = session.state().active;
@@ -136,13 +151,39 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
     else say(where, false);
   }, [activate, pageList, pages, say, session, show, total]);
 
-  /** Opens or closes the panel. Opened from a key or a button, it takes the focus; closed, it gives it back to the pages. */
+  // The note box in the panel that had the caret last, and when: a click on Close takes the caret to the button first.
+  const lastBox = useRef<{ box: CarriedBox; at: number } | null>(null);
+  useEffect(() => {
+    const el = panel.current;
+    if (!open || el === null) return;
+    const onOut = (e: FocusEvent) => {
+      const b = e.target instanceof HTMLTextAreaElement ? panelBoxOf(e.target) : null;
+      if (b !== null) lastBox.current = { box: b, at: performance.now() };
+    };
+    el.addEventListener('focusout', onOut);
+    return () => el.removeEventListener('focusout', onOut);
+  }, [open]);
+
+  /**
+   * Opens or closes the panel. Opened from a key or a button, it takes the focus; closed, it gives it back to the pages,
+   * or, when a note box had the caret (or had it a moment ago, before Close was clicked) and the margin cards fit, to that
+   * note's box in its margin card, caret and all (a layout change never closes a box).
+   */
   const setOpen = useCallback((next: boolean, o: { focus: boolean }) => {
     const inside = panel.current?.contains(document.activeElement) ?? false;
+    const now = document.activeElement instanceof HTMLTextAreaElement && inside ? panelBoxOf(document.activeElement) : null;
+    const recent = lastBox.current !== null && performance.now() - lastBox.current.at < RECENT_BOX_MS ? lastBox.current.box : null;
+    const b = now ?? recent;
+    lastBox.current = null;
+    if (!next && inside && b !== null && !cardsFolded() && session.state().active === b.threadId) {
+      carryBox(b, () => boxOfKind(document.getElementById(`${CARD_ID_PREFIX}${b.threadId}`), b));
+      notesPanel.setOpen(false);
+      return;
+    }
     notesPanel.setOpen(next);
     if (!next && inside) document.querySelector<HTMLElement>('[role="document"]')?.focus({ preventScroll: true });
     if (next && o.focus) focusOnOpen.current = true;
-  }, []);
+  }, [session]);
   const toggle = useCallback(() => setOpen(!notesPanel.isOpen(), { focus: true }), [setOpen]);
 
   // The toolbar's Notes button (NotesButton.tsx): how many notes, and the panel's toggle.
@@ -250,6 +291,35 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
     // The box is done with: the focus goes to its card, where a second Esc closes the card.
     cards.current.get(e.id)?.focus({ preventScroll: true });
   }, [session]);
+  const onDraftCancel = useCallback((e: NoteEntry) => {
+    // Cancel throws the unsent text away: a new note goes, with its highlight; a reply box empties.
+    if (e.draft !== null) void session.cancel(e.draft.id);
+    cards.current.get(e.id)?.focus({ preventScroll: true });
+  }, [session]);
+  const onEditChange = useCallback((body: string) => {
+    const e = openEdit.get();
+    if (e === null) return;
+    openEdit.set({ ...e, body });
+    session.typeEdit(e.id, body);
+  }, [session]);
+  const onEditSave = useCallback((body: string) => {
+    const e = openEdit.get();
+    if (e === null) return;
+    openEdit.set(null);
+    void session.editComment(e.id, body);
+  }, [session]);
+  const onEditEscape = useCallback((body: string) => {
+    const e = openEdit.get();
+    finishEdit(body);
+    if (e !== null) cards.current.get(e.threadId)?.focus({ preventScroll: true });
+  }, [finishEdit]);
+  const onEditCancel = useCallback(() => {
+    const e = openEdit.get();
+    if (e === null) return;
+    openEdit.set(null);
+    void session.cancelEdit(e.id);
+    cards.current.get(e.threadId)?.focus({ preventScroll: true });
+  }, [session]);
   const onDelete = useCallback((id: CommentId) => void session.removeComment(id), [session]);
   // "Show where it was": the place the note was stored at. The click also reaches the card, which goes to where the
   // note is now; this jump runs after that one, so it is the one the reader sees.
@@ -285,6 +355,12 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
           onDraftChange={onDraftChange}
           onDraftSend={onDraftSend}
           onDraftEscape={onDraftEscape}
+          onDraftCancel={onDraftCancel}
+          editing={editing}
+          onEditChange={onEditChange}
+          onEditSave={onEditSave}
+          onEditEscape={onEditEscape}
+          onEditCancel={onEditCancel}
           onDelete={onDelete}
           onShowOriginal={onShowOriginal}
           cardRef={cardRef}
@@ -326,6 +402,15 @@ function clientSpan(e: NoteEntry, api: PageListApi, pages: readonly PageSize[]):
   if (!e.spot) return null;
   const p = at(e.spot.pageIndex, e.spot.x, e.spot.y);
   return p && Number.isFinite(p.x) ? { left: p.x, right: p.x + WORDS_SHOWN } : null;
+}
+
+/** How long after a panel box lost the caret a Close still takes the box back to the margin. */
+const RECENT_BOX_MS = 1000;
+
+/** A note box of the panel, with its caret, as box-carry.ts moves it. */
+function panelBoxOf(box: HTMLTextAreaElement): CarriedBox | null {
+  const id = box.closest('[id^="sop-panel-note-"]')?.id.slice('sop-panel-note-'.length);
+  return id === undefined ? null : { threadId: id, start: box.selectionStart, end: box.selectionEnd, edit: isEditBox(box) };
 }
 
 /** Whether a note this far below the top of the view (CSS px) is in a view `height` tall. */

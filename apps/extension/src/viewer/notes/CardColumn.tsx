@@ -6,6 +6,7 @@
 import { ThreadCard, type ThreadCardProps } from '@sop/ui';
 import { CARD_GAP, layoutCards } from '@sop/viewer';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type CarriedBox, openBoxIn } from './box-carry';
 import styles from './CardColumn.module.css';
 
 export interface ColumnCard {
@@ -27,6 +28,11 @@ export interface CardColumnProps {
    * that part, the active card is kept inside it: lifted beside its line, never off the bottom of the window.
    */
   band?: { top: number; bottom: number } | null;
+  /**
+   * The column is going (the cards fold) while one of its note boxes has the caret: called with that box, read before it
+   * goes, so it can move where the note shows now (box-carry.ts).
+   */
+  onFold?: (box: CarriedBox) => void;
 }
 
 /** A card's height before it has been measured: one comment, one line. */
@@ -37,8 +43,21 @@ const VIEW_EDGE = 16;
 /** Each card's element id is this and its note's thread id (the click-away test and the tests find cards by it). */
 export const CARD_ID_PREFIX = 'note-card-';
 
-export function CardColumn({ cards, left, activeId, animate, band = null }: CardColumnProps) {
+export function CardColumn({ cards, left, activeId, animate, band = null, onFold }: CardColumnProps) {
   const [heights, setHeights] = useState<ReadonlyMap<string, number>>(() => new Map());
+  const column = useRef<HTMLDivElement>(null);
+  const folding = useRef(onFold);
+  useLayoutEffect(() => {
+    folding.current = onFold;
+  });
+  // React runs this as the column is removed, before its elements leave the page: the box still has the caret.
+  useLayoutEffect(() => {
+    const el = column.current;
+    return () => {
+      const box = openBoxIn(el, (t) => t.closest(`[id^="${CARD_ID_PREFIX}"]`)?.id.slice(CARD_ID_PREFIX.length) ?? null);
+      if (box !== null) folding.current?.(box);
+    };
+  }, []);
   const elements = useRef(new Map<string, HTMLElement>());
   const observer = useRef<ResizeObserver | null>(null);
 
@@ -117,7 +136,7 @@ export function CardColumn({ cards, left, activeId, animate, band = null }: Card
   }, [cards, heights, activeId, band]);
 
   return (
-    <div className={styles.column} data-animate={animate ? 'true' : 'false'}>
+    <div ref={column} className={styles.column} data-animate={animate ? 'true' : 'false'}>
       {cards.map((c) => (
         <ThreadCard
           key={c.id}

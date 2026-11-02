@@ -87,7 +87,7 @@ import { SaveAskDialog } from './save/SaveAskDialog';
 import { SaveDialogs } from './save/SaveDialogs';
 import { StatusChip, useSaveView } from './save/StatusChip';
 import { useSave } from './save/use-save';
-import { PrintMarksDialog } from './print/PrintMarksDialog';
+import { type PrintAsk, type PrintChoice, PrintDialog } from './print/PrintDialog';
 import { PrintProgressDialog } from './print/PrintProgressDialog';
 import { installShortcuts, type ShortcutDef } from './shortcuts';
 import { EngineStoppedCard } from './ui/EngineStoppedCard';
@@ -283,7 +283,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
   const [dialog, setDialog] = useState<'shortcuts' | 'about' | null>(null);
   const [note, setNote] = useState<SnackbarNote | null>(null);
   const [printing, setPrinting] = useState<{ done: number; total: number; cancel: () => void } | null>(null);
-  const [printAsk, setPrintAsk] = useState<{ answer(this: void, choice: 'with' | 'without' | null): void } | null>(null);
+  const [printAsk, setPrintAsk] = useState<{ ask: PrintAsk; answer(this: void, choice: PrintChoice | null): void } | null>(null);
   const ui = useMemo<ViewerUi>(
     () => ({
       openInChrome: escape,
@@ -295,9 +295,10 @@ function TabViewer({ params }: { params: ViewerParams }) {
       showAbout: () => setDialog('about'),
       copyLink: (link) => void copyLink(link).then((ok) => setNote({ text: ok ? 'Link copied' : 'Couldn’t copy the link. Try again.' })),
       printProgress: setPrinting,
-      askPrintMarks: () =>
+      askPrint: (ask) =>
         new Promise((resolve) =>
           setPrintAsk({
+            ask,
             answer: (choice) => {
               setPrintAsk(null);
               resolve(choice);
@@ -321,6 +322,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
   useEffect(() => {
     document.title = name;
   }, [name]);
+  useUndoneNote(save, ui);
   const form = useFormBounce({ opened, save, source, backend });
   const [reader, setReader] = useState<ReaderChrome | null>(null);
   // Not for a local file the tab was not seen opening: one click must not show it in Chrome's viewer either.
@@ -413,12 +415,31 @@ function TabViewer({ params }: { params: ViewerParams }) {
       <AboutDialog open={dialog === 'about'} onOpenChange={(open) => !open && setDialog(null)} />
       <ViewerPalette commands={commands} jumper={live?.jumper ?? null} ui={ui} />
       <SaveAskDialog save={save} />
-      {printAsk !== null && <PrintMarksDialog onAnswer={printAsk.answer} />}
+      {printAsk !== null && <PrintDialog ask={printAsk.ask} onAnswer={printAsk.answer} />}
       <SaveDialogs save={save} ui={ui} />
       {printing !== null && <PrintProgressDialog done={printing.done} total={printing.total} onCancel={printing.cancel} />}
       <Snackbar note={note} />
     </div>
   );
+}
+
+/** Said when the status chip's Undo (R62) took the first mark, and the save it started, back. */
+const UNDONE_NOTE = 'Mark removed. This PDF isn’t in your library.';
+
+/**
+ * The chip's Undo leaves no other sign than the chip going back to "Not sure", so a short note says what it did (TB4
+ * fix round). An undoable save only ever goes back to "not sure" through that Undo.
+ */
+function useUndoneNote(save: SaveControllerImpl | null, ui: Pick<ViewerUi, 'showNote'>): void {
+  useEffect(() => {
+    if (save === null) return;
+    let was = save.state;
+    return save.subscribe(() => {
+      const now = save.state;
+      if (was.kind === 'saved' && was.undoable && now.kind === 'unsure') ui.showNote(UNDONE_NOTE);
+      was = now;
+    });
+  }, [save, ui]);
 }
 
 /**
@@ -541,7 +562,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       // Ruling R61: fit width, but no larger than 100%, as Chrome's and Drive's viewers open (a narrow window goes below).
       zoom: START_ZOOM,
       currentPage: Math.min(doc.open.pageCount - 1, Math.max(0, (params.page ?? 1) - 1)),
-      railOpen: railStartsOpen() && !viewerFeatures().some((f) => f.foldsRailAtOpen?.(doc)),
+      railOpen: railStartsOpen(),
       ...resume,
     }),
   );
@@ -683,7 +704,13 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
     [store, onEngineStopped],
   );
   // R60: room the features keep at the right from the first layout (a PDF that already has notes opens with its margin).
-  const [reserveAtOpen] = useState(() => Math.max(0, ...viewerFeatures().map((f) => f.reserveAtOpen?.(doc) ?? 0)));
+  const [reserveAtOpen] = useState(() =>
+    viewerFeatures()
+      .map((f) => f.reserveAtOpen?.(doc) ?? null)
+      .reduce<{ px: number; maxShift?: number } | null>((a, b) => (b !== null && b.px > (a?.px ?? 0) ? b : a), null),
+  );
+  // The rail's pill sits over the rail while it is open; with it closed, a two-page spread keeps clear of it.
+  const railOpen = useViewerState(store, (s) => s.railOpen);
   const goToPage = useCallback((index: number) => void api.current?.goToPage(index), []);
   const zoom = useCallback((mode: ZoomMode) => api.current?.zoomTo(mode), []);
   const toolbarView = useMemo(
@@ -710,7 +737,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
         onToggle={() => commands.get('view.toggleRail')?.run()}
         tabs={notes === null ? undefined : viewerFeatures().flatMap((f) => (f.rail ? [{ id: f.id, icon: f.rail.icon, label: f.rail.label, panel: <f.rail.Panel host={notes.host} /> }] : []))}
       >
-        <PageList backend={backend} doc={doc} store={store} scheduler={scheduler} apiRef={api} renderPage={renderPage} onError={onDrawError} initialReserveRight={reserveAtOpen} />
+        <PageList backend={backend} doc={doc} store={store} scheduler={scheduler} apiRef={api} renderPage={renderPage} onError={onDrawError} initialReserveRight={reserveAtOpen?.px ?? 0} initialReserveOptions={reserveAtOpen ?? undefined} spreadSideClearance={railOpen ? 0 : SPREAD_SIDE_CLEARANCE} />
       </NavRail>
       {find.view}
       {notes !== null && viewerFeatures().map((f) => f.View && <f.View key={f.id} host={notes.host} />)}
@@ -792,6 +819,12 @@ function useWordStartsController(
   }, [controller]);
   return controller;
 }
+
+/**
+ * Two-page view with the rail closed: room kept clear at each side of a fitted spread (the rail's 56 px pill at the
+ * bottom left, mirrored on the right), so the spread is centred in the reading area and the pill never sits on a page.
+ */
+const SPREAD_SIDE_CLEARANCE = 56;
 
 /** The text layer's font: the engine's bundled Noto Sans (the spike measured canvas and DOM widths within 0.02 px with it). */
 const TEXT_LAYER_FONT = 'pdf/NotoSans-Regular.ttf';

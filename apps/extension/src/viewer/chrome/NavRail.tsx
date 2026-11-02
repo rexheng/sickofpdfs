@@ -21,7 +21,7 @@ export interface NavRailProps {
   onToggle(this: void): void;
   /** The page list. It sits beside the rail; in a window under 1100 px the rail lies over it instead. */
   children: ReactNode;
-  /** More tabs after Thumbnails and Outline (the figures feature's Figures tab), each in the outline's width. */
+  /** More tabs after Thumbnails and Outline (the figures feature's Figures tab), each in the thumbnails' width. */
   tabs?: readonly RailTab[];
 }
 
@@ -44,7 +44,9 @@ export function NavRail({ store, scheduler, pages, outline, onPage, onOutline, o
   const hasOutline = outline !== null && outline.length > 0;
   const extra = tabs?.find((t) => t.id === tab);
   const shown = tab === 'outline' && hasOutline ? 'outline' : extra !== undefined ? extra.id : 'thumbnails';
-  const wide = shown !== 'thumbnails';
+  // The rail's width is fixed: the pages always sit beside the thumbnails' width, so switching tabs never moves them
+  // (TB4 fix round). Only the outline is drawn wider, so its titles can be read: it lies over the canvas beside it.
+  const wide = shown === 'outline';
   return (
     <>
       {open && (
@@ -76,7 +78,7 @@ export function NavRail({ store, scheduler, pages, outline, onPage, onOutline, o
           </div>
         </div>
       )}
-      <div className={styles.pill} data-viewer-chrome="">
+      <div className={styles.pill} data-viewer-chrome="" data-nav-rail={open ? 'open' : 'closed'}>
         <IconButton
           icon={open ? 'left_panel_close' : 'left_panel_open'}
           label={open ? 'Hide navigation pane' : 'Show navigation pane'}
@@ -85,7 +87,7 @@ export function NavRail({ store, scheduler, pages, outline, onPage, onOutline, o
           onClick={onToggle}
         />
       </div>
-      <div className={cx(styles.pages, open && (wide ? styles.besideWide : styles.beside))}>{children}</div>
+      <div className={cx(styles.pages, open && styles.beside)}>{children}</div>
     </>
   );
 }

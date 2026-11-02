@@ -34,6 +34,11 @@ export interface DialogProps {
    */
   focusPrimary?: boolean;
   /**
+   * Put the focus on the dialog itself, not on any of its buttons, so Enter and Space press nothing (a progress dialog
+   * whose only button is Cancel: TB4 fix round, Enter never cancels a print). Tab then reaches the buttons.
+   */
+  focusSurface?: boolean;
+  /**
    * Asked as the dialog closes: the element that takes the focus now (the viewer's note box that a question was asked
    * for), instead of the one that had it before the dialog opened. Null keeps the usual return.
    */
@@ -56,7 +61,17 @@ const TABBABLE = 'button:not(:disabled), [href], input:not(:disabled):not([type=
  * wears a ring the owner did not choose (a ringed "No" beside a filled "Save" read as two choices), and the first Tab
  * then reaches the first control, ring and all. A dialog with a text field always gives the field the focus.
  */
-export function Dialog({ open, title, children, actions, onOpenChange, nameFromTitleAttribute = false, focusPrimary = false, focusOnClose }: DialogProps) {
+export function Dialog({
+  open,
+  title,
+  children,
+  actions,
+  onOpenChange,
+  nameFromTitleAttribute = false,
+  focusPrimary = false,
+  focusSurface = false,
+  focusOnClose,
+}: DialogProps) {
   // An empty title stops the dialog's own title attribute from showing as a tooltip over its content.
   const quiet = nameFromTitleAttribute ? { title: '' } : {};
   // The dialog has no trigger, so a hidden probe where it is placed tells it the theme of that place.
@@ -97,6 +112,11 @@ export function Dialog({ open, title, children, actions, onOpenChange, nameFromT
             onOpenAutoFocus={(event) => {
               opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
               const content = surface.current;
+              if (focusSurface && content !== null) {
+                event.preventDefault();
+                content.focus({ preventScroll: true });
+                return;
+              }
               if (lastInputWasPointer() && content !== null && content.querySelector(FIELD) === null) {
                 event.preventDefault();
                 content.focus({ preventScroll: true });

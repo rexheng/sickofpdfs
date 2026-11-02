@@ -40,6 +40,9 @@ test('Ctrl+P shows "Preparing to print… n of total" with a Cancel button, and 
   await page.emulateMedia({ media: null });
 
   await page.keyboard.press('Control+p');
+  // R99: Ctrl+P first asks which pages (All is chosen), and Enter means Print.
+  await expect(page.getByRole('dialog', { name: 'Print' }), 'Ctrl+P first asks which pages to print').toBeVisible({ timeout: 10_000 });
+  await page.keyboard.press('Enter');
   const message = page.getByText(/Preparing to print/).first();
   await expect(message, 'Ctrl+P opens the progress dialog').toBeVisible({ timeout: 10_000 });
   expect.soft(await page.getByRole('dialog').or(page.getByRole('alertdialog')).filter({ hasText: /Preparing to print/ }).count(), 'the progress is in a dialog').toBe(1);
@@ -77,6 +80,9 @@ test('the print copy has one sheet per page, each at its own size (landscape and
   await waitForFirstPage(page);
 
   await page.keyboard.press('Control+p');
+  // R99: Ctrl+P first asks which pages (All is chosen), and Enter means Print.
+  await expect(page.getByRole('dialog', { name: 'Print' }), 'Ctrl+P first asks which pages to print').toBeVisible({ timeout: 10_000 });
+  await page.keyboard.press('Enter');
   await expect.poll(async () => (await printLog(page)).calls, { message: 'Ctrl+P ends in window.print()', timeout: 30_000, intervals: [100, 250, 500] }).toBe(1);
   const snapshot = (await printLog(page)).snapshots[0];
 

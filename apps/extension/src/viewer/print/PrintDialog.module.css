@@ -1,0 +1,33 @@
+/* The print step (R99): the range choices, the Pages box beside its radio, and the marks box under them. */
+.pagesRow {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.pagesField {
+  flex: none;
+}
+
+/* The "Pages" choice sits level with its box (the choices' first-row gap is the group's, not this row's). */
+.pagesRow > label:first-child {
+  margin-block-start: 0;
+}
+
+/* "Type pages from 1 to 244…": the box's error, in the error colour of the dark dialog. Empty, it takes no room. */
+.wrong {
+  margin: var(--space-2) 0 0;
+  color: var(--gm3-sys-color-error);
+  font: var(--type-tooltip);
+  font-variation-settings: "opsz" 17;
+}
+
+.marks {
+  margin-block-start: var(--space-4);
+  padding-block-start: var(--space-2);
+  border-block-start: 1px solid var(--gm3-sys-color-outline-variant);
+}
+
+.wrong:empty {
+  display: none;
+}
