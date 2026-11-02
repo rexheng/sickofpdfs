@@ -7,7 +7,7 @@ import { describeBackup } from '@sop/core';
 import { Dialog, TextButton } from '@sop/ui';
 import { useContext, useState } from 'react';
 import { backupClient } from '../../backup/client';
-import { ANYWAY_MESSAGES, type BackupStatus, retiredLine, summaryLabel, summaryLine, unreadableLine } from '../../backup/status';
+import { ANYWAY_MESSAGES, type BackupStatus, droppedLine, retiredLine, summaryLabel, summaryLine, unreadableLine } from '../../backup/status';
 import { LibraryContext } from '../app/context';
 import styles from './BackupSection.module.css';
 import { useBackupStatus, useNow } from './use-backup';
@@ -51,7 +51,9 @@ export function BackupSection() {
 
   const finishRemovals = async (): Promise<void> => {
     try {
-      if ((await backupClient.finishRemovals()) === 'done') notify('The waiting removals are done.');
+      const result = await backupClient.finishRemovals();
+      if (result === 'done') notify('The waiting removals are done.');
+      else if (result === 'dropped') notify('The old backup folder can’t be found any more, so its waiting removal was dropped.');
       else notify('Some removals are still waiting. They are tried again at each backup.');
     } catch {
       notify('Couldn’t reach the folder. Try again.');
@@ -73,6 +75,19 @@ export function BackupSection() {
   const attention = status.phase === 'waiting' || status.phase === 'held' || status.phase === 'failed';
   const contents = holds(status);
   const pending = status.scrubsPending;
+
+  // Removals that were given up (R88): the old folder no longer exists, or they waited 30 days. Said plainly until the owner clicks OK.
+  const droppedRows = status.dropped.map((d, i) => (
+    <div key={`dropped-${d.at}-${i}`} className={styles.row}>
+      <div className={styles.text}>
+        <span className={styles.label}>Removing PDFs you forgot</span>
+        <span className={styles.value}>{droppedLine(d)}</span>
+      </div>
+      <div className={styles.actions}>
+        <TextButton label="OK" onClick={() => void backupClient.clearDropped()} />
+      </div>
+    </div>
+  ));
 
   // Removals still waiting for folders the owner moved away from (Change folder, Turn off): said plainly, with "Try now".
   const retiredRows = status.retired.map((r) => (
@@ -139,7 +154,7 @@ export function BackupSection() {
               </div>
               <div className={styles.actions}>
                 {status.phase === 'waiting' && <TextButton label="Allow" variant="tonal" onClick={() => void allow()} />}
-                {status.phase === 'held' && <TextButton label="Back up anyway" variant="tonal" onClick={() => setConfirm('back-up-anyway')} />}
+                {status.phase === 'held' && <TextButton label="Back up anyway" onClick={() => setConfirm('back-up-anyway')} />}
                 {(status.phase === 'idle' || status.phase === 'failed') && (
                   <TextButton label={status.phase === 'failed' ? 'Try again' : 'Back up now'} variant="tonal" onClick={() => backupClient.backUpNow()} />
                 )}
@@ -161,6 +176,7 @@ export function BackupSection() {
           </>
         )}
         {retiredRows}
+        {droppedRows}
         {exportRow}
       </div>
 
@@ -206,8 +222,8 @@ export function BackupSection() {
           {status.held === 'other-library' || status.held === 'unreadable'
             ? 'What is in this folder now will be replaced by a backup of this library.'
             : status.held === 'notes-missing'
-              ? 'The notes that are missing from your library will be removed from the backup.'
-              : 'The readings that are missing from your library will be removed from the backup.'}
+              ? 'Your library is backed up as it is now. The daily copies in the folder keep the missing notes for a week.'
+              : 'Your library is backed up as it is now. The copies of the missing readings stay in the folder.'}
         </p>
       </Dialog>
     </section>

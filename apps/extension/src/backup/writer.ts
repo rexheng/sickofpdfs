@@ -18,8 +18,10 @@
 //   cannot be read, when the folder holds readings this library never wrote, when every reading of the last backup is gone (or
 //   many at once), or when many notes are gone (at least 20, and at least half). Readings removed on purpose (the scrub list, the
 //   store's forgotten list) never count as gone. "Back up anyway" (`force`) overrides every hold.
-// - It removes a reading's files (its PDF copy and its notes file) only when this computer wrote them there (`known`) and the
-//   library no longer has the reading. A file it did not write is never removed.
+// - R87: no run, forced or not, ever deletes a reading's files unless the reading was removed on purpose (the scrub queue, the
+//   store's forgotten list). "Back up anyway" backs up what the library has now and keeps the copies of a reading that is missing
+//   without having been removed on purpose. A renamed reading's old notes file and the notes file of a reading with no notes go.
+// - A PDF copy is checked against its fingerprint as it is written; a library copy that does not match never replaces the folder's.
 // - Each run tidies what a run that stopped left behind: Chrome's `*.crswap` files older than a day, and `*.part` copies.
 // - It holds no API key and no secret: it reads the library through `exportLibrary` only, and the import boundary keeps the secrets store out of this folder.
 // - It logs nothing about what it writes (no names, no titles), and says nothing about an unsaved PDF: it has no way to see one.
@@ -76,6 +78,8 @@ export type RunOutcome =
       wrote: { pdfs: number; notes: number };
       /** Readings whose PDF copy is neither in the library's storage nor in the folder. */
       missingPdfs: number;
+      /** Readings whose copy in the library does not match its fingerprint: the folder's copy was kept, or none was written. */
+      damagedPdfs: number;
     }
   | { ok: false; kind: 'permission' }
   | { ok: false; kind: 'held'; held: HeldReason }
@@ -132,30 +136,44 @@ function holdFor(o: { unreadable: boolean; foreign: number; known: KnownReadings
   return null;
 }
 
-/** The PDF copies in the folder that belong to readings this computer wrote there and the library no longer has. */
-async function removeGonePdfs(root: FileSystemDirectoryHandle, known: ReadonlyMap<string, unknown>, have: ReadonlySet<string>): Promise<void> {
+/** Every PDF copy in the folder: fingerprint to size in bytes. */
+async function pdfCopies(root: FileSystemDirectoryHandle): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
   const base = await openDir(root, PDF_DIR);
-  if (base === null) return;
-  for await (const [shard, handle] of base.entries()) {
+  if (base === null) return out;
+  for await (const [, handle] of base.entries()) {
     if (handle.kind !== 'directory') continue;
     for await (const [name, file] of handle.entries()) {
       if (file.kind !== 'file' || !name.endsWith('.pdf')) continue;
       const sha = name.slice(0, -'.pdf'.length);
-      if (isSha(sha) && known.has(sha) && !have.has(sha)) {
-        await removeFile(root, `${PDF_DIR}/${shard}/${name}`);
-        await removeFile(root, `${PDF_DIR}/${shard}/${name}${PART_SUFFIX}`);
-      }
+      if (isSha(sha)) out.set(sha, (await file.getFile()).size);
     }
-    await removeDirIfEmpty(root, `${PDF_DIR}/${shard}`);
+  }
+  return out;
+}
+
+/**
+ * The PDF copies of readings removed on purpose that are still in the folder (the scrub normally took them already). R87: a reading
+ * that is missing without having been removed on purpose keeps its copy, whatever the run.
+ */
+async function removeGonePdfs(root: FileSystemDirectoryHandle, onPurpose: ReadonlySet<string>, have: ReadonlySet<string>): Promise<void> {
+  for (const id of onPurpose) {
+    if (!isSha(id) || have.has(id)) continue;
+    await removeFile(root, pdfPath(id));
+    await removeFile(root, `${pdfPath(id)}${PART_SUFFIX}`);
+    await removeDirIfEmpty(root, `${PDF_DIR}/${id.slice(0, 2)}`);
   }
 }
 
-/** Notes files of ours that no longer match a reading: the reading is gone, was renamed (the name has its title), or has no notes now. */
-async function removeStaleNotes(root: FileSystemDirectoryHandle, wanted: ReadonlySet<string>, known: ReadonlyMap<string, unknown>, have: ReadonlySet<string>): Promise<void> {
+/**
+ * Notes files of ours that no longer match a reading: the reading was renamed (the name has its title), has no notes now, or was
+ * removed on purpose. R87: the notes file of a reading that is missing without having been removed on purpose stays.
+ */
+async function removeStaleNotes(root: FileSystemDirectoryHandle, wanted: ReadonlySet<string>, onPurpose: ReadonlySet<string>, have: ReadonlySet<string>): Promise<void> {
   for (const entry of await list(root, NOTES_DIR)) {
     if (entry.kind !== 'file' || wanted.has(entry.name) || notesTag(entry.name) === null) continue;
     const id = notesDocumentId((await readText(root, `${NOTES_DIR}/${entry.name}`)) ?? '');
-    if (id !== null && (known.has(id) || have.has(id))) await removeFile(root, `${NOTES_DIR}/${entry.name}`);
+    if (id !== null && (have.has(id) || onPurpose.has(id))) await removeFile(root, `${NOTES_DIR}/${entry.name}`);
   }
 }
 
@@ -232,6 +250,7 @@ export async function runBackup(target: BackupTarget, deps: RunDeps, options: Ru
     const present: Record<string, number> = {};
     const withCopy = documentsWithCopy(dump);
     let missingPdfs = 0;
+    let damagedPdfs = 0;
     let wrotePdfs = 0;
     let done = 0;
     for (const doc of withCopy) {
@@ -244,20 +263,27 @@ export async function runBackup(target: BackupTarget, deps: RunDeps, options: Ru
         else present[doc.id] = inFolderSize;
       } else if (inFolderSize === copy.size) {
         present[doc.id] = inFolderSize;
-      } else {
-        await writeFileViaPart(root, path, copy.stream());
+      } else if (await writeFileViaPart(root, path, copy.stream(), doc.id)) {
         present[doc.id] = copy.size;
         wrotePdfs += 1;
+      } else {
+        // The library's copy does not match its fingerprint (damaged): a good copy in the folder is never replaced by it (N7).
+        damagedPdfs += 1;
+        if (inFolderSize !== null && inFolderSize > 0) present[doc.id] = inFolderSize;
       }
       done += 1;
       deps.onProgress?.({ done, total: withCopy.length });
     }
-    // A reading whose copy is not stored here (a restore that has not copied it yet) keeps the copy that is in the folder.
+    // A reading whose copy is not stored here (a restore that has not copied it yet) keeps the copy that is in the folder. So does a
+    // reading that is missing without having been removed on purpose (R87): its copy stays, and the manifest still lists it, so a
+    // restore from an older snapshot can find it.
+    const copies = await pdfCopies(root);
     for (const doc of dump.tables.documents) {
       if (doc.blobStored || !isSha(doc.id) || doc.id in present) continue;
-      const size = await fileSize(root, pdfPath(doc.id));
+      const size = copies.get(doc.id) ?? null;
       if (size !== null && size > 0) present[doc.id] = size;
     }
+    for (const [sha, size] of copies) if (!have.has(sha) && !onPurpose.has(sha) && size > 0 && !(sha in present)) present[sha] = size;
 
     // 5. Notes as Markdown, one file for each reading that has notes. A file that is already right is left alone.
     const notes = notesFiles(dump, { viewerBase: deps.viewerBase });
@@ -285,11 +311,11 @@ export async function runBackup(target: BackupTarget, deps: RunDeps, options: Ru
     await writeFile(root, MANIFEST_PATH, manifestText);
 
     // 8. Only now, what no longer belongs.
-    await removeGonePdfs(root, known, have);
+    await removeGonePdfs(root, onPurpose, have);
     await removeStaleNotes(
       root,
       new Set(notes.map((n) => n.path.slice(NOTES_DIR.length + 1))),
-      known,
+      onPurpose,
       have,
     );
     for (const old of plan.remove) await removeFile(root, `${SNAPSHOT_DIR}/${old}`);
@@ -300,7 +326,7 @@ export async function runBackup(target: BackupTarget, deps: RunDeps, options: Ru
     await deps.handles.setKnown(new Map([...have].map((id) => [id, notesNow.get(id) ?? 0])));
     const pdfBytes = Object.values(present).reduce((a, b) => a + b, 0);
     const bytes = pdfBytes + notesBytes + snapshotsBytes + byteLength(json) + byteLength(manifestText);
-    return { ok: true, manifest, bytes, wrote: { pdfs: wrotePdfs, notes: wroteNotes }, missingPdfs };
+    return { ok: true, manifest, bytes, wrote: { pdfs: wrotePdfs, notes: wroteNotes }, missingPdfs, damagedPdfs };
   } catch (error) {
     const failure = classifyFailure(error);
     return failure === 'permission' ? { ok: false, kind: 'permission' } : { ok: false, kind: 'failed', failure, detail: error instanceof Error ? `${error.name}: ${error.message}` : String(error) };

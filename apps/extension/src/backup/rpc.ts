@@ -21,10 +21,13 @@ export type RpcRequest =
   | { type: 'drain'; id: string };
 
 export type RunSummary =
-  | { ok: true; bytes: number; counts: BackupCounts; wrote: { pdfs: number; notes: number }; missingPdfs: number; at: number }
+  | { ok: true; bytes: number; counts: BackupCounts; wrote: { pdfs: number; notes: number }; missingPdfs: number; damagedPdfs: number; at: number }
   | { ok: false; reason: 'no-folder' | 'permission' | 'held' | 'failed' | 'busy'; message: string; /** Test builds only: what went wrong, for a test to read. */ detail?: string };
 
-export type ScrubSummary = { status: 'removed' | 'no-backup' } | { status: 'pending'; reason: 'permission' | 'failed' | 'busy' | 'unreadable'; message: string };
+export type ScrubSummary =
+  | { status: 'removed' | 'no-backup' }
+  /** `gone`: the folder no longer exists, so the removal was dropped (R88). */
+  | { status: 'pending'; reason: 'permission' | 'failed' | 'busy' | 'unreadable' | 'gone'; message: string };
 
 export interface RpcReply {
   type: 'reply';

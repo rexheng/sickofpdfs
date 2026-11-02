@@ -16,8 +16,11 @@ import { openDir, openFile } from './fs';
 
 /** The biggest `manifest.json` read. It holds one size per PDF, so even 100,000 PDFs fit easily. */
 export const MAX_MANIFEST_BYTES = 16 * 1024 * 1024;
-/** The biggest `library.json` read: far above any library this version writes (18,000 notes come to a few megabytes). */
-export const MAX_LIBRARY_BYTES = 256 * 1024 * 1024;
+/**
+ * The biggest `library.json` read: far above any library this version writes (18,000 notes come to a few megabytes), and small enough
+ * that reading it cannot freeze the renderer that viewer tabs share (N4). S17 parses it in a worker.
+ */
+export const MAX_LIBRARY_BYTES = 64 * 1024 * 1024;
 /** The biggest PDF copy taken from a backup. Files over 1 GiB open in Chrome's own viewer and are never saved (spec). */
 export const MAX_PDF_BYTES = 1024 * 1024 * 1024;
 

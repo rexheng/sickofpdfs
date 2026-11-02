@@ -19,8 +19,11 @@ import { libraryZip, zipFileName } from './zip';
 export type ChooseOutcome = 'chosen' | 'cancelled' | 'unsupported';
 export type AllowOutcome = 'allowed' | 'refused' | 'no-folder';
 export type ExportOutcome = 'saved' | 'cancelled' | 'unsupported';
-/** `done`: nothing is waiting any more. `waiting`: a folder could not be reached or allowed; it is tried again at each backup. */
-export type RemovalsOutcome = 'done' | 'waiting';
+/**
+ * `done`: nothing is waiting any more. `waiting`: a folder could not be reached or allowed; it is tried again at each backup.
+ * `dropped`: an old folder no longer exists, so its waiting removal was given up (R88; Settings says so).
+ */
+export type RemovalsOutcome = 'done' | 'waiting' | 'dropped';
 
 export interface BackupClient {
   /** The status record, with the folders that still have removals waiting for them (`retired`). */
@@ -43,6 +46,8 @@ export interface BackupClient {
   turnOff(): Promise<void>;
   /** "Try now": finishes the removals waiting for any folder, asking Chrome for each one. Call it straight from a click. */
   finishRemovals(): Promise<RemovalsOutcome>;
+  /** "OK" on the line about removals that were given up: clears it. */
+  clearDropped(): Promise<void>;
   /** "Export library": saves the same as a zip, to a file the owner picks. Call it straight from a click. */
   exportZip(): Promise<ExportOutcome>;
 }
@@ -191,7 +196,15 @@ export const backupClient: BackupClient = {
     const cur = await currentTarget(h);
     if (cur !== null && (await h.listScrubs()).length > 0) await askForFolder(cur.target);
     const reply = await ask<ScrubSummary>({ type: 'drain', id: newRequestId() }, DRAIN_WAIT_MS);
-    return reply?.status === 'removed' ? 'done' : 'waiting';
+    if (reply?.status === 'removed') return 'done';
+    return reply?.status === 'pending' && reply.reason === 'gone' ? 'dropped' : 'waiting';
+  },
+
+  async clearDropped() {
+    await (await handlesOf()).updateStatus((s) => ({ ...s, dropped: [] }));
+    const channel = new BroadcastChannel(STATUS_CHANNEL); // every page reads the status again
+    channel.postMessage({ type: 'status' });
+    channel.close();
   },
 
   async exportZip() {

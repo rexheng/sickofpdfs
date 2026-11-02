@@ -95,6 +95,11 @@ export interface HandleStore {
   doneRetired(id: number, documentIds: readonly string[]): Promise<void>;
   /** A new handle for a retired folder (its permission was granted again). */
   setRetiredTarget(id: number, target: StoredTarget): Promise<void>;
+  /**
+   * R88: drops every queued removal requested before `before`, from the chosen folder's queue and from retired folders. A retired
+   * folder left with nothing goes. Returns what was dropped from retired folders, for Settings.
+   */
+  expireScrubs(before: number): Promise<{ folderName: string; count: number }[]>;
   close(): void;
 }
 
@@ -343,6 +348,32 @@ export async function openHandleStore(): Promise<HandleStore> {
           const scrubs = cur.scrubs.filter((p) => !done.has(p.documentId));
           if (scrubs.length === 0) store.delete(id);
           else store.put({ ...cur, scrubs });
+        };
+      }),
+
+    expireScrubs: (before) =>
+      transact<{ folderName: string; count: number }[]>(['scrub', 'retired'], 'readwrite', (open, answer) => {
+        const dropped: { folderName: string; count: number }[] = [];
+        answer(dropped);
+        const queue = open('scrub');
+        const all = queue.getAll();
+        all.onsuccess = () => {
+          for (const r of all.result as unknown[]) {
+            if (isRecord(r) && typeof r.documentId === 'string' && (typeof r.requestedAt !== 'number' || r.requestedAt < before)) queue.delete(r.documentId);
+          }
+        };
+        const retired = open('retired');
+        const folders = retired.getAll();
+        folders.onsuccess = () => {
+          for (const raw of folders.result as unknown[]) {
+            const cur = asRetired(raw);
+            if (cur === null) continue;
+            const kept = cur.scrubs.filter((p) => p.requestedAt >= before);
+            if (kept.length === cur.scrubs.length) continue;
+            dropped.push({ folderName: cur.target.name, count: cur.scrubs.length - kept.length });
+            if (kept.length === 0) retired.delete(cur.id);
+            else retired.put({ ...cur, scrubs: kept });
+          }
         };
       }),
 

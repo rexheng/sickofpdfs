@@ -19,7 +19,7 @@
 //   storage to the folder in pieces. No viewer waits for any of it.
 // - It never asks for permission (only a click can). A folder that is not `granted` puts the backup in `waiting` and shows the badge.
 // - It says nothing in the console about what is written: no names, no titles, no ids.
-import type { BackupCounts } from '@sop/core';
+import type { BackupCounts, Sha256 } from '@sop/core';
 import { type BlobStore, openBlobStore } from '../store/blob-store';
 import { createStoreClient } from '../store/client';
 import { type HandleStore, openHandleStore } from './handle-store';
@@ -30,6 +30,8 @@ import {
   badgeOf,
   type BackupStatus,
   type BadgeState,
+  DROPPED_MESSAGE,
+  type DroppedRemovals,
   emptyStatus,
   failureMessage,
   HELD_MESSAGES,
@@ -51,6 +53,8 @@ const TICK_MS = 5 * 60_000;
 const MAX_WAIT_MS = 6 * 60 * 60_000;
 const MIN_WAIT_MS = 5000;
 const PROGRESS_EVERY_MS = 400;
+/** R88: a queued removal's raw id is kept at most this long. */
+const SCRUB_EXPIRE_MS = 30 * 24 * 60 * 60_000;
 
 /** Tables whose changes are the owner's notes: a marked passage, a thread, a comment. */
 const NOTE_TABLES: ReadonlySet<string> = new Set(['marks', 'threads', 'comments']);
@@ -124,7 +128,12 @@ export function startBackupController(o: ControllerOptions): BackupController {
    */
   async function drainScrubs(target: BackupTarget): Promise<ScrubOutcome> {
     const handles = await handlesOf();
-    const pending = await handles.listScrubs();
+    await expire(handles);
+    const queued = await handles.listScrubs();
+    // N6: a reading that is back in the library (saved again) is not removed: its queued removal is dropped.
+    const back = await backInLibrary(queued.map((p) => p.documentId));
+    if (back.length > 0) await handles.removeScrubs(back);
+    const pending = queued.filter((p) => !back.includes(p.documentId));
     if (pending.length === 0) {
       await setStatus((s) => (s.scrubsPending === 0 && s.unreadable.length === 0 ? s : { ...s, scrubsPending: 0, unreadable: [] }));
       return { ok: true, unreadable: [] };
@@ -132,25 +141,55 @@ export function startBackupController(o: ControllerOptions): BackupController {
     const ids = pending.map((p) => p.documentId);
     const outcome = await scrubFolder(target, ids, handles);
     const done = outcome.ok && outcome.unreadable.length === 0;
-    if (done) await handles.removeScrubs(ids);
+    if (done) await handles.removeScrubs(ids); // R88: once drained, the raw ids go
     await setStatus((s) => ({ ...s, scrubsPending: done ? 0 : ids.length, unreadable: outcome.ok ? outcome.unreadable : s.unreadable }));
     return outcome;
   }
 
-  /** Tries the removals still waiting for folders the owner moved away from. Never asks for permission. The caller holds the lock. */
-  async function drainRetired(): Promise<number> {
+  /** The ids among `ids` that are in the library again (a document, or an alias of one). On a store error, none. */
+  async function backInLibrary(ids: readonly string[]): Promise<string[]> {
+    const out: string[] = [];
+    for (const id of ids) {
+      if ((await store.resolveFingerprint(id as Sha256).catch(() => null)) !== null) out.push(id);
+    }
+    return out;
+  }
+
+  /**
+   * R88: raw ids wait at most 30 days. Older ones are dropped from the queue and from retired folders; a retired folder left with
+   * nothing is dropped too, and Settings says so (`dropped`). A forgotten reading this computer wrote is still caught at the next run
+   * through the store's forgotten list (writer.ts).
+   */
+  async function expire(handles: HandleStore): Promise<void> {
+    const gone = await handles.expireScrubs(Date.now() - SCRUB_EXPIRE_MS);
+    if (gone.length > 0) await setStatus((s) => ({ ...s, dropped: [...s.dropped, ...gone.map((g) => ({ ...g, reason: 'expired' as const, at: Date.now() }))] }));
+  }
+
+  /**
+   * Tries the removals still waiting for folders the owner moved away from. Never asks for permission. The caller holds the lock.
+   * R88: a folder that no longer exists is dropped with its list, and Settings says so plainly.
+   */
+  async function drainRetired(): Promise<{ left: number; dropped: number }> {
     const handles = await handlesOf();
+    await expire(handles);
     let left = 0;
+    const dropped: DroppedRemovals[] = [];
     for (const r of await handles.listRetired()) {
       const target = targetFrom(r.target, handles, retiredRecord(handles, r.id));
-      const ids = r.scrubs.map((p) => p.documentId);
-      if (target === null) continue;
+      const queued = r.scrubs.map((p) => p.documentId);
+      const back = await backInLibrary(queued);
+      if (back.length > 0) await handles.doneRetired(r.id, back);
+      const ids = queued.filter((id) => !back.includes(id));
+      if (target === null || ids.length === 0) continue;
       const outcome = await scrubFolder(target, ids);
       if (outcome.ok && outcome.unreadable.length === 0) await handles.doneRetired(r.id, ids);
-      else left += ids.length;
+      else if (!outcome.ok && outcome.kind === 'failed' && outcome.failure === 'gone') {
+        await handles.doneRetired(r.id, ids);
+        dropped.push({ folderName: r.target.name, count: ids.length, reason: 'gone', at: Date.now() });
+      } else left += ids.length;
     }
-    await setStatus((s) => s); // the pages read the retired list again
-    return left;
+    await setStatus((s) => (dropped.length === 0 ? s : { ...s, dropped: [...s.dropped, ...dropped] })); // the pages read the retired list again
+    return { left, dropped: dropped.reduce((n, d) => n + d.count, 0) };
   }
 
   /** With no folder chosen there are no runs: the removals still waiting for old folders are tried on the schedule's tick instead. */
@@ -162,11 +201,20 @@ export function startBackupController(o: ControllerOptions): BackupController {
     });
   }
 
-  /** Queues a removal for the chosen folder. Nothing is queued when no folder is chosen: there is nothing to remove from. */
+  /**
+   * Queues a removal for the chosen folder after a delete. Nothing is queued when no folder is chosen: there is nothing to remove from.
+   * R88: Forget and the Trash purge put the reading on the store's forgotten list, and its removal is always queued. An Undo of a save
+   * does not: its removal is queued only when a run may already hold the reading (this computer wrote it there, or a run is going now).
+   */
   async function queueScrub(documentIds: readonly string[]): Promise<void> {
     const handles = await handlesOf();
     if ((await handles.getTarget()) === null) return;
-    for (const id of documentIds) await handles.addScrub(id, Date.now());
+    const forgotten = new Set(await store.forgottenAmong(documentIds).catch(() => [...documentIds]));
+    const known = await handles.getKnown();
+    const running = (await handles.getStatus()).phase === 'running';
+    const ids = documentIds.filter((id) => forgotten.has(id) || known.has(id) || running);
+    if (ids.length === 0) return;
+    for (const id of ids) await handles.addScrub(id, Date.now());
     const pending = (await handles.listScrubs()).length;
     await setStatus((s) => ({ ...s, scrubsPending: pending }));
   }
@@ -197,9 +245,10 @@ export function startBackupController(o: ControllerOptions): BackupController {
     const cur = await currentTarget(handles);
     return await navigator.locks.request(RUN_LOCK, async () => {
       const outcome = cur === null ? ({ ok: true, unreadable: [] } as ScrubOutcome) : await drainScrubs(cur.target);
-      const left = await drainRetired();
+      const { left, dropped } = await drainRetired();
       if (!outcome.ok || outcome.unreadable.length > 0) return summaryOf(outcome);
-      return left === 0 ? { status: 'removed' } : { status: 'pending', reason: 'failed', message: failureMessage('other') };
+      if (left > 0) return { status: 'pending', reason: 'failed', message: failureMessage('other') };
+      return dropped > 0 ? { status: 'pending', reason: 'gone', message: DROPPED_MESSAGE } : { status: 'removed' };
     });
   }
 
@@ -208,10 +257,15 @@ export function startBackupController(o: ControllerOptions): BackupController {
   async function finish(outcome: RunOutcome, at: number): Promise<RunSummary> {
     if (outcome.ok) {
       const counts: BackupCounts = outcome.manifest.counts;
-      const message =
-        outcome.missingPdfs > 0 ? `${plural(outcome.missingPdfs, 'PDF', 'PDFs')} couldn’t be copied because the copy in your library is missing.` : null;
+      const notes = [
+        outcome.missingPdfs > 0 ? `${plural(outcome.missingPdfs, 'PDF', 'PDFs')} couldn’t be copied because the copy in your library is missing.` : null,
+        outcome.damagedPdfs > 0
+          ? `${plural(outcome.damagedPdfs, 'PDF', 'PDFs')} in your library ${outcome.damagedPdfs === 1 ? 'looks' : 'look'} damaged, so ${outcome.damagedPdfs === 1 ? 'it was' : 'they were'} not copied. The backup keeps any good copy it already had.`
+          : null,
+      ].filter((m): m is string => m !== null);
+      const message = notes.length > 0 ? notes.join(' ') : null;
       await setStatus((s) => ({ ...s, phase: 'idle', lastBackupAt: at, bytes: outcome.bytes, counts, held: null, message, progress: null }));
-      return { ok: true, bytes: outcome.bytes, counts, wrote: outcome.wrote, missingPdfs: outcome.missingPdfs, at };
+      return { ok: true, bytes: outcome.bytes, counts, wrote: outcome.wrote, missingPdfs: outcome.missingPdfs, damagedPdfs: outcome.damagedPdfs, at };
     }
     if (outcome.kind === 'permission') {
       await setStatus((s) => ({ ...s, phase: 'waiting', held: null, message: WAITING_MESSAGE, progress: null }));

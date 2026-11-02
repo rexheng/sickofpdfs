@@ -1,8 +1,8 @@
 // The backup needs the owner: a pill in the library's top bar on every page (plan S13, "the library shows 'Backup is waiting. Click to
 // allow.'"). One click asks Chrome to allow the folder again; when Chrome has the owner's answer the backup runs at once.
 // A backup that was held on purpose (it would have lost something, R86) shows "Backup needs a look". Its click opens a small card
-// with the reason, "Not now" and "Back up anyway", so a hold can be released from any library page (Settings, S14, hosts the same
-// choice in its Backup section).
+// with the reason, "Back up anyway" and "Not now" (the main button, R87), so a hold can be released from any library page (Settings,
+// S14, hosts the same choice in its Backup section).
 import { Icon, Popover } from '@sop/ui';
 import { useContext, useState } from 'react';
 import { backupClient } from '../../backup/client';
@@ -55,16 +55,16 @@ export function BackupAttention() {
           </button>
         }
         actions={[
-          { label: 'Not now', onClick: () => setOpen(false) },
           {
             label: 'Back up anyway',
-            primary: true,
             onClick: () => {
               setOpen(false);
               backupClient.backUpNow({ force: true });
               library?.notify({ text: 'Backing up anyway.' });
             },
           },
+          // R87: the safe answer is the main one.
+          { label: 'Not now', primary: true, onClick: () => setOpen(false) },
         ]}
       >
         <p>{HELD_MESSAGES[held]}</p>

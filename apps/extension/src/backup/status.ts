@@ -26,6 +26,14 @@ export type HeldReason =
   /** Many notes that were in the last backup are gone from the library (at least 20, and at least half). */
   | 'notes-missing';
 
+/** Removals that were given up (R88): the old folder no longer exists, or they waited 30 days. Settings says so until the owner clears it. */
+export interface DroppedRemovals {
+  folderName: string;
+  count: number;
+  reason: 'gone' | 'expired';
+  at: number;
+}
+
 /** A folder the owner moved away from, with removals still waiting for it (handle-store.ts `retired`). */
 export interface RetiredSummary {
   id: number;
@@ -59,6 +67,8 @@ export interface BackupStatus {
   unreadable: string[];
   /** Folders the owner moved away from with removals still waiting for them. Filled in when a page reads the status (client.ts). */
   retired: RetiredSummary[];
+  /** Removals that were given up (R88), until the owner clears the line in Settings. */
+  dropped: DroppedRemovals[];
 }
 
 export const emptyStatus = (): BackupStatus => ({
@@ -74,6 +84,7 @@ export const emptyStatus = (): BackupStatus => ({
   scrubsPending: 0,
   unreadable: [],
   retired: [],
+  dropped: [],
 });
 
 // ---- the words ---------------------------------------------------------------------------------------------------------
@@ -84,7 +95,7 @@ export const WAITING_MESSAGE = 'Backup is waiting. Click to allow.';
 export const HELD_MESSAGES: Readonly<Record<HeldReason, string>> = {
   'other-library': 'This folder already holds a backup that isn’t from this library. It was left as it is.',
   unreadable: 'The library file in the backup folder can’t be read. It was left as it is, in case it is the only copy of something.',
-  'many-missing': 'Readings that were in your last backup are missing from your library. The backup was left as it is, so nothing is lost.',
+  'many-missing': 'Some readings are missing from your library, but your backup still has them.',
   'notes-missing': 'Many notes that were in your last backup are missing from your library. The backup was left as it is, so nothing is lost.',
 };
 
@@ -92,8 +103,9 @@ export const HELD_MESSAGES: Readonly<Record<HeldReason, string>> = {
 export const ANYWAY_MESSAGES: Readonly<Record<HeldReason, string>> = {
   'other-library': 'Back up anyway replaces that backup with this library. To keep it, choose a different folder.',
   unreadable: 'Back up anyway replaces that file with this library. The daily copies in the folder stay.',
-  'many-missing': 'If you removed them on purpose, back up anyway. They will be removed from the backup.',
-  'notes-missing': 'If you deleted them on purpose, back up anyway. They will be removed from the backup.',
+  // R87, word for word with the line above: a lost reading's copies are never deleted, forced or not.
+  'many-missing': 'To get them back, use Restore from backup. Back up anyway keeps their copies in the folder.',
+  'notes-missing': 'If you deleted them on purpose, back up anyway. The daily copies in the folder keep them for a week.',
 };
 
 /** The toolbar icon's tooltip while a backup is on hold (R86). */
@@ -119,6 +131,17 @@ export const UNREADABLE_SCRUB_MESSAGE =
 /** "1 removal is waiting for Backups." The line Settings shows for a folder the owner moved away from. */
 export const retiredLine = (r: Pick<RetiredSummary, 'count' | 'folderName'>): string =>
   `${r.count === 1 ? '1 removal is' : `${r.count} removals are`} waiting for ${r.folderName}.`;
+
+/** What "Try now" says when an old folder could not be found and its removal was dropped. */
+export const DROPPED_MESSAGE = 'The old backup folder can’t be found any more, so the removal waiting for it was dropped.';
+
+/** The line Settings shows for removals that were given up (R88). */
+export function droppedLine(d: Pick<DroppedRemovals, 'folderName' | 'count' | 'reason'>): string {
+  const what = d.count === 1 ? '1 removal' : `${d.count} removals`;
+  return d.reason === 'gone'
+    ? `The old backup folder ${d.folderName} can’t be found any more, so ${what} waiting for it ${d.count === 1 ? 'was' : 'were'} dropped.`
+    : `${what} waiting for ${d.folderName} ${d.count === 1 ? 'was' : 'were'} dropped after 30 days.`;
+}
 
 /** The line Settings shows when a removal found files it could not read. */
 export function unreadableLine(paths: readonly string[]): string {

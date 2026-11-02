@@ -1,7 +1,7 @@
 // Small helpers over a `FileSystemDirectoryHandle`, for the backup folder (and the OPFS folder that stands in for it in tests).
 // Every file is written through `createWritable()`: Chrome writes to a swap file and puts it in place when the stream is
 // closed, so a half-written file never replaces a good one. A failed write is aborted and leaves the old file as it was.
-import { pathSegments } from '@sop/core';
+import { createSha256, pathSegments } from '@sop/core';
 
 const isNotFound = (error: unknown): boolean => error instanceof DOMException && error.name === 'NotFoundError';
 const isTypeMismatch = (error: unknown): boolean => error instanceof DOMException && error.name === 'TypeMismatchError';
@@ -81,15 +81,33 @@ interface MovableHandle extends FileSystemFileHandle {
 
 /**
  * Writes a stream to `path` by way of `<path>.part`, then moves it into place, so a quit while writing never leaves a short or empty
- * file under the real name (a copy that is there under its real name is whole). The real name is removed first if it is there,
- * since a copy is only rewritten when the one in place is wrong. Where the browser cannot move a file, it writes in place.
+ * file under the real name (a copy that is there under its real name is whole). With `expectSha`, the bytes are hashed as they are
+ * written, and a copy whose SHA-256 is not `expectSha` is never put in place: the part file is removed and the answer is false. The real
+ * name is removed just before the move, since a copy is only rewritten when the one in place is wrong. Where the browser cannot move a
+ * file, it is copied into place.
  */
-export async function writeFileViaPart(root: FileSystemDirectoryHandle, path: string, data: ReadableStream<Uint8Array>): Promise<void> {
+export async function writeFileViaPart(root: FileSystemDirectoryHandle, path: string, data: ReadableStream<Uint8Array>, expectSha?: string): Promise<boolean> {
   const { dir, name } = split(path);
   const folder = await openDir(root, dir, true);
   if (folder === null) throw new DOMException('The folder could not be made.', 'NotFoundError');
   const part = `${name}${PART_SUFFIX}`;
-  await writeFile(root, dir === '' ? part : `${dir}/${part}`, data);
+  const hasher = expectSha === undefined ? null : await createSha256();
+  const hashed =
+    hasher === null
+      ? data
+      : data.pipeThrough(
+          new TransformStream<Uint8Array, Uint8Array>({
+            transform(chunk, controller) {
+              hasher.update(chunk);
+              controller.enqueue(chunk);
+            },
+          }),
+        );
+  await writeFile(root, dir === '' ? part : `${dir}/${part}`, hashed);
+  if (hasher !== null && hasher.digest() !== expectSha) {
+    await folder.removeEntry(part).catch(() => {});
+    return false;
+  }
   const handle: MovableHandle = await folder.getFileHandle(part);
   if (typeof handle.move === 'function') {
     await folder.removeEntry(name).catch((error: unknown) => {
@@ -97,7 +115,7 @@ export async function writeFileViaPart(root: FileSystemDirectoryHandle, path: st
     });
     try {
       await handle.move(name);
-      return;
+      return true;
     } catch {
       // A folder where Chrome cannot move a file (some synced folders may refuse): copy it into place below instead.
     }
@@ -105,6 +123,7 @@ export async function writeFileViaPart(root: FileSystemDirectoryHandle, path: st
   // The whole copy is in the part file: write it in place from there (createWritable keeps any old file until the new one is whole).
   await writeFile(root, path, (await handle.getFile()).stream());
   await folder.removeEntry(part).catch(() => {});
+  return true;
 }
 
 /**
