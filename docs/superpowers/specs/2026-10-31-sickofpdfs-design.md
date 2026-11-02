@@ -200,8 +200,8 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
   - The Settings page (S14) will later add a strength choice (Light, Medium or Strong, where Medium is the rule above).
 - **Speed.** It is drawn for visible pages first, after the page's own render, so it never delays the first paint or scrolling. It is cached per page and zoom. Turning it on shows bold on the visible pages within 300 ms on the reference laptop.
 
-**R93: Text cursor (Nov 2, owner request).** A text cursor (caret) for reading and selecting by keyboard, like Chrome's caret browsing and Foxit's text cursor.
-- **The switch.** View → "Text cursor", with a check mark and a shortcut. It is remembered on this computer and off at first. F7 is used if Chrome lets the viewer have it; otherwise a key that clashes with nothing.
+**R93: Caret browsing (Nov 2, owner request).** A text cursor (caret) for reading and selecting by keyboard, like Chrome's caret browsing and Foxit's text cursor.
+- **The switch.** View → "Caret browsing", with a check mark and a shortcut. It is remembered on this computer and off at first. F7 is used if Chrome lets the viewer have it; otherwise a key that clashes with nothing.
 - **Placing it.** With the switch on, a click in the text puts a thin blinking cursor between letters. With reduced motion, it doesn't blink. A drag still selects as before.
 - **Moving.** The cursor follows reading order, so two-column papers go down one column and then the next. The page scrolls to keep it in view.
   - ←/→ move one letter, and Ctrl+←/→ one word.
