@@ -121,8 +121,17 @@ test('Ctrl+K in the viewer: a title word, a page phrase and a word from your not
   expect(did.url().split('#')[0], 'in the same tab and the same document').toBe(before.split('#')[0]);
   // Triage (S15): page 8 reads "choose” treatment status" (a closing quote after "choose"), so the whole phrase is not on it as one run; the last two words are.
   const where = await findOnPage(did, DID_PAGE8_INDEX, 'treatment status');
-  const spot = await hooks(did).eval((h, a) => ({ c: h.glyphCenter(a.p, a.i), height: h.viewer.viewportHeight() }), { p: DID_PAGE8_INDEX, i: where.start });
-  expect(Number.isFinite(spot.c.y) && spot.c.y > 0 && spot.c.y < spot.height + 80, `the passage itself is on the screen (at y=${spot.c.y} of ${spot.height})`).toBe(true);
+  // Triage (TB4, rule 7): a test race; the palette lands correctly a moment later, once page 8's text layer is drawn.
+  let spot = { c: { x: NaN, y: NaN }, height: 0 };
+  await expect
+    .poll(
+      async () => {
+        spot = await hooks(did).eval((h, a) => ({ c: h.glyphCenter(a.p, a.i), height: h.viewer.viewportHeight() }), { p: DID_PAGE8_INDEX, i: where.start });
+        return Number.isFinite(spot.c.y) && spot.c.y > 0 && spot.c.y < spot.height + 80;
+      },
+      { message: 'the passage itself is on the screen', timeout: 5_000 },
+    )
+    .toBe(true);
   await shotOf(did, testInfo, '05-landed-on-the-passage');
 });
 
