@@ -12,7 +12,8 @@
 //   new thread) is kept only until the store has confirmed one write of it; after that the store keeps the rest.
 // - `pending` says the store has not confirmed this text yet. On restore, a pending journal text is newer than the store's.
 // - The keeper writes here only when it writes to the store: never for a PDF that is not saved, never in Incognito (the
-//   viewer has no notes there, and `localDraftJournal` refuses too).
+//   viewer has no notes there, and `localDraftJournal` refuses too). One exception (TB4 ruling, Forget wins, no lost text):
+//   when another tab forgets the PDF, an unsent note this tab still holds is kept here until it is sent, dropped or saved.
 // - An entry goes when the draft is sent or discarded and the store has confirmed it, or when the PDF is forgotten.
 // - Nothing here syncs or is searched: sync reads the store's outbox, search the store's index.
 // - Only extension pages can read it: localStorage is per origin, and web pages and content scripts have another origin.

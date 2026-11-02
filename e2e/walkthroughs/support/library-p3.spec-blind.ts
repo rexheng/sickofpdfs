@@ -116,8 +116,21 @@ export async function waitViewerReady(page: Page, timeout = 30_000): Promise<voi
 }
 
 /** The chip in the header: the save decision, in words. Its name starts with its label (the icon is not part of it). */
-export const CHIP_NAME = /^(saved to library|not sure|not saved|saving|save to library|couldn.t save|in trash|incognito)/i;
+// TB4 fix (D9): a PDF saved without searchable text says "Saved · text not searchable" on the chip itself.
+export const CHIP_NAME = /^(saved to library|saved · text not searchable|not sure|not saved|saving|save to library|couldn.t save|in trash|incognito)/i;
 export const chipOf = (page: Page): Locator => page.locator('header').getByRole('button', { name: CHIP_NAME }).first();
+
+/**
+ * The owner saves the PDF from the chip. R95: a "Not sure" chip opens a menu with the banner's choices ("Save to library");
+ * R96: a "Not saved" chip asks "Save it to your library anyway?" first ("Save"). Either way, two clicks.
+ */
+export async function saveFromChip(page: Page): Promise<void> {
+  await chipOf(page).click();
+  const item = page.getByRole('menuitem', { name: /^save to library$/i });
+  const confirm = page.getByRole('dialog').getByRole('button', { name: /^save$/i });
+  await expect(item.or(confirm), 'the chip offers Save').toBeVisible({ timeout: 5000 });
+  await ((await item.isVisible()) ? item : confirm).click();
+}
 
 /** What the chip says (white space folded). */
 export async function chipText(page: Page): Promise<string> {

@@ -641,7 +641,11 @@ export async function waitSaved(page: Page, timeout = 30_000): Promise<string> {
 export async function saveFirst(page: Page): Promise<string> {
   const chip = page.getByRole('button', { name: /^(not sure|saved)/i }).first();
   await expect(chip, 'the save chip settles').toBeVisible({ timeout: 25_000 });
-  if (/not sure/i.test((await chip.textContent()) ?? '')) await chip.click(); // textContent starts with the icon's ligature
+  // textContent starts with the icon's ligature. R95: the "Not sure" chip opens a menu; its first item saves.
+  if (/not sure/i.test((await chip.textContent()) ?? '')) {
+    await chip.click();
+    await page.getByRole('menuitem', { name: /^save to library$/i }).click();
+  }
   return waitSaved(page);
 }
 

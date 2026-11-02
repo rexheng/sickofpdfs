@@ -34,7 +34,7 @@ import { WALKTHROUGH_DIR } from './support/fixtures.spec-blind';
 import { openLocalFile } from './support/local-file.spec-blind';
 import { libraryId, openPaper, savePrompt, selectPassage, SENTENCE_1, waitSaved, waitStored, type TlFixture } from './support/marks.spec-blind';
 import { ensureP3Fixtures, P3_FILES, p3Url } from './support/p3-fixtures.spec-blind';
-import { chipOf, chooseFileMenuItem, decided, forgetThisPdf, traceProblems, waitForStore, waitViewerReady } from './support/library-p3.spec-blind';
+import { chipOf, saveFromChip, chooseFileMenuItem, decided, forgetThisPdf, traceProblems, waitForStore, waitViewerReady } from './support/library-p3.spec-blind';
 import { shot } from './support/takeover';
 import { forceVerdict } from '../support/filter-verdict';
 
@@ -422,7 +422,7 @@ test('M5: a card statement saved again in the same tab after Forget + Never save
   await waitForStore(page);
   expect(await decided(page)).toBe('not-learning');
   // D9: the owner saves it anyway
-  await chipOf(page).click();
+  await saveFromChip(page); // R95, R96: the chip offers Save, then saves
   const id = await waitSaved(page);
   const d9 = await indexState(page, id);
 
@@ -434,7 +434,7 @@ test('M5: a card statement saved again in the same tab after Forget + Never save
   await expect(chipOf(page)).toContainText(/not saved/i, { timeout: 30_000 });
 
   // The owner changes their mind and clicks the chip again, in the same tab
-  await chipOf(page).click();
+  await saveFromChip(page); // R96: a "Not saved" chip asks first
   const id2 = await waitSaved(page);
   await page.waitForTimeout(3000);
   const again = await indexState(page, id2);
@@ -452,7 +452,7 @@ test('M5: reopened after Never save, then saved from the chip, a card statement 
   const page = await openPaper(openViewer, server, CARD);
   await waitForStore(page);
   expect(await decided(page)).toBe('not-learning');
-  await chipOf(page).click();
+  await saveFromChip(page); // R95, R96: the chip offers Save, then saves
   const id = await waitSaved(page);
   await page.keyboard.press('Control+a');
   await page.keyboard.press('h');
@@ -465,7 +465,7 @@ test('M5: reopened after Never save, then saved from the chip, a card statement 
   await waitForStore(back);
   await decided(back);
   expect((await decisionOf(back))?.rule, 'the reopened file is "never" by the owner’s choice').toBe('file-choice');
-  await chipOf(back).click();
+  await saveFromChip(back); // R96: a "Not saved" chip asks first
   const id2 = await waitSaved(back);
   await back.waitForTimeout(3000);
   const state = await indexState(back, id2);
@@ -635,7 +635,7 @@ test('N1: a card number outside the sample pages is not indexed after an owner s
   await waitForStore(page);
   const kind = await decided(page);
   const d = await decisionOf(page);
-  await chipOf(page).click();
+  await saveFromChip(page); // R95, R96: the chip offers Save, then saves
   const id = await waitSaved(page);
   await page.waitForTimeout(2500);
   const s = storeOf(page);
@@ -666,7 +666,7 @@ test('N1: a PDF the filter would save by itself, with a card number on page 7, i
   expect(await traceProblems(page, { sha, phrases: ['Payment details', 'harbour wall at dawn'], fileName: file }), 'and nothing of it was written').toEqual([]);
 
   // The owner's click still saves it, without searchable text and with the warning (D9).
-  await chipOf(page).click();
+  await saveFromChip(page); // R95, R96: the chip offers Save, then saves
   const id = await waitSaved(page);
   await page.waitForTimeout(2500);
   const doc = await storeOf(page).call<{ indexText: boolean } | null>('getDocument', id);

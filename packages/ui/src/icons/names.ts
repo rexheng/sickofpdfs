@@ -101,6 +101,8 @@ export const ICON_NAMES = [
   'block',
   'warning',
   'history',
+  // TB4 fix round (slice A): the "not sure" chip's menu (R95); 'warning' and 'block' above are used there too
+  'done_all',
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

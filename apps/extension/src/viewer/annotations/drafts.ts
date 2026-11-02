@@ -15,7 +15,8 @@
 // so a renderer crash kills the store too and a store write that was on its way is lost. So every change is also written,
 // synchronously, to the journal in the extension's localStorage, which the browser process keeps. `restore` reads both: a
 // journal text the store has not confirmed is newer and wins. The journal follows the store's rules: nothing for a PDF that
-// is not saved, an entry per draft, gone once the draft is sent or discarded and the store has confirmed it.
+// is not saved, an entry per draft, gone once the draft is sent or discarded and the store has confirmed it. One exception
+// (TB4 ruling, Forget wins): an unsent note a tab still holds when another tab forgets the PDF is kept here (`keepUnsaved`).
 
 import type { CommentId, CommentRow, DocumentId, TabId, ThreadId, ThreadRow } from '@sop/core';
 import type { AnnotationErrorCode, AnnotationsApi, EditDraft } from '../../store/annotations';
@@ -53,6 +54,13 @@ export interface DraftKeeper {
    * journal entry, and never touches the store. Optional, so a keeper without a journal need not have it.
    */
   sent?(id: CommentId): void;
+  /**
+   * TB4 ruling (Forget wins, no lost text): the owner forgot this PDF in another tab while this tab held this unsent note.
+   * The note stays in this tab, and its text is kept in the journal only (the store has no document for it now), so a crash
+   * loses nothing. Never written to the store; `change` takes over once the PDF is saved again, `drop` removes it. Optional,
+   * so a keeper without a journal need not have it.
+   */
+  keepUnsaved?(row: CommentRow & { draftOfTab: TabId }, thread?: ThreadRow): void;
   /**
    * Adopt the drafts (and unsent edits) of tabs that are gone. Returns every new-note draft of this document that this tab
    * now owns; the unsent edits are read with `editDrafts` afterwards.
@@ -615,6 +623,24 @@ export function createDraftKeeper(d: {
       });
       const store = usable();
       if (store) runDiscards(store);
+    },
+
+    keepUnsaved(row, thread) {
+      if (disposed || !journal || row.documentId === '') return;
+      const entry: JournalCommentEntry = {
+        v: 1,
+        kind: 'comment',
+        documentId: row.documentId,
+        commentId: row.id,
+        threadId: row.threadId,
+        tab: d.presence.tabId,
+        body: row.body,
+        at: Date.now(),
+        pending: true, // the store never confirmed this text
+        row,
+        ...(thread ? { thread } : {}),
+      };
+      journal.put(entry);
     },
 
     sent(id) {

@@ -58,3 +58,8 @@
   font: var(--type-tooltip);
   font-variation-settings: "opsz" 17;
 }
+
+/* R96: the save question's text holds the focus while it is open (no button does), with no ring of its own. */
+.questionBody {
+  outline: none;
+}

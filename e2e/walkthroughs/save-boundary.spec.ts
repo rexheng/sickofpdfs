@@ -40,6 +40,7 @@ import {
   type TlFixture,
   waitSaved,
 } from './support/marks.spec-blind';
+import { chipText, forgetThisPdf, saveFromChip } from './support/library-p3.spec-blind';
 import { shot } from './support/takeover';
 
 test.setTimeout(180_000);
@@ -379,7 +380,7 @@ test.describe('R67 tightened: a second download still being identified (secread3
   test('a note typed while the second download is "checking" survives the tab closing before it knows', async ({ openViewer, server }, testInfo) => {
     const copyUrl = await serveBookCopy(server);
     const first = await openNotSure(openViewer, server, BOOK);
-    await notSureChip(first).click(); // the owner saves the book
+    await saveFromChip(first); // the owner saves the book (R95: the "Not sure" chip's menu has "Save to library")
     const id = await waitSaved(first, 60_000);
     // The chip says "Saved" once all 714 pages of text are stored too; the copy is matched against that text.
     await expect(savedChip(first), 'the save is complete').toBeVisible({ timeout: 60_000 });
@@ -531,5 +532,57 @@ test.describe('R67 re-check: a resumed save on a PDF judged not learning keeps i
     await again.getByRole('dialog').getByRole('button', { name: /^save$/i }).click(); // the question's "Save" (plain wording, R73)
     await waitSaved(again, 15_000);
     await expect.poll(() => noteText(again).catch(() => ''), { timeout: 20_000, message: 'Yes saves the PDF and the note is back' }).toBe(NOTE);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// TB4 code and security critic, finding 1 (major): Forget in one tab was undone by an unsent note in another tab. The
+// other tab heard the delete, went back to "Not sure" and saved its note again before it learnt that the delete was the
+// owner's Forget. Ruling (Nov 2): Forget wins. Every tab follows a Forget first; an unsent note in another tab stays in
+// that tab (in memory, and in the drafts journal: no lost text); its chip says "Not saved: removed from your library",
+// and nothing saves again until the owner acts. Not spec-blind: the critic's reproduction (p4/p5-forget-*.mjs), kept
+// as a regression walkthrough under rule 10's exception (no lost notes, privacy).
+
+test.describe('TB4 ruling: Forget wins over an unsent note in another tab (code and security critic, finding 1)', () => {
+  test('tab B holds an unsent note while tab A forgets the PDF: A, B and the library all stay forgotten, and B keeps its text', async ({ openViewer, server }, testInfo) => {
+    const DRAFT = 'draft in tab B';
+    const a = await openNotSure(openViewer, server, ATTENTION);
+    await saveFromChip(a); // the owner saves the paper
+    await waitSaved(a);
+    const b = await openPaper(openViewer, server, ATTENTION);
+    await expect.poll(() => saveKind(b), { timeout: 30_000, message: 'tab B finds the paper in the library' }).toBe('saved');
+    await b.bringToFront();
+    await selectPassage(b, ATTENTION, LINES.l3);
+    await startNote(b);
+    await b.keyboard.type(DRAFT, { delay: 10 }); // not sent
+    await b.waitForTimeout(500);
+
+    await a.bringToFront();
+    const forgot = await forgetThisPdf(a); // "Never save this file" left unticked
+    expect(forgot.asked, 'Forget asks first').toBe(true);
+
+    // Watch for 6 s, as the critic did: no tab and no write may bring the PDF back.
+    const until = Date.now() + 6000;
+    while (Date.now() < until) {
+      expect(await libraryId(a), 'the library never holds the PDF again').toBeNull();
+      expect(await saveKind(b), 'tab B never saves it again on its own').not.toMatch(/^saved$/);
+      await a.waitForTimeout(250);
+    }
+    await expect.poll(() => chipText(a), { timeout: 5000 }).toMatch(/not saved: removed from your library/i);
+    await expect.poll(() => chipText(b), { timeout: 5000 }).toMatch(/not saved: removed from your library/i);
+    expect((await storeOf(a).stats()).documents, 'no document row').toBe(0);
+    await shot(a, testInfo, 'tab-a-forgotten');
+
+    await b.bringToFront();
+    expect((await readBox(noteBox(b))).text, "tab B's unsent note is still in its box").toBe(DRAFT);
+    const kept = await b.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('sop-draft:')).map((k) => localStorage.getItem(k) ?? ''));
+    expect(kept.some((v) => v.includes(DRAFT)), 'and in the drafts journal (no lost text)').toBe(true);
+    await shot(b, testInfo, 'tab-b-keeps-its-note');
+
+    // Saving again needs the owner's own action: the next letter in the note asks first.
+    await noteBox(b).focus();
+    await b.keyboard.type('!');
+    await expect(savePrompt(b).first(), 'the next letter asks "Save this PDF to keep your notes?"').toBeVisible({ timeout: 5000 });
+    expect(await libraryId(b), 'and nothing is saved while it asks').toBeNull();
   });
 });

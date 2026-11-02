@@ -350,7 +350,15 @@ function TabViewer({ params }: { params: ViewerParams }) {
         // The error and stopped cards carry their own "Open in Chrome's viewer"; one is enough on screen.
         onOpenInChrome={!canEscape || view.kind === 'error' || view.kind === 'stopped' ? null : () => escape(source, (live?.store.get().currentPage ?? 0) + 1)}
         chromeRefused={chromeRefused}
-        status={save !== null && <StatusChip save={save} returnFocus={focusPages} />}
+        status={
+          save !== null && (
+            <>
+              <StatusChip save={save} returnFocus={focusPages} ui={ui} />
+              {/* R95: right after the chip in the Tab order; drawn under the toolbar, above the pages it pushes down. */}
+              {view.kind === 'ready' && form.notice === null && <NotSureBanner save={save} ui={ui} />}
+            </>
+          )
+        }
         returnFocus={focusPages}
       />
       <div className={styles.content}>
@@ -372,7 +380,6 @@ function TabViewer({ params }: { params: ViewerParams }) {
         {/* The pill is there from the start, in its place, so it does not pop in when the PDF arrives. */}
         {view.kind === 'loading' && <Toolbar commands={idleCommands} view={null} />}
         {view.kind === 'ready' && form.notice !== null && <FormBanner kind={form.notice} onDismiss={form.dismiss} />}
-        {view.kind === 'ready' && form.notice === null && <NotSureBanner save={save} ui={ui} />}
         {view.kind === 'loading' && prompt === null && (
           <div role="progressbar" aria-label="Loading the PDF" className={styles.progress} />
         )}

@@ -107,7 +107,7 @@ export function targetFrom(stored: StoredTarget, handles: HandleStore, record: T
 
 /** True when two stored targets are the same folder (a folder picked again). Never throws. */
 export async function sameFolder(a: StoredTarget, b: StoredTarget): Promise<boolean> {
-  if (a.kind === 'test-opfs' && b.kind === 'test-opfs') return import.meta.env.MODE === 'test' && a.folder === b.folder; // test builds only
+  if (import.meta.env.MODE === 'test' && a.kind === 'test-opfs' && b.kind === 'test-opfs') return a.folder === b.folder; // test builds only
   if (a.kind !== 'folder' || b.kind !== 'folder') return false;
   try {
     return await a.handle.isSameEntry(b.handle);

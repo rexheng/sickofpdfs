@@ -212,6 +212,8 @@ const FLUSH_WAIT_MS = 2000;
 const SETTLE_WAIT_MS = 3000;
 /** After the PDF is first stored, drafts of tabs that are gone are looked for once more, when the roll call has settled. */
 const SECOND_ADOPT_MS = 1500;
+/** After another tab's Forget, the held notes are put in the journal again this long after the first time. */
+const HELD_AGAIN_MS = 1000;
 
 function newId<T extends string>(): T {
   return String(crypto.randomUUID()) as T;
@@ -393,6 +395,13 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
   const life = newId<string>();
   /** The second look for drafts of tabs that are gone (onBecameStored). */
   let secondAdopt: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * TB4 ruling (Forget wins): the owner forgot this PDF in another tab while this tab held unsent notes. They stay here, in
+   * memory, and their text is kept in the journal (`keepUnsaved`) until the PDF is saved again, the owner says No, or the
+   * note goes. Nothing is saved on its own.
+   */
+  let heldAfterForget = false;
+  let heldAgain: ReturnType<typeof setTimeout> | null = null;
 
   // The write queue.
   const queue: Batch[] = [];
@@ -638,9 +647,14 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       mode = computeMode();
       dropForgottenRows();
       emit();
-      // R67 tightened (1): what this tab made that the store never had survives another tab's Undo. Real content saves,
-      // so it is saved again at once, with no Undo.
-      if (holdsUnwritten()) startSaveIfNeeded([], { note: true });
+      if (holdsUnwritten()) {
+        // R67 tightened (1): what this tab made that the store never had survives another tab's Undo. Real content saves,
+        // so it is saved again at once, with no Undo. The save controller alone tells an Undo ("Not sure") from the owner's
+        // Forget (TB4 ruling, Forget wins): after a Forget in another tab nothing saves on its own; the notes stay here and
+        // in the journal, and the next mark or letter asks first. After this tab's own Forget, nothing is kept.
+        if (s.kind === 'unsure') startSaveIfNeeded([], { note: true });
+        else if (d.save?.busy !== 'forget') keepAfterForget();
+      }
       return;
     }
     if (s.kind === 'saved') docGone = false;
@@ -652,6 +666,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       // The owner said No, or the question "Save this PDF?" is open: nothing of this PDF is kept anywhere but this tab.
       ownerSave = false;
       dropPending();
+      if (mode === 'memory-only') releaseHeld(); // the owner said No: the notes held after a Forget leave the journal too
     }
     if (prevMode !== 'stored' && mode === 'stored') onBecameStored();
     if (prevMode !== mode) emit();
@@ -660,6 +675,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
 
   function onBecameStored(): void {
     ownerSave = false; // from here on the store and the keeper keep everything
+    stopHolding(); // the keeper keeps the drafts again, in the store and the journal
     compactQueue();
     // Rows made before the save carry the file's fingerprint; the library id may differ (a stamped copy). Stamp them
     // before anything is handed on (finding 1: a draft handed over with the old id was refused and lost).
@@ -823,6 +839,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
    * What was never written (changes still in the queue, notes still being typed) stays.
    */
   function dropForgottenRows(): void {
+    stopHolding();
     const gone = new Set<string>([...persisted, ...savedTriggerKeys]);
     persisted.clear();
     savedTriggerKeys.clear();
@@ -865,6 +882,70 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     if (active && !threads.has(active)) active = null;
     if (focusedMark && !marks.has(focusedMark)) focusedMark = null;
     marksVersion++;
+  }
+
+  /** TB4 ruling (Forget wins): an unsent note held after another tab's Forget is kept in the journal, never in the store. */
+  function keepUnsavedDraft(c: CommentRow): void {
+    try {
+      if (c.body.trim() === '') {
+        if (keeperHas.delete(c.id) || heldAfterForget) d.drafts.drop(c.id); // not a note any more: its journal copy goes
+        return;
+      }
+      const stash = rootDrafts.get(c.id);
+      const thread = stash ? threads.get(c.threadId) : undefined;
+      d.drafts.keepUnsaved?.(keeperRow(c), thread ? { ...thread, documentId: stampId() } : undefined);
+    } catch (e) {
+      report(e, 'drafts.keepUnsaved');
+    }
+  }
+
+  /** Another tab forgot the PDF while this tab held unsent notes: they stay, and the journal keeps their text. */
+  function keepAfterForget(): void {
+    heldAfterForget = true;
+    const keepAll = (): void => {
+      if (!heldAfterForget || disposed || mode !== 'pending-save') return;
+      for (const c of drafts.values()) keepUnsavedDraft(c);
+    };
+    keepAll();
+    // The forgetting tab clears the PDF's journal entries just after its delete, which may land after this: once more.
+    if (heldAgain) clearTimeout(heldAgain);
+    heldAgain = setTimeout(() => {
+      heldAgain = null;
+      keepAll();
+    }, HELD_AGAIN_MS);
+  }
+
+  function stopHolding(): void {
+    heldAfterForget = false;
+    if (heldAgain) clearTimeout(heldAgain);
+    heldAgain = null;
+  }
+
+  /** The owner said No: the notes held after a Forget stay in this tab only, as the question says. */
+  function releaseHeld(): void {
+    if (!heldAfterForget) return;
+    stopHolding();
+    for (const c of drafts.values()) {
+      keeperHas.delete(c.id);
+      try {
+        d.drafts.drop(c.id);
+      } catch (e) {
+        report(e, 'drafts.drop');
+      }
+    }
+  }
+
+  /**
+   * R96: notes that only this tab holds, which closing it would lose: a mark or a note made while the PDF is not saved and
+   * no save is on its way (the owner said No, the question is open, there is no library, or another tab forgot the PDF).
+   * A save on its way keeps them in the save-pending record (R67 a), so the tab can close without asking.
+   */
+  function holdsOnlyInMemory(): boolean {
+    if (disposed || mode === 'stored' || mode === 'view-only') return false;
+    if (mode === 'pending-save' && ownerSave && d.save?.state.kind !== 'asking') return false;
+    if (marks.size > 0 || comments.size > 0 || queue.some((b) => b.ops.length > 0)) return true;
+    for (const c of drafts.values()) if (c.body.trim() !== '') return true;
+    return false;
   }
 
   /**
@@ -1379,7 +1460,10 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
   function pushDraft(c: CommentRow): void {
     // While the PDF is not saved, the text is kept by the save-pending record (R67 a), or in this session only before
     // any save was asked for. It goes to the keeper the moment the PDF is saved.
-    if (mode !== 'stored') return;
+    if (mode !== 'stored') {
+      if (heldAfterForget && mode === 'pending-save') keepUnsavedDraft(c); // TB4 ruling: kept in the journal
+      return;
+    }
     const stash = rootDrafts.get(c.id);
     const thread = stash ? threads.get(c.threadId) : undefined;
     keeperHas.add(c.id);
@@ -1856,10 +1940,11 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
   }
 
   /**
-   * The document row is gone. Two causes look alike: our own Undo (the save controller says so a moment later, and
-   * dropForgottenRows runs) or another tab forgetting it (the controller here still says "saved"). Wait a moment
-   * and see which. In the second case nothing is dropped: we keep every note in memory and queue it to be written
-   * again, because this tab did not ask to forget anything.
+   * The document row is gone: our own Undo or Forget, or another tab's. Writes stop at once (`docGone`). The save controller
+   * decides what follows (TB4 ruling, Forget wins): it leaves "saved" once it knows whether this was an Undo or the owner's
+   * Forget, and onSaveState then drops what the store lost. If it still says "saved" after a moment (a save or Undo of its
+   * own was running and decides), every note is kept in memory and queued to be written again when the document is back;
+   * nothing is written while it is gone.
    */
   function suspectDocGone(): void {
     if (docGone || docGoneTimer || d.save?.state.kind !== 'saved') return;
@@ -2006,6 +2091,16 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       };
       document.addEventListener('visibilitychange', onVisible);
       cleanups.push(() => document.removeEventListener('visibilitychange', onVisible));
+    }
+    if (typeof window !== 'undefined' && !d.incognito) {
+      // R96: closing a tab whose notes are only in memory brings up the browser's "Leave site?" question.
+      const onBeforeUnload = (e: BeforeUnloadEvent) => {
+        if (!holdsOnlyInMemory()) return;
+        e.preventDefault();
+        e.returnValue = ''; // older Chrome needs it set as well
+      };
+      window.addEventListener('beforeunload', onBeforeUnload);
+      cleanups.push(() => window.removeEventListener('beforeunload', onBeforeUnload));
     }
     if (mode === 'pending-save' && d.save?.busy === 'save') markOwnerSave(); // a save was already running (R67 a)
     if (d.save && d.save.state.kind !== 'checking') void lookForPending();
@@ -2198,7 +2293,19 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       emit();
     },
 
-    undo: () => mutate('undo', () => undoRedo('undo')),
+    undo: () => {
+      // Ctrl+Z right after the first mark is the chip's Undo (R62, R67): the save goes with the mark. When there is no Undo
+      // to give after all (more was made, in any tab), it undoes the mark as usual.
+      const save = d.save;
+      const s = save?.state;
+      if (save && s?.kind === 'saved' && s.undoable && savedTriggerKeys.size > 0 && !disposed) {
+        return save.undo().then(
+          () => (save.state.kind === 'saved' ? mutate('undo', () => undoRedo('undo')) : undefined),
+          (e: unknown) => report(e, 'undo'),
+        );
+      }
+      return mutate('undo', () => undoRedo('undo'));
+    },
     redo: () => mutate('redo', () => undoRedo('redo')),
     retryParked: () => mutate('retryParked', () => retryParkedImpl()),
     adoptDrafts: () => adoptDraftsImpl(),
@@ -2207,6 +2314,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       if (disposed) return;
       disposed = true;
       clearDocGoneTimer();
+      stopHolding();
       if (secondAdopt) clearTimeout(secondAdopt);
       if (retryTimer) clearTimeout(retryTimer);
       for (const off of cleanups.splice(0)) off();

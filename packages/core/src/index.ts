@@ -30,6 +30,7 @@ export type { Sha256Hasher } from './identity/fingerprint';
 export { canonicalLink, cleanLink } from './identity/canonical-link';
 export { canonicalFileLocation, canonicalLocation, locationId } from './identity/location';
 export { ALIAS_THRESHOLD, MIN_ALIAS_CHARS, MIN_ALIAS_CHARS_PER_PAGE, isStampAlias, stampedTextSimilarity, stripStamps } from './identity/stamps';
+export { TEXT_FINGERPRINT_PAGES, textFingerprint } from './identity/text-fingerprint';
 export * from './filter/index';
 export { authorsFromInfo, extractMetadata } from './metadata/extract';
 export type { ExtractedMetadata, MetadataInput } from './metadata/extract';

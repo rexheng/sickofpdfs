@@ -23,7 +23,7 @@ import type { Page } from '@playwright/test';
 import { expect, test } from '../support/test';
 import { openClipboardReader } from '../support/tl-blind.spec-blind';
 import { libraryId, openPaper, selectPassage, UNSURE, HANDOUT_LINE } from './support/marks.spec-blind';
-import { fileMenuHas, forgetThisPdf, goTo, note, openLibrary, pageNotBuilt, shotOf, waitForStore } from './support/library-p3.spec-blind';
+import { fileMenuHas, forgetThisPdf, saveFromChip, goTo, note, openLibrary, pageNotBuilt, shotOf, waitForStore } from './support/library-p3.spec-blind';
 import { store as storeOf } from '../support/store-probe.spec-blind';
 
 test.setTimeout(240_000);
@@ -93,7 +93,7 @@ test('a draft with no document id is not deleted when a PDF is un-saved, forgott
   // 2. Forget this PDF (File menu), after saving it by choice
   await page.bringToFront();
   const chip = page.locator('header').getByRole('button', { name: /^(not sure|not saved|saved to library)/i }).first();
-  if (!/saved to library/i.test((await chip.textContent()) ?? '')) await chip.click();
+  if (!/saved to library/i.test((await chip.textContent()) ?? '')) await saveFromChip(page); // R95, R96: the chip offers Save first
   await expect.poll(() => libraryId(page), { timeout: 30_000 }).not.toBeNull();
   if (await fileMenuHas(page, /forget this pdf/i)) await forgetThisPdf(page);
   else {

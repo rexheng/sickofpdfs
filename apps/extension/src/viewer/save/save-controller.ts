@@ -23,6 +23,13 @@
 // - R91: every save reads every page for card, bank or ID numbers before anything is written (the filter only sampled the
 //   PDF). An automatic save that finds them stops, and the chip says "Not saved: has card or bank numbers"; a save by the
 //   owner's click goes on without searchable text, with the warning (D9), however it started.
+// - R97: "Never save this file" also keeps a text fingerprint (core's `textFingerprint`, a hash of the first pages' text once
+//   stamps and dates are removed), handed to the never-save list, which keeps only a salted HMAC of it, like the file's own
+//   fingerprint. So a re-download with other bytes is still "never". The text and the unsalted hash stay in memory.
+// - TB4 ruling (Forget wins): when another tab deletes the saved PDF, this controller alone decides what follows. It reads
+//   whether that was the owner's Forget (the store's forgotten list, or "never save") before it leaves "saved"; a Forget then
+//   reads "Not saved: removed from your library" here too, and nothing saves until the owner acts. Only an Undo goes back
+//   to "Not sure" (the session then saves again what it holds, R67 tightened 1).
 import {
   type DocumentId,
   extractMetadata,
@@ -38,6 +45,8 @@ import {
   type SaveEvent,
   type SaveState,
   type Sha256,
+  TEXT_FINGERPRINT_PAGES,
+  textFingerprint,
 } from '@sop/core';
 import type { PdfBackend, SaveController } from '@sop/viewer';
 import type { BlobStore } from '../../store/blob-store';
@@ -147,6 +156,11 @@ export interface SaveControllerImpl extends SaveController {
   /** The library document, while the state is `saved`. */
   documentId(): DocumentId | null;
   /**
+   * D9: the saved PDF's text is kept out of search (it has card, bank or ID numbers, or could not be checked for them), saved
+   * here or before. The chip says "Saved · text not searchable". Changes are announced through `subscribe`.
+   */
+  readonly notSearchable: boolean;
+  /**
    * The saved document is in the library's Trash (ruling R76): the chip says "In Trash" and offers Restore. Opening it
    * never restores it by itself. Changes are announced through `subscribe`.
    */
@@ -246,6 +260,8 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
   let undoTimer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
   let trashed = false;
+  /** D9: the saved document's row says its text is kept out of search (`indexText: false`). */
+  let rowNotIndexed = false;
   /** The store and blob store, once `start()` has them. Effects only run after that. */
   let store: StoreClient | null = null;
   let blobs: BlobStore | null = null;
@@ -321,6 +337,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       savedReasons = null;
       saveWarning = null;
       trashed = false; // a PDF that is not in the library is not in its Trash either
+      rowNotIndexed = false;
     }
     notify();
   }
@@ -343,6 +360,28 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     return out;
   }
   const allPageTexts = (): Promise<string[]> => textsOf(Array.from({ length: open.pageCount }, (_, i) => i));
+
+  /**
+   * R97: this PDF's text fingerprint, read once (the filter has read these pages already); null when it has too little
+   * text. It lives in memory only: the never-save list keeps a salted HMAC of it. A failed read is tried again next time.
+   */
+  let textKeyRead: Promise<Sha256 | null> | null = null;
+  function textKey(): Promise<Sha256 | null> {
+    if (textKeyRead !== null) return textKeyRead;
+    const read = textsOf(Array.from({ length: Math.min(open.pageCount, TEXT_FINGERPRINT_PAGES) }, (_, i) => i)).then((pages) =>
+      textFingerprint(open.pageCount, pages),
+    );
+    textKeyRead = read.catch(() => {
+      textKeyRead = null;
+      return null;
+    });
+    return textKeyRead;
+  }
+  /** The fingerprints the owner's choice for this file is kept under: the file's own, and its text's (R97). */
+  async function choiceKeys(...more: Sha256[]): Promise<Sha256[]> {
+    const key = await textKey();
+    return [...new Set([...more, loaded.sha256, ...(key === null ? [] : [key])])];
+  }
 
   /**
    * The filter's view of the PDF (S8's `buildFilterInput`): links, names, sizes, metadata, form type and the text of the
@@ -453,7 +492,12 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     saveWarning = owner?.warning ?? null;
     // R91: only the owner's own explicit Save takes "never save" back. (In the store's list a saved PDF does not count as
     // forgotten, R89.)
-    if (cause === 'owner') void d.rules?.saved([id, loaded.sha256]).catch(() => {});
+    if (cause === 'owner' && d.rules) {
+      const rules = d.rules;
+      void choiceKeys(id)
+        .then((keys) => rules.saved(keys))
+        .catch(() => {});
+    }
     createdHere = created && (cause === 'first-mark' || cause === 'first-note');
     // R67 (c): Undo only ever removes the save and the one mark that caused it. Not when this tab did not create the
     // document, nor when more was made meanwhile, here or in another tab.
@@ -523,7 +567,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     if (owner !== null && owner.neverSave) {
       neverKept = 'failed';
       if (d.rules) {
-        neverKeys = [...new Set([id, ...(await store.listAliases(id)), loaded.sha256])];
+        neverKeys = await choiceKeys(id, ...(await store.listAliases(id))); // R97: and the text fingerprint
         neverKept = await d.rules.neverSave(neverKeys).then(() => 'kept' as const, () => 'failed' as const);
       }
     }
@@ -588,19 +632,61 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
   }
 
   /**
-   * After another tab forgot this PDF: an Undo there leaves it "not sure" here, but the owner's Forget (or "Never save this
-   * file") must not be undone by a stray mark in this tab, so the chip says so and a mark asks first.
+   * What another tab's delete of the saved PDF was: the owner's Forget ('never' when "Never save this file" came with it) or
+   * an Undo of a save. Read before this tab leaves "saved" (TB4 ruling, Forget wins): "never save" is kept before the delete,
+   * and the store's forgotten list in the same transaction as it (R88, R89; an Undo writes nothing to it). When either cannot
+   * be read, it counts as a Forget, so nothing saves on its own (R91). Without the owner's rules here it is an Undo, as before.
    */
-  async function followOwnersForget(documentId: DocumentId): Promise<void> {
+  async function deleteKind(lib: StoreClient, documentId: DocumentId): Promise<'never' | 'forget' | 'undo'> {
     const rules = d.rules;
-    const lib = store;
-    if (!rules || lib === null || state.kind !== 'unsure') return;
-    const never = await rules.fileChoice([loaded.sha256, documentId]).catch(() => null);
-    // R89: one forgotten list, the store's, written with the delete (an Undo writes nothing to it).
-    const gone = never === 'never' || (await lib.forgottenAmong([documentId, loaded.sha256]).then((ids) => ids.length > 0, () => false));
-    if (!gone || disposed || state.kind !== 'unsure' || busy !== null) return;
-    if (never === 'never') decision = neverSaveDecision();
-    set(reduceSave(state, { type: 'forgotten', reasons: [never === 'never' ? NEVER_SAVE_REASON : FORGOTTEN_REASON] }).state);
+    if (!rules) return 'undo';
+    const keys = await choiceKeys(documentId).catch(() => [loaded.sha256, documentId]);
+    const never = await rules.fileChoice(keys).catch(() => 'unknown' as const);
+    if (never === 'never') return 'never';
+    const forgotten = await lib.forgottenAmong([documentId, loaded.sha256]).then(
+      (ids) => ids.length > 0,
+      () => true,
+    );
+    return forgotten || never === 'unknown' ? 'forget' : 'undo';
+  }
+
+  /** How long this tab waits to learn what another tab's delete was before it treats it as the owner's Forget. */
+  const DELETE_READ_MS = 5_000;
+
+  /**
+   * R67 (d) and the TB4 ruling: another tab deleted the saved PDF. This tab stays "saved" (the session has stopped writing,
+   * session.ts `suspectDocGone`) until it knows which delete it was, then follows in one step: an Undo goes back to "Not sure",
+   * the owner's Forget to "Not saved: removed from your library" (or "you chose never to save this file"), where a mark asks.
+   * Nothing is saved again on its own after a Forget.
+   */
+  let followingDelete: DocumentId | null = null;
+  async function followDelete(lib: StoreClient, documentId: DocumentId): Promise<void> {
+    if (followingDelete === documentId) return;
+    followingDelete = documentId;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      const late = new Promise<'forget'>((resolve) => {
+        timer = setTimeout(() => resolve('forget'), DELETE_READ_MS);
+      });
+      const kind = await Promise.race([deleteKind(lib, documentId), late]);
+      if (disposed || busy !== null || state.kind !== 'saved' || state.documentId !== documentId) return;
+      if (kind === 'undo') {
+        backToNotSure();
+        return;
+      }
+      othersAdded = false;
+      moreHere = false;
+      byNote = false;
+      noteSeen = false;
+      createdHere = false;
+      triggerRows = null;
+      rememberNotes(loaded.sha256, false); // R67 tightened (6), as backToNotSure does
+      if (kind === 'never') decision = neverSaveDecision();
+      set(reduceSave(state, { type: 'forgotten', reasons: [kind === 'never' ? NEVER_SAVE_REASON : FORGOTTEN_REASON] }).state);
+    } finally {
+      if (timer !== null) clearTimeout(timer);
+      if (followingDelete === documentId) followingDelete = null;
+    }
   }
 
   /** An open, empty note box (N1): the first-mark Undo chip goes (or the save on its way lands without one), and nothing else changes. */
@@ -643,7 +729,10 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
   function onMoreContent(e: MessageEvent): void {
     const news = e.data as Partial<NeverSaveNews> | null;
     if (!disposed && news?.type === 'never-save' && Array.isArray(news.ids)) {
-      if (news.ids.includes(loaded.sha256)) void holdForChoice();
+      const ids = news.ids;
+      if (ids.includes(loaded.sha256)) void holdForChoice();
+      // R97: another download of the same text (its text fingerprint is in the news)
+      else if (state.kind === 'unsure') void textKey().then((k) => (k !== null && ids.includes(k) ? holdForChoice() : undefined));
       return;
     }
     const m = e.data as Partial<MoreContent> | null;
@@ -679,9 +768,12 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
   }
 
   /** R91: the owner's choice for this file, read now: 'unknown' when it cannot be read. */
-  function choiceNow(): Promise<'never' | 'unknown' | null> {
-    if (!d.rules) return Promise.resolve(null);
-    return d.rules.fileChoice(loaded.sha256).then(
+  async function choiceNow(): Promise<'never' | 'unknown' | null> {
+    const rules = d.rules;
+    if (!rules) return null;
+    // R97: under the file's own fingerprint, or its text's (another download of the same PDF)
+    const keys = await choiceKeys().catch(() => [loaded.sha256]);
+    return rules.fileChoice(keys).then(
       (c) => c,
       () => 'unknown' as const,
     );
@@ -775,8 +867,10 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
   async function readTrashed(lib: StoreClient, documentId: DocumentId): Promise<void> {
     const row = await lib.getDocument(documentId).catch(() => null);
     const now = row !== null && row.deletedAt !== null;
-    if (disposed || now === trashed || state.kind !== 'saved' || state.documentId !== documentId) return;
+    const noIndex = row !== null && row.indexText === false; // D9: saved without searchable text, here or before
+    if (disposed || (now === trashed && noIndex === rowNotIndexed) || state.kind !== 'saved' || state.documentId !== documentId) return;
     trashed = now;
+    rowNotIndexed = noIndex;
     notify();
   }
 
@@ -787,11 +881,8 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       // the store no longer has. Never "Saved" for a PDF that is not saved. While a save or Undo runs here, that decides.
       const mine = c.ids.includes(loaded.sha256) || (state.kind === 'saved' && c.ids.includes(state.documentId));
       if (mine) othersAdded = false;
-      if (mine && state.kind === 'saved' && busy === null) {
-        const documentId = state.documentId;
-        backToNotSure();
-        void followOwnersForget(documentId);
-      }
+      // TB4 ruling (Forget wins): what follows is decided once it is known whether this was the owner's Forget.
+      if (mine && state.kind === 'saved' && busy === null && store !== null) void followDelete(store, state.documentId);
       return;
     }
     // R76 (d): the saved document went to the Trash, or came back (the library tab, another tab): the chip follows.
@@ -854,11 +945,12 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       } catch {
         decision = cannotCheck(null, FILTER_FAILED); // R91: a filter that fails saves nothing on its own, and a mark asks
       }
-      // R91: "Never for this file" may have been chosen in another tab while this one was checking
-      if (decision.verdict !== 'not-learning' && d.rules) {
+      // R91: "Never for this file" may have been chosen in another tab while this one was checking. R97: and it is read again
+      // under the text fingerprint, now that the first pages are read, so another download of a "never" PDF is "never" too.
+      if (d.rules) {
         const now = await choiceNow();
         if (now === 'never') decision = neverSaveDecision();
-        else if (now === 'unknown') decision = cannotCheck(decision);
+        else if (now === 'unknown' && decision.verdict !== 'not-learning') decision = cannotCheck(decision);
       }
     }
     if (disposed) return;
@@ -895,6 +987,9 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     get trashed() {
       return state.kind === 'saved' && trashed;
     },
+    get notSearchable() {
+      return state.kind === 'saved' && (rowNotIndexed || saveWarning !== null);
+    },
     get decision() {
       return decision;
     },
@@ -909,10 +1004,11 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     async neverSave() {
       await afterStart();
       if (!d.rules || (state.kind !== 'unsure' && state.kind !== 'not-learning')) return;
-      await d.rules.neverSave([loaded.sha256]);
+      const keys = await choiceKeys(); // R97: the file and its text
+      await d.rules.neverSave(keys);
       decision = neverSaveDecision();
       await dispatch({ type: 'never-save', reasons: [NEVER_SAVE_REASON] });
-      tellNever([loaded.sha256]);
+      tellNever(keys);
     },
     async alwaysForSite() {
       await afterStart();

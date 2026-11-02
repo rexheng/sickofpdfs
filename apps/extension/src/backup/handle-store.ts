@@ -153,15 +153,22 @@ type StoreName = 'target' | 'status' | 'known' | 'scrub' | 'retired';
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 
-/** A stored target is read defensively: anything that is not one of the two shapes reads as "no folder". */
+/**
+ * A stored target is read defensively: anything that is not one of the two shapes reads as "no folder". The test-only parts
+ * (`testPermission`, the `test-opfs` stand-in) are read only in a test build: `import.meta.env.MODE` is fixed at build time,
+ * so a production build drops them (TB4 code and security critic, finding 5).
+ */
 function asTarget(v: unknown): StoredTarget | null {
   if (!isRecord(v)) return null;
   if (v.kind === 'folder' && isRecord(v.handle) && typeof v.name === 'string') {
     const folder: FolderTarget = { kind: 'folder', handle: v.handle as unknown as FileSystemDirectoryHandle, name: v.name, pickedAt: typeof v.pickedAt === 'number' ? v.pickedAt : 0 };
-    if (v.testPermission === 'prompt' || v.testPermission === 'granted' || v.testPermission === 'denied') folder.testPermission = v.testPermission;
+    if (import.meta.env.MODE === 'test') {
+      const p = v.testPermission;
+      if (p === 'prompt' || p === 'granted' || p === 'denied') folder.testPermission = p;
+    }
     return folder;
   }
-  if (v.kind === 'test-opfs' && typeof v.folder === 'string' && typeof v.name === 'string') {
+  if (import.meta.env.MODE === 'test' && v.kind === 'test-opfs' && typeof v.folder === 'string' && typeof v.name === 'string') {
     return {
       kind: 'test-opfs',
       folder: v.folder,

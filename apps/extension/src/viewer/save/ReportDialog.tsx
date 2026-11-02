@@ -2,6 +2,8 @@
 // the file are kept, on this computer (spec, "Local traces"); never the file, its name or its text.
 // R91: a report that a saved PDF is not for learning does not remove it. The note says it is still in the library, and
 // offers Forget in the same note.
+// R96: a report that a PDF that is not saved is for learning does not save it either. The note says so, and offers
+// "Save now" in the same note (the owner's own Save).
 import { Dialog } from '@sop/ui';
 import { useEffect, useId, useState } from 'react';
 import type { FilterReportLabel } from '../../local-only/secrets-store';
@@ -16,6 +18,9 @@ export const REPORT_TITLE = 'Report a wrong decision';
 export const REPORT_THANKS = 'Thanks. Your report is kept on this computer only.';
 /** R91: after "it's not for learning" on a saved PDF. */
 export const STILL_IN_LIBRARY = 'It’s still in your library.';
+/** R96: after "it's for learning" on a PDF that is not saved. */
+export const NOT_IN_LIBRARY_YET = 'It isn’t in your library yet.';
+export const SAVE_NOW = 'Save now';
 
 const CHOICES: { label: FilterReportLabel; text: string }[] = [
   { label: 'learning', text: 'It’s for learning. It should be saved.' },
@@ -46,8 +51,14 @@ export function ReportDialog({ save, open, onClose, ui }: ReportDialogProps) {
     onClose();
     save.report(label).then(
       () => {
-        if (label === 'not-learning' && save.state.kind === 'saved') {
+        const kind = save.state.kind;
+        if (label === 'not-learning' && kind === 'saved') {
           ui.showNote(`${REPORT_THANKS} ${STILL_IN_LIBRARY}`, { label: 'Forget', run: () => openSaveDialog('forget') });
+        } else if (label === 'learning' && (kind === 'unsure' || kind === 'not-learning' || kind === 'memory-only')) {
+          ui.showNote(`${REPORT_THANKS} ${NOT_IN_LIBRARY_YET}`, {
+            label: SAVE_NOW,
+            run: () => void save.requestSave().then(() => ui.showNote('Saved to your library.'), () => ui.showNote('Couldn’t save it. Try again.')),
+          });
         } else ui.showNote(REPORT_THANKS);
       },
       () => ui.showNote('Couldn’t keep your report. Try again.'),

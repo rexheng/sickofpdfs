@@ -23,6 +23,7 @@ import {
   FILTER_IN_VIEWER,
   NO_FILTER,
   chipOf,
+  saveFromChip,
   chipText,
   chipTooltip,
   collectConsole,
@@ -82,10 +83,10 @@ test('a receipt leaves no trace; one click saves it; Forget removes it again; on
   await shot(library, testInfo, 'library-empty');
   await library.close();
 
-  // 4. One click on the chip saves it.
+  // 4. The chip saves it. R96: a click on "Not saved" asks first ("Save it to your library anyway?"), then Save saves it.
   await page.bringToFront();
-  await chipOf(page).click();
-  await expect(chipOf(page), 'one click saves it').toContainText(/saved to library/i, { timeout: 30_000 });
+  await saveFromChip(page);
+  await expect(chipOf(page), 'the chip saves it').toContainText(/saved to library/i, { timeout: 30_000 });
   await expect.poll(() => saveOf(page).hasBlob(sha), { message: 'its copy is kept', timeout: 20_000 }).toBe(true);
   await shot(page, testInfo, 'saved-by-one-click');
   const listed = await openLibrary(context, 'library');

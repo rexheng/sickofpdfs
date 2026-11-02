@@ -1,14 +1,18 @@
 /*
- * The "not sure" banner: placed as the form banner is, centred over the page list 16 px under the toolbar pill, at most as
- * wide as a dialog. GM3 two-line banner: the icon and message on top, the actions right-aligned under them, on
- * surface-container-high with a 12 px radius and elevation 2.
+ * The "not sure" banner (R95): an inline bar directly under the toolbar pill, 16 px below it, centred on the reading area
+ * (NotSureBanner.tsx sets its left edge and width to the page list's), at most as wide as a dialog. The page list starts
+ * 8 px under it (--viewer-banner-h), so it never lies over the pages. GM3 two-line banner: the icon and message on top, the
+ * actions right-aligned under them, on surface-container-high with a 12 px radius and elevation 2.
+ * It is drawn in the header, right after the chip, so it comes right after the chip in the Tab order; `position: fixed`
+ * places it under the toolbar from there.
  */
 .place {
-  position: absolute;
-  inset: calc(var(--viewer-pill-h) + var(--space-4)) var(--space-4) auto;
-  z-index: 2;
+  position: fixed;
+  inset-block-start: calc(var(--viewer-header-h) + var(--viewer-pill-h) + var(--space-4));
   display: flex;
   justify-content: center;
+  box-sizing: border-box;
+  padding-inline: var(--space-4);
   pointer-events: none;
 }
 
@@ -42,6 +46,7 @@
   margin: 0;
   font: var(--type-body);
   font-variation-settings: "opsz" 17;
+  white-space: normal;
 }
 
 .actions {

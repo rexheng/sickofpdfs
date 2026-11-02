@@ -1,17 +1,26 @@
 // The library status chip in the header (Task 30, worded for Phase 3's real filter by S11 and ruling R73): it always shows
-// the save decision. On a PDF that is not saved, clicking it saves (as Ctrl+Alt+S does). On a saved PDF it opens a small
-// menu with "Remove from library…" (the Forget flow). After a first mark saved the PDF, "Undo" stands next to it for 10 s.
+// the save decision. On a saved PDF it opens a small menu with "Remove from library…" (the Forget flow). After a first mark
+// saved the PDF, "Undo" stands next to it for 10 s.
+// - R95: on a "not sure" PDF it opens a menu with the banner's choices: Save to library, Never for this file, Always for <place>.
+// - R96: a click on a "Not saved: …" chip asks first ("This looks like a bank statement. Save it to your library anyway?"),
+//   with Cancel as the default, so a stray click never saves a private PDF. Ctrl+Alt+S still saves at once.
 //
 // Wording (R73: plain, for an owner who reads best in short sentences):
 //   not sure      "Not sure: Save to library"                     hover: "This PDF isn't in your library yet. Save it to keep your notes."
 //   a scan        "Not sure: scanned pages · Save to library"     hover: "It's a scan, but its title looks like a course reading." (R94)
 //   not learning  "Not saved: looks like an invoice or receipt"   hover: "Click to save it to your library anyway." and what else it saw
-//   saved         "Saved to library"                              hover: the reasons ("References section, DOI, 40 pages")
+//   saved         "Saved to library"                              hover: one plain sentence, "Saved because it looks like a paper: it
+//                                                                 has an arXiv number and a References section."
+//   saved, D9     "Saved · text not searchable"                   a PDF with card, bank or ID numbers saved by the owner's choice
 // "No filter yet" never shows.
-import { SCAN_TITLE_REASON, STAND_IN_REASONS, type SaveState } from '@sop/core';
-import { Chip, type ChipProps, DropdownMenu, TextButton } from '@sop/ui';
+import { CHOICES_UNREAD, FILTER_FAILED, FORGOTTEN_REASON, NEVER_SAVE_REASON } from '../filter/async-filter';
+import { HARD_BLOCK_REASON, SCAN_TITLE_REASON, STAND_IN_REASONS, type SaveState } from '@sop/core';
+import { Chip, type ChipProps, Dialog, DropdownMenu, TextButton } from '@sop/ui';
 import { useCallback, useState, useSyncExternalStore } from 'react';
-import type { SaveControllerImpl } from './save-controller';
+import type { ViewerUi } from '../commands';
+import cards from '../ui/cards.module.css';
+import { FAILED_NOTE, notSureChoices } from './NotSureBanner';
+import { SAVED_BY_FIRST_MARK, SAVED_BY_FIRST_NOTE, SAVED_BY_OWNER, type SaveControllerImpl } from './save-controller';
 import { openSaveDialog } from './save-dialogs';
 import styles from './StatusChip.module.css';
 
@@ -28,7 +37,18 @@ const SAVE_HINT = 'Save it to your library (Ctrl+Alt+S)';
 /** The saved chip's one menu item (R73), which opens the Forget flow (R75). */
 export const REMOVE_FROM_LIBRARY = 'Remove from library…';
 
-type ChipLook = Pick<ChipProps, 'label' | 'icon' | 'tone' | 'tooltip' | 'disabled'> & { saves: boolean; menu?: boolean };
+type ChipLook = Pick<ChipProps, 'label' | 'icon' | 'tone' | 'tooltip' | 'disabled'> & {
+  saves: boolean;
+  menu?: boolean;
+  /** R95: the "not sure" chip opens the banner's choices. */
+  choices?: boolean;
+  /** R96: a click asks "Save it to your library anyway?" first. */
+  asks?: boolean;
+};
+
+/** D9: the saved chip of a PDF whose text is kept out of search (card, bank or ID numbers), on the chip itself. */
+export const SAVED_NOT_SEARCHABLE = 'Saved · text not searchable';
+const NOT_SEARCHABLE_HINT = 'It has card, bank or ID numbers, so its text is not searchable.';
 
 /** The chip after a save failed (R67 a): the notes are still kept in this tab and on this computer. */
 export const SAVE_FAILED = 'Couldn’t save. Try again';
@@ -54,6 +74,8 @@ export interface ChipFlags {
   privateNumbers?: boolean;
   /** The saved chip opens its menu ("Remove from library…"). Off where there is no Forget (an upload, no rules). */
   menu?: boolean;
+  /** D9: the saved PDF's text is not searchable (`SaveControllerImpl.notSearchable`). */
+  notSearchable?: boolean;
 }
 
 /** The chip while a save left by a tab that closed or crashed is finished (R67 tightened 4). */
@@ -74,7 +96,7 @@ const QUIET_REASONS = new Set<string>(['not sure if this is a reading', ...STAND
  * it is written down so a later change keeps it.
  */
 export function chipFor(state: SaveState, busy: SaveControllerImpl['busy'], savedReasons: readonly string[] | null, flags: ChipFlags = {}): ChipLook | null {
-  const { failed = false, trashed = false, resuming = false, warning = null, privateNumbers = false, menu = false } = flags;
+  const { failed = false, trashed = false, resuming = false, warning = null, privateNumbers = false, menu = false, notSearchable = false } = flags;
   if (resuming && !failed && state.kind !== 'saved' && state.kind !== 'asking') {
     return { label: SAVING_NOTES, icon: 'library_add', tone: 'attention', tooltip: SAVING_NOTES_HINT, saves: false };
   }
@@ -87,18 +109,21 @@ export function chipFor(state: SaveState, busy: SaveControllerImpl['busy'], save
     case 'checking':
       return null;
     case 'saved':
+      if (notSearchable || warning !== null) {
+        return { label: SAVED_NOT_SEARCHABLE, icon: 'warning', tone: 'saved', tooltip: warning ?? NOT_SEARCHABLE_HINT, saves: false, menu };
+      }
       return {
         label: 'Saved to library',
         icon: 'library_add_check',
         tone: 'saved',
-        tooltip: warning ?? reasonsLine(savedReasons ?? []) ?? ALREADY_SAVED,
+        tooltip: savedSentence(savedReasons ?? []) ?? ALREADY_SAVED,
         saves: false,
         menu,
       };
     case 'unsure': {
       // R94: a scan with no text whose title looks like a reading. The hover is the reason, in one plain sentence.
       if (state.reasons.includes(SCAN_TITLE_REASON)) {
-        return { label: 'Not sure: scanned pages · Save to library', icon: 'library_add', tone: 'attention', tooltip: `${SCAN_TITLE_REASON} ${NOT_IN_LIBRARY}`, saves: true };
+        return { label: 'Not sure: scanned pages · Save to library', icon: 'library_add', tone: 'attention', tooltip: `${SCAN_TITLE_REASON} ${NOT_IN_LIBRARY}`, saves: true, choices: menu };
       }
       const why = reasonsLine(state.reasons.filter((r) => !QUIET_REASONS.has(r)).slice(0, 2));
       return {
@@ -108,6 +133,7 @@ export function chipFor(state: SaveState, busy: SaveControllerImpl['busy'], save
         tone: 'attention',
         tooltip: why === undefined ? NOT_IN_LIBRARY : `${NOT_IN_LIBRARY} Not sure it’s for learning: ${why}.`,
         saves: true,
+        choices: menu, // R95: the banner's choices, where the owner's rules can be kept
       };
     }
     case 'not-learning': {
@@ -118,12 +144,13 @@ export function chipFor(state: SaveState, busy: SaveControllerImpl['busy'], save
         tone: 'neutral',
         tooltip: also === undefined ? hint : `${hint} It also has: ${also}.`,
         saves: true,
+        asks: true,
       };
     }
     case 'asking':
       return { label: 'Not saved', tone: 'neutral', saves: false };
     case 'memory-only':
-      return { label: 'Not saved: notes stay until you close this tab', tone: 'neutral', tooltip: SAVE_HINT, saves: true };
+      return { label: 'Not saved: notes stay until you close this tab', tone: 'neutral', tooltip: SAVE_HINT, saves: true, asks: true };
     case 'incognito':
       // A status, not a broken control (TB2 visual 4): full contrast, an icon, and a tooltip that says why.
       return { label: 'Incognito: view only', icon: 'visibility', tone: 'neutral', tooltip: INCOGNITO_HINT, saves: false };
@@ -136,6 +163,94 @@ const TOOLTIP_REASONS = 4;
 /** "References section, DOI, 40 pages"; undefined for none. */
 function reasonsLine(reasons: readonly string[]): string | undefined {
   return reasons.length > 0 ? reasons.slice(0, TOOLTIP_REASONS).join(', ') : undefined;
+}
+
+/** "a, b and c". */
+function andList(items: readonly string[]): string {
+  return items.length <= 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items.at(-1) ?? ''}`;
+}
+
+/** What the filter saw, in the words of "it has …": each signal label, with the ones that say the same thing merged. */
+const HAS: Readonly<Record<string, readonly string[]>> = {
+  'arXiv number and References section': ['an arXiv number', 'a References section'],
+  'DOI, Abstract and References section': ['a DOI', 'an abstract', 'a References section'],
+  'arXiv number': ['an arXiv number'],
+  'arXiv number in the file name': ['an arXiv number'],
+  DOI: ['a DOI'],
+  Abstract: ['an abstract'],
+  'References section': ['a References section'],
+  'Many citations': ['many citations'],
+  Citations: ['citations'],
+  'Thesis wording': ['thesis wording'],
+  'Chapter, lecture or contents headings': ['chapter or lecture headings'],
+  ISBN: ['an ISBN'],
+  'Maths symbols': ['maths'],
+  'Academic wording': ['academic wording'],
+  'Slide-deck page shape': ['slide-shaped pages'],
+  'Course words in the link, file name or title': ['course words in its name'],
+};
+/** Where it came from, in the words of "it comes from …". */
+const FROM: Readonly<Record<string, string>> = {
+  'Scholarly website': 'a journal website',
+  'Course website': 'a course website',
+  'University website': 'a university website',
+};
+/** Signals that mean nothing to the owner on their own (TB4 critics): left out of the sentence. */
+const NOT_SAID = new Set(['Made with LaTeX']);
+/** Saves the owner made, in their own words. */
+const BY_OWNER: Readonly<Record<string, string>> = {
+  [SAVED_BY_OWNER]: 'You saved it to your library.',
+  [SAVED_BY_FIRST_MARK]: 'Your first mark saved it to your library.',
+  [SAVED_BY_FIRST_NOTE]: 'Your first note saved it to your library.',
+  'matches your allow list': 'Saved because you chose to always save PDFs from this place.',
+  'you chose to save this file': 'Saved because you chose to save this file.',
+};
+
+/**
+ * The saved chip's hover (TB4 critics): one plain sentence, such as "Saved because it looks like a paper: it has an arXiv
+ * number and a References section." Repeats are merged, the labels are lower case, and labels that say nothing to the owner
+ * ("Made with LaTeX") are left out. Undefined when there is nothing to say.
+ */
+export function savedSentence(reasons: readonly string[]): string | undefined {
+  for (const r of reasons) if (BY_OWNER[r] !== undefined) return BY_OWNER[r];
+  const has: string[] = [];
+  const from: string[] = [];
+  let pages: string | null = null;
+  for (const r of reasons) {
+    if (NOT_SAID.has(r)) continue;
+    const place = FROM[r];
+    if (place !== undefined) {
+      if (!from.includes(place)) from.push(place);
+      continue;
+    }
+    if (/^\d+ pages$/.test(r)) {
+      pages = r;
+      continue;
+    }
+    for (const h of HAS[r] ?? [r.charAt(0).toLowerCase() + r.slice(1)]) if (!has.includes(h)) has.push(h);
+  }
+  if (pages !== null) has.push(pages);
+  // Academic wording only when there is little else to say.
+  const said = has.length > 2 ? has.filter((h) => h !== 'academic wording') : has;
+  const paperish = said.some((h) => /arXiv|DOI|abstract|References|citations/.test(h));
+  const bookish = said.some((h) => /ISBN|chapter/.test(h));
+  const kind = paperish ? 'a paper' : bookish ? 'a book' : said.includes('slide-shaped pages') ? 'slides' : said.includes('thesis wording') ? 'a thesis' : null;
+  const parts: string[] = [];
+  if (said.length > 0) parts.push(`it has ${andList(said.slice(0, 3))}`);
+  if (from.length > 0) parts.push(`it comes from ${andList(from)}`);
+  if (parts.length === 0) return undefined;
+  const lead = kind === null ? 'Saved because' : `Saved because it looks like ${kind}:`;
+  return `${lead} ${parts.join(', and ')}.`;
+}
+
+/** R96: the first line of "Save it to your library anyway?", from the reason the PDF is not saved. */
+export function saveAnywayLine(reason: string | null, privateNumbers: boolean): string {
+  if (privateNumbers || reason === HARD_BLOCK_REASON) return 'This has card, bank or ID numbers. If you save it, its text won’t be searchable.';
+  if (reason === NEVER_SAVE_REASON) return 'You chose never to save this file. Saving it now changes that.';
+  if (reason === FORGOTTEN_REASON) return 'You removed this PDF from your library.';
+  if (reason === CHOICES_UNREAD || reason === FILTER_FAILED) return 'This PDF couldn’t be checked, so it isn’t in your library.';
+  if (reason !== null && reason.startsWith('looks like ')) return `This ${reason}.`;
+  return 'This doesn’t look like a learning PDF.';
 }
 
 /** The controller's state and running effect, re-read whenever it announces a change. */
@@ -159,39 +274,89 @@ export interface StatusChipProps {
   save: SaveControllerImpl;
   /** Where the focus goes when the saved chip's menu was closed with the pointer (the pages). */
   returnFocus?: () => void;
+  /** Its `showNote`: what a choice in the "not sure" menu did (R95). */
+  ui?: Pick<ViewerUi, 'showNote'>;
 }
 
 /** A failed save or Undo is told by the App's note (SaveControllerImpl.onFailure); here it only must not go unhandled. */
 const quietly = (p: Promise<void>): void => void p.catch(() => {});
 
-export function StatusChip({ save, returnFocus }: StatusChipProps) {
+export function StatusChip({ save, returnFocus, ui }: StatusChipProps) {
   const { state, busy, failed, trashed, resuming } = useSaveView(save);
   const subscribe = useCallback((cb: () => void) => save.subscribe(cb), [save]);
   const warning = useSyncExternalStore(subscribe, () => save.saveWarning);
+  const notSearchable = useSyncExternalStore(subscribe, () => save.notSearchable);
   const [restoring, setRestoring] = useState(false);
+  const [asking, setAsking] = useState(false);
   if (state === null) return null;
+  const privateNumbers = save.decision?.ownerSave !== undefined;
   const look = chipFor(state, busy, save.savedReasons, {
     failed,
     trashed,
     resuming,
     warning,
-    privateNumbers: save.decision?.ownerSave !== undefined,
+    privateNumbers,
     menu: save.hasRules,
+    notSearchable,
   });
   if (look === null) return null;
-  const { saves, menu, ...chip } = look;
+  const { saves, menu, choices, asks, ...chip } = look;
+  const focusProps = returnFocus !== undefined ? { returnFocus } : {};
+  let control;
+  if (menu === true && busy === null) {
+    control = (
+      <DropdownMenu
+        trigger={<Chip {...chip} className={styles.chip} />}
+        items={[{ kind: 'item', id: 'remove', label: REMOVE_FROM_LIBRARY, icon: 'delete_forever', onSelect: () => openSaveDialog('forget') }]}
+        align="end"
+        {...focusProps}
+      />
+    );
+  } else if (choices === true && busy === null) {
+    // R95: the banner's choices, here too.
+    control = (
+      <DropdownMenu
+        trigger={<Chip {...chip} className={styles.chip} />}
+        items={notSureChoices(save).map((c) => ({
+          kind: 'item' as const,
+          id: c.id,
+          label: c.id === 'save' ? 'Save to library' : c.label,
+          icon: c.id === 'save' ? ('library_add' as const) : c.id === 'never' ? ('block' as const) : ('done_all' as const),
+          onSelect: () =>
+            c.run().then(
+              () => ui?.showNote(c.done),
+              () => ui?.showNote(FAILED_NOTE),
+            ),
+        }))}
+        align="end"
+        {...focusProps}
+      />
+    );
+  } else {
+    control = <Chip {...chip} className={styles.chip} onClick={saves ? () => (asks === true ? setAsking(true) : quietly(save.requestSave())) : undefined} />;
+  }
   return (
     <div className={styles.status}>
-      {menu === true && busy === null ? (
-        <DropdownMenu
-          trigger={<Chip {...chip} className={styles.chip} />}
-          items={[{ kind: 'item', id: 'remove', label: REMOVE_FROM_LIBRARY, icon: 'delete_forever', onSelect: () => openSaveDialog('forget') }]}
-          align="end"
-          {...(returnFocus !== undefined ? { returnFocus } : {})}
-        />
-      ) : (
-        <Chip {...chip} className={styles.chip} onClick={saves ? () => quietly(save.requestSave()) : undefined} />
-      )}
+      {control}
+      {/* R96: a stray click on "Not saved" never saves a private PDF: it asks, and Cancel is the default. */}
+      <Dialog
+        open={asking && asks === true}
+        title="Save it to your library anyway?"
+        actions={[
+          { label: 'Cancel', onClick: () => setAsking(false) },
+          {
+            label: 'Save',
+            primary: true,
+            onClick: () => {
+              setAsking(false);
+              quietly(save.requestSave());
+            },
+          },
+        ]}
+        onOpenChange={(open) => !open && setAsking(false)}
+      >
+        <p className={cards.body}>{saveAnywayLine(save.whyNotSaved, privateNumbers)}</p>
+      </Dialog>
       {state.kind === 'saved' && trashed && (
         <TextButton
           label="Restore"
