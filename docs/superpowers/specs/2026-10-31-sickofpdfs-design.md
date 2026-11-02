@@ -184,7 +184,7 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 
 **R90: Bold word starts (Nov 2, owner request).** This is a reading aid in the spirit of "bionic" reading. The product never uses the trademarked name "Bionic Reading".
 - **What it does.** In every word, the first letters are drawn bold, and the rest stay as printed.
-  - Words of 1 to 3 letters get their first letter bold. Longer words get their first half bold, rounded up: "Rea·ding", "meth·od", "facili·tating".
+  - Words of 1 to 3 letters get their first letter bold. Longer words get their first half bold, rounded up: "Read·ing" (4 of 7), "met·hod" (3 of 6), "facili·tating" (6 of 12), as in the owner's reference.
   - Only letters count. Pure numbers, maths symbols and punctuation are left alone.
   - Each part of a hyphenated word counts as its own word. A word broken across lines counts per line.
 - **How it is drawn.** It reuses the bold mark's glyph-outline overlay (BoldLayer), with a heavier stroke, so it reads as clearly bold at 100%, as in common examples. It is drawn over the page's render and never changes the file.
