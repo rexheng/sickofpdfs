@@ -1,8 +1,8 @@
 // The owner's own rules for the learning filter, and the few records the filter keeps on this computer (contracts §5):
 // - "Never save this file": a salted fingerprint in the local-only store (`sop-local`), read before any page is read;
 // - the deny and allow lists: the synced settings `filter.deny` and `filter.allow` in the library store;
-// - "Report a wrong decision": the owner's label and a salted fingerprint, never the file;
-// - the forgotten list (ruling R75): salted fingerprints of PDFs forgotten here, so a restore never brings one back.
+// - "Report a wrong decision": the owner's label and a salted fingerprint, never the file.
+// The list of forgotten readings is not here: it is the library store's own, written with Forget's delete (R88, R89).
 //
 // Privacy: every record here is the owner's own action. Nothing is written because a PDF was opened, and nothing about a
 // PDF is logged. In Incognito there is no rules source at all (nothing is saved there).
@@ -25,12 +25,8 @@ export interface FilterRulesSource {
   allow(entry: string): Promise<void>;
   /** "Never for this file" (or Forget's "Never save this file"). */
   neverSave(shas: readonly Sha256[]): Promise<void>;
-  /** The PDF was saved: the owner's latest choice wins, so it is neither "never save" nor "forgotten" any more. */
+  /** The PDF was saved: the owner's latest choice wins, so it is not "never save" any more. */
   saved(shas: readonly Sha256[]): Promise<void>;
-  /** The owner forgot it (R75): a restore must skip it. */
-  forgotten(shas: readonly Sha256[]): Promise<void>;
-  /** True when the owner forgot these bytes on this computer (and has not saved them since). */
-  isForgotten(sha: Sha256): Promise<boolean>;
   /** "Report a wrong decision". */
   report(sha: Sha256, label: FilterReportLabel): Promise<void>;
 }
@@ -89,18 +85,7 @@ export function createRulesSource(d: RulesSourceDeps): FilterRulesSource {
     async saved(shas) {
       const l = await readable();
       if (l === null) return; // nothing was ever kept, so there is nothing to take back
-      await each(shas, async (sha) => {
-        await l.removeNeverSave(sha);
-        await l.removeForgotten(sha);
-      });
-    },
-    async forgotten(shas) {
-      const l = await local();
-      await each(shas, (sha) => l.addForgotten(sha));
-    },
-    async isForgotten(sha) {
-      const l = await readable();
-      return l !== null && (await l.isForgotten(sha));
+      await each(shas, (sha) => l.removeNeverSave(sha));
     },
     async report(sha, label) {
       await (await local()).addFilterReport(sha, label);

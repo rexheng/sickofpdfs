@@ -28,8 +28,8 @@ const RANDOM_META_KEYS: readonly MetaKey[] = ['filterSalt'];
 export const LOCAL_ONLY_STORES: readonly { name: string; options?: IDBObjectStoreParameters }[] = [
   { name: 'secrets', options: { keyPath: 'name' } }, // { name: SecretName, value: string }
   { name: 'meta', options: { keyPath: 'key' } }, // { key: MetaKey, value: string }; claudeSpendMonth holds JSON { month, usd } (Phase 4, A6)
-  // Phase 3: salted fingerprints, { hash, list }. `list` is 'never-save' (the owner chose "Never save this file") or 'forgotten'
-  // (forgotten on this computer, so a restore never brings it back). The two lists hash differently, so they never collide.
+  // Phase 3: salted fingerprints of the files the owner chose "Never save this file" for, { hash, list: 'never-save' }. (The list
+  // of forgotten readings is the library store's own, R89.)
   { name: 'never_save', options: { keyPath: 'hash' } },
   { name: 'filter_reports', options: { keyPath: 'id', autoIncrement: true } }, // Phase 3: { hash, label } from "Report a wrong decision"
   { name: 'handles' }, // out-of-line keys: folder handles
@@ -60,14 +60,9 @@ export interface LocalOnlyStore {
   removeNeverSave(sha: string): Promise<void>;
   /** "Report a wrong decision": the owner's label and the salted fingerprint, nothing else. A second report of a file replaces the first. */
   addFilterReport(sha: string, label: FilterReportLabel): Promise<void>;
-  /** Forgotten on this computer (ruling R75): a restore skips these, even from a backup the forget could not clean. */
-  isForgotten(sha: string): Promise<boolean>;
-  addForgotten(sha: string): Promise<void>;
-  /** Saved again after it was forgotten: a restore may bring it back. */
-  removeForgotten(sha: string): Promise<void>;
 }
 
-type FingerprintList = 'never-save' | 'forgotten';
+type FingerprintList = 'never-save';
 const REPORT_LABELS: readonly FilterReportLabel[] = ['learning', 'not-learning'];
 const FINGERPRINT = /^[0-9a-f]{64}$/;
 
@@ -233,9 +228,6 @@ export async function openLocalOnlyStore(): Promise<LocalOnlyStore> {
     isNeverSave: (sha) => onList('never-save', sha),
     addNeverSave: (sha) => addToList('never-save', sha),
     removeNeverSave: (sha) => removeFromList('never-save', sha),
-    isForgotten: (sha) => onList('forgotten', sha),
-    addForgotten: (sha) => addToList('forgotten', sha),
-    removeForgotten: (sha) => removeFromList('forgotten', sha),
 
     async addFilterReport(sha, label) {
       assertFingerprint(sha);

@@ -14,8 +14,8 @@
 //   open tab follows a forget back to "Not sure". The first-mark Undo is offered only while that mark is all there is,
 //   in any tab; a save a note started has none.
 // - Phase 3 (S11): the owner's choice for the file is asked before any page text is read; the filter then runs in memory.
-//   "Forget this PDF" removes everything (as Undo does), keeps only a salted fingerprint so a restore never brings it back,
-//   and asks the backup writer to clean it out of the backups (R75). A PDF with card or bank numbers that the owner saves
+//   "Forget this PDF" removes everything (as Undo does); the store's delete keeps only a salted hash in its forgotten list,
+//   so a restore never brings it back (R88, R89), and then the backup writer cleans it out of the backups (R75). A PDF with card or bank numbers that the owner saves
 //   anyway keeps its page text out of search (D9).
 import {
   type DocumentId,
@@ -28,7 +28,6 @@ import {
   type SaveEffect,
   type SaveEvent,
   type SaveState,
-  type Sha256,
 } from '@sop/core';
 import type { PdfBackend, SaveController } from '@sop/viewer';
 import type { BlobStore } from '../../store/blob-store';
@@ -153,7 +152,8 @@ export interface SaveControllerImpl extends SaveController {
   alwaysForSite(): Promise<void>;
   /**
    * "Forget this PDF" and "Remove from library…": the library, this computer and the backups keep nothing of it (R13,
-   * R75), and a salted fingerprint stops a restore from bringing it back. `neverSave` also remembers "Never save this file".
+   * R75); the store's forgotten list (a salted hash, R88, R89) stops a restore from bringing it back. `neverSave` also
+   * remembers "Never save this file".
    * Rejects (and changes nothing) when it is not saved, or the library could not forget it.
    */
   forget(o: { neverSave: boolean }): Promise<ForgetOutcome>;
@@ -416,7 +416,8 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     texts.clear(); // the library has the text now; this tab no longer needs its copy
     savedReasons = reasons;
     saveWarning = owner?.warning ?? null;
-    // The owner's latest choice wins: a saved PDF is neither "never save" nor "forgotten" any more.
+    // The owner's latest choice wins: a saved PDF is not "never save" any more. (In the store's list a saved PDF does not count
+    // as forgotten, R89.)
     void d.rules?.saved([id, loaded.sha256]).catch(() => {});
     createdHere = created && (cause === 'first-mark' || cause === 'first-note');
     // R67 (c): Undo only ever removes the save and the one mark that caused it. Not when this tab did not create the
@@ -435,9 +436,9 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
 
   /**
    * Removes the saved PDF: its rows, its copy, and what this computer kept outside the store. `owner` is the owner's own
-   * Forget: then the salted records come first (so another tab that hears the delete can tell it was a Forget, not an
-   * Undo), the chip says "removed from your library", and the backups are cleaned (R75). Without it (Undo, a withdrawn
-   * first note) the PDF goes back to "not sure" and nothing at all is kept.
+   * Forget: the store's delete writes its forgotten list in the same transaction (R88, R89), so another tab that hears the
+   * delete can tell a Forget from an Undo; the chip says "removed from your library", and the backups are cleaned (R75).
+   * Without it (Undo, a withdrawn first note) the PDF goes back to "not sure" and nothing at all is kept.
    */
   async function forgetEffect(owner: OwnerForget | null): Promise<void> {
     if (store === null || state.kind !== 'saved') return;
