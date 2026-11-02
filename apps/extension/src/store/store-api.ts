@@ -34,6 +34,7 @@ import type { StoreChange } from './change-bus';
 import { ftsQuery } from './fts-query';
 import { createLibraryApi, type LibraryApi } from './library-api';
 import { createPageFiguresApi, type PageFiguresApi } from './page-figures';
+import { forgottenHashes, recordForgotten } from './forgotten';
 import { FTS_TABLES } from './schema';
 import { isReadOnly, type SqlValue, userVersion } from './schema-v2';
 
@@ -637,13 +638,22 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
       }),
   };
 
-  function forgetRows(documentId: DocumentId): Promise<void> {
+  async function forgetRows(documentId: DocumentId): Promise<void> {
+    // R82: the fingerprints that leave for good (the document and its aliases) are hashed first, so the list of forgotten readings
+    // is written in the same transaction as the delete (forgotten.ts). The request queue keeps anything from changing in between.
+    const hashes = await attempt(() => {
+      assertWritable();
+      checkHex(documentId, 'the document id');
+      if (!documentExists(documentId)) return null;
+      return [documentId, ...db.selectObjects('SELECT sha256 AS id FROM aliases WHERE document_id = ?', [documentId]).map((r) => text(r, 'id'))];
+    }).then((ids) => (ids === null ? new Map<string, string>() : forgottenHashes(db, ids)));
     return attempt(() => {
       assertWritable();
       checkHex(documentId, 'the document id');
       let existed = false;
       db.savepoint(() => {
         existed = documentExists(documentId);
+        if (existed) recordForgotten(db, hashes.values(), deps.now());
         // 1. Every id that names this document or something hanging off it. The history row's id is the document id.
         const ids = new Set<string>([documentId]);
         for (const sql of [

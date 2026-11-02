@@ -16,6 +16,7 @@
 // - It runs inside the store worker's own request queue (see `startDailyPurge`), so a restore cannot slip in between steps.
 import type { DocumentId, HlcStamp } from '@sop/core';
 import type { StoreChange } from './change-bus';
+import { forgottenHashes, recordForgotten } from './forgotten';
 import { FTS_TABLES } from './schema';
 import type { SqlDb } from './schema-v2';
 
@@ -85,6 +86,17 @@ export async function purgeTrashRows(db: SqlDb, deps: TrashDeps, olderThan: numb
     }
   }
 
+  // R82: the fingerprints that leave for good (each reading and its aliases), hashed now so the list of forgotten readings is
+  // written in the same transaction as the delete (forgotten.ts).
+  const fingerprints = new Map<string, string[]>();
+  if (copiesGone.length > 0) {
+    for (const id of copiesGone) fingerprints.set(id, [id]);
+    for (const r of db.selectObjects('SELECT sha256 AS id, document_id AS doc FROM aliases WHERE document_id IN (SELECT value FROM json_each(?))', [JSON.stringify(copiesGone)])) {
+      fingerprints.get(str(r, 'doc'))?.push(str(r, 'id'));
+    }
+  }
+  const hashes = copiesGone.length > 0 ? await forgottenHashes(db, [...fingerprints.values()].flat()) : new Map<string, string>();
+
   // 3. The rows, in one transaction.
   const forgotten: string[] = [];
   const blanked = new Map<string, string[]>();
@@ -105,6 +117,11 @@ export async function purgeTrashRows(db: SqlDb, deps: TrashDeps, olderThan: numb
         tx.exec({ sql: 'DELETE FROM documents WHERE id IN (SELECT value FROM json_each(?))', bind: [JSON.stringify(still)] });
         // Every outbox row naming any of them, including the delete rows the cascade itself just queued.
         tx.exec({ sql: 'DELETE FROM outbox WHERE row_id IN (SELECT value FROM json_each(?))', bind: [JSON.stringify(ids)] });
+        recordForgotten(
+          tx,
+          still.flatMap((id) => (fingerprints.get(id) ?? [id]).flatMap((sha) => (hashes.has(sha) ? [hashes.get(sha) as string] : []))),
+          Date.now(),
+        );
         forgotten.push(...still);
       }
     }
