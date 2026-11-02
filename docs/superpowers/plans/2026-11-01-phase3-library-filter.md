@@ -235,3 +235,16 @@ Library: Home; My library list (plain, row hover, selected, keyboard focus); gri
     - refuses a folder with no readable `library.json`;
     - checks every row's ids against its own reading, so a crafted row can never move a note to another reading.
 - **From S11 triage (2 Nov):** walkthrough `20-journal-paper-link` steps 5–6 ("reopens where you stopped", and the history behind it) fail until S16 lands. S16 must make them pass unchanged.
+
+**S18. Tags, About this PDF and smart sorting (UI for R92; added 2 Nov).**
+- Owns `apps/extension/src/library/tags/**`, `apps/extension/src/library/about/**` and `apps/extension/src/viewer/about/**`. Adds one-line mounts in the library sidebar, row menu, viewer File menu and saved-chip menu.
+- **Tags:**
+  - the "Tags" list in the library's left column, with counts;
+  - tag chips on rows and in the grid;
+  - add or remove tags on one or many rows;
+  - auto chips, lighter and marked "auto", with Keep and Remove;
+  - rename, merge and delete.
+- **About this PDF:** the details panel in the library and the viewer, as R92 describes, with "Your context" as the document note.
+- **Smart sorting:** group by Topic, Course, Tag or Kind; "Related readings"; and `tag:` and `course:` in the Ctrl+K palette.
+- Depends: the categoriser engine (wt/categorise), S7, S9, S14 and S15. · **visual** · opus · M.
+- **Topic names:** 2 telling terms joined by " · ". A term may be a two-word phrase ("Inflation · Monetary Policy").
