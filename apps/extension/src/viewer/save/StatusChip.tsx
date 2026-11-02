@@ -121,8 +121,8 @@ export function chipFor(state: SaveState, busy: SaveControllerImpl['busy'], save
   }
 }
 
-/** The tooltip shows this many reasons at most, so it stays short. */
-const TOOLTIP_REASONS = 3;
+/** The tooltip shows this many reasons at most, strongest first, so it stays short. */
+const TOOLTIP_REASONS = 4;
 
 /** "References section, DOI, 40 pages"; undefined for none. */
 function reasonsLine(reasons: readonly string[]): string | undefined {

@@ -177,6 +177,27 @@ export const SCRUB_WAIT_MS = 60_000;
 
 type SaveCause = 'filter' | 'owner' | 'first-mark' | 'first-note';
 
+/** The saved chip's hover lists this many reasons at most, strongest first. */
+export const SAVED_REASONS = 4;
+
+/**
+ * Why the filter saved it, for the hover and the library: up to 4 reasons, strongest first, in the owner's words ("arXiv
+ * number, Many citations, Abstract"). A save by the score (or by the tie-breaker's nudge) names its strongest signals; a save
+ * by a rule (force save, the allow list) keeps the rule's own words first.
+ */
+export function filterReasons(d: FilterDecision | null): string[] {
+  if (d === null) return [];
+  if ((d.rule === 'score' || d.rule === 'model') && d.signals !== undefined) {
+    const out: string[] = [];
+    for (const s of [...d.signals].filter((x) => x.weight > 0).sort((a, b) => b.weight - a.weight)) {
+      if (!out.includes(s.label)) out.push(s.label);
+      if (out.length === SAVED_REASONS) break;
+    }
+    if (out.length > 0) return out;
+  }
+  return d.reasons.slice(0, SAVED_REASONS);
+}
+
 /** A forget the owner asked for (Forget this PDF), as opposed to an Undo or a withdrawn first note. */
 interface OwnerForget {
   neverSave: boolean;
@@ -350,7 +371,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     const pages = await allPageTexts();
     const put = blobs === null ? null : await blobs.put(loaded.blob, id);
     const reasons =
-      cause === 'filter' ? (decision?.reasons ?? []) : [cause === 'owner' ? SAVED_BY_OWNER : cause === 'first-note' ? SAVED_BY_FIRST_NOTE : SAVED_BY_FIRST_MARK];
+      cause === 'filter' ? filterReasons(decision) : [cause === 'owner' ? SAVED_BY_OWNER : cause === 'first-note' ? SAVED_BY_FIRST_NOTE : SAVED_BY_FIRST_MARK];
     // D9: card, bank or ID numbers. The owner's own save wins, with a warning, and the text is kept out of search.
     const owner = decision?.ownerSave ?? null;
     // Page 1 names a reading; paperwork saved by choice (a receipt, a never-save file) keeps its own name instead, which is
