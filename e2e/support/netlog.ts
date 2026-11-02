@@ -99,3 +99,38 @@ export async function netlogBrowserServiceHosts(netlogPath: string): Promise<str
   const hosts = (await readNetlogRequests(netlogPath)).filter((r) => r.browserService && NETWORK_SCHEME.test(r.url)).map((r) => new URL(r.url).host);
   return [...new Set(hosts)].sort();
 }
+
+// ---- the online lookups (S12) ------------------------------------------------------------------------------------------------------
+
+const ARXIV_ID = /^(?:\d{4}\.\d{4,5}|[a-z]+(?:-[a-z]+)*(?:\.[A-Za-z]{2})?\/\d{7})$/;
+const DOI = /^10\.\d{4,9}\/\S+$/;
+
+/**
+ * True when `url` is exactly a request the online lookups make (Settings → Online lookups, off until the owner turns it on), and so goes to
+ * one of two hosts and carries an id and nothing else:
+ *   https://export.arxiv.org/api/query?id_list=<arXiv id>&max_results=1
+ *   https://api.crossref.org/works/<DOI, percent-encoded>
+ * Any other address on these two hosts (a search, a list, an extra parameter) is not one.
+ */
+export function isLookupRequest(url: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== 'https:' || u.port !== '' || u.username !== '' || u.password !== '' || u.hash !== '') return false;
+  if (u.hostname === 'export.arxiv.org') {
+    const keys = [...u.searchParams.keys()].sort().join(',');
+    return u.pathname === '/api/query' && keys === 'id_list,max_results' && u.searchParams.get('max_results') === '1' && ARXIV_ID.test(u.searchParams.get('id_list') ?? '');
+  }
+  if (u.hostname === 'api.crossref.org') {
+    if (u.search !== '' || !u.pathname.startsWith('/works/')) return false;
+    try {
+      return DOI.test(decodeURIComponent(u.pathname.slice('/works/'.length)));
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}

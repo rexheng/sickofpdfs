@@ -8,7 +8,7 @@ import { buildViewerUrl, VIEWER_PATH } from '../../apps/extension/src/shared/vie
 import { LOCAL_ONLY_DB, LOCAL_ONLY_STORES } from '../../apps/extension/src/local-only/secrets-store';
 import type { SopTestHooks } from '../../apps/extension/src/testing/test-hooks';
 import { launchExtension, waitForExtensionWorker } from './launch';
-import { netlogBrowserServiceHosts, netlogExternalUrls, readNetlogRequests, waitForNetlog } from './netlog';
+import { isLookupRequest, netlogBrowserServiceHosts, netlogExternalUrls, readNetlogRequests, waitForNetlog } from './netlog';
 import { profileTemplates, type ProfileKind } from './seed-profile';
 import { startFixtureServer, TEST_ASSETS, type FixtureServer } from './server';
 
@@ -58,10 +58,13 @@ interface Options {
   /** `seeded`: file access and Incognito allowed. `bare`: neither (see seed-profile.ts). */
   profile: ProfileKind;
   /**
-   * `enforce` (default): after the test the browser closes and the net log must hold no external request.
+   * `enforce` (default): after the test the browser closes and the net log must hold no external request. That includes arXiv and
+   * Crossref: Settings → Online lookups is off until the owner turns it on, so a lookup in a test that did not turn it on is a failure.
+   * `lookups`: for a test that turns Online lookups on. The only requests allowed are the lookups' own, to exactly export.arxiv.org and
+   * api.crossref.org and carrying an id and nothing else (`isLookupRequest`); anything else fails the test.
    * `observe`: for the gate's own positive controls; the test must call `netgate.report()` and assert on it.
    */
-  networkGate: 'enforce' | 'observe';
+  networkGate: 'enforce' | 'lookups' | 'observe';
 }
 
 interface Fixtures {
@@ -168,6 +171,10 @@ export const test = base.extend<Options & Fixtures, WorkerFixtures>({
     }
     // A gate that recorded nothing would pass on anything.
     expect(report.recording, "the net log does not show the extension's own ping: the gate is not recording").toBe(true);
+    if (networkGate === 'lookups') {
+      expect(report.external.filter((u) => !isLookupRequest(u)), 'requests to anything but an id-only lookup of arXiv or Crossref').toEqual([]);
+      return;
+    }
     expect(report.external, 'requests to anything but the fixture server').toEqual([]);
   },
 
