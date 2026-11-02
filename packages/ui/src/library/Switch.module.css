@@ -1,0 +1,92 @@
+/*
+ * GM3 switch [css default]: the track 52 × 32 with round ends; off, surface-container-highest with a 2 px outline and a
+ * 16 px handle in the outline colour; on, primary with a 24 px on-primary handle holding a 16 px check in
+ * on-primary-container. The handle grows to 28 px while pressed. Disabled: 38 % opacity.
+ */
+.switch {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  inline-size: var(--sop-switch-w);
+  block-size: var(--sop-switch-h);
+  margin: 0;
+  padding: 0;
+  border: var(--sop-switch-outline) solid var(--gm3-sys-color-outline);
+  border-radius: var(--shape-full);
+  background-color: var(--gm3-sys-color-surface-container-highest);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.handle {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: calc(var(--sop-switch-h) / 2 - var(--sop-switch-outline) - var(--sop-switch-handle-off) / 2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--sop-switch-handle-off);
+  block-size: var(--sop-switch-handle-off);
+  border-radius: var(--shape-full);
+  background-color: var(--gm3-sys-color-outline);
+  color: var(--gm3-sys-color-on-primary-container);
+  transform: translateY(-50%);
+  transition:
+    inset-inline-start 150ms ease-out,
+    inline-size 150ms ease-out,
+    block-size 150ms ease-out,
+    background-color 150ms ease-out;
+}
+
+.switch:hover .handle {
+  background-color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.on {
+  border-color: var(--gm3-sys-color-primary);
+  background-color: var(--gm3-sys-color-primary);
+}
+
+.on .handle,
+.on:hover .handle {
+  inset-inline-start: calc(var(--sop-switch-w) - var(--sop-switch-h) / 2 - var(--sop-switch-outline) - var(--sop-switch-handle-on) / 2);
+  inline-size: var(--sop-switch-handle-on);
+  block-size: var(--sop-switch-handle-on);
+  background-color: var(--gm3-sys-color-on-primary);
+}
+
+.on:hover .handle {
+  background-color: var(--gm3-sys-color-primary-container);
+}
+
+.switch:active:not(:disabled) .handle {
+  inset-inline-start: calc(var(--sop-switch-h) / 2 - var(--sop-switch-outline) - var(--sop-switch-handle-pressed) / 2);
+  inline-size: var(--sop-switch-handle-pressed);
+  block-size: var(--sop-switch-handle-pressed);
+}
+
+.on:active:not(:disabled) .handle {
+  inset-inline-start: calc(var(--sop-switch-w) - var(--sop-switch-h) / 2 - var(--sop-switch-outline) - var(--sop-switch-handle-pressed) / 2);
+}
+
+.switch:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.switch:disabled {
+  opacity: var(--gm3-state-disabled-content);
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .handle {
+    transition: none;
+  }
+}
+
+/* The check on the handle is 16 px (the icon's own box is 20 or 24). */
+.handle > .check {
+  --_size: var(--sop-switch-icon);
+}

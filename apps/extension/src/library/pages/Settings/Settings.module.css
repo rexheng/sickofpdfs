@@ -1,0 +1,84 @@
+/*
+ * Settings: Drive's settings layout. The section list sits on the left as the library's own navigation does (32 px pills,
+ * the chosen one in #c2e7ff), and stays in place while the sections scroll beside it.
+ */
+.layout {
+  display: grid;
+  grid-template-columns: var(--sop-settings-nav-w) minmax(0, var(--sop-settings-max-w));
+  gap: var(--space-8);
+  align-items: start;
+}
+
+.narrow {
+  grid-template-columns: minmax(0, var(--sop-settings-max-w));
+}
+
+.list {
+  position: sticky;
+  inset-block-start: 0;
+  padding-block-start: var(--space-1);
+}
+
+.items {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+  box-sizing: border-box;
+  block-size: var(--nav-item-h);
+  padding: 0 var(--space-4);
+  border-radius: var(--shape-nav-item);
+  color: var(--gm3-sys-color-on-surface-variant);
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.label {
+  overflow: hidden;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.item:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.item:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.on,
+.on .label {
+  color: var(--gm3-sys-color-on-secondary-fixed);
+}
+
+.on {
+  background-color: var(--drive-row-selected-bg);
+}
+
+.on:hover {
+  background-color: var(--drive-row-selected-hover);
+}
+
+.sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-inline-size: 0;
+  padding-block-start: var(--space-1);
+}
+
+.slot {
+  scroll-margin-block-start: var(--space-4);
+}

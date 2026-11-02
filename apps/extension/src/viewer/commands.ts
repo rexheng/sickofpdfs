@@ -22,6 +22,7 @@ import type { OpenedDocument } from './open-document';
 import { enterPresentation } from './presentation';
 import { printDocument } from './print/print';
 import type { PrintMarks } from './print/print-marks';
+import { keysFor, readOverrides } from '../shortcuts/overrides';
 import { isTypingTarget, type KeyCombo, type ShortcutDef } from './shortcuts';
 
 export { buildMenus, formatCombo } from './chrome/menus';
@@ -127,8 +128,8 @@ interface CommandSpec {
   keys: KeyCombo[];
 }
 
-/** Every command, in the order of the shortcut sheet. (Dark pages were dropped: ruling R41.) */
-const SPECS: [ViewerCommandId, CommandSpec][] = [
+/** Every command, in the order of the shortcut sheet. (Dark pages were dropped: ruling R41.) Settings → Shortcuts lists them too. */
+export const SPECS: [ViewerCommandId, CommandSpec][] = [
   ['file.openInChrome', { label: 'Open in Chrome’s viewer', icon: 'open_in_new', keys: [] }],
   // Phase 3 (S15): only for a reading opened from its saved copy (`?doc=`).
   ['file.openOriginal', { label: 'Open original link', icon: 'link', keys: [] }],
@@ -188,10 +189,11 @@ const always = () => true;
 const LIMIT_EPSILON = 1e-3;
 
 function assemble(behaviours: Partial<Record<ViewerCommandId, Behaviour>>): ViewerCommands {
+  const overrides = readOverrides();
   return new Map(
     SPECS.map(([id, spec]): [ViewerCommandId, ViewerCommand] => {
       const behaviour = behaviours[id];
-      return [id, { id, ...spec, ...(behaviour ?? LATER), built: behaviour !== undefined }];
+      return [id, { id, ...spec, keys: keysFor(id, spec.keys, overrides), ...(behaviour ?? LATER), built: behaviour !== undefined }]; // S14: the owner's own keys
     }),
   );
 }
@@ -400,13 +402,15 @@ const keysFree = (id: ViewerCommandId): boolean => id === 'tools.search' || !pal
 /** The shortcuts for installShortcuts: every command's keys, in command order. */
 export function commandShortcuts(cmds: ViewerCommands): ShortcutDef[] {
   const defs: ShortcutDef[] = [];
+  const rebound = readOverrides();
   for (const c of cmds.values()) {
     const taken = NEVER_THE_BROWSERS[c.id] ?? [];
-    const keys = [...c.keys, ...(HIDDEN_KEYS[c.id] ?? [])].filter((k) => !taken.includes(k));
+    const keys = [...c.keys, ...(rebound[c.id] !== undefined ? [] : (HIDDEN_KEYS[c.id] ?? []))].filter((k) => !taken.includes(k));
     const ours = keys.filter((k) => alwaysOurs(c.id, k));
     const others = keys.filter((k) => !alwaysOurs(c.id, k));
     const typing = EDITING_KEYS.has(c.id) ? { whileTyping: 'yield' as const } : SWALLOWED_WHILE_TYPING.has(c.id) ? { whileTyping: 'swallow' as const } : {};
-    if (taken.length > 0) defs.push({ id: c.id, keys: taken, run: (e) => !inTextField(e) && keysFree(c.id) && c.enabled() && c.run() });
+    // Still taken from Chrome when the owner gave the command another key (S14), but then it does nothing.
+    if (taken.length > 0) defs.push({ id: c.id, keys: taken, run: (e) => c.keys.some((k) => taken.includes(k)) && !inTextField(e) && keysFree(c.id) && c.enabled() && c.run() });
     if (ours.length > 0) defs.push({ id: c.id, keys: ours, run: () => keysFree(c.id) && c.enabled() && c.run() });
     const physical = BY_PHYSICAL_KEY.has(c.id) ? { byPhysicalKey: true } : {};
     if (others.length > 0) defs.push({ id: c.id, keys: others, run: () => c.run(), enabled: () => keysFree(c.id) && c.enabled(), ...typing, ...physical });

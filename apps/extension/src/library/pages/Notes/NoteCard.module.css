@@ -1,0 +1,109 @@
+/*
+ * A note thread as a Docs comment card (02 section 4.11), on Drive's tonal surface (#f0f4f9) so it stands out on the
+ * white content card: 12 px corners, padding 16 16 12. The head names the reading in 14/20 500; under it, where the note
+ * is, in 12/16 like the viewer's notes panel; then the comments.
+ */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  min-inline-size: 0;
+  padding: var(--sop-card-pad);
+  border-radius: var(--sop-card-radius);
+  background-color: var(--gm3-sys-color-surface-container);
+}
+
+.opens {
+  cursor: pointer;
+}
+
+.opens:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), var(--gm3-sys-color-surface-container));
+}
+
+.head {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-inline-size: 0;
+}
+
+.title {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--space-1);
+  background: none;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-row-name);
+  font-variation-settings: "opsz" 17;
+  text-align: start;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.title:hover:not(:disabled) {
+  color: var(--gm3-sys-color-primary);
+  text-decoration: underline;
+}
+
+.title:disabled {
+  cursor: inherit;
+}
+
+.title:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.where {
+  display: flex;
+  gap: var(--space-1);
+  min-inline-size: 0;
+  margin: calc(-1 * var(--space-2)) 0 0;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-docs-comment-time);
+  letter-spacing: var(--tracking-tight);
+  white-space: nowrap;
+}
+
+.page {
+  flex: none;
+}
+
+.quote {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.comments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sop-card-reply-gap);
+}
+
+.foot {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: space-between;
+  min-block-size: var(--space-6);
+}
+
+.replies {
+  color: var(--gm3-sys-color-primary);
+  font: var(--type-docs-comment-time);
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+}
+
+.foot > :last-child:not(:first-child),
+.foot > button:only-child {
+  margin-inline-start: auto;
+}

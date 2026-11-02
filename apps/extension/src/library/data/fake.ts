@@ -4,6 +4,7 @@
 import type { DocumentId, DocumentRow, LocationId, LocationRow } from '@sop/core';
 import { compareTitles, shownTitle } from '../../shared/shown-title';
 import type { SearchHit } from '../../store/library-api';
+import { createFakePagesData } from './fake-pages';
 import type { LibraryChange, LibraryData, LibraryItem, LibraryPage, LibraryQuery } from './types';
 
 export interface FakeLibraryOptions {
@@ -147,6 +148,7 @@ export function createFakeLibraryData(o: FakeLibraryOptions): LibraryData {
   };
 
   const data: LibraryData = {
+    ...createFakePagesData({ now, readings: () => [...items.values()], changed: () => changed() }),
     listDocuments(q: LibraryQuery): Promise<LibraryPage> {
       const f = q.filter ?? {};
       const rows = [...items.values()].filter((i) => {

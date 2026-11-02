@@ -9,6 +9,8 @@ export interface DialogAction {
   onClick: () => void;
   /** The main action: a filled button. The others are text buttons. */
   primary?: boolean;
+  /** Greyed out: there is nothing to do yet (Save before a key is chosen). */
+  disabled?: boolean;
 }
 
 export interface DialogProps {
@@ -96,6 +98,7 @@ export function Dialog({ open, title, children, actions, onOpenChange, nameFromT
                     ref={action.primary === true ? primary : undefined}
                     type="button"
                     className={cx(styles.action, action.primary === true && styles.primary)}
+                    disabled={action.disabled === true}
                     onClick={action.onClick}
                   >
                     {action.label}

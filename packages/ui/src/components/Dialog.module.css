@@ -87,6 +87,18 @@
   box-shadow: var(--elev-1);
 }
 
+/* GM3 disabled: the text at 38 %; a filled button's container at 12 % of on-surface. */
+.action:disabled {
+  color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-disabled-content) * 100%), transparent);
+  background-color: transparent;
+  box-shadow: none;
+  cursor: default;
+}
+
+.primary:disabled {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) 12%, transparent);
+}
+
 .action:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);

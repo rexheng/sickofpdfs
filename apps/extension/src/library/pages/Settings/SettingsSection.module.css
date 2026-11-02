@@ -1,0 +1,117 @@
+/* Settings sections, in the Backup section's look (BackupSection.module.css): Drive's list rows with words left, controls right. */
+.section {
+  display: flex;
+  flex-direction: column;
+  max-inline-size: var(--sop-settings-max-w);
+  padding-block-end: var(--space-6);
+}
+
+.title {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-lib-empty-title);
+  font-variation-settings: "opsz" 18;
+}
+
+.intro {
+  margin: var(--space-2) 0 var(--space-4);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  padding-block: var(--space-2) var(--space-4);
+}
+
+.groupTitle {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-lib-subhead);
+  font-variation-settings: "opsz" 18;
+}
+
+.groupText {
+  margin: var(--space-1) 0 var(--space-3);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  border-block-start: 1px solid var(--drive-row-divider);
+}
+
+.row {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+  min-block-size: var(--row-h);
+  padding-block: var(--space-2);
+  border-block-end: 1px solid var(--drive-row-divider);
+}
+
+.inset {
+  padding-inline-start: var(--space-8);
+}
+
+.muted .text {
+  opacity: var(--gm3-state-disabled-content);
+}
+
+.icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.label {
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-row-name);
+  font-variation-settings: "opsz" 17;
+  overflow-wrap: anywhere;
+}
+
+.value {
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-row);
+  font-variation-settings: "opsz" 17;
+  overflow-wrap: anywhere;
+}
+
+.attention {
+  color: var(--gm3-sys-color-error);
+}
+
+.actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.note {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--shape-chip);
+  background-color: var(--gm3-sys-color-surface-container);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}

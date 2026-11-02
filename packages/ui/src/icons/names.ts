@@ -89,6 +89,16 @@ export const ICON_NAMES = [
   'radio_button_unchecked',
   // Phase 3, the search palette (S15): a page hit
   'description',
+  // Phase 3: Home, Notes and Settings (S14): the Settings section list, list entries, warnings and recovered notes
+  'rule',
+  'public',
+  'backup',
+  'settings_backup_restore',
+  'language',
+  'folder',
+  'block',
+  'warning',
+  'history',
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

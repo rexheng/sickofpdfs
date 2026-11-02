@@ -14,3 +14,4 @@ export { QuietButton, type QuietButtonProps } from './QuietButton';
 export { SearchPill, type SearchPillProps } from './SearchPill';
 export { type SegmentOption, SegmentedToggle, type SegmentedToggleProps } from './SegmentedToggle';
 export { Snackbar, type SnackbarMessage, type SnackbarProps } from './Snackbar';
+export { Switch, type SwitchProps } from './Switch';

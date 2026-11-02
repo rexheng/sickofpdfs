@@ -58,6 +58,8 @@ export interface LocalOnlyStore {
   addNeverSave(sha: string): Promise<void>;
   /** The owner saved these bytes after all: their latest choice wins. */
   removeNeverSave(sha: string): Promise<void>;
+  /** How many files are kept as "Never save this file" (Settings → Library rules shows the count, never the files). */
+  countNeverSave(): Promise<number>;
   /** "Report a wrong decision": the owner's label and the salted fingerprint, nothing else. A second report of a file replaces the first. */
   addFilterReport(sha: string, label: FilterReportLabel): Promise<void>;
 }
@@ -228,6 +230,19 @@ export async function openLocalOnlyStore(): Promise<LocalOnlyStore> {
     isNeverSave: (sha) => onList('never-save', sha),
     addNeverSave: (sha) => addToList('never-save', sha),
     removeNeverSave: (sha) => removeFromList('never-save', sha),
+
+    async countNeverSave() {
+      return await transact<number>('never_save', 'readonly', (objects, answer) => {
+        let n = 0;
+        const cursor = objects.openCursor();
+        cursor.onsuccess = () => {
+          const c = cursor.result;
+          if (c === null) return answer(n);
+          if ((c.value as { list?: unknown }).list === 'never-save') n++;
+          c.continue();
+        };
+      });
+    },
 
     async addFilterReport(sha, label) {
       assertFingerprint(sha);

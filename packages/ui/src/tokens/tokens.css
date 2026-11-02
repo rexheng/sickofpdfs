@@ -408,6 +408,26 @@
   --sop-snackbar-max-w: 568px;
   --type-snackbar: 400 14px/20px var(--font-text);
 
+  /* ===== Phase 3: Home, Notes and Settings (S14) ===== */
+  /* A section header on Home and a group inside a Settings section: Drive Home's "Suggested files", Google Sans 16/24 500 [img] */
+  --type-lib-subhead: 500 16px/24px var(--font-display);
+  /* GM3 switch [css default]: a 52 × 32 track, outlined 2 px when off; the handle is 16 px off, 24 px on and 28 px pressed */
+  --sop-switch-w: 52px;
+  --sop-switch-h: 32px;
+  --sop-switch-outline: 2px;
+  --sop-switch-handle-off: 16px;
+  --sop-switch-handle-on: 24px;
+  --sop-switch-handle-pressed: 28px;
+  --sop-switch-icon: 16px;
+  /* Continue reading: a card's page picture is shorter than the grid's, to leave room for where you stopped; a 4 px bar */
+  --sop-resume-thumb-h: 120px;
+  --sop-progress-h: 4px;
+  /* Notes: one column of note cards, as wide as reads well */
+  --sop-notes-col-max: 760px;
+  /* Settings: the section list beside the sections, and the sections' width (the Backup section's own) */
+  --sop-settings-nav-w: 200px;
+  --sop-settings-max-w: 880px;
+
   /* ===== Part 3: component roles that change with the theme. tokens-dark.css declares each one again. ===== */
   --menu-bg: var(--gm3-sys-color-surface-container);           /* #f0f4f9 light context menu [live] */
   --menu-row-h: var(--menu-item-h);                            /* 32px light library menu */

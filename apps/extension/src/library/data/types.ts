@@ -3,6 +3,7 @@
 import type { DocumentId } from '@sop/core';
 import type { PaletteStore } from '../../shared/palette';
 import type { LibraryApi, LibraryQuery } from '../../store/library-api';
+import type { PagesData } from './pages-data';
 
 // ---- contract §5 shapes: the store's own (S9) ------------------------------------------------------------------------
 
@@ -20,7 +21,8 @@ export interface LibraryChange {
 /** What became of one uploaded file. */
 export type UploadOutcome = 'saved' | 'already-saved' | 'not-pdf' | 'needs-password' | 'failed';
 
-export interface LibraryData {
+/** The readings (S7) and, through PagesData, what Home, Notes and Settings use (S14). */
+export interface LibraryData extends PagesData {
   listDocuments(this: void, q: LibraryQuery): Promise<LibraryPage>;
   setStarred(this: void, documentId: DocumentId, on: boolean): Promise<void>;
   trashDocument(this: void, documentId: DocumentId): Promise<void>;

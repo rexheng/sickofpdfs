@@ -5,6 +5,7 @@ import { createEmbedPdfBackend, ENGINE_WORKERS, engineAssets, type PdfBackend } 
 import type { BlobStore } from '../../store/blob-store';
 import type { StoreChange } from '../../store/change-bus';
 import type { StoreClient } from '../../store/client';
+import { createStorePagesData } from './pages-data';
 import type { LibraryData } from './types';
 import { savePickedPdf } from './upload';
 
@@ -18,6 +19,7 @@ export function createStoreLibraryData(client: StoreClient, blobs: BlobStore | n
   let uploads: Promise<unknown> = Promise.resolve();
   const backend = (): PdfBackend => (engine ??= createEmbedPdfBackend(engineAssets((p) => chrome.runtime.getURL(p)), { workers: ENGINE_WORKERS }));
   return {
+    ...createStorePagesData(client),
     listDocuments: (q) => client.listDocuments(q),
     setStarred: (id, on) => client.setStarred(id, on),
     trashDocument: (id) => client.trashDocument(id),

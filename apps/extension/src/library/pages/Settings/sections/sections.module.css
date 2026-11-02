@@ -1,0 +1,176 @@
+/* The parts of the Settings sections that are not rows: the add field, its error, captions, key caps. */
+.addRow {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  padding-block: var(--space-3);
+  border-block-end: 1px solid var(--drive-row-divider);
+}
+
+.addField {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+
+.fieldError {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--gm3-sys-color-error);
+  font: var(--type-row);
+  font-variation-settings: "opsz" 17;
+}
+
+.caption {
+  margin: 0;
+  padding: var(--space-4) 0 var(--space-2);
+  border-block-end: 1px solid var(--drive-row-divider);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-table-header);
+  font-variation-settings: "opsz" 17;
+}
+
+.problem {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin: 0 0 var(--space-3);
+  color: var(--gm3-sys-color-error);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+/* A key, as the shortcut sheet draws one: a small cap on the highest container surface. */
+.keys {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.kbd {
+  display: inline-block;
+  padding: var(--kbd-pad);
+  border-radius: var(--shape-field);
+  background-color: var(--gm3-sys-color-surface-container-highest);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-tooltip);
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+}
+
+.or {
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.changed {
+  color: var(--gm3-sys-color-primary);
+}
+
+/* The strength choice: three halves of one outlined button, as Drive's segmented buttons. */
+.segments {
+  display: inline-flex;
+}
+
+.segment {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  box-sizing: border-box;
+  block-size: var(--chip-h);
+  margin: 0;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--gm3-sys-color-outline);
+  border-inline-start-width: 0;
+  background-color: transparent;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-chip);
+  font-variation-settings: "opsz" 17;
+  cursor: pointer;
+}
+
+.segment:first-child {
+  border-inline-start-width: 1px;
+  border-start-start-radius: var(--shape-full);
+  border-end-start-radius: var(--shape-full);
+}
+
+.segment:last-child {
+  border-start-end-radius: var(--shape-full);
+  border-end-end-radius: var(--shape-full);
+}
+
+.segment:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.segment[aria-checked='true'] {
+  background-color: var(--drive-row-selected-bg);
+  color: var(--gm3-sys-color-on-secondary-fixed);
+}
+
+.segment:focus-visible {
+  position: relative;
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.segment:disabled {
+  opacity: var(--gm3-state-disabled-content);
+  cursor: default;
+}
+
+.segment:disabled:hover {
+  background-color: transparent;
+}
+
+/* The key dialog: the key being chosen, large, in a box that listens for it. */
+.capture {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  inline-size: calc(var(--dialog-max-w) - 2 * var(--space-6));
+  max-inline-size: 100%;
+}
+
+.captureBox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-block-size: var(--space-16);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--gm3-sys-color-outline);
+  border-radius: var(--shape-chip);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+  outline: none;
+}
+
+.captureBox:focus {
+  outline: 1px solid var(--gm3-sys-color-primary);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+  border-color: var(--gm3-sys-color-primary);
+}
+
+.captureBox .kbd {
+  font: var(--type-lib-subhead);
+}
+
+.verdict {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+.verdictBad {
+  color: var(--gm3-sys-color-error);
+}
