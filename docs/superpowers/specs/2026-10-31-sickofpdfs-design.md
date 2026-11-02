@@ -332,6 +332,10 @@ The filter runs on your computer, in memory, before anything is stored. It glanc
    5. The score, for PDFs with text: 3 or more saves; 0 or less does not; anything between is "not sure".
 3. **Not sure:** a small bundled model (MiniLM, well under a second) nudges the score. If still unsure, the chip asks you.
 4. **Scans with no text** are never saved automatically, and the score is not used for them. From scholarly sites or course pages the chip asks; otherwise they are not saved. They are never OCR'd to decide.
+   **R94 (Nov 2, owner): a scan's title counts as a signal.** The title means the file name, the PDF's own title and the link's words.
+   - If the title looks like learning, a no-text scan becomes "Not sure" instead of "Not saved". That means a course code (EC1A1, CS50, 14.01), or words such as lecture, chapter, reading, week, notes, slides, textbook, problem set, syllabus, seminar or tutorial. The quiet banner then offers Save, and a first mark asks as for any "not sure" PDF. The chip says "Not sure: scanned pages · Save to library".
+   - A title that looks private keeps it "Not saved": receipt, invoice, statement, payslip, bank, tax, CV, résumé, passport, or a camera or scanner name such as IMG_1234 or Scan_2023-01-02.
+   - A title never auto-saves a scan, and hard blocks still win.
 
 One reference implementation in TypeScript, with its test cases, defines these rules and weights. It replaces the research prototype, which scored 43 of 44 with zero false saves but had no hard block, force save or MiniLM. Expected results are regenerated from PDFium's text, and any decision that differs from the prototype's is reviewed by hand.
 
