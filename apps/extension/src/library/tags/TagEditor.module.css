@@ -1,0 +1,90 @@
+/* The tags of a reading in the Tags dialog and the details panel: the field, the chips, then "Added for you". */
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A chip with its buttons inside, as a GM3 input chip: 32 px, radius 8, tonal. */
+.chipItem {
+  display: inline-flex;
+  align-items: center;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  block-size: var(--chip-h);
+  padding-inline-start: var(--space-1);
+  border-radius: var(--shape-chip);
+  background-color: var(--sop-tag-bg);
+}
+
+.chipItem .ownChip {
+  max-inline-size: none;
+  min-inline-size: 0;
+  background-color: transparent;
+}
+
+.chipButton {
+  flex: none;
+  color: var(--sop-tag-fg);
+}
+
+.empty {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+.autoSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.autoHeading {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-details-heading);
+}
+
+.autoHint {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-tooltip);
+}
+
+.autoList {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.autoRow {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: space-between;
+  min-block-size: var(--btn-h);
+}
+
+.autoRow .autoChip {
+  max-inline-size: none;
+  min-inline-size: 0;
+}
+
+.autoActions {
+  display: inline-flex;
+  flex: none;
+}

@@ -1,5 +1,6 @@
 // What was typed in the palette, and how a hit's snippet is shown. Pure functions: no store, no DOM.
 import type { DocumentId } from '@sop/core';
+import type { IconName } from '@sop/ui';
 import type { TextPart } from './types';
 
 // ---- operators: the hook for `tag:` and `course:` (S18) ------------------------------------------------------------------------
@@ -13,6 +14,37 @@ export interface PaletteOperator {
   key: string;
   /** The readings the typed value lets through. The palette keeps only hits from these. */
   readings(value: string): Promise<ReadonlySet<DocumentId>>;
+  /** S18: what the value being typed could be (tag names), shown as the first group while it is typed. */
+  suggest?(partial: string): Promise<PaletteSuggestion[]>;
+  /** The suggestions' heading ("Tags", "Courses"). */
+  heading?: string;
+}
+
+/** One suggestion for an operator's value: Enter or a click puts it in the field. */
+export interface PaletteSuggestion {
+  /** What goes after the colon. */
+  value: string;
+  /** How it is shown ("Deep Learning"). */
+  label: string;
+  /** The second line ("Topic · 5 readings"). */
+  detail: string;
+  /** The row's icon (a course, a topic, a tag). */
+  icon?: IconName;
+}
+
+/** The operator being typed at the end of the text (`tag:dee`), or null. `start` is where the `key:` begins. */
+export function operatorBeingTyped(typed: string): { op: PaletteOperator; partial: string; start: number } | null {
+  const m = /(^|\s)([a-z]+):(?:"([^"]*)|(\S*))$/iu.exec(typed);
+  if (m === null) return null;
+  const op = operators.get((m[2] ?? '').toLowerCase());
+  if (op?.suggest === undefined) return null;
+  return { op, partial: m[3] ?? m[4] ?? '', start: m.index + (m[1] ?? '').length };
+}
+
+/** The text with the operator being typed finished: `tag:"Deep Learning" ` (quoted when it has a space), ready for more words. */
+export function completeOperator(typed: string, at: { op: PaletteOperator; start: number }, value: string): string {
+  const v = /[\s"]/u.test(value) ? `"${value.replace(/"/gu, '')}"` : value;
+  return `${typed.slice(0, at.start)}${at.op.key}:${v} `;
 }
 
 const operators = new Map<string, PaletteOperator>();
@@ -32,15 +64,16 @@ export interface ParsedQuery {
   operators: { op: PaletteOperator; value: string }[];
 }
 
-/** `key:value` or `key:"two words"` at the start of the text or after a space. */
-const OPERATOR = /(^|\s)([a-z]+):(?:"([^"]*)"|(\S+))/giu;
+/** `key:value` or `key:"two words"` at the start of the text or after a space. A quote still being typed runs to the end. */
+const OPERATOR = /(^|\s)([a-z]+):(?:"([^"]*)"?|(\S*))/giu;
 
 export function parseQuery(typed: string): ParsedQuery {
   const found: ParsedQuery['operators'] = [];
   const text = typed.replace(OPERATOR, (all: string, lead: string, key: string, quoted: string | undefined, bare: string | undefined) => {
     const op = operators.get(key.toLowerCase());
     const value = (quoted ?? bare ?? '').trim();
-    if (op === undefined || value === '') return all;
+    if (op === undefined) return all;
+    if (value === '') return lead; // `tag:` with nothing after it yet: not searched as a word
     found.push({ op, value });
     return lead;
   });

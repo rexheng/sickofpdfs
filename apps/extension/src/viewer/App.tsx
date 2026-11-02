@@ -77,6 +77,8 @@ import { createHitJumper, type HitJumper, useOpenTarget } from './jump-to-hit';
 import { openSavedCopy, savedCopyName } from './open-saved';
 import { useOriginalLink } from './original-link';
 import { ViewerPalette } from './palette-host';
+import { aboutCommands } from './about/about-commands';
+import { ViewerAbout } from './about/ViewerAbout';
 import { publishRuntime, type ViewerHooks, type ViewerState } from './runtime';
 import { atPage, openInChrome } from './open-in-chrome';
 import { settlePresentation } from './presentation';
@@ -625,7 +627,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       wordStarts: { on: wordStartsSwitch.get, toggle: wordStartsSwitch.toggle },
       ui,
     };
-    return createCommands(ctx, { ...notes?.behaviours(), ...saveDecisionCommands(save) });
+    return createCommands(ctx, { ...notes?.behaviours(), ...saveDecisionCommands(save), ...aboutCommands() });
   }, [params, doc, store, scheduler, rootRef, ui, save, nav.jumps, find.controller, find.open, notes, pageText, originalLink]);
   // Search hits in this document (S15): a jump in place, through the same history as links and find.
   const jumper = useMemo(
@@ -742,6 +744,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       {find.view}
       {notes !== null && viewerFeatures().map((f) => f.View && <f.View key={f.id} host={notes.host} />)}
       {notes !== null && <MarkupMenu input={notes.input} commands={commands} />}
+      <ViewerAbout doc={doc} save={save} session={notes?.host.session ?? null} ui={ui} />
     </>
   );
 });

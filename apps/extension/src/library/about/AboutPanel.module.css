@@ -1,0 +1,65 @@
+/*
+ * The details panel beside the list (Drive's file details): a white card with 16 px corners, 360 px wide, 16 px from the
+ * content card. A 64 px header (icon, "About this PDF" in Google Sans 18/24, close), then the details scroll.
+ */
+.panel {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  box-sizing: border-box;
+  inline-size: var(--sop-details-w);
+  min-block-size: 0;
+  margin-inline-start: var(--space-4);
+  overflow: hidden;
+  border-radius: var(--shape-content-card);
+  background-color: var(--drive-content-bg);
+  color: var(--gm3-sys-color-on-surface);
+}
+
+.header {
+  display: flex;
+  flex: none;
+  gap: var(--space-3);
+  align-items: center;
+  block-size: var(--space-16);
+  padding: 0 var(--space-2) 0 var(--space-5);
+}
+
+.heading {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-details-title);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.body {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  padding: 0 var(--space-5) var(--space-4);
+  overflow-y: auto;
+}
+
+.none {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-block-start: var(--space-8);
+  text-align: center;
+}
+
+.emptyTitle {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-lib-subhead);
+}
+
+.empty {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}

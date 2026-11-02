@@ -5,6 +5,8 @@ import { createEmbedPdfBackend, ENGINE_WORKERS, engineAssets, type PdfBackend } 
 import type { BlobStore } from '../../store/blob-store';
 import type { StoreChange } from '../../store/change-bus';
 import type { StoreClient } from '../../store/client';
+import { createStoreAboutData } from '../about/about-data';
+import { createStoreTagsData } from '../tags/tags-data';
 import { createStorePagesData } from './pages-data';
 import type { LibraryData } from './types';
 import { savePickedPdf } from './upload';
@@ -46,5 +48,7 @@ export function createStoreLibraryData(client: StoreClient, blobs: BlobStore | n
       });
     },
     palette: client,
+    tags: createStoreTagsData(client),
+    about: createStoreAboutData(client),
   };
 }

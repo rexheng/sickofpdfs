@@ -1,0 +1,46 @@
+/* "Add a tag": the outlined field, and under it the suggestions as Drive's light menu (or the dark one in the viewer). */
+.box {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.field {
+  inline-size: 100%;
+}
+
+.list {
+  position: absolute;
+  inset-block-start: calc(100% + var(--space-1));
+  inset-inline: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2) 0;
+  border-radius: var(--shape-menu);
+  background-color: var(--menu-bg);
+  box-shadow: var(--elev-2);
+}
+
+.option {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  min-block-size: var(--menu-row-h);
+  padding: 0 var(--space-3);
+  color: var(--gm3-sys-color-on-surface-variant);
+  cursor: pointer;
+}
+
+.lit {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.optionText {
+  min-inline-size: 0;
+  overflow: hidden;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-menu-item);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

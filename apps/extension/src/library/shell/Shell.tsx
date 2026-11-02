@@ -7,6 +7,8 @@ import { DEFAULT_ROUTE } from '../routes/pages';
 import { ROUTES, type RouteId, routeHref } from '../routes/routes';
 import type { UploadOutcome } from '../data/types';
 import { NewMenu, type NewMenuHandle } from './NewMenu';
+import { TagsNav } from '../tags/TagsNav';
+import { useTagInAddress } from '../tags/tag-route';
 
 const NAV_ITEMS = ROUTES.map((r) => ({ id: r.id, label: r.label, icon: r.icon, href: routeHref(r.id), group: r.group }));
 
@@ -32,6 +34,9 @@ function typing(target: EventTarget | null): boolean {
  */
 export function Shell({ route, search, onSearch, onNotify, newMenu, onUpload, children }: ShellProps) {
   const field = useRef<HTMLInputElement>(null);
+  const addressTag = useTagInAddress();
+  /** S18: My library showing one tag: that tag's pill is the selected one, not My library's. */
+  const tag = route === 'library' ? addressTag : null;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== '/' || e.ctrlKey || e.altKey || e.metaKey || typing(e.target) || e.defaultPrevented) return;
@@ -57,7 +62,12 @@ export function Shell({ route, search, onSearch, onNotify, newMenu, onUpload, ch
         </>
       }
       newButton={<NewMenu ref={newMenu} onNotify={onNotify} onUpload={onUpload} />}
-      nav={<NavList items={NAV_ITEMS} current={route} label="Library" />}
+      nav={
+        <>
+          <NavList items={NAV_ITEMS} current={tag === null ? route : null} label="Library" />
+          <TagsNav current={tag} />
+        </>
+      }
     >
       {children}
     </LibraryShell>

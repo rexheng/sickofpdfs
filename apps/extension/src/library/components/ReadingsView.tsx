@@ -8,6 +8,7 @@ import {
   EmptyState,
   ItemGrid,
   ItemTable,
+  itemsOf,
   PageTitle,
   PointMenu,
   RowActions,
@@ -29,6 +30,16 @@ import { RenameDialog } from './RenameDialog';
 import { nextSort, type Sort, SORT_LABELS } from './sort';
 import { SortMenu } from './SortMenu';
 import { useLayoutPreference } from './use-layout';
+// S18 (R92): tags on rows and cards, several readings at once, Group by, a tag's own list, and About this PDF.
+import { AboutPanel } from '../about/AboutPanel';
+import { groupEntries, useGrouping, useGroups } from '../tags/grouping';
+import { GroupByMenu } from '../tags/GroupByMenu';
+import { RowTags } from '../tags/RowTags';
+import { sayWith } from '../tags/say';
+import { SelectionBar } from '../tags/SelectionBar';
+import { TagDialog } from '../tags/TagDialog';
+import { TagTitle } from '../tags/TagTitle';
+import { useReadingTags, useTagList, useTagReadings } from '../tags/use-tags';
 
 export interface ReadingsViewProps {
   /** The page title: "My library". */
@@ -45,10 +56,17 @@ export interface ReadingsViewProps {
   empty: ReactNode;
   /** A line under the title (Trash: how long things stay). */
   note?: ReactNode;
+  /** My library: the Group by choice (R92 smart sorting). */
+  groupable?: boolean;
+  /** My library narrowed to the readings with this tag (the left column's Tags, a click on a chip). */
+  tagFilter?: string | null;
 }
 
-/** Room for the list's columns: below these widths (px) the Authors and then the Pages columns step aside. */
-const AUTHORS_MIN = 760;
+/**
+ * Room for the list's columns: below these widths (px) the Authors and then the Pages columns step aside. S18: Authors
+ * goes a little sooner, so the titles keep room when the details panel takes the right side of the window.
+ */
+const AUTHORS_MIN = 900;
 const PAGES_MIN = 720;
 
 const keyOf = (item: LibraryItem) => item.doc.id;
@@ -60,8 +78,15 @@ function matches(item: LibraryItem, words: readonly string[]): boolean {
 }
 const fold = (s: string) => s.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase();
 
-export function ReadingsView({ title, view, defaultSort, sortable, groupByDate = false, chips, empty, note }: ReadingsViewProps) {
+export function ReadingsView({ title, view, defaultSort, sortable, groupByDate = false, chips, empty, note, groupable = false, tagFilter = null }: ReadingsViewProps) {
   const { data, notify, search } = useLibrary();
+  const tags = data.tags ?? null;
+  const say = useMemo(() => sayWith(notify), [notify]);
+  const groupingState = useGrouping();
+  const grouping = groupable && tags !== null ? groupingState.grouping : 'none';
+  const tagList = useTagList(tags);
+  const tagReadings = useTagReadings(tags, tagFilter);
+  const narrowed = tagFilter !== null;
   const [layout, setLayout] = useLayoutPreference();
   const [sort, setSort] = useState<Sort>(defaultSort);
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
@@ -73,15 +98,21 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
 
   const words = useMemo(() => fold(search).split(/\s+/).filter(Boolean), [search]);
   const searching = words.length > 0;
-  const shown = useMemo(() => (state.kind === 'ready' ? state.items.filter((i) => !searching || matches(i, words)) : []), [state, searching, words]);
+  const shown = useMemo(
+    () => (state.kind === 'ready' ? state.items.filter((i) => (!searching || matches(i, words)) && (!narrowed || tagReadings?.has(i.doc.id) === true)) : []),
+    [state, searching, words, narrowed, tagReadings],
+  );
 
-  // While searching, the rest of the library is fetched too, so the filter sees every reading.
+  // While searching, grouping or showing one tag, the rest of the library is fetched too, so every reading is seen.
   const { loadMore } = readings;
+  const needAll = searching || grouping !== 'none' || narrowed;
   useEffect(() => {
-    if (searching && state.kind === 'ready' && state.nextCursor !== null) loadMore();
-  }, [searching, state, loadMore]);
+    if (needAll && state.kind === 'ready' && state.nextCursor !== null) loadMore();
+  }, [needAll, state, loadMore]);
 
+  const groups = useGroups(tags, grouping, state);
   const entries = useMemo<CollectionEntry<LibraryItem>[]>(() => {
+    if (grouping !== 'none') return groups === null ? [] : groupEntries(groups, new Map(shown.map((i) => [i.doc.id, i])), groupingState.collapsed);
     if (!groupByDate) return shown.map((item) => ({ kind: 'item', key: keyOf(item), item }));
     const now = Date.now();
     const out: CollectionEntry<LibraryItem>[] = [];
@@ -92,9 +123,24 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
       for (const item of inGroup) out.push({ kind: 'item', key: keyOf(item), item });
     }
     return out;
-  }, [shown, groupByDate]);
-  const keys = useMemo(() => shown.map(keyOf), [shown]);
+  }, [shown, groupByDate, grouping, groups, groupingState.collapsed]);
+  const lines = useMemo(() => itemsOf(entries), [entries]);
+  const keys = useMemo(() => lines.map((l) => l.key), [lines]);
   const selection = useCollectionSelection(keys);
+  const shownIds = useMemo(() => shown.map((i) => i.doc.id), [shown]);
+  const readingTags = useReadingTags(tags, shownIds);
+  /** The selected readings, each once (a reading can be in two groups). */
+  const selectedItems = useMemo(() => {
+    const byKey = new Map(lines.map((l) => [l.key, l.item]));
+    const seen = new Set<string>();
+    return selection.keys.flatMap((k) => {
+      const item = byKey.get(k);
+      if (item === undefined || seen.has(item.doc.id)) return [];
+      seen.add(item.doc.id);
+      return [item];
+    });
+  }, [lines, selection.keys]);
+  const primary = useMemo(() => lines.find((l) => l.key === selection.selected)?.item ?? null, [lines, selection.selected]);
 
   // ---- actions ----
   const [menu, setMenu] = useState<{ item: LibraryItem; at: { x: number; y: number }; align: 'start' | 'end' } | null>(null);
@@ -138,6 +184,23 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
     [notify],
   );
   const { setTitle } = data;
+  const [tagTarget, setTagTarget] = useState<{ ids: LibraryItem['doc']['id'][]; title: string } | null>(null);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  /** "Tags…" for a reading: for every selected reading when it is one of several selected. */
+  const tagsFor = (item: LibraryItem) => {
+    const many = selectedItems.length > 1 && selectedItems.some((i) => i.doc.id === item.doc.id) ? selectedItems : [item];
+    setTagTarget({ ids: many.map((i) => i.doc.id), title: readingTitle(item) });
+  };
+  const trashMany = (items: readonly LibraryItem[]) => {
+    const ids = items.map((i) => i.doc.id);
+    void Promise.all(ids.map((id) => data.trashDocument(id))).then(
+      () => {
+        selection.select(null);
+        notify({ text: ids.length === 1 ? 'Moved to Trash' : `Moved ${ids.length} readings to Trash`, action: { label: 'Undo', onClick: () => void Promise.all(ids.map((id) => data.restoreDocument(id))).catch(failed) } });
+      },
+      failed,
+    );
+  };
   const menuItems = (item: LibraryItem) =>
     readingMenu(item, {
       open: () => open(item),
@@ -146,21 +209,29 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
       copyLink: () => copyLink(item),
       trash: () => moveToTrash(item),
       restore: () => restore(item),
+      ...(tags !== null ? { tags: () => tagsFor(item) } : {}),
+      ...(data.about !== undefined ? { about: () => setAboutOpen(true) } : {}),
     });
 
   /** A right-click opens the menu at the pointer; the ⋮ button and the keyboard open it under the button, leftwards. */
   const openMenu = (item: LibraryItem, at: { x: number; y: number }, from: 'pointer' | 'keyboard') => setMenu({ item, at, align: from === 'pointer' ? 'start' : 'end' });
   const root = useRef<HTMLDivElement>(null);
-  /** The ⋮ button of a row or card: the menu opens under it. */
+  /** The ⋮ button of a row or card: the menu opens under it. (A grouped reading can be on two lines: the one clicked counts.) */
   const openMenuFromButton = (item: LibraryItem) => {
-    const button = root.current?.querySelector(`[data-key="${CSS.escape(keyOf(item))}"] [data-more]`);
+    const pressed = document.activeElement;
+    const button = pressed instanceof HTMLElement && pressed.hasAttribute('data-more') ? pressed : root.current?.querySelector(`[data-key="${CSS.escape(keyOf(item))}"] [data-more]`);
+    const key = button?.closest('[data-key]')?.getAttribute('data-key') ?? keyOf(item);
     const r = button?.getBoundingClientRect();
-    selection.select(keyOf(item));
+    if (!selection.isSelected(key)) selection.select(key);
     if (r !== undefined) openMenu(item, { x: r.right, y: r.bottom }, 'keyboard');
   };
   const onKey = (e: KeyboardEvent<HTMLElement>, item: LibraryItem): boolean => {
-    if (e.key === 'Delete' && !trash) moveToTrash(item);
-    else if (e.key === 'Escape') selection.select(null);
+    const plain = !e.ctrlKey && !e.altKey && !e.metaKey;
+    if (e.key === 'Delete' && !trash) {
+      if (selectedItems.length > 1 && selectedItems.some((i) => i.doc.id === item.doc.id)) trashMany(selectedItems);
+      else moveToTrash(item);
+    } else if (e.key === 'Escape') selection.select(null);
+    else if (plain && e.key.toLowerCase() === 'i' && !trash && data.about !== undefined) setAboutOpen((o) => !o);
     else return false;
     return true;
   };
@@ -235,6 +306,7 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
           <FileTypeIcon kind="pdf" size={24} />
           <CellText title={readingTitle(i)}>{readingTitle(i)}</CellText>
           <Badges item={i} />
+          {tags !== null && <RowTags documentId={i.doc.id} list={readingTags.get(i.doc.id) ?? []} tags={tags} say={say} max={2} tabbable={false} />}
         </>
       ),
     },
@@ -247,31 +319,42 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
   const ready = state.kind === 'ready';
   const nothingAtAll = ready && state.total === 0 && !filtered;
 
+  const titleEnd = !nothingAtAll && (
+    <>
+      {groupable && tags !== null && !narrowed && <GroupByMenu value={grouping} onChange={groupingState.setGrouping} />}
+      <SegmentedToggle
+        label="Layout"
+        value={layout}
+        onChange={setLayout}
+        options={[
+          { value: 'list', icon: 'menu', label: 'List layout' },
+          { value: 'grid', icon: 'grid_view', label: 'Grid layout' },
+        ]}
+      />
+      {!trash && data.about !== undefined && <IconButton icon="info" label={aboutOpen ? 'Hide details' : 'View details'} size={40} pressed={aboutOpen} shortcut="I" onClick={() => setAboutOpen((o) => !o)} />}
+    </>
+  );
+  const many = selectedItems.length > 1;
   const header = (
     <>
-      <PageTitle
-        title={title}
-        end={
-          !nothingAtAll && (
-            <SegmentedToggle
-              label="Layout"
-              value={layout}
-              onChange={setLayout}
-              options={[
-                { value: 'list', icon: 'menu', label: 'List layout' },
-                { value: 'grid', icon: 'grid_view', label: 'Grid layout' },
-              ]}
-            />
-          )
-        }
-      />
+      {narrowed ? <TagTitle tag={tagList?.find((t) => t.id === tagFilter) ?? null} all={tagList} end={titleEnd} /> : <PageTitle title={title} end={titleEnd} />}
       {!nothingAtAll && note}
-      {chips.length > 0 && !nothingAtAll && <FilterChips chips={chips} value={filters} onChange={setFilters} />}
+      {many && !trash ? (
+        <SelectionBar
+          count={selectedItems.length}
+          onClear={() => selection.select(null)}
+          onTags={tags === null ? undefined : () => setTagTarget({ ids: selectedItems.map((i) => i.doc.id), title: '' })}
+          onStar={() => void Promise.all(selectedItems.map((i) => data.setStarred(i.doc.id, true))).then(() => notify({ text: `Starred ${selectedItems.length} readings` }), failed)}
+          onTrash={() => trashMany(selectedItems)}
+        />
+      ) : (
+        chips.length > 0 && !nothingAtAll && <FilterChips chips={chips} value={filters} onChange={setFilters} />
+      )}
     </>
   );
 
   let body: ReactNode;
-  if (state.kind === 'loading') body = null;
+  if (state.kind === 'loading' || (narrowed && tagReadings === null) || (grouping !== 'none' && groups === null)) body = null;
   else if (state.kind === 'error') {
     body = (
       <EmptyState icon="error" title="Couldn’t show your library" actions={<TextButton label="Try again" variant="tonal" onClick={readings.retry} />}>
@@ -285,12 +368,22 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
         <p>The search looks at titles and authors.</p>
       </EmptyState>
     );
+  } else if (shown.length === 0 && narrowed && !filtered) {
+    body = (
+      <EmptyState icon="sell" title="No readings have this tag" actions={<TextButton label="Show all readings" variant="tonal" onClick={() => (location.hash = '#/library')} />}>
+        <p>Give a reading this tag from its menu: Tags.</p>
+      </EmptyState>
+    );
   } else if (shown.length === 0) {
     body = (
       <EmptyState icon="search_off" title="No readings match these filters" actions={<TextButton label="Clear filters" variant="tonal" onClick={() => setFilters(NO_FILTERS)} />} />
     );
   } else {
     const footer = <LoadMore active={state.nextCursor !== null} onVisible={readings.loadMore} />;
+    // Grouped, the order inside each group is fixed: the most recently opened first (R92).
+    const sorting = sortable && grouping === 'none';
+    // Cards keep the same height: a line for tags on every card once any shown reading has one.
+    const cardTags = tags !== null && shown.some((i) => (readingTags.get(i.doc.id)?.length ?? 0) > 0);
     body =
       layout === 'list' ? (
         <ItemTable
@@ -298,18 +391,19 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
           columns={columns}
           entries={entries}
           selection={selection}
-          sort={sortable ? { key: sort.by, dir: sort.dir } : null}
-          onSort={sortable ? (key) => setSort(nextSort(sort, key as Sort['by'])) : undefined}
-          headerEnd={sortable ? <SortMenu sort={sort} onSort={setSort} /> : undefined}
+          sort={sorting ? { key: sort.by, dir: sort.dir } : null}
+          onSort={sorting ? (key) => setSort(nextSort(sort, key as Sort['by'])) : undefined}
+          headerEnd={sorting ? <SortMenu sort={sort} onSort={setSort} /> : undefined}
           renderActions={(item, { active }) => rowActions(item, active)}
           onOpen={open}
           onMenu={openMenu}
           onRowKey={onKey}
           footer={footer}
+          {...(grouping !== 'none' ? { onToggleSection: groupingState.toggle } : {})}
         />
       ) : (
         <>
-          {sortable && (
+          {sorting && (
             <div className={styles.gridHeader}>
               <button type="button" className={styles.gridSort} onClick={() => setSort(nextSort(sort, sort.by))} aria-label={`Sorted by ${SORT_LABELS[sort.by]}. Turn the order round`}>
                 <span>{SORT_LABELS[sort.by]}</span>
@@ -330,11 +424,13 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
               badges: <Badges item={item} compact />,
               more: more(item, active),
               thumbnail: <CardThumbnail id={item.doc.id} stored={item.doc.blobStored} />,
+              ...(cardTags ? { footer: tags !== null && <RowTags documentId={item.doc.id} list={readingTags.get(item.doc.id) ?? []} tags={tags} say={say} max={1} tabbable={false} /> } : {}),
             })}
             onOpen={open}
             onMenu={openMenu}
             onCardKey={onKey}
             footer={footer}
+            {...(grouping !== 'none' ? { onToggleSection: groupingState.toggle } : {})}
           />
         </>
       );
@@ -343,6 +439,8 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
   return (
     <div ref={root} className={styles.view}>
       <ContentCard header={header}>{body}</ContentCard>
+      {aboutOpen && !trash && <AboutPanel documentId={primary?.doc.id ?? null} onClose={() => setAboutOpen(false)} />}
+      {tags !== null && <TagDialog tags={tags} target={tagTarget} onClose={() => setTagTarget(null)} say={say} />}
       <PointMenu at={menu?.at ?? null} align={menu?.align} items={menu === null ? [] : menuItems(menu.item)} onClose={() => setMenu(null)} label="Reading actions" />
       <RenameDialog
         title={renaming === null ? null : (renaming.doc.title ?? readingTitle(renaming))}

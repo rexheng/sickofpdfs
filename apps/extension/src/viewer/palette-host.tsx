@@ -2,10 +2,12 @@
 // opening, or an error card, too), offers the viewer's commands as its last group, and shows a hit of the open document
 // in place: a jump through the history, with no new tab. A hit of any other reading opens it in a new tab, from its saved
 // copy. In Incognito there is no library: the palette says so and still finds commands.
-import { Palette, type PaletteCommand, type PaletteCommandGroup, type PaletteStore, type PaletteTarget, openTargetInNewTab, palette, usePaletteState } from '../shared/palette';
+import { Palette, type PaletteCommand, type PaletteCommandGroup, type PaletteTarget, openTargetInNewTab, palette, usePaletteState } from '../shared/palette';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { openLibrary } from '../background/open-library';
-import { connectStore } from '../store/client';
+import { connectStore, type StoreClient } from '../store/client';
+import { registerTagOperators } from '../library/tags/palette-operators';
+import { createStoreTagsData } from '../library/tags/tags-data';
 import type { ViewerCommandId, ViewerCommands, ViewerUi } from './commands';
 import { formatCombo } from './chrome/menus';
 import { isIncognito } from './incognito';
@@ -15,13 +17,13 @@ import { libraryStore } from './use-store';
 /** How long the viewer's own connection to the library is waited for before the palette makes one of its own. */
 const OWN_STORE_AFTER_MS = 400;
 
-let connecting: Promise<PaletteStore | null> | null = null;
+let connecting: Promise<StoreClient | null> | null = null;
 
 /**
  * The library store for the palette. The viewer connects its own after the first page is drawn (use-store.ts); the palette
  * uses that one. While the PDF has not opened (or never does), it connects a store of its own, so Ctrl+K works at once.
  */
-function paletteStore(): Promise<PaletteStore | null> {
+function paletteStore(): Promise<StoreClient | null> {
   connecting ??= (async () => {
     if (isIncognito()) return null;
     const waited = await Promise.race([libraryStore(), new Promise<'later'>((resolve) => setTimeout(() => resolve('later'), OWN_STORE_AFTER_MS))]);
@@ -72,8 +74,9 @@ export function ViewerPalette(p: ViewerPaletteProps) {
 }
 
 function Open({ commands, jumper, ui, initialQuery }: ViewerPaletteProps & { initialQuery: string }) {
-  const [store, setStore] = useState<PaletteStore | null>(null);
+  const [store, setStore] = useState<StoreClient | null>(null);
   const [unavailable, setUnavailable] = useState<string | null>(null);
+  useEffect(() => (store === null ? undefined : registerTagOperators(createStoreTagsData(store))), [store]); // S18: `tag:` and `course:`
   useEffect(() => {
     let live = true;
     void paletteStore().then((s) => {

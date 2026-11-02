@@ -1,5 +1,5 @@
 // @sop/ui/library: the light components of the Drive-style library (Phase 3, S7). The viewer never imports these.
-export { type CollectionEntry, type CollectionSelection, itemsOf, sectionsOf, useCollectionSelection } from './collection';
+export { clickSelect, type CollectionEntry, type CollectionSection, type CollectionSelection, itemsOf, sectionsOf, useCollectionSelection } from './collection';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
 export { FilterChip, type FilterChipProps } from './FilterChip';
 export { type GridCardParts, ItemGrid, type ItemGridProps } from './ItemGrid';
@@ -12,6 +12,7 @@ export { PointMenu, type PointMenuProps } from './PointMenu';
 export { ProductMark, type ProductMarkProps } from './ProductMark';
 export { QuietButton, type QuietButtonProps } from './QuietButton';
 export { SearchPill, type SearchPillProps } from './SearchPill';
+export { SectionHeading, type SectionHeadingProps } from './SectionHeading';
 export { type SegmentOption, SegmentedToggle, type SegmentedToggleProps } from './SegmentedToggle';
 export { Snackbar, type SnackbarMessage, type SnackbarProps } from './Snackbar';
 export { Switch, type SwitchProps } from './Switch';

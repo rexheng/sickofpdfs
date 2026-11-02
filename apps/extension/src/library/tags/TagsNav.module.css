@@ -1,0 +1,106 @@
+/*
+ * The left column's Tags (R92), under Drive's navigation (02 section 4.4): the same 32 px pills, 224 px wide, 16 px in,
+ * the 20 px icon at x 32 and the name at x 68; the count at the right in the secondary colour, as Gmail counts its labels.
+ * The pill's ⋮ takes the count's place while it is hovered or focused.
+ */
+.nav {
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--nav-item-inset-x);
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  block-size: var(--nav-item-h);
+  padding: 0 var(--space-4);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-lib-nav-heading);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry {
+  position: relative;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  inline-size: var(--nav-item-pill-w);
+  max-inline-size: 100%;
+  block-size: var(--nav-item-h);
+  border-radius: var(--shape-nav-item);
+}
+
+.entry:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.item {
+  display: flex;
+  flex: 1 1 auto;
+  gap: var(--space-4);
+  align-items: center;
+  min-inline-size: 0;
+  block-size: 100%;
+  padding: 0 var(--space-3) 0 var(--space-4);
+  border-radius: var(--shape-nav-item);
+  color: var(--gm3-sys-color-on-surface-variant);
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.item:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.label {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.count {
+  flex: none;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-tooltip);
+  font-variant-numeric: tabular-nums;
+}
+
+.more {
+  position: absolute;
+  inset-inline-end: 0;
+  visibility: hidden;
+}
+
+.entry:hover .more,
+.entry:focus-within .more {
+  visibility: visible;
+}
+
+.entry:hover .count,
+.entry:focus-within .count {
+  visibility: hidden;
+}
+
+.selected,
+.selected:hover {
+  background-color: var(--drive-row-selected-bg);
+}
+
+.selected .item,
+.selected .label,
+.selected .count {
+  color: var(--gm3-sys-color-on-secondary-fixed);
+}

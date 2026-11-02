@@ -1,0 +1,26 @@
+/* Drive's selection bar: a 40 px pill on the tonal surface, where the filter chips were, 12 px below the title. */
+.bar {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  box-sizing: border-box;
+  block-size: var(--btn-h);
+  margin-block-end: var(--space-3);
+  padding: 0 var(--space-2) 0 var(--space-1);
+  border-radius: var(--shape-full);
+  background-color: var(--sop-selection-bar-bg);
+}
+
+.count {
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-table-header);
+  font-variation-settings: "opsz" 17;
+  white-space: nowrap;
+}
+
+.actions {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+  margin-inline-start: var(--space-2);
+}

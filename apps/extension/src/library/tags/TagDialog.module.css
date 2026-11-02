@@ -1,0 +1,18 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  inline-size: var(--sop-tag-dialog-w);
+  max-inline-size: 100%;
+  min-block-size: var(--sop-tag-dialog-min-h);
+}
+
+.what {
+  margin: 0;
+  overflow: hidden;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

@@ -1,0 +1,80 @@
+/*
+ * A tag chip (R92): 24 px, radius 8, Google Sans Text 12/16 500. The owner's own tag is tonal; an auto tag is lighter:
+ * no fill, a dashed outline-variant edge, its name in the outline colour and a small "auto" after it. On a selected row
+ * (#c2e7ff) the tonal chips turn white so they still read as chips.
+ */
+.chip {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-1);
+  align-items: center;
+  box-sizing: border-box;
+  max-inline-size: var(--sop-tag-chip-max-w);
+  block-size: var(--sop-tag-chip-h);
+  margin: 0;
+  padding: var(--sop-tag-chip-pad);
+  border: 1px solid transparent;
+  border-radius: var(--shape-chip);
+  font: var(--type-tag-chip);
+  font-variation-settings: "opsz" 17;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-user-select: none;
+}
+
+.still {
+  cursor: default;
+}
+
+.owner {
+  background-color: var(--sop-tag-bg);
+  color: var(--sop-tag-fg);
+}
+
+.auto {
+  border-style: dashed;
+  border-color: var(--sop-tag-auto-edge);
+  background-color: transparent;
+  color: var(--sop-tag-auto-fg);
+}
+
+.more {
+  background-color: transparent;
+  color: var(--gm3-sys-color-on-surface-variant);
+  cursor: default;
+}
+
+button.chip:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), var(--sop-tag-bg));
+}
+
+button.auto:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+button.chip:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+:global([aria-selected='true']) .owner {
+  background-color: var(--sop-tag-on-selected-bg);
+}
+
+.name {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.note {
+  flex: none;
+  font: var(--type-tag-auto);
+  opacity: 0.85;
+}
+
+.autoMark {
+  flex: none;
+  font: var(--type-tag-auto);
+  font-style: italic;
+}

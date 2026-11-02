@@ -103,6 +103,13 @@ export const ICON_NAMES = [
   'history',
   // TB4 fix round (slice A): the "not sure" chip's menu (R95); 'warning' and 'block' above are used there too
   'done_all',
+  // Phase 3: tags, About this PDF and Group by (S18): a tag, a course, a topic, merge, the group headings and the groups menu
+  'sell',
+  'school',
+  'category',
+  'call_merge',
+  'workspaces',
+  'new_label',
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

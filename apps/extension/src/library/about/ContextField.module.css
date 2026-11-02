@@ -1,0 +1,52 @@
+/* "Your context": an outlined box as the library's fields (radius 4, 1 px outline), growing with its words. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.box {
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-block-size: var(--sop-context-min-h);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--gm3-sys-color-outline);
+  border-radius: var(--shape-field);
+  background-color: transparent;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+  overflow: hidden;
+  caret-color: var(--gm3-sys-color-primary);
+  outline: none;
+}
+
+.box::placeholder {
+  color: var(--gm3-sys-color-on-surface-variant);
+  opacity: 1;
+}
+
+.box:hover {
+  border-color: var(--gm3-sys-color-on-surface);
+}
+
+.box:focus {
+  border-color: var(--gm3-sys-color-primary);
+  outline: var(--focus-ring-width) solid var(--gm3-sys-color-primary);
+  outline-offset: calc(var(--focus-ring-width) / -2);
+}
+
+.box:disabled {
+  opacity: var(--sop-disabled-content);
+}
+
+.status {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-tooltip);
+}
+
+.status[data-status='failed'] {
+  color: var(--gm3-sys-color-error);
+}

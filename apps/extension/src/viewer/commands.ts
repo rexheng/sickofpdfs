@@ -33,6 +33,7 @@ export { linkForCopy } from './actions/copy-link';
 export type ViewerCommandId =
   | 'file.openInChrome' | 'file.openOriginal' | 'file.download' | 'file.copyLink' | 'file.print' | 'file.saveToLibrary'
   | 'file.forget' | 'file.reportDecision' // Phase 3 (S11): save/save-commands.ts
+  | 'file.about' // Phase 3 (S18, R92): About this PDF, viewer/about/
   | 'view.fitWidth' | 'view.fitPage' | 'view.zoomIn' | 'view.zoomOut' | 'view.rotateCw' | 'view.rotateCcw'
   | 'view.twoPage' | 'view.presentation' | 'view.wordStarts' | 'view.caretBrowsing' | 'view.toggleRail'
   | 'tools.find' | 'tools.goToPage' | 'tools.search' | 'help.shortcuts' | 'help.about'
@@ -143,6 +144,8 @@ export const SPECS: [ViewerCommandId, CommandSpec][] = [
   ['file.saveToLibrary', { label: 'Save to library', icon: 'library_add', keys: ['Ctrl+Alt+S'] }],
   ['file.forget', { label: 'Forget this PDF', icon: 'delete_forever', keys: ['Ctrl+Shift+Delete'] }],
   ['file.reportDecision', { label: 'Report a wrong decision', icon: 'flag', keys: [] }],
+  // Phase 3 (S18, R92): the details panel, as Drive's File → Details.
+  ['file.about', { label: 'About this PDF', icon: 'info', keys: [] }],
   ['view.fitWidth', { label: 'Fit width', icon: 'fit_page_width', keys: ['Ctrl+0'] }],
   ['view.fitPage', { label: 'Fit page', icon: 'fit_page', keys: [] }],
   ['view.zoomIn', { label: 'Zoom in', icon: 'zoom_in', keys: ['Ctrl+=', 'Ctrl++'] }],

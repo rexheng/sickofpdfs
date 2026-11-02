@@ -2,7 +2,8 @@ import '../tokens/tokens.css';
 import { type KeyboardEvent, type ReactNode, useLayoutEffect, useRef, useState } from 'react';
 import { cx } from '../components/classes';
 import { Icon } from '../icons/Icon';
-import { type CollectionEntry, type CollectionSelection, focusKey, isMenuKey, itemsOf, menuPointFor, sectionsOf } from './collection';
+import { clickSelect, type CollectionEntry, type CollectionSelection, focusKey, isMenuKey, itemsOf, menuPointFor, sectionsOf } from './collection';
+import { SectionHeading } from './SectionHeading';
 import styles from './ItemTable.module.css';
 
 export interface TableColumn<T> {
@@ -52,6 +53,8 @@ export interface ItemTableProps<T> {
   onRowKey?(this: void, e: KeyboardEvent<HTMLElement>, item: T): boolean;
   /** After the last row: the "loading more" sentinel. */
   footer?: ReactNode;
+  /** Makes each group's heading a button that folds the group away and back (My library's groups). */
+  onToggleSection?(this: void, id: string): void;
 }
 
 /**
@@ -63,7 +66,7 @@ export interface ItemTableProps<T> {
  * row's menu. One row holds the tab stop.
  */
 export function ItemTable<T>(props: ItemTableProps<T>) {
-  const { label, columns, entries, selection, sort, onSort, headerEnd, renderActions, onOpen, onMenu, onRowKey, footer } = props;
+  const { label, columns, entries, selection, sort, onSort, headerEnd, renderActions, onOpen, onMenu, onRowKey, footer, onToggleSection } = props;
   const root = useRef<HTMLDivElement>(null);
   const width = useWidth(root);
   const shown = columns.filter((c) => c.minTableWidth === undefined || width === 0 || width >= c.minTableWidth);
@@ -71,30 +74,35 @@ export function ItemTable<T>(props: ItemTableProps<T>) {
   const items = itemsOf(entries);
   const keys = items.map((i) => i.key);
 
-  const moveTo = (key: string | undefined) => {
+  /** Shift with an arrow key selects the run as it goes, as Drive's list does. */
+  const moveTo = (key: string | undefined, extend = false) => {
     if (key === undefined) return;
-    selection.select(key);
+    if (extend) selection.extendTo(key);
+    else selection.select(key);
     focusKey(root.current, key);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>, key: string, item: T) => {
     if (e.target !== e.currentTarget) return; // a key on a row's own button is that button's
     const at = keys.indexOf(key);
-    if (e.key === 'ArrowDown') moveTo(keys[at + 1]);
-    else if (e.key === 'ArrowUp') moveTo(keys[at - 1]);
-    else if (e.key === 'Home') moveTo(keys[0]);
-    else if (e.key === 'End') moveTo(keys.at(-1));
+    if (e.key === 'ArrowDown') moveTo(keys[at + 1], e.shiftKey);
+    else if (e.key === 'ArrowUp') moveTo(keys[at - 1], e.shiftKey);
+    else if (e.key === 'Home') moveTo(keys[0], e.shiftKey);
+    else if (e.key === 'End') moveTo(keys.at(-1), e.shiftKey);
     else if (e.key === 'Enter') onOpen(item);
-    else if (e.key === ' ') selection.select(key);
+    else if (e.key === ' ') {
+      if (e.ctrlKey || e.metaKey) selection.toggle(key);
+      else selection.select(key);
+    } else if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'a') selection.selectAll();
     else if (isMenuKey(e)) {
-      selection.select(key);
+      if (!selection.isSelected(key)) selection.select(key);
       onMenu(item, menuPointFor(e.currentTarget), 'keyboard');
     } else if (!(onRowKey?.(e, item) ?? false)) return;
     e.preventDefault();
   };
 
   return (
-    <div ref={root} className={styles.table} role="grid" aria-label={label} style={{ gridTemplateColumns: template }}>
+    <div ref={root} className={styles.table} role="grid" aria-label={label} aria-multiselectable="true" style={{ gridTemplateColumns: template }}>
       <div className={cx(styles.row, styles.header)} role="row">
         {shown.map((c) => {
           const sorted = sort !== null && sort !== undefined && c.sortKey !== undefined && sort.key === c.sortKey;
@@ -122,13 +130,16 @@ export function ItemTable<T>(props: ItemTableProps<T>) {
       </div>
       {sectionsOf(entries).map((section) => (
         <div key={section.id} role="rowgroup" aria-label={section.label ?? undefined} className={styles.group}>
-          {section.label !== null && (
-            <div className={styles.section} aria-hidden="true">
-              {section.label}
-            </div>
-          )}
+          {section.label !== null &&
+            (onToggleSection === undefined ? (
+              <div className={styles.section} aria-hidden="true">
+                {section.label}
+              </div>
+            ) : (
+              <SectionHeading className={styles.section} label={section.label} count={section.count} collapsed={section.collapsed} onToggle={() => onToggleSection(section.id)} />
+            ))}
           {section.items.map(({ key, item }) => {
-            const selected = selection.selected === key;
+            const selected = selection.isSelected(key);
             return (
               <div
                 key={key}
@@ -137,11 +148,11 @@ export function ItemTable<T>(props: ItemTableProps<T>) {
                 aria-selected={selected}
                 tabIndex={selection.active === key ? 0 : -1}
                 className={cx(styles.row, styles.item, selected && styles.selected)}
-                onClick={() => selection.select(key)}
+                onClick={(e) => clickSelect(selection, key, e)}
                 onDoubleClick={() => onOpen(item)}
                 onContextMenu={(e) => {
                   e.preventDefault();
-                  selection.select(key);
+                  if (!selection.isSelected(key)) selection.select(key);
                   onMenu(item, { x: e.clientX, y: e.clientY }, 'pointer');
                 }}
                 onKeyDown={(e) => onKeyDown(e, key, item)}

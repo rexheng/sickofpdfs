@@ -434,6 +434,39 @@
   --sop-settings-nav-w: 200px;
   --sop-settings-max-w: 880px;
 
+  /* ===== Phase 3: tags, About this PDF and Group by (S18, R92). Drive's labels and its file "Details" panel ===== */
+  /* A tag chip on a row, a card and in the details: 24 px, radius 8, Google Sans Text 12/16 500. The owner's own tags are
+     tonal (surface-container-high); an auto tag is lighter: no fill, a dashed outline-variant edge and a small "auto". */
+  --sop-tag-chip-h: 24px;
+  --sop-tag-chip-pad: 0 8px;
+  --sop-tag-chip-max-w: 160px;
+  --type-tag-chip: 500 12px/16px var(--font-text);
+  --type-tag-auto: 400 11px/16px var(--font-text);
+  --sop-tag-bg: var(--gm3-sys-color-surface-container-high);
+  --sop-tag-fg: var(--gm3-sys-color-on-surface-variant);
+  --sop-tag-auto-edge: var(--gm3-sys-color-outline-variant);
+  --sop-tag-auto-fg: var(--gm3-sys-color-outline);
+  /* A selected row is #c2e7ff: its chips sit on white so they still read as chips */
+  --sop-tag-on-selected-bg: var(--drive-content-bg);
+  /* The tags in the left column: Gmail's label list, in Drive's navigation pills; the count at the right */
+  --type-lib-nav-heading: 500 14px/20px var(--font-display);
+  /* The card's line of tags under the page */
+  --sop-grid-foot-h: 32px;
+  /* The details panel (Drive's file details): a white card 360 px wide beside the content card, 16 px apart */
+  --sop-details-w: 360px;
+  --type-details-title: 400 18px/24px var(--font-display);
+  --type-details-label: 500 12px/16px var(--font-text);
+  --type-details-heading: 500 14px/20px var(--font-display);
+  --sop-details-thumb-h: 160px;
+  --sop-details-label-w: 104px;
+  /* Several readings selected: Drive's selection bar in place of the filter chips */
+  --sop-selection-bar-bg: var(--gm3-sys-color-surface-container);
+  /* "Your context": the document note's box */
+  --sop-context-min-h: 88px;
+  /* The Tags dialog: room for the field, its suggestions and a few chips */
+  --sop-tag-dialog-w: 420px;
+  --sop-tag-dialog-min-h: 240px;
+
   /* ===== Part 3: component roles that change with the theme. tokens-dark.css declares each one again. ===== */
   --menu-bg: var(--gm3-sys-color-surface-container);           /* #f0f4f9 light context menu [live] */
   --menu-row-h: var(--menu-item-h);                            /* 32px light library menu */

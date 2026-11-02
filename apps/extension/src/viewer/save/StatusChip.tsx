@@ -16,6 +16,7 @@
 import { CHOICES_UNREAD, FILTER_FAILED, FORGOTTEN_REASON, NEVER_SAVE_REASON } from '../filter/async-filter';
 import { HARD_BLOCK_REASON, SCAN_TITLE_REASON, STAND_IN_REASONS, type SaveState } from '@sop/core';
 import { Chip, type ChipProps, Dialog, DropdownMenu, TextButton } from '@sop/ui';
+import { aboutPanel } from '../about/about-panel-state';
 import { useCallback, useState, useSyncExternalStore } from 'react';
 import type { ViewerUi } from '../commands';
 import cards from '../ui/cards.module.css';
@@ -307,7 +308,10 @@ export function StatusChip({ save, returnFocus, ui }: StatusChipProps) {
     control = (
       <DropdownMenu
         trigger={<Chip {...chip} className={styles.chip} />}
-        items={[{ kind: 'item', id: 'remove', label: REMOVE_FROM_LIBRARY, icon: 'delete_forever', onSelect: () => openSaveDialog('forget') }]}
+        items={[
+          { kind: 'item', id: 'about', label: 'Tags and details…', icon: 'sell', onSelect: () => aboutPanel.open() }, // S18 (R92)
+          { kind: 'item', id: 'remove', label: REMOVE_FROM_LIBRARY, icon: 'delete_forever', onSelect: () => openSaveDialog('forget') },
+        ]}
         align="end"
         {...focusProps}
       />

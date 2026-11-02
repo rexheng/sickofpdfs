@@ -54,9 +54,16 @@ export function Palette({ store, unavailable = null, commands, initialQuery = ''
     if (litId !== undefined) document.getElementById(litId)?.scrollIntoView({ block: 'nearest' });
   }, [litId]);
 
+  const { setQuery } = view;
   const choose = useCallback(
     async (row: PaletteRow) => {
       setNotice(null);
+      if (row.complete !== undefined && row.complete !== null) {
+        // A `tag:` suggestion: it goes in the field, and the list then shows that tag's readings.
+        setQuery(row.complete);
+        input.current?.focus({ preventScroll: true });
+        return;
+      }
       if (row.command !== null) {
         const run = row.command.run;
         onClose();
@@ -70,7 +77,7 @@ export function Palette({ store, unavailable = null, commands, initialQuery = ''
         else setNotice(problem);
       }
     },
-    [onClose, onOpen],
+    [onClose, onOpen, setQuery],
   );
 
   // Enter while the answer is still on its way: open the best one when it comes.

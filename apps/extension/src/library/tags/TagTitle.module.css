@@ -1,0 +1,83 @@
+/* The title row (02 section 4.5): 64 px, Google Sans 24/32; "My library" a step back in the secondary colour, as Drive's path. */
+.row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  block-size: var(--space-16);
+}
+
+.path {
+  display: flex;
+  flex: 0 1 auto;
+  gap: var(--space-1);
+  align-items: center;
+  min-inline-size: 0;
+  margin: 0 0 0 calc(-1 * var(--space-3));
+  font: var(--type-page-title);
+  font-variation-settings: "opsz" 18;
+  white-space: nowrap;
+}
+
+.crumb {
+  flex: none;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--shape-full);
+  color: var(--gm3-sys-color-on-surface-variant);
+  text-decoration: none;
+}
+
+.crumb:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.crumb:focus-visible,
+.tagButton:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.sep {
+  flex: none;
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.tagButton {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-inline-size: 0;
+  margin: 0;
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+  border: 0;
+  border-radius: var(--shape-full);
+  background: transparent;
+  color: var(--gm3-sys-color-on-surface);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tagButton:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.current {
+  min-inline-size: 0;
+  overflow: hidden;
+  color: var(--gm3-sys-color-on-surface);
+  text-overflow: ellipsis;
+}
+
+.count {
+  flex: none;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+.end {
+  display: flex;
+  flex: none;
+  gap: var(--space-2);
+  align-items: center;
+  margin-inline-start: auto;
+}

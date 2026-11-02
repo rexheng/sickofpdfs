@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { shownTitle } from '../shown-title';
 import type { LibraryFilter, LibraryItem, SearchHit } from '../../store/library-api';
 import { type Filters, NO_FILTERS, toQueryFilter } from '../../library/components/filters';
-import { matchScore, parseQuery, plain, plainOf, queryTerms, splitMarked } from './query';
+import { completeOperator, matchScore, operatorBeingTyped, type PaletteSuggestion, parseQuery, plain, plainOf, queryTerms, splitMarked } from './query';
 import type { PaletteCommand, PaletteCommandGroup, PaletteStore, PaletteTarget, TextPart } from './types';
 
 /** The most hits one search asks for. The store shares them fairly between readings, pages and notes. */
@@ -22,7 +22,7 @@ const PER_READING = 3;
 const RECENT_SHOWN = 5;
 const COMMANDS_SHOWN = 5;
 
-export type PaletteGroupId = 'recent' | 'readings' | 'pages' | 'notes' | 'commands';
+export type PaletteGroupId = 'suggest' | 'recent' | 'readings' | 'pages' | 'notes' | 'commands';
 
 export interface PaletteRow {
   key: string;
@@ -36,6 +36,8 @@ export interface PaletteRow {
   compact: boolean;
   target: PaletteTarget | null;
   command: PaletteCommand | null;
+  /** S18: a `tag:` or `course:` suggestion: choosing it puts this text in the field instead of opening anything. */
+  complete?: string | null;
 }
 
 export interface PaletteGroup {
@@ -74,6 +76,8 @@ function authorsLine(doc: DocumentRow): string {
 interface Answer {
   /** The words searched for (the operators taken out). */
   terms: string[];
+  /** S18: what the `tag:` or `course:` being typed could be, with the text each one completes to. */
+  suggestions: { heading: string; items: { s: PaletteSuggestion; complete: string }[] } | null;
   recent: LibraryItem[] | null;
   hits: SearchHit[];
   described: Map<DocumentId, Described>;
@@ -150,17 +154,22 @@ export function usePalette(o: { store: PaletteStore | null; commands: PaletteCom
       const terms = queryTerms(parsed.text);
       // `tag:` and `course:` (S18) narrow to some readings; the hits are cut down to them after the search.
       const allowed = parsed.operators.length > 0 ? await narrowTo(parsed.operators) : null;
-      if (store === null) return { terms, recent: null, hits: [], described: new Map() };
+      // While a `tag:` value is typed, its suggestions come first.
+      const typing = operatorBeingTyped(req.typed);
+      const offered = typing === null ? [] : await (typing.op.suggest?.(typing.partial) ?? Promise.resolve([])).catch(() => []);
+      const suggestions =
+        typing === null || offered.length === 0 ? null : { heading: typing.op.heading ?? 'Suggestions', items: offered.map((s) => ({ s, complete: completeOperator(req.typed, typing, s.value) })) };
+      if (store === null) return { terms, suggestions, recent: null, hits: [], described: new Map() };
       if (parsed.text === '') {
         const page = await store.listDocuments({ view: 'recent', sort: { by: 'lastOpened', dir: 'desc' }, ...(filter ? { filter } : {}), limit: allowed === null ? RECENT_SHOWN : NARROWED_LIMIT });
         const items = allowed === null ? page.items : page.items.filter((i) => allowed.has(i.doc.id)).slice(0, RECENT_SHOWN);
         const described = await describe(items.map((i) => i.doc.id));
-        return { terms, recent: items, hits: [], described };
+        return { terms, suggestions, recent: items, hits: [], described };
       }
       const found = await store.search({ text: parsed.text, ...(filter ? { filter } : {}), limit: allowed === null ? SEARCH_LIMIT : NARROWED_LIMIT });
       const hits = allowed === null ? found : found.filter((h) => allowed.has(h.documentId));
       const described = await describe([...new Set(hits.map((h) => h.documentId))]);
-      return { terms, recent: null, hits, described };
+      return { terms, suggestions, recent: null, hits, described };
     },
     [store, describe],
   );
@@ -269,6 +278,23 @@ function buildGroups(answer: Answer | null, query: string, commands: PaletteComm
   const nameOf = (id: DocumentId): string => answer?.described.get(id)?.title ?? 'This PDF';
 
   if (answer !== null) {
+    if (answer.suggestions !== null) {
+      groups.push({
+        id: 'suggest',
+        heading: answer.suggestions.heading,
+        rows: answer.suggestions.items.map(({ s, complete }) => ({
+          key: `suggest:${s.value}`,
+          icon: s.icon ?? 'sell',
+          title: plain(s.label),
+          detail: plain(s.detail),
+          trail: null,
+          compact: false,
+          target: null,
+          command: null,
+          complete,
+        })),
+      });
+    }
     if (answer.recent !== null && answer.recent.length > 0) {
       groups.push({
         id: 'recent',

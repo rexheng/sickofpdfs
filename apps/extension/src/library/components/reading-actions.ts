@@ -44,9 +44,13 @@ export interface ReadingMenuActions {
   copyLink(this: void): void;
   trash(this: void): void;
   restore(this: void): void;
+  /** S18: the reading's tags (or every selected reading's). Absent where there are no tags. */
+  tags?: (() => void) | undefined;
+  /** S18: About this PDF, the details panel. */
+  about?: (() => void) | undefined;
 }
 
-/** The row menu (plan S7): Open, Star, Rename, Copy link, Move to Trash. In Trash: Restore. */
+/** The row menu (plan S7): Open, Star, Rename, Tags, About this PDF (S18), Copy link, Move to Trash. In Trash: Restore. */
 export function readingMenu(item: LibraryItem, a: ReadingMenuActions): MenuItemDef[] {
   if (item.doc.deletedAt !== null) {
     return [{ kind: 'item', id: 'restore', label: 'Restore', icon: 'restore_from_trash', onSelect: a.restore }];
@@ -67,6 +71,8 @@ export function readingMenu(item: LibraryItem, a: ReadingMenuActions): MenuItemD
     { kind: 'separator' },
     { kind: 'item', id: 'star', label: starred ? 'Remove from Starred' : 'Add to Starred', icon: 'star', onSelect: () => a.star(!starred) },
     { kind: 'item', id: 'rename', label: 'Rename', icon: 'edit', onSelect: a.rename },
+    ...(a.tags !== undefined ? [{ kind: 'item', id: 'tags', label: 'Tags…', icon: 'sell', onSelect: a.tags } as const] : []),
+    ...(a.about !== undefined ? [{ kind: 'item', id: 'about', label: 'About this PDF', icon: 'info', shortcut: 'I', onSelect: a.about } as const] : []),
     {
       kind: 'item',
       id: 'copy-link',

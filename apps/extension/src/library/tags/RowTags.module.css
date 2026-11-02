@@ -1,0 +1,33 @@
+/*
+ * The tags after a reading's name: at most two chips and a "+1". The name column decides how many fit, so a title
+ * always keeps its room: in a medium column (a laptop window, or the details panel open) the first chip and how many
+ * more there are; in a narrow one none. Every tag is still in the details and the Tags dialog.
+ */
+.tags {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+/* The "+N" for a medium column (only the first chip shows) waits until it is needed. */
+.moreMedium {
+  display: none;
+}
+
+@container sop-name-cell (max-width: 560px) {
+  .tags > button:nth-of-type(n + 2),
+  .tags > .moreWide {
+    display: none;
+  }
+
+  .tags > .moreMedium {
+    display: inline-flex;
+  }
+}
+
+@container sop-name-cell (max-width: 400px) {
+  .tags {
+    display: none;
+  }
+}

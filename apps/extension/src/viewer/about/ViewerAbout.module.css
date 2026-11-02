@@ -1,0 +1,87 @@
+/*
+ * About this PDF in the viewer: in the notes panel's place (02 section 4.11) and shape, on the dark canvas: under the
+ * toolbar row on the right, 16 px in, 16 px corners, on --sop-notes-panel-bg (#1e1f20), raised over the pages, which never
+ * shrink for it (R69). 360 px wide, as the library's details panel.
+ */
+.panel {
+  position: absolute;
+  inset: calc(var(--viewer-pill-h) + var(--space-4)) var(--space-4) var(--space-4) auto;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  inline-size: var(--sop-details-w);
+  max-inline-size: calc(100% - 2 * var(--space-4));
+  overflow: hidden;
+  border-radius: var(--sop-notes-panel-radius);
+  background-color: var(--sop-notes-panel-bg);
+  color: var(--gm3-sys-color-on-surface);
+  box-shadow: var(--elev-3);
+}
+
+.header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  block-size: var(--space-14);
+  padding: 0 var(--space-2) 0 var(--space-4);
+}
+
+.heading {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-docs-sidebar-title);
+}
+
+.body {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  padding: var(--space-2) var(--space-4) var(--space-4);
+  overflow-y: auto;
+}
+
+.notSaved {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  align-items: flex-start;
+}
+
+.title {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-details-title);
+  overflow-wrap: anywhere;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: var(--sop-details-label-w) minmax(0, 1fr);
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-body);
+}
+
+.facts dt {
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-details-label);
+}
+
+.facts dd {
+  min-inline-size: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.link {
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.note {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+}

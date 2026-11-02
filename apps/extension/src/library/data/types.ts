@@ -3,6 +3,8 @@
 import type { DocumentId } from '@sop/core';
 import type { PaletteStore } from '../../shared/palette';
 import type { LibraryApi, LibraryQuery } from '../../store/library-api';
+import type { AboutData } from '../about/about-data';
+import type { TagsData } from '../tags/tags-data';
 import type { PagesData } from './pages-data';
 
 // ---- contract §5 shapes: the store's own (S9) ------------------------------------------------------------------------
@@ -42,4 +44,8 @@ export interface LibraryData extends PagesData {
   onChange(this: void, cb: (change: LibraryChange) => void): () => void;
   /** What the Ctrl+K palette searches (S15): the store. Absent where there is no search (the sample library). */
   palette?: PaletteStore;
+  /** Tags, groups and related readings (S18, R92). Absent in the sample library, which has no tags. */
+  tags?: TagsData;
+  /** About this PDF (S18, R92). Absent in the sample library. */
+  about?: AboutData;
 }

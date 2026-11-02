@@ -1,7 +1,8 @@
 import '../tokens/tokens.css';
 import { type KeyboardEvent, type ReactNode, useLayoutEffect, useRef, useState } from 'react';
 import { cx } from '../components/classes';
-import { type CollectionEntry, type CollectionSelection, focusKey, isMenuKey, itemsOf, menuPointFor, sectionsOf } from './collection';
+import { clickSelect, type CollectionEntry, type CollectionSelection, focusKey, isMenuKey, itemsOf, menuPointFor, sectionsOf } from './collection';
+import { SectionHeading } from './SectionHeading';
 import styles from './ItemGrid.module.css';
 
 export interface GridCardParts {
@@ -15,6 +16,8 @@ export interface GridCardParts {
   more: ReactNode;
   /** What fills the white box under the header: the first page. */
   thumbnail: ReactNode;
+  /** A short line under the page (the reading's tags). */
+  footer?: ReactNode;
 }
 
 export interface ItemGridProps<T> {
@@ -28,6 +31,8 @@ export interface ItemGridProps<T> {
   onMenu(this: void, item: T, at: { x: number; y: number }, from: 'pointer' | 'keyboard'): void;
   onCardKey?(this: void, e: KeyboardEvent<HTMLElement>, item: T): boolean;
   footer?: ReactNode;
+  /** As ItemTable's: each group's heading folds the group away and back. */
+  onToggleSection?(this: void, id: string): void;
 }
 
 /** Fallbacks for the first layout, before the card size token can be read. */
@@ -39,49 +44,56 @@ const FALLBACK_GAP = 16;
  * name, ⋮) and the first page in a white box inset 8 px, 16 px apart. Cards stretch to fill each row. Selected cards are
  * #c2e7ff with #004a77 text. The arrow keys move by card and by row; Enter opens; the context-menu key opens the menu.
  */
-export function ItemGrid<T>({ label, entries, selection, renderCard, onOpen, onMenu, onCardKey, footer }: ItemGridProps<T>) {
+export function ItemGrid<T>({ label, entries, selection, renderCard, onOpen, onMenu, onCardKey, footer, onToggleSection }: ItemGridProps<T>) {
   const root = useRef<HTMLDivElement>(null);
   const columns = useColumns(root);
   const keys = itemsOf(entries).map((i) => i.key);
   const sections = sectionsOf(entries);
 
-  const moveTo = (key: string | undefined) => {
+  const moveTo = (key: string | undefined, extend = false) => {
     if (key === undefined) return;
-    selection.select(key);
+    if (extend) selection.extendTo(key);
+    else selection.select(key);
     focusKey(root.current, key);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>, key: string, item: T) => {
     if (e.target !== e.currentTarget) return;
     const at = keys.indexOf(key);
-    if (e.key === 'ArrowRight') moveTo(keys[at + 1]);
-    else if (e.key === 'ArrowLeft') moveTo(keys[at - 1]);
-    else if (e.key === 'ArrowDown') moveTo(keys[Math.min(at + columns, keys.length - 1)]);
-    else if (e.key === 'ArrowUp') moveTo(keys[Math.max(at - columns, 0)]);
-    else if (e.key === 'Home') moveTo(keys[0]);
-    else if (e.key === 'End') moveTo(keys.at(-1));
+    if (e.key === 'ArrowRight') moveTo(keys[at + 1], e.shiftKey);
+    else if (e.key === 'ArrowLeft') moveTo(keys[at - 1], e.shiftKey);
+    else if (e.key === 'ArrowDown') moveTo(keys[Math.min(at + columns, keys.length - 1)], e.shiftKey);
+    else if (e.key === 'ArrowUp') moveTo(keys[Math.max(at - columns, 0)], e.shiftKey);
+    else if (e.key === 'Home') moveTo(keys[0], e.shiftKey);
+    else if (e.key === 'End') moveTo(keys.at(-1), e.shiftKey);
     else if (e.key === 'Enter') onOpen(item);
-    else if (e.key === ' ') selection.select(key);
+    else if (e.key === ' ') {
+      if (e.ctrlKey || e.metaKey) selection.toggle(key);
+      else selection.select(key);
+    } else if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'a') selection.selectAll();
     else if (isMenuKey(e)) {
-      selection.select(key);
+      if (!selection.isSelected(key)) selection.select(key);
       onMenu(item, menuPointFor(e.currentTarget), 'keyboard');
     } else if (!(onCardKey?.(e, item) ?? false)) return;
     e.preventDefault();
   };
 
   return (
-    <div ref={root} className={styles.grid} role="grid" aria-label={label}>
+    <div ref={root} className={styles.grid} role="grid" aria-label={label} aria-multiselectable="true">
       {sections.map((section) => (
         <div key={section.id} role="rowgroup" aria-label={section.label ?? undefined} className={styles.group}>
-          {section.label !== null && (
-            <div className={styles.section} aria-hidden="true">
-              {section.label}
-            </div>
-          )}
+          {section.label !== null &&
+            (onToggleSection === undefined ? (
+              <div className={styles.section} aria-hidden="true">
+                {section.label}
+              </div>
+            ) : (
+              <SectionHeading className={styles.section} label={section.label} count={section.count} collapsed={section.collapsed} onToggle={() => onToggleSection(section.id)} />
+            ))}
           {chunk(section.items, columns).map((row) => (
             <div key={row[0]?.key} role="row" className={styles.row} style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
               {row.map(({ key, item }) => {
-                const selected = selection.selected === key;
+                const selected = selection.isSelected(key);
                 const card = renderCard(item, { active: selection.active === key });
                 return (
                   <div
@@ -92,11 +104,11 @@ export function ItemGrid<T>({ label, entries, selection, renderCard, onOpen, onM
                     aria-label={card.title}
                     tabIndex={selection.active === key ? 0 : -1}
                     className={cx(styles.card, selected && styles.selected)}
-                    onClick={() => selection.select(key)}
+                    onClick={(e) => clickSelect(selection, key, e)}
                     onDoubleClick={() => onOpen(item)}
                     onContextMenu={(e) => {
                       e.preventDefault();
-                      selection.select(key);
+                      if (!selection.isSelected(key)) selection.select(key);
                       onMenu(item, { x: e.clientX, y: e.clientY }, 'pointer');
                     }}
                     onKeyDown={(e) => onKeyDown(e, key, item)}
@@ -112,6 +124,7 @@ export function ItemGrid<T>({ label, entries, selection, renderCard, onOpen, onM
                       </span>
                     </div>
                     <div className={styles.thumb}>{card.thumbnail}</div>
+                    {card.footer !== undefined && card.footer !== null && <div className={styles.foot}>{card.footer}</div>}
                   </div>
                 );
               })}

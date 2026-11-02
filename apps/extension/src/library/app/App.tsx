@@ -12,6 +12,7 @@ import { LibraryPalette, useLibraryPaletteKey } from '../shell/LibraryPalette';
 import { useRoute } from '../routes/use-route';
 import type { NewMenuHandle } from '../shell/NewMenu';
 import { Shell } from '../shell/Shell';
+import { registerTagOperators } from '../tags/palette-operators';
 import { LibraryContext, type LibraryContextValue } from './context';
 
 /** How the library gets its data: the store (or, in test builds, the fake). null: this store cannot list the library. */
@@ -54,6 +55,7 @@ function Frame({ start, retry }: { start: Start; retry(this: void): void }) {
   }, [def]);
 
   const data = start.kind === 'ready' ? start.data : null;
+  useEffect(() => (data?.tags === undefined ? undefined : registerTagOperators(data.tags)), [data]); // S18: `tag:` and `course:` in Ctrl+K
   const thumbnails = useMemo(() => (data === null ? null : createThumbnailCache({ savedPdf: data.savedPdf, hasDocument: data.hasDocument })), [data]);
   useEffect(() => {
     if (data === null || thumbnails === null) return;

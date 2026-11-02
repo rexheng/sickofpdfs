@@ -1,0 +1,223 @@
+/*
+ * About this PDF (R92), after Drive's file "Details" panel: the first page, the title in Google Sans 18/24, then sections
+ * 24 px apart, each with a 14/20 500 heading. The details are a two-column list (label 12/16 500 in the secondary colour,
+ * value 14/20 in on-surface), so the eye runs down the labels.
+ */
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-inline-size: 0;
+  padding-block-end: var(--space-4);
+}
+
+.loading {
+  min-block-size: var(--sop-details-thumb-h);
+}
+
+.thumb {
+  position: relative;
+  block-size: var(--sop-details-thumb-h);
+  overflow: hidden;
+  border-radius: var(--shape-grid-card);
+  background-color: var(--gm3-sys-color-surface-container);
+  padding: var(--space-2) var(--space-2) 0;
+}
+
+.titleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.titleRow {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.title {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  margin: var(--space-1) 0 0;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-details-title);
+  overflow-wrap: anywhere;
+}
+
+.titleEdit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.titleActions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.by {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sectionTitle {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-details-heading);
+}
+
+.note {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+.footnote {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-tooltip);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: var(--sop-details-label-w) minmax(0, 1fr);
+  gap: var(--space-2) var(--space-3);
+  align-items: baseline;
+  margin: 0;
+}
+
+.label {
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-details-label);
+}
+
+.value {
+  min-inline-size: 0;
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+  overflow-wrap: anywhere;
+}
+
+.aside {
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.link {
+  color: var(--gm3-sys-color-primary);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.link:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 1px;
+  border-radius: var(--shape-field);
+}
+
+.places {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.place {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-inline-size: 0;
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+.placeKind {
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-details-label);
+}
+
+.path {
+  color: var(--gm3-sys-color-on-surface);
+  overflow-wrap: anywhere;
+}
+
+.via,
+.when {
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-tooltip);
+}
+
+.related {
+  display: flex;
+  flex-direction: column;
+  margin: 0 calc(-1 * var(--space-2));
+  padding: 0;
+  list-style: none;
+}
+
+.relatedRow {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-block-size: var(--space-14);
+  margin: 0;
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--shape-chip);
+  background: transparent;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.relatedRow:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.relatedRow:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.relatedText {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.relatedTitle {
+  overflow: hidden;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-row-name);
+  font-variation-settings: "opsz" 17;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.relatedMeta {
+  overflow: hidden;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-tooltip);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

@@ -97,3 +97,14 @@
   border-radius: var(--shape-grid-thumb);
   background-color: var(--drive-content-bg);
 }
+
+/* Under the page: the reading's tags, one line. */
+.foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  min-inline-size: 0;
+  block-size: var(--sop-grid-foot-h);
+  padding-block-start: var(--space-2);
+  overflow: hidden;
+}
