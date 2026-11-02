@@ -173,6 +173,7 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 | Find | Ctrl+F with match count, next and previous |
 | Navigate | Thumbnails, outline, a Figures tab listing every figure and table, go to page, links inside the PDF (contents, citations) and out to the web |
 | Rotate and views | Rotate 90°, two-page view, presentation mode for slides, dark (inverted) pages |
+| Bold word starts (R90) | A reading aid: the first part of every word is drawn bold, to guide the eye. One switch in the View menu, remembered across PDFs |
 | Password PDFs | Asks for the password; the library keeps the encrypted original and asks again next time; its page text is indexed like any saved PDF unless you switch that off for it |
 | Forms | PDFs with real fillable fields (text boxes, choices or checkboxes listed as form fields, or XFA) are classified first and saved if they are learning PDFs, then reopen in Chrome's own viewer to be filled, through a one-time allow rule for that link and tab. Link boxes that LaTeX adds to papers do not count. If the link can't be fetched again, our view stays, with a banner |
 | Escape hatch | File → "Open in Chrome's viewer", always available |
@@ -180,6 +181,24 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 | Large files | Up to 1 GB opens normally; larger files (size read from the download header) open in Chrome's viewer with a note. Phase 0 confirms the limit |
 | Accessibility | WCAG 2.2 AA for the interface; the text layer is readable by screen readers |
 | Embedded PDFs | A PDF shown inside a page (such as Moodle) opens in the full tab, with a "Back to page" button |
+
+**R90: Bold word starts (Nov 2, owner request).** This is a reading aid in the spirit of "bionic" reading. The product never uses the trademarked name "Bionic Reading".
+- **What it does.** In every word, the first letters are drawn bold, and the rest stay as printed.
+  - Words of 1 to 3 letters get their first letter bold. Longer words get their first half bold, rounded up: "Rea·ding", "meth·od", "facili·tating".
+  - Only letters count. Pure numbers, maths symbols and punctuation are left alone.
+  - Each part of a hyphenated word counts as its own word. A word broken across lines counts per line.
+- **How it is drawn.** It reuses the bold mark's glyph-outline overlay (BoldLayer), with a heavier stroke, so it reads as clearly bold at 100%, as in common examples. It is drawn over the page's render and never changes the file.
+  - Selecting, copying, Find, links, marks and comments work exactly as without it.
+  - The owner's own bold marks still show whole words bold.
+  - It turns with the page (rotation) and works in two-page view and presentation mode.
+  - It never prints.
+- **Where it can't work.** Pages without real text outlines (scans, and OCR text) are left as they are. The first time such a page is shown with the switch on, a quiet note says: "Bold word starts works on text pages. This page is a scanned image."
+- **The switch.**
+  - It sits in the View menu as "Bold word starts", with a check mark, and has a keyboard shortcut that clashes with nothing in Chrome or the viewer.
+  - It is listed in the shortcut sheet.
+  - It is remembered on this computer for every PDF, and is off until the owner turns it on.
+  - The Settings page (S14) will later add a strength choice (Light, Medium or Strong, where Medium is the rule above).
+- **Speed.** It is drawn for visible pages first, after the page's own render, so it never delays the first paint or scrolling. It is cached per page and zoom. Turning it on shows bold on the visible pages within 300 ms on the reference laptop.
 
 **Shortcuts.** Single-key and Ctrl+Alt shortcuts never fire while you are typing, because on some keyboards Ctrl+Alt is AltGr. Letters and symbols are matched by the character they type, so shortcuts follow your keyboard layout; only the number row (Alt+Shift+5, 1 to 5) is matched by position. Ctrl+= and Ctrl++ both zoom in. All are rebindable in Settings, and Ctrl+U only acts when text is selected.
 
