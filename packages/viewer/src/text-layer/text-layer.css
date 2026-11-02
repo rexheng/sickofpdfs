@@ -117,3 +117,47 @@
   position: absolute;
   inset: 0;
 }
+
+/*
+ * Caret browsing's text cursor (R93): a thin bar beside a letter, as tall as its line, drawn by caret-browsing.ts (its
+ * place, length and turn are set inline). It blinks 530 ms on and 530 ms off, as Chrome's caret does, and holds still
+ * for readers who asked for reduced motion.
+ */
+.sop-caret {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  width: var(--sop-caret-width);
+  background: var(--sop-caret);
+  transform-origin: 0 0;
+  pointer-events: none;
+  animation: sop-caret-blink 1060ms step-end infinite;
+}
+
+/* Each move swaps the animation's name, which starts the blink over: the caret is solid again from the move. */
+.sop-caret.sop-caret-again {
+  animation-name: sop-caret-blink-again;
+}
+
+.sop-caret[hidden] {
+  display: none;
+}
+
+@keyframes sop-caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes sop-caret-blink-again {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sop-caret {
+    animation: none;
+  }
+}

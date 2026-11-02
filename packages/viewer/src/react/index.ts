@@ -14,6 +14,7 @@ export {
   type TextLayerSource,
   type TextSelectionSource,
 } from './TextLayer';
+export { CARET_SCAN_NOTE, CaretBrowsing, type CaretHost } from './caret-browsing';
 export { FindBar, type FindBarProps } from './FindBar';
 export { FindHighlights, type FindHighlightsProps } from './FindHighlights';
 export { MarkLayer, markPaths, type MarkLayerItem, type MarkLayerPage, type MarkLayerProps, type MarkLayerSource, type MarkLayerStyle, type MarkPath } from './MarkLayer';

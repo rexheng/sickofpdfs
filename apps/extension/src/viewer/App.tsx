@@ -36,6 +36,7 @@ import { MarkupMenu } from './annotations/MarkupMenu';
 import { createNotes, type Notes, registerViewerFeature, viewerFeatures } from './annotations/wire';
 import styles from './App.module.css';
 import { backTarget, goBackToPage } from './back-to-page';
+import { CARET_OFF_NOTE, CARET_ON_NOTE, caretBrowsingSwitch, useCaretBrowsing } from './caret-browsing';
 import { AboutDialog } from './chrome/AboutDialog';
 import { Header } from './chrome/Header';
 import { buildMenus } from './chrome/menus';
@@ -322,7 +323,8 @@ function TabViewer({ params }: { params: ViewerParams }) {
   // The menus read each command's state when they are built: build them again whenever the view changes.
   const viewVersion = useViewVersion(live?.store ?? null);
   const saveKind = useSaveView(save).state?.kind; // File → Save to library follows the save state
-  const menus = useMemo(() => buildMenus(commands), [commands, viewVersion, saveKind]); // eslint-disable-line react-hooks/exhaustive-deps -- viewVersion and saveKind are the triggers
+  const caretOn = useCaretBrowsing(); // View → Caret browsing shows its check
+  const menus = useMemo(() => buildMenus(commands), [commands, viewVersion, saveKind, caretOn]); // eslint-disable-line react-hooks/exhaustive-deps -- viewVersion, saveKind and caretOn are the triggers
 
   return (
     <div ref={root} className={styles.app}>
@@ -536,10 +538,24 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   const [scans] = useState(() => new ScanDetector(backend, doc.open.doc, doc.open.pages));
   // The page text everything reads (the text layer now; marks and find later): one glyph cache for the document.
   const [pageText] = useState(() => createPageTextProvider(backend, doc.open.doc));
-  const [textLayers] = useState(
-    () => new TextLayerController({ source: pageText, pages: doc.open.pages, fontUrl: chrome.runtime.getURL(TEXT_LAYER_FONT), onNote: (text) => ui.showNote(text) }),
-  );
   const api = useRef<PageListApi | null>(null);
+  const [textLayers] = useState(
+    () =>
+      new TextLayerController({
+        source: pageText,
+        pages: doc.open.pages,
+        fontUrl: chrome.runtime.getURL(TEXT_LAYER_FONT),
+        onNote: (text) => ui.showNote(text),
+        // Caret browsing (R93) moves through the page list, and leaves presentation mode its keys.
+        pageList: () => api.current,
+        paused: () => store.get().presenting !== null,
+        isScannedPage: (i) => scans.isScannedPage(i),
+      }),
+  );
+  useEffect(() => {
+    textLayers.caret.setEnabled(caretBrowsingSwitch.get());
+    return caretBrowsingSwitch.subscribe(() => textLayers.caret.setEnabled(caretBrowsingSwitch.get()));
+  }, [textLayers]);
   const nav = useReaderNavigation({ backend, doc, store, api });
   const outline = useOutline(backend, doc);
   useRailFitsWindow(store);
@@ -565,6 +581,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       save,
       pageList: api,
       printMarks: notes === null ? null : { layer: notes.layer, text: pageText },
+      caretBrowsing: { on: caretBrowsingSwitch.get, toggle: () => ui.showNote(caretBrowsingSwitch.toggle() ? CARET_ON_NOTE : CARET_OFF_NOTE) },
       ui,
     };
     return createCommands(ctx, { ...notes?.behaviours(), ...saveDecisionCommands(save) });
@@ -591,7 +608,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
     onChrome({ commands, store, jumper });
     return () => onChrome(null);
   }, [commands, store, jumper, onChrome]);
-  useEffect(() => installShortcuts(readerShortcuts(api)), []);
+  useEffect(() => installShortcuts(readerShortcuts(api, () => textLayers.caret.takesKeys())), [textLayers]);
   useEffect(() => () => textLayers.dispose(), [textLayers]);
   useEffect(
     () =>
@@ -599,6 +616,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
         viewer: viewerHooks(api, store, scans, textLayers),
         selectionRanges: () => textLayers.selectionRanges(),
         glyphCenter: (pageIndex, charIndex) => textLayers.glyphCenter(pageIndex, charIndex),
+        caret: () => ({ on: textLayers.caret.enabled, position: textLayers.caret.position() }),
       }),
     [store, scans, textLayers],
   );
@@ -774,15 +792,20 @@ function onChromeButtonNotMenu(): boolean {
   return onChromeButton() && document.activeElement?.getAttribute('role') !== 'menuitem';
 }
 
-/** Chromium's viewer scroll keys. (The zoom keys are commands: commands.ts.) */
-function readerShortcuts(api: RefObject<PageListApi | null>): ShortcutDef[] {
+/**
+ * Chromium's viewer scroll keys. (The zoom keys are commands: commands.ts.) With caret browsing on and the focus on the
+ * pages (`caretKeys`), the arrows, Page Up/Down, Home and End move the text cursor instead (R93); Space still scrolls.
+ */
+function readerShortcuts(api: RefObject<PageListApi | null>, caretKeys: () => boolean): ShortcutDef[] {
   const on = (f: (a: PageListApi) => void) => () => {
     if (api.current) f(api.current);
   };
   const def = (enabled: () => boolean) => (id: string, keys: string[], f: (a: PageListApi) => void): ShortcutDef => ({ id, keys, run: on(f), enabled });
+  const notCaret = (enabled: () => boolean) => () => enabled() && !caretKeys();
   const page = def(inPageArea);
-  const vertical = def(() => inPageArea() || onChromeButton());
-  const line = def(() => inPageArea() || onChromeButtonNotMenu());
+  const pageNotCaret = def(notCaret(inPageArea));
+  const vertical = def(notCaret(() => inPageArea() || onChromeButton()));
+  const line = def(notCaret(() => inPageArea() || onChromeButtonNotMenu()));
   return [
     line('scroll.lineDown', ['ArrowDown'], (a) => a.scrollLines(1)),
     line('scroll.lineUp', ['ArrowUp'], (a) => a.scrollLines(-1)),
@@ -792,8 +815,8 @@ function readerShortcuts(api: RefObject<PageListApi | null>): ShortcutDef[] {
     page('scroll.screenUp', ['Shift+Space'], (a) => a.scrollScreens(-1)),
     vertical('scroll.start', ['Home'], (a) => a.goToStart()),
     vertical('scroll.end', ['End'], (a) => a.goToEnd()),
-    page('scroll.left', ['ArrowLeft'], (a) => a.scrollSideways(-1)),
-    page('scroll.right', ['ArrowRight'], (a) => a.scrollSideways(1)),
+    pageNotCaret('scroll.left', ['ArrowLeft'], (a) => a.scrollSideways(-1)),
+    pageNotCaret('scroll.right', ['ArrowRight'], (a) => a.scrollSideways(1)),
   ];
 }
 

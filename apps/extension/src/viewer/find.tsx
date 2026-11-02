@@ -217,7 +217,15 @@ export function useReaderFind({ backend, doc, store, api, pageText, textLayers, 
     [close, reveal, textLayers, root],
   );
 
-  const onJump = useCallback((hit: SearchHit) => void reveal(hit), [reveal]);
+  // With caret browsing on (R93), the text cursor goes to each hit Find moves to (Enter, Shift+Enter, the first hit as
+  // the words are typed), so reading and selecting go on from there once the bar is closed.
+  const onJump = useCallback(
+    (hit: SearchHit) => {
+      textLayers.caret.placeAt({ pageIndex: hit.pageIndex, charIndex: hit.start, side: 'before' });
+      void reveal(hit);
+    },
+    [reveal, textLayers],
+  );
   const onClose = useCallback(() => close({ keep: true }), [close]);
   const onWrap = useCallback((to: 'first' | 'last') => setNote({ text: to === 'first' ? 'Back to the first match' : 'Back to the last match' }), []);
 

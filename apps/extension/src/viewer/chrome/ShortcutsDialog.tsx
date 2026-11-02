@@ -16,6 +16,7 @@ const GROUPS: { title: string; prefix: string; also?: string[] }[] = [
   { title: 'File', prefix: 'file.' },
   { title: 'View', prefix: 'view.' },
   { title: 'In presentation mode', prefix: 'presenting.' },
+  { title: 'Caret browsing (F7)', prefix: 'caret.' },
   { title: 'Tools', prefix: 'tools.' },
   { title: 'Marks and notes', prefix: 'marks.', also: ['notes.', 'figures.'] },
   { title: 'Edit', prefix: 'edit.' },
@@ -53,6 +54,21 @@ const PRESENTING: Row[] = [
   { id: 'presenting.leave', label: 'Leave presentation mode', keys: ['Esc'] },
 ];
 
+/**
+ * The keys of caret browsing (R93, View → Caret browsing): the text cursor follows the reading order, across pages. The
+ * Shift keys also work without it, after a mouse selection.
+ */
+const CARET: Row[] = [
+  { id: 'caret.letter', label: 'Move the text cursor a letter', keys: ['←', '→'] },
+  { id: 'caret.word', label: 'Move it a word', keys: ['Ctrl+←', 'Ctrl+→'] },
+  { id: 'caret.line', label: 'Move it a line', keys: ['↑', '↓'] },
+  { id: 'caret.lineEnds', label: 'Start or end of the line', keys: ['Home', 'End'] },
+  { id: 'caret.ends', label: 'Start or end of the PDF', keys: ['Ctrl+Home', 'Ctrl+End'] },
+  { id: 'caret.screen', label: 'Move it a screen', keys: ['Page Up', 'Page Down'] },
+  { id: 'caret.select', label: 'Select as it moves, or change a selection', keys: ['Shift+those keys'] },
+  { id: 'caret.collapse', label: 'Let go of the selection', keys: ['Esc'] },
+];
+
 /** The keys of a mark that was clicked (mark-input.ts): not commands of their own, so they are listed here. */
 const FOCUSED_MARK: Row[] = [
   { id: 'marks.focused.colour', label: 'Change a clicked mark’s colour', keys: ['1–5'] },
@@ -73,6 +89,7 @@ export function ShortcutsDialog({ open, onOpenChange, commands }: ShortcutsDialo
       .filter((c) => c.built && (c.keys.length > 0 || KEYLESS[c.id] !== undefined))
       .map((c) => ({ id: c.id, label: c.label, keys: [...new Set(c.keys.map(formatCombo))], ...(c.keys.length === 0 ? { where: KEYLESS[c.id] } : {}) })),
     ...(commands.get('view.presentation')?.built === true ? PRESENTING : []),
+    ...(commands.get('view.caretBrowsing')?.built === true ? CARET : []),
     // Marks exist only where they can be made (not in Incognito).
     ...(commands.get('marks.highlight')?.built === true ? FOCUSED_MARK : []),
   ];

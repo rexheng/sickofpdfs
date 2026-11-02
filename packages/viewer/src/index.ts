@@ -68,9 +68,13 @@ export {
   TEXT_LAYER_FONT_FAMILY,
   textModelRange,
   wordAt,
+  wordSegments,
   type GlyphUnit,
   type TextItem,
+  type WordSegment,
 } from './text-layer/items';
+// Caret browsing (R93): where a text cursor can stand on a page, and how it moves.
+export { pageCaret, type CaretLine, type CaretPos, type CaretSide, type CaretStop, type PageCaret } from './text-layer/caret';
 export { loadTextLayerFont, measureTextLayerText, renderTextLayer, TEXT_LAYER_CLASS, type TextLayerHandle } from './text-layer/text-layer';
 export { charAtPoint, charRangeFromDomRange, domPositionOfChar, getSelectionRanges, selectCharRanges, type CharRange } from './text-layer/char-map';
 

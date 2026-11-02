@@ -207,6 +207,9 @@
   --viewer-focus: #a8c7fa;
   /* The text selection on a PDF page: Drive's blue (#0b57d0) at 30%, painted as one band a line (Task 22, R44) */
   --text-selection: rgba(11,87,208,.3);
+  /* Caret browsing's text cursor (R93): Drive's blue, solid, so it stands out from black text and from the selection */
+  --sop-caret: #0b57d0;
+  --sop-caret-width: 1.5px;
 
   /* Icons: Material Symbols Outlined at wght 400, drawn at opsz 20 or 24 (02 section 6.1) */
   --font-icons: "Material Symbols Outlined";

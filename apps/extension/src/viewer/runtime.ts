@@ -3,7 +3,7 @@
  * nothing in this file is global, and nothing in production reads it. Later tasks add fields.
  */
 import type { DocumentId, FilterDecision, SaveState } from '@sop/core';
-import type { CharRange, PageBox, PagePoint, PdfBackend, ViewerSnapshot } from '@sop/viewer';
+import type { CaretPos, CharRange, PageBox, PagePoint, PdfBackend, ViewerSnapshot } from '@sop/viewer';
 import type { BlobStore } from '../store/blob-store';
 import type { StoreClient } from '../store/client';
 import type { AnnotationSession } from './annotations/session';
@@ -44,6 +44,8 @@ export interface ViewerRuntime {
   selectionRanges(): CharRange[];
   /** The centre of char `charIndex`'s PDFium box on page `pageIndex`, in client px (NaN while its text layer is not built). */
   glyphCenter(pageIndex: number, charIndex: number): { x: number; y: number };
+  /** Caret browsing (R93): whether the switch is on in this tab, and where the text cursor is (null before it is placed). */
+  caret(): { on: boolean; position: CaretPos | null };
   /** The copies of saved PDFs (Task 30). Null in Incognito. */
   blobStore: BlobStore | null;
   /** The open PDF's library save (Task 30), once its controller exists. */

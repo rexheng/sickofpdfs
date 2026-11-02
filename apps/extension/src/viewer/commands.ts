@@ -32,7 +32,7 @@ export type ViewerCommandId =
   | 'file.openInChrome' | 'file.openOriginal' | 'file.download' | 'file.copyLink' | 'file.print' | 'file.saveToLibrary'
   | 'file.forget' | 'file.reportDecision' // Phase 3 (S11): save/save-commands.ts
   | 'view.fitWidth' | 'view.fitPage' | 'view.zoomIn' | 'view.zoomOut' | 'view.rotateCw' | 'view.rotateCcw'
-  | 'view.twoPage' | 'view.presentation' | 'view.toggleRail'
+  | 'view.twoPage' | 'view.presentation' | 'view.caretBrowsing' | 'view.toggleRail'
   | 'tools.find' | 'tools.goToPage' | 'tools.search' | 'help.shortcuts' | 'help.about'
   // Phase 2 (plan section 7). S13 runs the marks, the menu and undo; S14 the comment commands; S15 the notes ones;
   // S16 the figure and area ones. P4 adds 'claude.ask' and 'claude.explainFigure'.
@@ -114,6 +114,8 @@ export interface ViewerContext {
   pageList: RefObject<PageListApi | null>;
   /** The marks as the screen draws them, for Print (S17). Null in Incognito and while there are no notes. */
   printMarks?: PrintMarks | null;
+  /** The caret browsing switch (R93): remembered for every PDF, the same in every tab (caret-browsing.ts). */
+  caretBrowsing?: { on(): boolean; toggle(): void };
   ui: ViewerUi;
 }
 
@@ -145,6 +147,8 @@ const SPECS: [ViewerCommandId, CommandSpec][] = [
   ['view.rotateCcw', { label: 'Rotate counter-clockwise', icon: 'rotate_left', keys: ['Ctrl+['] }],
   ['view.twoPage', { label: 'Two-page view', icon: 'auto_stories', keys: [] }],
   ['view.presentation', { label: 'Presentation mode', icon: 'slideshow', keys: [] }],
+  // R93: F7, Chrome's own key for caret browsing. The page gets it before Chrome, and taking it stops Chrome's question.
+  ['view.caretBrowsing', { label: 'Caret browsing', icon: 'text_select_start', keys: ['F7'] }],
   ['view.toggleRail', { label: 'Thumbnails and outline', icon: 'photo_library', keys: ['F4'] }],
   ['tools.find', { label: 'Find', icon: 'find_in_page', keys: ['Ctrl+F'] }],
   // Not 'pageview' (a page and a magnifier), which looks like Find's icon beside it in the Tools menu.
@@ -259,6 +263,11 @@ function toggleTwoPage(store: ViewerStore): void {
   store.set({ spread: store.get().spread === 'two-page' ? 'none' : 'two-page' });
 }
 
+/** Caret browsing (R93): a switch with a check mark, for every PDF and every tab. */
+function caretBrowsingCommand(c: NonNullable<ViewerContext['caretBrowsing']>): Behaviour {
+  return { run: () => c.toggle(), enabled: always, checked: () => c.on() };
+}
+
 /**
  * The commands for an open document. `extra` is what the marks and the registered features (annotations/wire.ts) do
  * for the commands they own.
@@ -298,6 +307,7 @@ export function createCommands(ctx: ViewerContext, extra: Partial<Record<ViewerC
     'view.rotateCcw': { run: () => turn(-1), enabled: always },
     'view.twoPage': { run: () => toggleTwoPage(ctx.store), enabled: always, checked: () => ctx.store.get().spread === 'two-page' },
     'view.presentation': { run: () => void enterPresentation(ctx).catch(() => {}), enabled: () => ctx.store.get().presenting === null },
+    ...(ctx.caretBrowsing !== undefined ? { 'view.caretBrowsing': caretBrowsingCommand(ctx.caretBrowsing) } : {}),
     'view.toggleRail': { run: () => ctx.store.set({ railOpen: !ctx.store.get().railOpen }), enabled: always, checked: () => ctx.store.get().railOpen },
     'tools.find': { run: () => ctx.openFind?.(), enabled: () => ctx.openFind !== undefined },
     'tools.goToPage': { run: () => ctx.ui.focusPageField(), enabled: always },
@@ -310,7 +320,8 @@ export function createCommands(ctx: ViewerContext, extra: Partial<Record<ViewerC
 /** The commands that need an open document: while there is none, they are greyed out and say why. */
 const DOCUMENT_COMMANDS: ViewerCommandId[] = [
   'file.download', 'file.print', 'file.saveToLibrary', 'view.fitWidth', 'view.fitPage', 'view.zoomIn', 'view.zoomOut',
-  'view.rotateCw', 'view.rotateCcw', 'view.twoPage', 'view.presentation', 'view.toggleRail', 'tools.find', 'tools.goToPage',
+  'view.rotateCw', 'view.rotateCcw', 'view.twoPage', 'view.presentation', 'view.caretBrowsing', 'view.toggleRail', 'tools.find',
+  'tools.goToPage',
 ];
 
 /**
@@ -362,6 +373,12 @@ const NEVER_THE_BROWSERS: Partial<Record<ViewerCommandId, KeyCombo[]>> = { 'mark
  */
 const BY_PHYSICAL_KEY = new Set<ViewerCommandId>(['marks.comment', 'marks.documentNote']);
 
+/**
+ * Single keys that are taken in a text field too, because they type nothing and the browser's own action is not wanted
+ * anywhere in the viewer: F7 would ask to turn on Chrome's caret browsing over the viewer's own.
+ */
+const EVEN_WHILE_TYPING = new Set<ViewerCommandId>(['view.caretBrowsing']);
+
 /** The key was pressed in a text field (the note box, the page box). */
 function inTextField(e: KeyboardEvent): boolean {
   const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
@@ -388,7 +405,7 @@ export function commandShortcuts(cmds: ViewerCommands): ShortcutDef[] {
     const keys = [...c.keys, ...(HIDDEN_KEYS[c.id] ?? [])].filter((k) => !taken.includes(k));
     const ours = keys.filter((k) => alwaysOurs(c.id, k));
     const others = keys.filter((k) => !alwaysOurs(c.id, k));
-    const typing = EDITING_KEYS.has(c.id) ? { whileTyping: 'yield' as const } : {};
+    const typing = EDITING_KEYS.has(c.id) ? { whileTyping: 'yield' as const } : EVEN_WHILE_TYPING.has(c.id) ? { whileTyping: 'run' as const } : {};
     if (taken.length > 0) defs.push({ id: c.id, keys: taken, run: (e) => !inTextField(e) && keysFree(c.id) && c.enabled() && c.run() });
     if (ours.length > 0) defs.push({ id: c.id, keys: ours, run: () => keysFree(c.id) && c.enabled() && c.run() });
     const physical = BY_PHYSICAL_KEY.has(c.id) ? { byPhysicalKey: true } : {};

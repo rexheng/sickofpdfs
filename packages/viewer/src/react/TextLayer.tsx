@@ -21,6 +21,9 @@
 //   the white space beside a line or between lines) starts at the nearest char of the nearest line; a pointer over no
 //   text ends the selection at the nearest line's end (or start), preferring the column the drag started in. A
 //   double-click selects the word, a triple-click the line (R28).
+// - Caret browsing (R93, ./caret-browsing.ts): a text cursor on the same char model. Shift+keys move the selection's end
+//   in PDFium's reading order (with the switch or after a mouse selection); with the switch on, a click puts the cursor
+//   between two letters and the keys move it.
 import { memo, useLayoutEffect, useRef } from 'react';
 import { PdfEngineCrashedError } from '../backend/errors';
 import type { PageGlyphs, PageSize, PdfRect } from '../backend/types';
@@ -43,6 +46,8 @@ import {
 } from '../text-layer/items';
 import { loadTextLayerFont, measureTextLayerText, renderTextLayer, type TextLayerHandle } from '../text-layer/text-layer';
 import '../text-layer/text-layer.css';
+import { CaretBrowsing } from './caret-browsing';
+import type { PageListApi } from './PageList';
 import type { PageLayerContext } from './PageView';
 
 /** Where the text layer reads a page's glyphs and selection rects: PdfBackend, or PageTextProvider (which caches). */
@@ -65,6 +70,12 @@ export interface TextLayerControllerOptions {
   fontUrl: string;
   /** A short note for the reader (the viewer's snackbar): a long copy says it is working, then that it is done. */
   onNote?: (text: string) => void;
+  /** Caret browsing (R93): the page list, for its layout and scrolling. Without it the caret cannot move. */
+  pageList?: () => PageListApi | null;
+  /** Caret browsing steps aside while this is true (presentation mode has the keys). */
+  paused?: () => boolean;
+  /** Whether a page is a scan: the caret skips pages with no text, with a note once a tab when they are scans. */
+  isScannedPage?: (pageIndex: number) => Promise<boolean>;
 }
 
 /** A position between two chars: just before char `charIndex` of page `pageIndex`. PAGE_END: after the page's last char. */
@@ -113,6 +124,11 @@ const REFERENCE_SCALE = 2 * PT_TO_CSS;
 const REBUILD_ABOVE = 1.1;
 /** Glyphs are read only after scrolling has paused this long. */
 const SCROLL_IDLE_MS = 150;
+/**
+ * A selection moved by the keys is shown in the DOM this long after the last key (see setModel's 'soon'): rewriting the
+ * DOM selection over thousands of spans is most of a key's cost, and only the browser and screen readers read it.
+ */
+const DOM_FOLLOW_MS = 120;
 /** Selection rect requests a page may have with the engine at once (two, so a drag never waits for a whole round trip). */
 const RECT_REQUESTS_IN_FLIGHT = 2;
 /** A mouse-down that moves less than this is a click, not a drag. */
@@ -131,8 +147,6 @@ const START_REACH_PT = 24;
 const LINE_SPLIT_GAP = 1.5;
 /** A drag scrolls the pages when the pointer is this close (CSS px) to the edge of the page area, or beyond it. */
 const AUTOSCROLL_EDGE_PX = 6;
-/** Shift+arrow moves the browser's selection end at most this many times to select one more char (see extendByKey). */
-const KEY_EXTEND_TRIES = 4;
 /** What Ctrl+C says when nothing is selected. */
 export const NOTHING_TO_COPY = 'Nothing is selected, so nothing was copied.';
 /** Autoscroll speed: this share of the distance past the edge each frame, between the two bounds (CSS px a frame). */
@@ -145,6 +159,8 @@ interface PageState {
   size: PageSize;
   host: HTMLElement;
   path: SVGPathElement;
+  /** Where caret browsing draws its caret on this page. */
+  caret: HTMLElement | null;
   box: PageBox | null;
   ctx: PageLayerContext | null;
   handle: TextLayerHandle | null;
@@ -223,6 +239,8 @@ const CONTROLS = 'input, textarea, select, button, [contenteditable]:not([conten
 export class TextLayerController {
   /** The selection for Phase 2 (see TextSelectionSource). */
   readonly textSelection: TextSelectionSource;
+  /** Caret browsing (R93): its switch, the caret, and the Shift+keys that move the selection's end. */
+  readonly caret: CaretBrowsing;
   private readonly selectionListeners = new Set<() => void>();
   private readonly pages = new Map<number, PageState>();
   private readonly glyphCache = new Map<number, PageGlyphs>();
@@ -239,6 +257,8 @@ export class TextLayerController {
   private glyphQueue: Promise<unknown> = Promise.resolve();
   private drag: Drag | null = null;
   private paintFrame = 0;
+  /** Set while the DOM selection is behind the model (setModel 'soon'), until it is shown there. */
+  private domFollow: ReturnType<typeof setTimeout> | null = null;
   private scrollFrame = 0;
   /** The pointer's last position, with the fraction of a pixel that pointer events keep and mouse events drop. */
   private pointer: { x: number; y: number } | null = null;
@@ -280,15 +300,38 @@ export class TextLayerController {
         return () => this.selectionListeners.delete(cb);
       },
     };
+    this.caret = new CaretBrowsing(
+      {
+        pages: o.pages,
+        cachedGlyphs: (i) => this.glyphCache.get(i),
+        glyphs: (i) => this.glyphs(i),
+        selection: () => this.model,
+        select: (sel) => {
+          this.clickedAt = null;
+          this.setModel(sel, sel ? 'soon' : true);
+        },
+        mounted: (i) => {
+          const s = this.pages.get(i);
+          return s?.box && s.caret ? { box: s.box, caret: s.caret } : null;
+        },
+        scroller: () => this.root,
+        pageList: () => o.pageList?.() ?? null,
+        paused: () => o.paused?.() ?? false,
+        ...(o.isScannedPage ? { isScannedPage: o.isScannedPage } : {}),
+        ...(o.onNote ? { note: o.onNote } : {}),
+      },
+      (cb) => this.textSelection.subscribe(cb),
+    );
   }
 
-  /** Registers a page's layer host and selection path (TextLayer does this). */
-  mount(index: number, host: HTMLElement, path: SVGPathElement): PageTextLayer {
+  /** Registers a page's layer host, selection path and caret (TextLayer does this). */
+  mount(index: number, host: HTMLElement, path: SVGPathElement, caret: HTMLElement | null = null): PageTextLayer {
     const s: PageState = {
       index,
       size: this.o.pages[index],
       host,
       path,
+      caret,
       box: null,
       ctx: null,
       handle: null,
@@ -315,6 +358,7 @@ export class TextLayerController {
         s.ctx = ctx;
         s.handle?.update(this.scaleOf(s), box.rotation);
         this.draw(s);
+        this.caret.pageShown(index);
         void this.ensureBuilt(s);
       },
       dispose: () => {
@@ -391,6 +435,7 @@ export class TextLayerController {
     }
     this.pages.clear();
     this.uninstall();
+    this.caret.dispose();
   }
 
   // ---- building ----
@@ -440,6 +485,7 @@ export class TextLayerController {
       s.building = false;
     }
     if (this.isReady(s)) {
+      this.caret.warm(s.index);
       const waiters = this.readyWaiters.get(s.index) ?? [];
       this.readyWaiters.delete(s.index);
       for (const w of waiters) w();
@@ -593,12 +639,23 @@ export class TextLayerController {
 
   /**
    * Makes `next` the selection (null or an empty one clears it): it is painted, shown in the DOM where its pages have
-   * layers (unless `dom` is false), and Copy starts reading the pages it needs.
+   * layers (unless `dom` is false; with 'soon', once the keys pause: DOM_FOLLOW_MS), and Copy starts reading the pages
+   * it needs. Painting, Copy, the marks and the notes read the model, never the DOM.
    */
-  private setModel(next: TextSelection | null, dom = true): void {
+  private setModel(next: TextSelection | null, dom: boolean | 'soon' = true): void {
     const was = this.model;
     this.model = next && cmpPos(next.anchor, next.focus) !== 0 ? next : null;
-    if (dom) this.applyModel();
+    if (dom === 'soon') {
+      if (this.domFollow !== null) clearTimeout(this.domFollow);
+      this.domFollow = setTimeout(() => {
+        this.domFollow = null;
+        this.applyModel();
+      }, DOM_FOLLOW_MS);
+    } else if (dom) {
+      if (this.domFollow !== null) clearTimeout(this.domFollow);
+      this.domFollow = null;
+      this.applyModel();
+    }
     this.prepareCopy();
     this.schedulePaint();
     const same = was === this.model || (was && this.model && cmpPos(was.anchor, this.model.anchor) === 0 && cmpPos(was.focus, this.model.focus) === 0);
@@ -661,7 +718,8 @@ export class TextLayerController {
    */
   private syncFromDom(): void {
     const root = this.root;
-    if (!root || this.drag) return;
+    // While the DOM selection is behind the model (keys moving it), what the DOM says is old news, not a change.
+    if (!root || this.drag || this.domFollow !== null) return;
     const sel = document.getSelection();
     const dom = getSelectionRanges(root);
     // A field with the focus holds the DOM selection (its caret, or text selected in it): that is not the reader letting
@@ -835,6 +893,8 @@ export class TextLayerController {
     this.paintFrame = 0;
     if (this.scrollFrame) cancelAnimationFrame(this.scrollFrame);
     this.scrollFrame = 0;
+    if (this.domFollow !== null) clearTimeout(this.domFollow);
+    this.domFollow = null;
     this.drag = null;
   }
 
@@ -1040,9 +1100,11 @@ export class TextLayerController {
     e.preventDefault();
     // (Without its focus ring: a press is not keyboard use.)
     if (!root.contains(document.activeElement) || isEditable(document.activeElement)) root.focus({ preventScroll: true, focusVisible: false });
-    if (e.shiftKey && (this.model || this.clickedAt)) {
-      // Shift+press extends the selection (or, after a plain click, selects from the click), and goes on as a drag.
-      this.drag = { from: this.model?.anchor ?? this.clickedAt, x0: at.x, y0: at.y, x: at.x, y: at.y, moved: true };
+    const caretAt = this.caret.anchor();
+    if (e.shiftKey && (this.model || caretAt || this.clickedAt)) {
+      // Shift+press extends the selection (or, after a plain click, selects from the click or the caret), and goes on as
+      // a drag.
+      this.drag = { from: this.model?.anchor ?? caretAt ?? this.clickedAt, x0: at.x, y0: at.y, x: at.x, y: at.y, moved: true };
       this.updateDrag();
       return;
     }
@@ -1075,6 +1137,8 @@ export class TextLayerController {
     d.y = at.y;
     if (d.moved) this.updateDrag();
     this.endDrag();
+    // A click, not a drag: with caret browsing on, the caret goes there.
+    if (!d.moved) this.caret.click(at.x, at.y);
   }
 
   /** The selection as the drag now makes it (live, without the DOM, which endDrag sets). */
@@ -1150,39 +1214,19 @@ export class TextLayerController {
   // ---- keys and Copy ----
 
   /**
-   * Ctrl+A in the pages (or anywhere but a field or a dialog) selects the whole document, as in Chrome's viewer. Shift+Left
-   * and Shift+Right (with Ctrl, by words) move the selection's end: see extendByKey.
+   * Ctrl+A in the pages (or anywhere but a field or a dialog) selects the whole document, as in Chrome's viewer. The
+   * moving keys are caret browsing's (R93): with Shift they move the selection's end, from the model, in PDFium's reading
+   * order (the browser's own Shift+arrows stop at every span edge); Esc lets go of the selection.
    */
   private onKeyDown(e: KeyboardEvent): void {
-    if (e.defaultPrevented || e.altKey) return;
+    if (e.defaultPrevented) return;
     const t = e.target instanceof Element ? e.target : document.activeElement;
     if (isEditable(t) || isEditable(document.activeElement)) return;
-    if (e.shiftKey && !e.metaKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
-      this.extendByKey(e, e.key === 'ArrowRight' ? 'right' : 'left', e.ctrlKey ? 'word' : 'character');
-      return;
-    }
-    if (!(e.ctrlKey || e.metaKey) || e.shiftKey || (e.key !== 'a' && e.key !== 'A' && e.code !== 'KeyA')) return;
     if (t?.closest('[role="dialog"], [role="alertdialog"], [role="menu"]')) return;
+    if (this.caret.onKey(e) || e.altKey) return;
+    if (!(e.ctrlKey || e.metaKey) || e.shiftKey || (e.key !== 'a' && e.key !== 'A' && e.code !== 'KeyA')) return;
     e.preventDefault();
     this.selectAll();
-  }
-
-  /**
-   * Shift+arrow on a selection in the pages. The browser moves the selection's end itself, but each span of the layer is
-   * placed on its own, so it stops once at every edge between two spans (the end of one span's text, then the gap
-   * between them) and one press in two selected nothing more. Here every press moves it on until another char is
-   * selected (or there is none left). The model follows from the DOM (syncFromDom), as for any change made there.
-   */
-  private extendByKey(e: KeyboardEvent, direction: 'left' | 'right', granularity: 'character' | 'word'): void {
-    const root = this.root;
-    const sel = document.getSelection();
-    if (!root || !sel || sel.rangeCount === 0 || sel.isCollapsed || !sel.focusNode || !root.contains(sel.focusNode)) return;
-    e.preventDefault();
-    const before = getSelectionRanges(root);
-    for (let i = 0; i < KEY_EXTEND_TRIES; i++) {
-      sel.modify('extend', direction, granularity);
-      if (!sameRanges(getSelectionRanges(root), before)) return;
-    }
   }
 
   /** A field gives the focus back to anything but another field: the selection it held off (syncFromDom) is shown again. */
@@ -1348,11 +1392,12 @@ export interface TextLayerProps {
 export const TextLayer = memo(function TextLayer({ controller, box, ctx }: TextLayerProps) {
   const host = useRef<HTMLDivElement>(null);
   const path = useRef<SVGPathElement>(null);
+  const caret = useRef<HTMLDivElement>(null);
   const page = useRef<PageTextLayer | null>(null);
   const index = box.index;
 
   useLayoutEffect(() => {
-    const p = controller.mount(index, host.current!, path.current!);
+    const p = controller.mount(index, host.current!, path.current!, caret.current);
     page.current = p;
     return () => {
       p.dispose();
@@ -1370,6 +1415,7 @@ export const TextLayer = memo(function TextLayer({ controller, box, ctx }: TextL
         <path ref={path} />
       </svg>
       <div ref={host} className="sop-text-layer-host" />
+      <div ref={caret} className="sop-caret" hidden aria-hidden="true" />
     </>
   );
 });

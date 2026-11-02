@@ -487,30 +487,73 @@ export function itemsScale(items: TextItem[]): number | undefined {
  * across two lines is one word. A double-click on a space selects the run of spaces, as in a web page.
  */
 export function wordAt(g: PageGlyphs, charIndex: number): { start: number; end: number } | null {
+  const w = wordsOf(g);
+  if (charIndex < 0 || charIndex >= w.at.length) return null;
+  const offset = w.at[charIndex];
+  const seg = w.segments.find((s) => offset >= s.textStart && offset < s.textEnd);
+  return seg && seg.start >= 0 ? { start: seg.start, end: seg.end } : null;
+}
+
+/**
+ * One segment of a page's text as Intl.Segmenter cuts it by words (a word, a run of spaces, a punctuation mark): from
+ * the first char that shows text in it to just after the last (both −1 for a segment with none). A double-click selects
+ * the segment it lands in (wordAt), and caret browsing's Ctrl+←/→ (R93) steps between the starts of the word-like ones:
+ * one cut serves both, so they always agree on where a word starts and ends.
+ */
+export interface WordSegment {
+  start: number;
+  end: number;
+  /** A word (letters or digits), not spaces or punctuation. */
+  wordLike: boolean;
+}
+
+interface PageWords {
+  /** at[i]: char i's offset in the segmented text. */
+  at: number[];
+  /** In text order, which is char order. */
+  segments: (WordSegment & { textStart: number; textEnd: number })[];
+}
+
+const wordsCache = new WeakMap<PageGlyphs, PageWords>();
+
+/**
+ * The page's text model cut into words by Intl.Segmenter, once per page. PDFium's joined line-end hyphen and the
+ * joined breaks show nothing in it, so a word hyphenated across two lines is one word.
+ */
+function wordsOf(g: PageGlyphs): PageWords {
+  const hit = wordsCache.get(g);
+  if (hit) return hit;
   const chars = textModel(g);
-  if (charIndex < 0 || charIndex >= chars.length) return null;
-  const at: number[] = []; // at[i]: char i's offset in `text`
+  const at: number[] = [];
+  const shownLength: number[] = [];
   let text = '';
   for (let i = 0; i < chars.length; i++) {
     at.push(text.length);
-    text += chars[i].replace(NOT_TEXT, '');
+    const shown = chars[i].replace(NOT_TEXT, '');
+    shownLength.push(shown.length);
+    text += shown;
   }
-  const segmenter = new Intl.Segmenter(undefined, { granularity: 'word' });
-  const seg = segmenter.segment(text).containing(at[charIndex]);
-  if (!seg) return null;
-  const s0 = seg.index;
-  const s1 = seg.index + seg.segment.length;
-  let start = -1;
-  let end = -1;
+  const segments: PageWords['segments'] = [];
+  for (const seg of new Intl.Segmenter(undefined, { granularity: 'word' }).segment(text)) {
+    segments.push({ start: -1, end: -1, wordLike: seg.isWordLike === true, textStart: seg.index, textEnd: seg.index + seg.segment.length });
+  }
+  let k = 0;
   for (let i = 0; i < chars.length; i++) {
-    const len = chars[i].replace(NOT_TEXT, '').length;
-    if (len === 0) continue;
-    if (at[i] >= s0 && at[i] < s1) {
-      if (start < 0) start = i;
-      end = i + 1;
-    }
+    if (shownLength[i] === 0) continue;
+    while (k < segments.length && at[i] >= segments[k].textEnd) k++;
+    const s = segments[k];
+    if (s === undefined) break;
+    if (s.start < 0) s.start = i;
+    s.end = i + 1;
   }
-  return start < 0 ? null : { start, end };
+  const out = { at, segments };
+  wordsCache.set(g, out);
+  return out;
+}
+
+/** The page's word segments in char order (see WordSegment). */
+export function wordSegments(g: PageGlyphs): readonly WordSegment[] {
+  return wordsOf(g).segments;
 }
 
 /**

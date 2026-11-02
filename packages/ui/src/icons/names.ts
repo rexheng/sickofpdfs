@@ -62,6 +62,8 @@ export const ICON_NAMES = [
   'person', // the owner's avatar on comment cards (S5)
   // TB1 chrome polish: Go to page (not 'pageview', which looked like Find's icon beside it)
   'move_down',
+  // R93: View → Caret browsing (an I-beam text cursor)
+  'text_select_start',
   // Phase 3: the library shell, list and grid (S7): the nav, "+ New", the view toggle, sorting and the row actions
   'home',
   'library_books',
