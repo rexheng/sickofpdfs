@@ -57,8 +57,7 @@ export function SaveAskDialog({ save }: SaveAskDialogProps) {
       title="Save this PDF to keep your notes?"
       actions={[
         { label: 'No', onClick: () => answer(false) },
-        // The spec's own words: "Save this PDF to keep your notes?" Yes saves it; No keeps the notes in this tab only.
-        { label: 'Yes', primary: true, onClick: () => answer(true) },
+        { label: 'Save', primary: true, onClick: () => answer(true) },
       ]}
       onOpenChange={(open) => !open && answer(false)}
       // A note box waiting for this answer takes the caret back as the question closes (and again, if it is drawn anew).
