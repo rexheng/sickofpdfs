@@ -351,7 +351,13 @@ Everything is written locally first, so reading and noting work offline. Release
 - **R83: "after a session with new notes"** means one quiet minute after the last change, and at most one run every 10 minutes.
 - **R84: snapshots are named by local date.** Seven snapshots are kept: one per local day, the newest of each day.
 - **R85: Settings → Backup** shows the folder, the last good backup time and "Back up now". When Chrome needs the folder re-allowed, it shows "Allow", and one click allows the folder and finishes the waiting backup.
-- **R86: a run holds rather than harms.** If the folder holds another library's readings, or many readings vanished since the last run, the run changes nothing. Settings and the badge then say why, with "Back up anyway".
+- **R86: a run holds rather than harms.** The run changes nothing if any of these is true:
+  - the folder holds another library's readings;
+  - its `library.json` cannot be read;
+  - many readings, or every reading, vanished since the last good run;
+  - the note count dropped by at least 20 and by at least half.
+
+  Readings removed on purpose (Forget, purge, Undo of a save) never count as vanished. Settings and the badge then say why, with "Back up anyway".
 
 **Sync rules (Release 2):**
 
