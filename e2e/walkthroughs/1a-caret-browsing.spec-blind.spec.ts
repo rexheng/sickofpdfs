@@ -571,7 +571,8 @@ test('Shift+Right five times selects five letters, and Ctrl+C copies exactly tho
   const d = await open(openViewer, server, TWO);
   await setCaret(d.page, true);
   const line = d.cols.left[6];
-  const i = plainRun(d.glyphs, line.first + 10, line.last, 9);
+  // Triage (caret): this line of the fixture has no 9-letter run after its 10th char; the search goes on down the column.
+  const i = plainRun(d.glyphs, line.first + 10, d.cols.left[d.cols.left.length - 1].last, 9);
   const k = i + 1;
   await clickAt(d.page, 0, d.glyphs[k]);
   await expectCaretAt(d.page, 0, k, 'the cursor is inside a word');
@@ -671,6 +672,9 @@ test('a keyboard selection takes the mark key, the mark menu (Shift+F10) and a c
   ] as const;
   for (const w of WORDS) expect(await rangeText(page, 0, w.at, w.at + w.word.length), `precondition: chars ${w.at}.. are "${w.word}"`).toBe(w.word);
   const as = (w: (typeof WORDS)[number]): Selected => ({ fx: ATTENTION, a: w.at, b: w.at + w.word.length - 1, text: w.word, ranges: [] });
+  // Triage (caret): the text cursor stays drawn just after the marked word, inside its box, so the colour share is read on
+  // all its letters but the last (the threshold is unchanged).
+  const colourOf = (w: (typeof WORDS)[number]): Selected => ({ ...as(w), b: w.at + w.word.length - 2, text: w.word.slice(0, -1) });
 
   /** Puts the cursor in front of the word and selects it with Shift+Right. */
   const selectByKeys = async (w: (typeof WORDS)[number]): Promise<void> => {
@@ -691,7 +695,7 @@ test('a keyboard selection takes the mark key, the mark menu (Shift+F10) and a c
   await snap(page, testInfo, '1a-keyboard-selection');
   await page.keyboard.press('h');
   await answerSavePrompt(page, 'Yes', 600);
-  const hl = await paintOfSelection(page, as(WORDS[0]), { name: '1a-highlight-by-keys', testInfo });
+  const hl = await paintOfSelection(page, colourOf(WORDS[0]), { name: '1a-highlight-by-keys', testInfo });
   expect(hl.paint.share(tokens.fill[0]), 'H highlights "models" in yellow, the default colour').toBeGreaterThanOrEqual(0.6);
   expect(await selected(page), 'a mark lets go of the selection, so it shows in its true colour (R71)').toEqual([]);
   await neighboursPlain(WORDS[0], hl.shot);
@@ -710,7 +714,7 @@ test('a keyboard selection takes the mark key, the mark menu (Shift+F10) and a c
   await snap(page, testInfo, '1a-mark-menu-on-keyboard-selection');
   await swatch(page, 'green').click();
   await expect(markMenu(page), 'choosing a colour closes the menu').toBeHidden();
-  const green = await paintOfSelection(page, as(WORDS[1]), { name: '1a-green-by-menu', testInfo });
+  const green = await paintOfSelection(page, colourOf(WORDS[1]), { name: '1a-green-by-menu', testInfo });
   expect(green.paint.share(tokens.fill[1]), 'the menu marks "connect" green').toBeGreaterThanOrEqual(0.6);
   await neighboursPlain(WORDS[1], green.shot);
 
@@ -736,7 +740,8 @@ test('Esc lets go of the selection and leaves the cursor at one end of it', asyn
   const d = await open(openViewer, server, TWO);
   await setCaret(d.page, true);
   const line = d.cols.left[7];
-  const k = plainRun(d.glyphs, line.first + 10, line.last, 9) + 1;
+  // Triage (caret): this line of the fixture has no 9-letter run after its 10th char; the search goes on down the column.
+  const k = plainRun(d.glyphs, line.first + 10, d.cols.left[d.cols.left.length - 1].last, 9) + 1;
   await clickAt(d.page, 0, d.glyphs[k]);
   await press(d.page, 'Shift+ArrowRight', 5);
   expect(await selected(d.page)).toEqual([{ pageIndex: 0, start: k, end: k + 5 }]);

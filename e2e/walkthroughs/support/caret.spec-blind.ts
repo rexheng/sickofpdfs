@@ -438,7 +438,8 @@ export const letters = (s: string): string =>
  * A note about a scan: words about a scan (scan, scanned) and about what the cursor needs (caret, cursor, text). The spec gives no wording,
  * so this is any visible text that says both.
  */
-export const SCAN_NOTE = /(?=[\s\S]*\bscan(?:ned)?\b)(?=[\s\S]*\b(?:caret|cursor|text)\b)/i;
+// Triage (caret): the controller ruled the wording; the guess also matched the save chip's and the scan hint's own words.
+export const SCAN_NOTE = /Caret browsing works on text pages\. This page is a scanned image\./i;
 
 /**
  * Counts, in every page this browser opens from now on, how many times such a note appears (a note that stays on screen counts once).
