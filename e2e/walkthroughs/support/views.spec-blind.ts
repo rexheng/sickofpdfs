@@ -356,7 +356,11 @@ const WITHOUT_MARKS = /\bwithout\b.*\b(?:marks?|notes?|annotations?)\b|\bno\s+(?
 export async function printNow(page: Page, withMarks: boolean | null): Promise<PrintLog> {
   const before = (await printLog(page)).calls;
   await page.keyboard.press('Control+p');
-  if (withMarks !== null) {
+  if (withMarks === null) {
+    // R99: Ctrl+P's first step asks which pages even with no marks; All is chosen and Enter means Print.
+    const step = page.getByRole('dialog', { name: 'Print' });
+    if (await step.waitFor({ state: 'visible', timeout: 5_000 }).then(() => true, () => false)) await page.keyboard.press('Enter');
+  } else {
     const wanted = withMarks ? WITH_MARKS : WITHOUT_MARKS;
     const roles = ['button', 'radio', 'menuitemradio', 'menuitem', 'option', 'tab'] as const;
     const pick = roles.map((role) => page.getByRole(role, { name: wanted })).reduce((a, b) => a.or(b));
