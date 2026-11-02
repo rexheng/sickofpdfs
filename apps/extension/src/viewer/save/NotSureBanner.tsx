@@ -29,9 +29,9 @@ function placeWords(rule: SiteRule, max = Infinity): string {
 /** The button: "Always for moodle.lse.ac.uk". */
 export const alwaysLabel = (rule: SiteRule): string => `Always for ${placeWords(rule, PLACE_CHARS)}`;
 
-/** The note after it: the place, and that private papers are still never saved by it (R91). */
+/** The note after it: the place, and what it still never saves (R91). */
 export const alwaysNote = (rule: SiteRule): string =>
-  `Saved. PDFs from ${placeWords(rule)} will be saved from now on, but never receipts or other private papers.`;
+  `Saved. PDFs from ${placeWords(rule)} will be saved from now on, but never PDFs that look like receipts, statements or CVs.`;
 
 export interface NotSureBannerProps {
   save: SaveControllerImpl | null;

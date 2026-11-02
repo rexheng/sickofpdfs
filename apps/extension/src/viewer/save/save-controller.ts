@@ -19,16 +19,18 @@
 //   anyway keeps its page text out of search (D9).
 // - R91: the owner's choices only make the filter more careful. "Never for this file" is read again before any save the owner
 //   did not ask for (another tab may have chosen it), covers the reading's id, its downloads and the copy open here, and only
-//   the owner's own explicit Save takes it back. Every save by choice is checked for card and bank numbers (D9), however it
-//   started. When the choices cannot be read, nothing saves on its own.
+//   the owner's own explicit Save takes it back. When the choices cannot be read, nothing saves on its own.
+// - R91: every save reads every page for card, bank or ID numbers before anything is written (the filter only sampled the
+//   PDF). An automatic save that finds them stops, and the chip says "Not saved: has card or bank numbers"; a save by the
+//   owner's click goes on without searchable text, with the warning (D9), however it started.
 import {
-  classify,
   type DocumentId,
   extractMetadata,
   type FilterDecision,
   type FilterInput,
-  type FilterRule,
   guessKind,
+  hardBlockDecision,
+  hardBlockOnEveryPage,
   type LocationKind,
   type OwnerSavePolicy,
   reduceSave,
@@ -97,8 +99,6 @@ interface NeverSaveNews {
  */
 export const UNCHECKED_WARNING = 'This PDF couldn’t be checked for card or bank numbers, so its text is not searchable.';
 
-/** The rules of a decision that went through `classify`'s hard-block check with the PDF's own text. */
-const CHECKED_RULES: ReadonlySet<FilterRule> = new Set<FilterRule>(['hard-block', 'deny-list', 'allow-list', 'force-save', 'score', 'model', 'no-text']);
 
 export interface SaveLocation {
   kind: LocationKind;
@@ -392,15 +392,23 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     if (store === null) throw new Error('library-unavailable: the library could not be opened in this tab');
     const id = loaded.sha256;
     const pages = await allPageTexts();
+    // D9: card, bank or ID numbers. The owner's own save wins, with a warning, and the text is kept out of search. R91: every
+    // page is read for them now, before anything is written, however the save started. A save the owner did not click for
+    // (the filter's own, a first mark, a resumed one) stops instead: the PDF is "not learning", and a mark asks.
+    let owner = decision?.ownerSave ?? null;
+    if (owner === null) {
+      const found = await blockOnEveryPage(pages);
+      if (found !== null && cause !== 'owner') {
+        held = { cause, decision: found.decision };
+        return;
+      }
+      owner = found?.ownerSave ?? null;
+    }
     const put = blobs === null ? null : await blobs.put(loaded.blob, id);
     const reasons =
       cause === 'filter'
         ? filterReasons(decision)
         : [cause === 'owner' || cause === 'resume' ? SAVED_BY_OWNER : cause === 'first-note' ? SAVED_BY_FIRST_NOTE : SAVED_BY_FIRST_MARK];
-    // D9: card, bank or ID numbers. The owner's own save wins, with a warning, and the text is kept out of search. R91: however
-    // the save started, so a decision that skipped the filter's check (a "never" file, a PDF that was in the library when it
-    // opened, a filter that failed) is checked now, as a save by the owner's choice.
-    const owner = decision?.ownerSave ?? (checkedForNumbers(decision) ? null : await ownerSaveNow());
     // Page 1 names a reading; paperwork saved by choice (a receipt, a never-save file) keeps its own name instead, which is
     // both the better name for it and keeps the words of a private page out of the library's title.
     const meta = metadataToSave(pages, owner !== null || decision?.verdict === 'not-learning');
@@ -452,22 +460,41 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     await dispatch({ type: 'saved', documentId: id, undoable: undoable && created && !moreHere && !othersAdded && !boxDuringSave });
   }
 
-  /** A decision `classify` made with the PDF's own text, so its D9 policy is known. */
-  function checkedForNumbers(dec: FilterDecision | null): boolean {
-    return dec !== null && dec.rule !== undefined && CHECKED_RULES.has(dec.rule);
+  /**
+   * R91: the hard-block check over every page at save time: the D9 policy, and the decision a save that is not the owner's
+   * own stops with; null when the PDF has no blocking numbers. Positive evidence of 8 or more in the filter's own sample
+   * overrides a block, as in `classify` (the pages are in this tab's cache already). If it cannot be checked, the text is
+   * kept out of search too, and a save the owner did not click for stops.
+   */
+  async function blockOnEveryPage(pages: readonly string[]): Promise<{ ownerSave: OwnerSavePolicy; decision: FilterDecision } | null> {
+    try {
+      const input = await filterInput().catch(() => null);
+      const found = hardBlockOnEveryPage(input, pages);
+      return found === null ? null : { ownerSave: found.ownerSave, decision: hardBlockDecision(found) };
+    } catch {
+      return { ownerSave: { warning: UNCHECKED_WARNING, indexText: false }, decision: cannotCheck(decision, FILTER_FAILED) };
+    }
   }
 
   /**
-   * D9 for a save by the owner's choice that skipped the filter's check: `classify` with "save" as the choice keeps the hard
-   * block's warning and its text indexing off (and the 8-point override). The pages are in this tab's cache already. If it
-   * cannot be checked, its text is kept out of search too.
+   * R91: a save the owner did not click for found card, bank or ID numbers on a page the filter had not read, and stopped
+   * before writing anything. Once its effect has ended, the PDF is "not learning" with those reasons; a first mark (or a
+   * resumed save) that started it asks "Save this PDF to keep your notes?" instead.
    */
-  async function ownerSaveNow(): Promise<OwnerSavePolicy | null> {
-    try {
-      return classify(await filterInput(), { fileChoice: 'save', deny: [], allow: [] }).ownerSave ?? null;
-    } catch {
-      return { warning: UNCHECKED_WARNING, indexText: false };
+  let held: { cause: SaveCause; decision: FilterDecision } | null = null;
+  function settleHeld(): void {
+    const h = held;
+    held = null;
+    if (h === null || disposed) return;
+    decision = h.decision;
+    if (state.kind === 'checking') {
+      void dispatch({ type: 'classified', decision: h.decision });
+      return;
     }
+    if (state.kind !== 'unsure') return;
+    void dispatch({ type: 'never-save', reasons: [...h.decision.reasons] });
+    if (h.cause === 'first-mark' || h.cause === 'first-note') void dispatch({ type: 'first-mark' });
+    else if (h.cause === 'resume') void dispatch({ type: 'resume-save' });
   }
 
   /** The copy this tab stored, when the document did not get saved after all (another tab may have saved it). */
@@ -692,6 +719,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       () => {
         busy = null;
         notify();
+        settleHeld(); // R91: a save that stopped for card or bank numbers
       },
       (error: unknown) => {
         busy = null;
