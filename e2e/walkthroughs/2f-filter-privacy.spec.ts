@@ -15,6 +15,10 @@
 //   - Forget always asks, so "Never save this file" is always offered. (M6)
 //   - If the owner's choices can't be read, the PDF is "not learning": nothing saves on its own, and a first mark asks. (M7)
 //   - Reporting "not for learning" on a saved PDF says it is still in the library, and offers Forget in the same note. (m2)
+//   - Round 2 (re-check of ecd1ba8): "The hard-block check reads every page at save time, not only the pages the filter
+//     sampled. If an automatic save finds card, bank or ID numbers on any page, it stops before anything is written, and the
+//     chip says 'Not saved: has card or bank numbers'. An owner's click saves the PDF without searchable text, with the
+//     warning." (N1, probe P15)
 import { createHash } from 'node:crypto';
 import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -32,6 +36,7 @@ import { libraryId, openPaper, savePrompt, selectPassage, SENTENCE_1, waitSaved,
 import { ensureP3Fixtures, P3_FILES, p3Url } from './support/p3-fixtures.spec-blind';
 import { chipOf, chooseFileMenuItem, decided, forgetThisPdf, traceProblems, waitForStore, waitViewerReady } from './support/library-p3.spec-blind';
 import { shot } from './support/takeover';
+import { forceVerdict } from '../support/filter-verdict';
 
 test.setTimeout(300_000);
 
@@ -562,4 +567,127 @@ test('m2: reporting a saved PDF as not for learning says it is still in the libr
   await forget.click();
   await expect(page.getByRole('dialog').first(), 'Forget asks first').toContainText(/forget this pdf/i);
   expect(await libraryId(page), 'nothing is removed until the owner says so').not.toBeNull();
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// N1 (probe P15, re-check of ecd1ba8): D9 looked only at the filter's sample (the first and last 5 pages)
+
+/** A PDF of plain Helvetica lines, one list of lines per page. */
+async function pagedPdf(pages: string[][]): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  for (const lines of pages) {
+    const p = doc.addPage([595, 842]);
+    lines.forEach((t, k) => p.drawText(t, { x: 50, y: 780 - k * 22, size: 12, font }));
+  }
+  return doc.save();
+}
+
+/** The reviewer's 12-page statement: its card number, IBAN, sort code with account number and NI number only on page 7. */
+async function statement(): Promise<Uint8Array> {
+  return pagedPdf(
+    Array.from({ length: 12 }, (_, k) => {
+      const i = k + 1;
+      return i === 7
+        ? ['Account details', 'Card number 4111 1111 1111 1111', 'IBAN GB82 WEST 1234 5698 7654 32', 'Sort code 12-34-56 Account number 12345678', 'National Insurance number QQ 12 34 56 C']
+        : [`Statement page ${i}`, 'Date Description Amount', '02/10 Coffee shop 3.20', '03/10 Groceries 45.10', '04/10 Train ticket 12.50', 'Balance carried forward 1,204.33'];
+    }),
+  );
+}
+
+/**
+ * A 12-page paper the filter saves by itself (an arXiv number and a References section: force save, positive evidence 7.5, so
+ * no override), whose page 7, outside the sample, holds a card number and an IBAN.
+ */
+async function paperWithCardOnPage7(): Promise<Uint8Array> {
+  const prose = (i: number): string[] => [
+    `Part ${i}`,
+    'The fisherman unloads the quay and the harbour wall at dawn, before the market opens.',
+    'The boats come back with the tide, and the nets are dried along the beach in the afternoon.',
+    'In winter the harbour is quiet, and the town mends its boats and its houses for the spring.',
+    'The old lighthouse keeper writes down the weather, the tides and the boats that come and go.',
+  ];
+  return pagedPdf(
+    Array.from({ length: 12 }, (_, k) => {
+      const i = k + 1;
+      if (i === 1) return ['arXiv:2301.12345v2 [cs.LG] 3 Feb 2023', 'Notes on a small harbour town', 'Jane Example', ...prose(1).slice(1)];
+      if (i === 7) return ['Appendix C. Payment details', 'Card number 4111 1111 1111 1111', 'IBAN GB82 WEST 1234 5698 7654 32'];
+      if (i === 12) return ['References', 'A. Author. Harbour towns. Journal of Things, 2020.', 'B. Writer. Small boats. Journal of Stuff, 2019.'];
+      return prose(i);
+    }),
+  );
+}
+
+async function searchHits(page: Page, needle: string): Promise<number> {
+  const s = storeOf(page);
+  return (await s.call<unknown[]>('searchPages', needle, 10)).length + (await s.call<unknown[]>('search', { text: needle, limit: 10 })).length;
+}
+
+test('N1: a card number outside the sample pages is not indexed after an owner save', async ({ openViewer, server }, testInfo) => {
+  const bytes = await statement();
+  server.mount('/stmt/', (req, res) => {
+    res.writeHead(200, { 'content-type': 'application/pdf', 'content-length': bytes.byteLength });
+    res.end(req.method === 'HEAD' ? undefined : bytes);
+    return Promise.resolve();
+  });
+  const page = await openViewer(server.url('/stmt/october.pdf'));
+  await waitViewerReady(page);
+  await waitForStore(page);
+  const kind = await decided(page);
+  const d = await decisionOf(page);
+  await chipOf(page).click();
+  const id = await waitSaved(page);
+  await page.waitForTimeout(2500);
+  const s = storeOf(page);
+  const doc = await s.call<{ indexText: boolean } | null>('getDocument', id);
+  const hits = await searchHits(page, '4111');
+  const notes = await statusText(page);
+  testInfo.annotations.push({ type: 'statement', description: JSON.stringify({ kind, rule: d?.rule, reason: d?.reasons[0], indexText: doc?.indexText, pageText: (await s.stats()).pageText, hits4111: hits }) });
+  expect(hits, 'the card number is not searchable').toBe(0);
+  expect(doc?.indexText, 'D9: its text is not indexed').toBe(false);
+  expect(notes, 'the D9 warning shows').toMatch(/its text is not searchable/i);
+});
+
+test('N1: a PDF the filter would save by itself, with a card number on page 7, is not saved', async ({ openViewer, server }, testInfo) => {
+  const file = '2f-paper-card-p7.pdf';
+  const bytes = await paperWithCardOnPage7();
+  await writeFile(join(WALKTHROUGH_DIR, file), bytes);
+  const sha = createHash('sha256').update(bytes).digest('hex');
+  const page = await openViewer(server.url(`/f/walkthroughs/${file}`));
+  await waitViewerReady(page);
+  await waitForStore(page);
+  expect(await decided(page), 'the automatic save stops: the PDF is not learning').toBe('not-learning');
+  await page.waitForTimeout(1500);
+  const d = await decisionOf(page);
+  testInfo.annotations.push({ type: 'decision', description: JSON.stringify({ rule: d?.rule, reasons: d?.reasons }) });
+  expect(await libraryId(page), 'nothing was saved').toBeNull();
+  await expect(chipOf(page), 'the chip says why').toContainText(/not saved: has card or bank numbers/i);
+  await still(page, testInfo, 'chip-card-on-page-7');
+  expect(await traceProblems(page, { sha, phrases: ['Payment details', 'harbour wall at dawn'], fileName: file }), 'and nothing of it was written').toEqual([]);
+
+  // The owner's click still saves it, without searchable text and with the warning (D9).
+  await chipOf(page).click();
+  const id = await waitSaved(page);
+  await page.waitForTimeout(2500);
+  const doc = await storeOf(page).call<{ indexText: boolean } | null>('getDocument', id);
+  expect(doc?.indexText, 'saved by the owner without searchable text').toBe(false);
+  expect(await searchHits(page, '4111'), 'and its card number is not searchable').toBe(0);
+  expect(await statusText(page), 'the D9 warning shows').toMatch(/its text is not searchable/i);
+});
+
+test('N1: a first mark on a "not sure" PDF with a card number on page 7 asks, and saves nothing', async ({ context, openViewer, server }, testInfo) => {
+  // The test build's verdict switch makes the statement "not sure", so its first mark would save it without a question.
+  await forceVerdict(context, 'unsure');
+  const file = '2f-statement-card-p7.pdf';
+  await writeFile(join(WALKTHROUGH_DIR, file), await statement());
+  const fx: TlFixture = { name: 'statement-p7', file: `walkthroughs/${file}`, page: 0, dir: 'ltr' };
+  const page = await openPaper(openViewer, server, fx);
+  await waitForStore(page);
+  expect(await decided(page)).toBe('unsure');
+  await selectPassage(page, fx, { from: 'Coffee', to: 'shop' });
+  await page.keyboard.press('h');
+  await expect(savePrompt(page).first(), 'the first mark asks first').toBeVisible({ timeout: 15_000 });
+  await still(page, testInfo, 'first-mark-asks-card-on-page-7');
+  expect(await libraryId(page), 'and nothing is saved').toBeNull();
+  expect((await decisionOf(page))?.rule).toBe('hard-block');
 });
