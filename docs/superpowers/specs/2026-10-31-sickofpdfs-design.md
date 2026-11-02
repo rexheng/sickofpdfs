@@ -348,6 +348,23 @@ One reference implementation in TypeScript, with its test cases, defines these r
 
 - The chip in the top bar always shows the decision; click it, or press Ctrl+Alt+S, to save. Saving back-fills the history.
 - "Not sure" PDFs show a quiet banner after 20 seconds: Save, Not now, Never for this file, or Always for this site.
+- **R91 (Nov 2, from the filter's privacy read): the owner's choices can only make the filter more careful, never less.**
+  - **The allow list only turns "not sure" into "save".** It never saves a PDF the filter calls "not learning": no text, a CV, a receipt, a bank statement or a payslip. Hard blocks still beat everything.
+  - **"Always for this site" names the place** on its button and in its note, for example "Always for moodle.lse.ac.uk" or "Always for the folder Week 3 readings". It is never offered for catch-all places:
+    - local folders: Downloads, Desktop, Documents, the home folder, a drive root, or anything less than two levels below home;
+    - mail attachments (Gmail, Outlook);
+    - Drive, OneDrive, Dropbox and iCloud downloads;
+    - shared object stores (s3.amazonaws.com, storage.googleapis.com, blob.core.windows.net);
+    - chat file hosts (Slack, Discord, Teams).
+    Typed or synced entries are checked by the same rule. A bare top-level domain, `/`, a drive root or `file:///` is refused.
+  - **"Never for this file" holds everywhere at once.**
+    - Every open tab re-reads the file choice before a first mark saves.
+    - The choice covers the reading's id, every download of it (its aliases) and the opened copy.
+    - Only the owner's own explicit Save clears it.
+  - **A PDF saved by the owner's click still gets the filter's protections.** A card, bank or ID statement is saved without searchable text, with the warning (D9), however the save starts.
+  - **Forget always asks,** even with no marks or notes, so "Never save this file" is always offered.
+  - **If the owner's choices can't be read,** the PDF is treated as "not learning": nothing saves on its own, and a first mark asks.
+  - **Reporting "not for learning" on a saved PDF** says it is still in the library, and offers Forget in the same note.
 - "Forget this PDF" removes it completely, including from your cloud, with an option to never save it again.
 - Settings has the allow and deny lists, with suggestions such as moodle.lse.ac.uk that you switch on yourself.
 
