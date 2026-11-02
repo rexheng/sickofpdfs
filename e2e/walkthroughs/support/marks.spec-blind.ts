@@ -496,7 +496,8 @@ export async function answerSavePrompt(page: Page, answer: 'Yes' | 'No', timeout
     .waitFor({ state: 'visible', timeout })
     .then(() => true)
     .catch(() => false);
-  if (asked) await page.getByRole('button', { name: new RegExp(`^${answer}$`, 'i') }).first().click();
+  // Triage (S11, rule 7): the question's buttons are "No" and "Save" (R73's plain wording), so a Yes is the "Save" button.
+  if (asked) await page.getByRole('button', { name: new RegExp(`^${answer === 'Yes' ? 'Save' : answer}$`, 'i') }).first().click();
   return asked;
 }
 

@@ -6,6 +6,13 @@ import type { BrowserContext } from '@playwright/test';
 
 export const FORCE_VERDICT_KEY = 'sop.test.filterVerdict';
 
+/** From now on, every extension page in `context` uses the real filter again (after a file-wide `forceVerdict`). */
+export async function realVerdict(context: BrowserContext): Promise<void> {
+  await context.addInitScript((key) => {
+    if (location.protocol === 'chrome-extension:') localStorage.removeItem(key);
+  }, FORCE_VERDICT_KEY);
+}
+
 /** From now on, every extension page in `context` forces `verdict` (set before the viewer's own scripts run). */
 export async function forceVerdict(context: BrowserContext, verdict: 'unsure' | 'not-learning' | 'learning'): Promise<void> {
   await context.addInitScript(

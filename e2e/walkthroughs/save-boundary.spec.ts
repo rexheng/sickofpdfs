@@ -18,7 +18,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { dragSelect } from '../support/drag-select';
-import { forceVerdict } from '../support/filter-verdict';
+import { forceVerdict, realVerdict } from '../support/filter-verdict';
 import { TEST_ASSETS } from '../support/server';
 import { settle, setZoom, waitForTextLayer } from '../support/tl-blind.spec-blind';
 import { store as storeOf, waitForStore, ZERO_STATS } from '../support/store-probe.spec-blind';
@@ -489,6 +489,8 @@ test.describe('R67 re-check: an empty note box is not content (N1)', () => {
 });
 
 test.describe('R67 re-check: a resumed save on a PDF judged not learning keeps its notes while it asks (N2)', () => {
+  // Triage (S11): this one needs the real filter's "not learning" verdict for the receipt, not the file's forced "not sure".
+  test.beforeEach(async ({ context }) => realVerdict(context));
   test('the notes a crashed tab kept stay on this computer while "Save this PDF?" is open, and come back after a close', async ({ openViewer, server }, testInfo) => {
     // Needs the real filter's "not learning" verdict. There is no test hook for the verdict, and the stand-in filter
     // calls every PDF "Not sure" until Phase 3's filter lands, so this runs by itself from then on.
