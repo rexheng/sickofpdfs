@@ -1,6 +1,6 @@
 import { memo, type ReactNode, useLayoutEffect, useMemo, useRef } from 'react';
 import type { PageBox } from '../layout/page-layout';
-import type { PageDriver } from './page-driver';
+import type { PageDriver, PagePaint } from './page-driver';
 import styles from './PageList.module.css';
 
 /** What a page's layers (renderPage) are told besides the box. */
@@ -9,6 +9,16 @@ export interface PageLayerContext {
   dpr: number;
   /** Resolves once the page's full render at the current zoom is on screen. */
   whenPainted(): Promise<void>;
+  /** The page's pictures on screen now (its full render or base, and its tiles), for layers drawn on its pixel grid. */
+  paints(): PagePaint[];
+  /** Calls `listener` in the same task as any change to paints(); returns the function that stops. */
+  onPaint(listener: () => void): () => void;
+  /**
+   * The page's underlay: a box over the page's pictures and under its layers, blended with them by `darken`, so what is
+   * drawn there in the text's colour replaces the text it covers instead of darkening it again (synthetic bold, R90b).
+   * Null until the page is in the DOM.
+   */
+  underlay(): HTMLElement | null;
 }
 
 export interface PageViewProps {
@@ -36,8 +46,18 @@ export const PageView = memo(function PageView({ box, device, dpr, driver, rende
   const full = useRef<HTMLCanvasElement>(null);
   const preview = useRef<HTMLCanvasElement>(null);
   const tiles = useRef<HTMLDivElement>(null);
+  const under = useRef<HTMLDivElement>(null);
   const index = box.index;
-  const layerCtx = useMemo<PageLayerContext>(() => ({ dpr, whenPainted: () => driver.whenPainted(index) }), [driver, index, dpr]);
+  const layerCtx = useMemo<PageLayerContext>(
+    () => ({
+      dpr,
+      whenPainted: () => driver.whenPainted(index),
+      paints: () => driver.paintsOf(index),
+      onPaint: (l) => driver.onPaintOf(index, l),
+      underlay: () => under.current,
+    }),
+    [driver, index, dpr],
+  );
 
   useLayoutEffect(() => {
     const slot = { index, root: root.current!, full: full.current!, preview: preview.current!, tiles: tiles.current! };
@@ -57,6 +77,7 @@ export const PageView = memo(function PageView({ box, device, dpr, driver, rende
       <canvas ref={full} className={styles.full} aria-hidden="true" />
       <canvas ref={preview} className={styles.preview} aria-hidden="true" />
       <div ref={tiles} className={styles.tiles} />
+      {renderPage && <div ref={under} className={styles.under} aria-hidden="true" />}
       {renderPage && <div className={styles.layers}>{renderPage(box, layerCtx)}</div>}
     </div>
   );

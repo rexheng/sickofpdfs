@@ -19,7 +19,7 @@
 // Ranges are PDFium char indices, `end` exclusive (BoldRange). An astral char is two chars (a surrogate pair) and counts
 // as one letter. A ligature glyph stands for several chars; it is drawn bold when its first char is in a range
 // (getGlyphOutlines gives its outline at its first char).
-import type { BoldRange } from './BoldLayer';
+import type { BoldRange } from './bold-painter';
 
 /** What a char is to the word rule. */
 const Kind = {

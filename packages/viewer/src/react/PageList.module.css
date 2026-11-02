@@ -60,6 +60,20 @@
 }
 
 /*
+ * The page's underlay (PageLayerContext.underlay): synthetic bold (R90b) is drawn here, on the page render's own pixel
+ * grid, blended with darken: where the bold covers a glyph, the result is the bold's own edge, anti-aliased once,
+ * never the glyph's edge darkened a second time. Under the layers (same z-index, earlier in the page), so marks and the
+ * selection lie over it.
+ */
+.under {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  mix-blend-mode: darken;
+  pointer-events: none;
+}
+
+/*
  * The page's layers (marks, the selection, the text layer) are blended with multiply onto the page render. A z-index
  * makes this box an isolated group, so a mark inside it could only blend with the other layers, never with the page:
  * an opaque highlight would hide the text. Multiplying the group instead keeps black text black under every highlight

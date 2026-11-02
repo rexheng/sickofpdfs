@@ -5,8 +5,9 @@
 // - Highlights, underlines, strikethroughs and area outlines are the mark layer's own paths (markPaths, the function
 //   MarkLayer draws its SVG with), made for the picture's size: one path per style and colour, with the same line
 //   widths and the same multiply blending, so overlapping marks never print darker.
-// - Bold is S11's: the glyph outlines BoldLayer reads (drawBoldRange), filled and stroked in the glyph's own colour, or
-//   the strong style where a glyph has no outline.
+// - Bold is the screen's synthetic bold (R90b): the glyphs BoldLayer reads (drawBoldRange), emboldened by their face's
+//   own regular-to-bold gain and filled in their own colour on the picture's pixel grid (paintBold, blended with
+//   darken), or the strong style where a glyph has no outline. Bold word starts never print.
 //
 // What is left out, on purpose (R78: notes never print): the dotted underline and the grey wash of the open comment's
 // words (both are signs of a comment), the darker fill of the open comment, and the ring round a focused mark. Those are
@@ -16,7 +17,19 @@
 // outlines of one bold range at a time are dropped as soon as they are painted. A page without marks costs one map lookup.
 import type { DocHandle, PageSize, PdfBackend } from '@sop/viewer';
 import { PT_TO_CSS } from '@sop/viewer';
-import { type BoldRange, type BoldTextSource, displayMatrix, drawBoldRange, type MarkLayerItem, type MarkLayerPage, type MarkLayerSource, markPaths, STRONG_UNDERLINE_EM } from '@sop/viewer/react';
+import {
+  type BoldRange,
+  type BoldTextSource,
+  displayMatrix,
+  drawBoldRange,
+  type MarkLayerItem,
+  type MarkLayerPage,
+  type MarkLayerSource,
+  markPaths,
+  pageToDevice,
+  paintBold as paintBoldGlyphs,
+  STRONG_UNDERLINE_EM,
+} from '@sop/viewer/react';
 
 /** What printing reads of the screen's marks: the same source the mark layer draws from, and the text bold reads. */
 export interface PrintMarks {
@@ -82,7 +95,7 @@ export interface MarkPainter {
 }
 
 export interface MarkPainterDeps {
-  backend: Pick<PdfBackend, 'getGlyphOutlines'>;
+  backend: Pick<PdfBackend, 'getGlyphShapes'>;
   doc: DocHandle;
   /** OpenResult.pages: each page's unrotated size and /Rotate. */
   pages: readonly PageSize[];
@@ -166,9 +179,13 @@ export function createMarkPainter(d: MarkPainterDeps): MarkPainter {
     }
   }
 
-  /** Bold: each range's glyph outlines, one range at a time (the outlines are dropped once painted). */
-  async function paintBold(context: OffscreenCanvasRenderingContext2D, index: number, page: PageSize, ranges: readonly BoldRange[], k: number): Promise<void> {
+  /**
+   * Bold: each range's glyphs, one range at a time (dropped once painted), as the screen draws them (R90b): synthetic
+   * bold on the picture's own pixel grid, blended with darken over the picture, at the print's resolution.
+   */
+  async function paintBold(context: OffscreenCanvasRenderingContext2D, index: number, page: PageSize, ranges: readonly BoldRange[], k: number, size: { width: number; height: number }): Promise<void> {
     const { matrix } = displayMatrix(page, 0);
+    const device = pageToDevice(page, 0, size.width, size.height);
     for (const range of ranges) {
       if (d.signal.aborted) return;
       const drawn = await outlinesOf(index, range);
@@ -178,20 +195,14 @@ export function createMarkPainter(d: MarkPainterDeps): MarkPainter {
       context.setTransform(k, 0, 0, k, 0, 0);
       if (matrix !== null) context.transform(...matrix);
       paintStrong(context, strong);
-      context.lineJoin = 'round';
-      for (const g of drawn?.glyphs ?? []) {
-        const shape = new Path2D(g.d);
-        if (g.fill !== 'none') {
-          context.fillStyle = g.fill;
-          context.fill(shape);
-        }
-        if (g.width > 0) {
-          context.strokeStyle = g.stroke;
-          context.lineWidth = g.width;
-          context.stroke(shape);
-        }
-      }
       context.restore();
+      if (drawn !== null && drawn.glyphs.length > 0) {
+        context.save();
+        context.setTransform(1, 0, 0, 1, 0, 0);
+        context.globalCompositeOperation = 'darken';
+        paintBoldGlyphs(context, drawn.glyphs, device);
+        context.restore();
+      }
     }
   }
 
@@ -203,7 +214,7 @@ export function createMarkPainter(d: MarkPainterDeps): MarkPainter {
       // Pixels a point: the picture's width over the page as displayed (width and height swap for /Rotate 90 and 270).
       const k = size.width / displayMatrix(page, 0).width;
       paintPaths(context, page, found.items, k);
-      await paintBold(context, index, page, found.bold, k);
+      await paintBold(context, index, page, found.bold, k, size);
     },
     simplerBold: () => simpler,
     dispose() {

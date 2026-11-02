@@ -15,7 +15,7 @@
 //      it (about 200 ms on a 200 dpi scan, where tiling does not help: every tile decodes the whole JPEG again). With
 //      the preview already cached, the page shows at once (R24).
 // The scheduler puts every preview before any full render, so the queue only ever holds what is wanted right now.
-import type { PageSize, Rotation } from '../backend/types';
+import type { PageSize, PdfRect, Rotation } from '../backend/types';
 import type { PageBox, PageLayout } from '../layout/page-layout';
 import { visibleRange } from '../layout/page-layout';
 import { displayedRectToPage } from '../layout/page-space';
@@ -34,6 +34,23 @@ export interface PageSlot {
   preview: HTMLCanvasElement;
   /** Tile canvases for very large zooms. */
   tiles: HTMLDivElement;
+}
+
+/**
+ * A picture of a page on screen: its full render (or the capped base under tiles) or one tile. Layers that draw on the
+ * page's own pixel grid (synthetic bold, R90b) draw one canvas per picture, the same size and in the same place.
+ */
+export interface PagePaint {
+  /** 'full' for the full render or the base; a tile's own key. */
+  key: string;
+  /** The picture's size in device px. */
+  width: number;
+  height: number;
+  /** The part of the page drawn, unrotated points; undefined for the whole page. */
+  rect: PdfRect | undefined;
+  viewRotation: Rotation;
+  /** Where it sits in the page box, as shares of the box (0–1). */
+  box: { left: number; top: number; width: number; height: number };
 }
 
 /** What the page list shows now. */
@@ -83,6 +100,8 @@ interface SlotState {
   fullGen: string | null;
   fullIsBase: boolean;
   tiles: Map<string, { canvas: HTMLCanvasElement; gen: string }>;
+  /** The pictures on screen now, by key (PagePaint). */
+  paints: Map<string, PagePaint>;
 }
 
 interface TilePlan {
@@ -130,6 +149,8 @@ export class PageDriver {
   /** The page whose preview is being fetched ahead (step 5); one at a time. */
   private prefetching: number | null = null;
   private readonly paintWaiters = new Map<number, (() => void)[]>();
+  /** Per page, who wants to know when its pictures change (PageLayerContext.onPaint). */
+  private readonly paintListeners = new Map<number, Set<() => void>>();
   private disposed = false;
   private hooks: DriverHooks = { onRange: () => {}, onCurrentPage: () => {}, onError: () => {} };
 
@@ -186,6 +207,7 @@ export class PageDriver {
       fullGen: null,
       fullIsBase: false,
       tiles: new Map(),
+      paints: new Map(),
     };
     this.slots.set(slot.index, state);
     const cached = this.scheduler.cachedPreview(slot.index);
@@ -219,6 +241,29 @@ export class PageDriver {
       list.push(resolve);
       this.paintWaiters.set(index, list);
     });
+  }
+
+  /** The pictures page `index` shows now: its full render (or base) and its tiles. */
+  paintsOf(index: number): PagePaint[] {
+    return [...(this.slots.get(index)?.paints.values() ?? [])];
+  }
+
+  /**
+   * Calls `listener` whenever page `index`'s pictures change: a full render, a tile, a tile dropped, the page cleared. It
+   * runs in the same task as the change, so whatever it draws shows in the same frame. Returns the function that stops.
+   */
+  onPaintOf(index: number, listener: () => void): () => void {
+    let set = this.paintListeners.get(index);
+    if (!set) this.paintListeners.set(index, (set = new Set()));
+    set.add(listener);
+    return () => {
+      set.delete(listener);
+      if (set.size === 0 && this.paintListeners.get(index) === set) this.paintListeners.delete(index);
+    };
+  }
+
+  private notifyPaint(index: number): void {
+    for (const l of [...(this.paintListeners.get(index) ?? [])]) l();
   }
 
   /** The visible range (no overscan). */
@@ -509,6 +554,9 @@ export class PageDriver {
     if (!isBase) this.removeTiles(s, () => true);
     s.slot.preview.style.visibility = 'hidden';
     s.painted = 'full';
+    // The canvas's size, not the bitmap's: transferFromImageBitmap has detached the bitmap (its size reads 0 now).
+    s.paints.set('full', { key: 'full', width: s.slot.full.width, height: s.slot.full.height, rect: undefined, viewRotation: this.view?.viewRotation ?? 0, box: { left: 0, top: 0, width: 1, height: 1 } });
+    this.notifyPaint(i);
     this.onPainted(i, true);
   }
 
@@ -538,6 +586,15 @@ export class PageDriver {
     this.removeTiles(s, (_key, tile) => tile.gen !== gen);
     s.slot.preview.style.visibility = 'hidden';
     s.painted = 'full';
+    s.paints.set(t.key, {
+      key: t.key,
+      width: canvas.width,
+      height: canvas.height,
+      rect: t.rect,
+      viewRotation: this.view?.viewRotation ?? 0,
+      box: { left: t.dev.x / plan.devW, top: t.dev.y / plan.devH, width: t.dev.w / plan.devW, height: t.dev.h / plan.devH },
+    });
+    this.notifyPaint(i);
     this.onPainted(i, true);
   }
 
@@ -546,12 +603,16 @@ export class PageDriver {
   }
 
   private removeTiles(s: SlotState, match: (key: string, tile: { canvas: HTMLCanvasElement; gen: string }) => boolean): void {
+    let removed = false;
     for (const [key, tile] of [...s.tiles]) {
       if (!match(key, tile)) continue;
       tile.canvas.getContext('bitmaprenderer')?.transferFromImageBitmap(null);
       tile.canvas.remove();
       s.tiles.delete(key);
+      s.paints.delete(key);
+      removed = true;
     }
+    if (removed) this.notifyPaint(s.slot.index);
   }
 
   /**
@@ -565,6 +626,10 @@ export class PageDriver {
     s.painted = 'none';
     s.fullGen = null;
     s.fullIsBase = false;
+    if (s.paints.size > 0) {
+      s.paints.clear();
+      this.notifyPaint(s.slot.index);
+    }
   }
 
   private onPainted(i: number, full: boolean): void {

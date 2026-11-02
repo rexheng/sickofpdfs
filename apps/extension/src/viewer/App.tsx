@@ -28,14 +28,12 @@ import {
   type ZoomMode,
 } from '@sop/viewer';
 import {
-  BOLD_STROKE_EM,
   MarkLayer,
   type PageLayerContext,
   PageList,
   type PageListApi,
   TextLayer,
   TextLayerController,
-  WORD_STARTS_STROKE_EM,
   WordStartsController,
   WordStartsLayer,
 } from '@sop/viewer/react';
@@ -547,7 +545,6 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   // The page text everything reads (the text layer now; marks and find later): one glyph cache for the document.
   const [pageText] = useState(() => createPageTextProvider(backend, doc.open.doc));
   const wordStarts = useWordStartsController(doc, pageText, scans, scheduler, ui);
-  const wordStartsOn = useWordStarts();
   const api = useRef<PageListApi | null>(null);
   const [textLayers] = useState(
     () =>
@@ -636,29 +633,18 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   const findLayer = find.pageLayer;
   const linksFor = nav.renderPage;
   const bold = useMemo(() => ({ backend, doc: doc.open.doc, text: pageText }), [doc, pageText]);
-  // With word starts on, a bold mark takes their weight, so a word the owner made bold reads as bold all through (R90).
-  const boldStrokeScale = wordStartsOn ? WORD_STARTS_STROKE_EM / BOLD_STROKE_EM : undefined;
   const renderPage = useCallback(
     (box: PageBox, ctx: PageLayerContext) => (
       <>
         <WordStartsLayer controller={wordStarts} box={box} ctx={ctx} page={doc.open.pages[box.index]} />
-        {notes !== null && (
-          <MarkLayer
-            source={notes.layer}
-            box={box}
-            ctx={ctx}
-            page={doc.open.pages[box.index]}
-            bold={bold}
-            {...(boldStrokeScale !== undefined ? { boldStrokeScale } : {})}
-          />
-        )}
+        {notes !== null && <MarkLayer source={notes.layer} box={box} ctx={ctx} page={doc.open.pages[box.index]} bold={bold} />}
         {notes !== null && viewerFeatures().map((f) => f.PageLayer && <f.PageLayer key={f.id} host={notes.host} box={box} ctx={ctx} />)}
         {findLayer(box, ctx)}
         <TextLayer controller={textLayers} box={box} ctx={ctx} />
         {linksFor(box)}
       </>
     ),
-    [textLayers, findLayer, linksFor, notes, doc, bold, wordStarts, boldStrokeScale],
+    [textLayers, findLayer, linksFor, notes, doc, bold, wordStarts],
   );
   // Every render still waiting fails at once when the engine stops: the first one tells the viewer, the rest are quiet.
   const stopped = useRef(false);
@@ -759,6 +745,7 @@ function useWordStartsController(
       backend,
       doc: doc.open.doc,
       text: pageText,
+      pageCount: doc.open.pageCount,
       renderIdle: () => scheduler.isIdle(),
       onNothingToDraw: (pageIndex, hasText) => {
         (hasText ? scans.isImagePage(pageIndex) : scans.isScannedPage(pageIndex)).then(

@@ -1,63 +1,59 @@
 // Bold word starts (ruling R90): the first part of every word drawn bold over the page, to guide the eye. A reading aid,
 // not a mark: it is not saved, never prints (print draws pages from PDFium, not from this layer) and never changes the
-// file. The word rule is marks/word-starts.ts; the drawing is BoldLayer's glyph-outline overlay with a heavier stroke.
+// file. The word rule is marks/word-starts.ts; the bold is synthetic bold (R90b, marks/synthetic-bold.ts): each
+// glyph's own outline pushed outward along its edges by its face's own regular-to-bold gain, filled in its colour on
+// exactly the page picture's pixel grid (BoldCanvas, in the page's darken underlay, under the marks and the selection).
 //
-// - One <svg> per page, the first of the page's layers, so it lies under the marks, the selection and the text layer
-//   and takes no pointer: selecting, copying, Find, links, marks and comments work exactly as without it. The owner's
-//   own bold marks are drawn above it, whole words (MarkLayer's boldStrokeScale gives them the same weight).
-// - Its user units are points of the unrotated page, turned by the page's /Rotate plus the view's rotation (the one
-//   page turn), so it turns with the page and fits any zoom. The paths are made once per page: zooming, rotating,
-//   two-page view and presentation mode only redraw them. A few paths a page (one per colour and stroke width), never a
-//   node per glyph.
-// - The work for a page (its chars, then its outlines a few hundred chars per engine call) starts only after the
-//   page's own render is on screen, and only while the reader is not scrolling and the engine is not drawing pages.
-//   Visible pages go first, then the pages mounted around them. The engine worker also draws the pages, so each call is
-//   kept short, one call is out at a time, and each waits until no page render is queued (RenderScheduler.isIdle). A
-//   page's paths are kept while the page is mounted, and dropped with it.
+// - It takes no pointer, so selecting, copying, Find, links, marks and comments work exactly as without it. The owner's
+//   own bold marks are drawn the same way, whole words.
+// - A page's glyphs are kept in page points, so zoom, rotation, two-page view and presentation mode only redraw them,
+//   in the same frame as the page's picture. A few paths a page (one per colour), never a node per glyph.
+// - The work for a page (its chars, then its glyphs: a page in view in one or two engine calls, others a few hundred
+//   chars a call) starts after the page's own render is on screen, and only while the reader is not scrolling and the
+//   engine is not drawing pages (RenderScheduler.isIdle). Visible pages go first, then the pages mounted around them, then, at idle, the next pages
+//   either side, so scrolling on finds them ready. The last PAGES_KEPT pages are kept.
 // - A page with no outline to draw (a scan, whose OCR text is invisible; a page with no text) is left as it is, and the
 //   controller says so (onNothingToDraw) when such a page is in view, for R90's quiet note.
 import { memo, useLayoutEffect, useRef, useSyncExternalStore, type JSX } from 'react';
 import { PdfEngineCrashedError } from '../backend/errors';
-import type { DocHandle, GlyphOutline, PageSize, PdfBackend, Rotation } from '../backend/types';
+import type { DocHandle, PageSize, PdfBackend } from '../backend/types';
 import type { PageBox } from '../layout/page-layout';
-import { type BoldRange, displayTransform, type DrawnRange, glyphPaths } from '../marks/BoldLayer';
+import { type BoldGlyph, boldGlyphs, type BoldRange, prepareGlyphs } from '../marks/bold-painter';
 import { type WordStartChunk, wordStartChunks, wordStartRanges } from '../marks/word-starts';
+import { useBoldCanvas } from './BoldCanvas';
 import type { PageLayerContext } from './PageView';
 
-/**
- * The word starts' stroke, in ems of the glyph's font size: a glyph's own outline, filled and stroked this wide, reads
- * as clearly bold at 100% (R90; a bold mark's is BOLD_STROKE_EM, 0.03).
- */
-export const WORD_STARTS_STROKE_EM = 0.07;
-/**
- * Text that is already bold (its font's weight, as PDFium reads it, is BOLD_FONT_WEIGHT or more: titles, headings,
- * author names) is stroked only this much, so its word starts still show without smudging into blots.
- */
-export const WORD_STARTS_ON_BOLD_STROKE_EM = 0.03;
-/** PDFium's weight for regular faces reads up to about 540 (stem widths), bold ones 570 and up (CMBX10, Times Bold 700). */
-const BOLD_FONT_WEIGHT = 560;
-/** Stroke widths are rounded to this many points, so a page in many sizes is still a few paths (0.03 px at 100%). */
-const STROKE_QUANTUM_PT = 0.05;
-/** Chars of a page per getGlyphOutlines call: about 2 to 5 ms of the engine worker on a paper's page. */
+/** Chars of a page per getGlyphShapes call: a few ms of the engine worker on a paper's page. */
 const CHARS_PER_CALL = 512;
+/**
+ * Chars per call for a page in view (or not yet known to be out of view, as when the switch has just been turned on):
+ * the reader is waiting for it, and each call is a round trip through a busy main thread, so it takes a whole page of
+ * a paper in one call (some 30 ms of the worker; the first call on a page, which also reads its faces, up to 100).
+ */
+const VISIBLE_CHARS_PER_CALL = 4096;
 /** The work waits until the page list has not scrolled for this long. */
 const SCROLL_IDLE_MS = 120;
 /** While the pages are being drawn, the work looks again this often. */
 const BUSY_RECHECK_MS = 50;
+/** Pages kept besides the mounted ones (their glyphs in points: a few hundred kB a page). */
+const PAGES_KEPT = 24;
+/** At idle, the pages this far after (and one before) each visible page are made ready too. */
+const PREFETCH_AHEAD = 2;
 /** The perf mark made when a page's word starts are on screen. */
 export const WORD_STARTS_PERF_MARK = 'sop:word-starts-drawn';
 
-/** What a page shows: its glyph paths (none for a scan or a page without text), and whether it has words at all. */
+/** What a page shows: its glyphs to embolden (none for a scan or a page without text), and whether it has words. */
 export interface WordStartsPage {
-  glyphs: DrawnRange['glyphs'];
+  glyphs: BoldGlyph[];
   hasText: boolean;
 }
 
 export interface WordStartsControllerOptions {
-  backend: Pick<PdfBackend, 'getGlyphOutlines'>;
+  backend: Pick<PdfBackend, 'getGlyphShapes'>;
   doc: DocHandle;
   /** The page's chars, one UTF-16 unit each (the page text provider's rawText: getPageChars, cached per page). */
   text: { rawText(pageIndex: number): Promise<string> };
+  pageCount: number;
   /**
    * Whether the engine is free of page drawing (RenderScheduler.isIdle). Every engine call waits for it, so a jump or a
    * zoom never waits behind word starts. Without it, only the scrolling is waited for.
@@ -70,12 +66,12 @@ export interface WordStartsControllerOptions {
   onNothingToDraw?: (pageIndex: number, hasText: boolean) => void;
 }
 
-/** A page being worked on: its word starts, in engine calls, and the outlines kept so far. */
+/** A page being worked on: its word starts, in engine calls, and the glyphs kept so far. */
 interface Work {
   ranges: BoldRange[];
   chunks: WordStartChunk[];
   next: number;
-  kept: GlyphOutline[];
+  kept: BoldGlyph[];
 }
 
 /** A mounted page. */
@@ -83,26 +79,37 @@ interface Slot {
   index: number;
   el: Element | null;
   visible: boolean;
+  /** The IntersectionObserver has told whether its marker is in view (until then it may be, as when the switch has just been turned on). */
+  known: boolean;
   /** Its own render is on screen (PageLayerContext.whenPainted): its work may start. */
   painted: boolean;
-  work: Work | null;
-  drawn: WordStartsPage | null;
-  /** The engine could not give its chars or outlines: left undrawn until the page is mounted again. */
-  failed: boolean;
 }
 
-/** While the switch is on and a page's paths are still being made: an empty svg, so the page can be watched. */
+/** While the switch is on and a page's glyphs are still being read: nothing drawn yet. */
 const PENDING: WordStartsPage = { glyphs: [], hasText: true };
 
+/** A keep(charIndex) for glyphs met in char order: true inside one of `ranges` (sorted, not overlapping). */
+function inRanges(ranges: readonly BoldRange[]): (charIndex: number) => boolean {
+  let r = 0;
+  return (i) => {
+    while (r < ranges.length && ranges[r].end <= i) r++;
+    const range = ranges[r];
+    return range !== undefined && i >= range.start;
+  };
+}
+
 /**
- * The open document's bold word starts: the switch, the work queue and each mounted page's paths. One per document,
- * made by the viewer with the page text provider; WordStartsLayer draws a page from it.
+ * The open document's bold word starts: the switch, the work queue and each page's glyphs. One per document, made by
+ * the viewer with the page text provider; WordStartsLayer draws a page from it.
  */
 export class WordStartsController {
   private on = false;
   private disposed = false;
   private running = false;
   private readonly slots = new Map<number, Slot>();
+  private readonly cache = new Map<number, WordStartsPage>();
+  private readonly work = new Map<number, Work>();
+  private readonly failed = new Set<number>();
   private readonly listeners = new Set<() => void>();
   private observer: IntersectionObserver | null = null;
   private lastScrollAt = -Infinity;
@@ -115,7 +122,7 @@ export class WordStartsController {
     return this.on;
   }
 
-  /** Turns the word starts on or off for every page of this document. Paths already made are kept, so on is instant. */
+  /** Turns the word starts on or off for every page of this document. Glyphs already read are kept, so on is instant. */
   setEnabled(on: boolean): void {
     if (on === this.on || this.disposed) return;
     this.on = on;
@@ -130,16 +137,17 @@ export class WordStartsController {
     return () => this.listeners.delete(onChange);
   };
 
-  /** What page `pageIndex` shows: null while the switch is off; its paths once made (an empty set until then). */
+  /** What page `pageIndex` shows: null while the switch is off; its glyphs once read (none until then). */
   page = (pageIndex: number): WordStartsPage | null => {
     if (!this.on) return null;
-    return this.slots.get(pageIndex)?.drawn ?? PENDING;
+    return this.cache.get(pageIndex) ?? PENDING;
   };
 
-  /** A page was mounted (its layer context). Returns the function that unmounts it, which drops its paths. */
+  /** A page was mounted (its layer context). Returns the function that unmounts it. */
   attach(pageIndex: number, ctx: PageLayerContext): () => void {
-    const slot: Slot = { index: pageIndex, el: null, visible: false, painted: false, work: null, drawn: null, failed: false };
+    const slot: Slot = { index: pageIndex, el: null, visible: false, known: false, painted: false };
     this.slots.set(pageIndex, slot);
+    this.failed.delete(pageIndex);
     ctx.whenPainted().then(
       () => {
         slot.painted = true;
@@ -153,18 +161,20 @@ export class WordStartsController {
     };
   }
 
-  /** The page's svg is in the DOM (the switch is on): it is watched for coming into view. Returns the function that stops. */
+  /** The page's marker is in the DOM (the switch is on): it is watched for coming into view. Returns the function that stops. */
   observe(pageIndex: number, el: Element): () => void {
     const slot = this.slots.get(pageIndex);
     if (!slot || typeof IntersectionObserver === 'undefined') return () => {};
     this.observer ??= new IntersectionObserver((entries) => this.onIntersect(entries));
     slot.el = el;
+    slot.known = false;
     this.observer.observe(el);
     return () => {
       this.observer?.unobserve(el);
       if (slot.el === el) {
         slot.el = null;
         slot.visible = false;
+        slot.known = false;
       }
     };
   }
@@ -191,6 +201,7 @@ export class WordStartsController {
       if (!slot) continue;
       const was = slot.visible;
       slot.visible = e.isIntersecting;
+      slot.known = true;
       if (slot.visible && !was) {
         this.tellIfEmpty(slot);
         more = true;
@@ -201,21 +212,29 @@ export class WordStartsController {
 
   /** R90's note: a page in view, switch on, with nothing to draw. */
   private tellIfEmpty(s: Slot): void {
-    if (this.on && s.visible && s.drawn !== null && s.drawn.glyphs.length === 0) this.o.onNothingToDraw?.(s.index, s.drawn.hasText);
+    const drawn = this.cache.get(s.index);
+    if (this.on && s.visible && drawn !== undefined && drawn.glyphs.length === 0) this.o.onNothingToDraw?.(s.index, drawn.hasText);
   }
 
   private emit(): void {
     for (const l of [...this.listeners]) l();
   }
 
-  /** The page to work on next: a page in view before one mounted around the view, then the first in page order. */
-  private next(): Slot | null {
-    let best: Slot | null = null;
-    for (const s of this.slots.values()) {
-      if (s.drawn !== null || s.failed || !s.painted) continue;
-      if (best === null || (s.visible && !best.visible) || (s.visible === best.visible && s.index < best.index)) best = s;
+  /** The pages worth reading now, best first: in view, then mounted, then (prefetch) near those in view. */
+  private wanted(): number[] {
+    const out: number[] = [];
+    const add = (i: number) => {
+      if (i >= 0 && i < this.o.pageCount && !this.cache.has(i) && !this.failed.has(i) && !out.includes(i)) out.push(i);
+    };
+    const slots = [...this.slots.values()].sort((a, b) => a.index - b.index);
+    for (const s of slots) if (s.visible && s.painted) add(s.index);
+    for (const s of slots) if (s.painted) add(s.index);
+    for (const s of slots) {
+      if (!s.visible) continue;
+      for (let d = 1; d <= PREFETCH_AHEAD; d++) add(s.index + d);
+      add(s.index - 1);
     }
-    return best;
+    return out;
   }
 
   /** Works through the pages, one engine call at a time, while the switch is on. */
@@ -227,18 +246,21 @@ export class WordStartsController {
         if (!this.on || this.disposed || this.crashed) return;
         await this.engineFree();
         if (!this.on || this.disposed) return;
-        const slot = this.next();
-        if (slot === null) return;
+        const wanted = this.wanted();
+        const index = wanted[0];
+        if (index === undefined) return;
+        // Work for pages no longer wanted is dropped.
+        for (const i of this.work.keys()) if (!wanted.includes(i)) this.work.delete(i);
         try {
-          await this.step(slot);
+          await this.step(index);
         } catch (err) {
-          slot.failed = true;
-          slot.work = null;
+          this.failed.add(index);
+          this.work.delete(index);
           if (err instanceof PdfEngineCrashedError) {
             this.crashed = true; // the viewer opens the document again, with a new controller
             return;
           }
-          console.error(`sickofpdfs: bold word starts could not be drawn on page ${slot.index + 1}`, err);
+          console.error(`sickofpdfs: bold word starts could not be drawn on page ${index + 1}`, err);
         }
       }
     } finally {
@@ -246,29 +268,48 @@ export class WordStartsController {
     }
   }
 
-  /** One engine call for `slot`: its chars first, then its outlines a chunk at a time; the last one draws the page. */
-  private async step(slot: Slot): Promise<void> {
-    const live = () => this.slots.get(slot.index) === slot && !this.disposed;
-    if (slot.work === null) {
-      const chars = await this.o.text.rawText(slot.index);
-      if (!live()) return;
+  /** One engine call for page `index`: its chars first, then its glyphs a chunk at a time; the last one shows the page. */
+  private async step(index: number): Promise<void> {
+    let w = this.work.get(index);
+    if (!w) {
+      const chars = await this.o.text.rawText(index);
+      if (this.disposed) return;
       const ranges = wordStartRanges(chars);
-      slot.work = { ranges, chunks: wordStartChunks(ranges, CHARS_PER_CALL), next: 0, kept: [] };
+      this.work.set(index, (w = { ranges, chunks: wordStartChunks(ranges, CHARS_PER_CALL), next: 0, kept: [] }));
     }
-    const w = slot.work;
-    const chunk = w.chunks[w.next];
-    if (chunk !== undefined) {
-      const outlines = await this.o.backend.getGlyphOutlines(this.o.doc, slot.index, chunk.start, chunk.end - chunk.start);
-      if (!live() || slot.work !== w) return;
-      keepInRanges(outlines, chunk.ranges, w.kept);
-      w.next++;
+    const first = w.chunks[w.next];
+    if (first !== undefined) {
+      // The next chunks, up to the call's size, in one call.
+      const slot = this.slots.get(index);
+      const limit = slot !== undefined && (slot.visible || !slot.known) ? VISIBLE_CHARS_PER_CALL : CHARS_PER_CALL;
+      let last = w.next;
+      while (last + 1 < w.chunks.length && w.chunks[last + 1].end - first.start <= limit) last++;
+      const chunk = { start: first.start, end: w.chunks[last].end, ranges: w.chunks.slice(w.next, last + 1).flatMap((c) => c.ranges) };
+      const set = await this.o.backend.getGlyphShapes(this.o.doc, index, chunk.start, chunk.end - chunk.start);
+      if (this.disposed || this.work.get(index) !== w) return;
+      const glyphs = boldGlyphs(set, inRanges(chunk.ranges));
+      // Their emboldened outlines are worked out now, a chunk at a time, so drawing the page is only placing them.
+      await prepareGlyphs(glyphs);
+      if (this.disposed || this.work.get(index) !== w) return;
+      for (const g of glyphs) w.kept.push(g);
+      w.next = last + 1;
     }
     if (w.next < w.chunks.length) return;
-    const strokeOf = (o: GlyphOutline) => ((o.fontWeight ?? 0) >= BOLD_FONT_WEIGHT ? WORD_STARTS_ON_BOLD_STROKE_EM : WORD_STARTS_STROKE_EM) * (o.fontSize ?? 0);
-    slot.drawn = { glyphs: glyphPaths(w.kept, strokeOf, STROKE_QUANTUM_PT), hasText: w.ranges.length > 0 };
-    slot.work = null;
+    this.work.delete(index);
+    this.remember(index, { glyphs: w.kept, hasText: w.ranges.length > 0 });
     this.emit();
-    this.tellIfEmpty(slot);
+    const slot = this.slots.get(index);
+    if (slot) this.tellIfEmpty(slot);
+  }
+
+  /** Keeps a page's glyphs; beyond PAGES_KEPT, the oldest page not mounted goes. */
+  private remember(index: number, page: WordStartsPage): void {
+    this.cache.delete(index);
+    this.cache.set(index, page);
+    for (const i of this.cache.keys()) {
+      if (this.cache.size <= PAGES_KEPT + this.slots.size) break;
+      if (!this.slots.has(i)) this.cache.delete(i);
+    }
   }
 
   /** Waits until the page list has not scrolled for SCROLL_IDLE_MS and the engine is not drawing pages (renderIdle). */
@@ -282,20 +323,6 @@ export class WordStartsController {
   }
 }
 
-/**
- * The outlines whose char (a ligature's first char) is inside one of `ranges` (sorted, not overlapping), appended to
- * `out`. Both lists are in char order, so this is one walk.
- */
-function keepInRanges(outlines: readonly GlyphOutline[], ranges: readonly BoldRange[], out: GlyphOutline[]): void {
-  let r = 0;
-  for (const o of outlines) {
-    while (r < ranges.length && ranges[r].end <= o.charIndex) r++;
-    const range = ranges[r];
-    if (range === undefined) return;
-    if (o.charIndex >= range.start) out.push(o);
-  }
-}
-
 export interface WordStartsLayerProps {
   controller: WordStartsController;
   box: PageBox;
@@ -304,36 +331,21 @@ export interface WordStartsLayerProps {
   page: PageSize;
 }
 
-/** One page's bold word starts. Nothing while the switch is off. See the file comment. */
+/**
+ * One page's bold word starts: synthetic bold in the page's underlay, and an empty marker in its layers that says the
+ * switch is on (`.sop-word-starts`, `data-drawn` once the page's glyphs are drawn). Nothing while the switch is off.
+ */
 export const WordStartsLayer = memo(function WordStartsLayer({ controller, box, ctx, page }: WordStartsLayerProps): JSX.Element | null {
   const index = box.index;
-  const svg = useRef<SVGSVGElement>(null);
+  const marker = useRef<HTMLDivElement>(null);
   const shown = useSyncExternalStore(controller.subscribe, () => controller.page(index));
   const on = shown !== null;
   useLayoutEffect(() => controller.attach(index, ctx), [controller, index, ctx]);
-  useLayoutEffect(() => (on && svg.current ? controller.observe(index, svg.current) : undefined), [controller, index, ctx, on]);
-  const drawn = shown !== null && shown.glyphs.length > 0;
-  useLayoutEffect(() => {
-    if (drawn) performance.mark(WORD_STARTS_PERF_MARK, { detail: { pageIndex: index } });
-  }, [drawn, shown, index]);
-  if (shown === null) return null;
-  const viewRotation = ((((box.rotation - page.rotation) % 360) + 360) % 360) as Rotation;
-  const view = displayTransform(page, viewRotation);
-  return (
-    <svg
-      ref={svg}
-      className="sop-word-starts"
-      aria-hidden="true"
-      data-sop-word-starts-page={index}
-      viewBox={`0 0 ${view.width} ${view.height}`}
-      preserveAspectRatio="none"
-      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'none' }}
-    >
-      <g transform={view.transform || undefined}>
-        {shown.glyphs.map((g, n) => (
-          <path key={n} d={g.d} fill={g.fill} stroke={g.stroke} strokeWidth={g.width} strokeLinejoin="round" />
-        ))}
-      </g>
-    </svg>
-  );
+  useLayoutEffect(() => (on && marker.current ? controller.observe(index, marker.current) : undefined), [controller, index, ctx, on]);
+  useBoldCanvas(ctx, page, shown?.glyphs ?? null, 'sop-word-starts-canvas', (n) => {
+    marker.current?.toggleAttribute('data-drawn', n > 0);
+    if (n > 0) performance.mark(WORD_STARTS_PERF_MARK, { detail: { pageIndex: index } });
+  });
+  if (!on) return null;
+  return <div ref={marker} className="sop-word-starts" data-sop-word-starts-page={index} aria-hidden="true" style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} />;
 });

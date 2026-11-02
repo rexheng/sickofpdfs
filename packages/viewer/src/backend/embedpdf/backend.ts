@@ -159,6 +159,7 @@ export function createEmbedPdfBackend(assets: EngineAssets, opts: EmbedPdfBacken
     getTextRuns: ((doc: DocHandle, pageIndex: number, o?: { budgetMs: number }) =>
       call(doc, pageIndex, 'getTextRuns', o ? [pageIndex, { budgetMs: o.budgetMs }] : [pageIndex])) as PdfBackend['getTextRuns'],
     getGlyphOutlines: (doc, pageIndex, charStart, charCount) => call(doc, pageIndex, 'getGlyphOutlines', [pageIndex, charStart, charCount]),
+    getGlyphShapes: (doc, pageIndex, charStart, charCount) => call(doc, pageIndex, 'getGlyphShapes', [pageIndex, charStart, charCount]),
     hashImageObject: (doc, pageIndex, objectIndex) => call(doc, pageIndex, 'hashImageObject', [pageIndex, objectIndex]),
   };
 }

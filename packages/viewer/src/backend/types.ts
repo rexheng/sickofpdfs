@@ -234,6 +234,42 @@ export interface GlyphOutline {
 }
 
 /**
+ * One glyph for synthetic bold (getGlyphShapes, R90b): which outline it is, where it goes on the page, how it is painted
+ * and how much bold its face gets.
+ */
+export interface GlyphPlacement {
+  /** PDFium char index; a ligature is one glyph, at the first of its chars in the range (as GlyphOutline). */
+  charIndex: number;
+  /** Its outline: an index into GlyphShapes.shapes. */
+  shape: number;
+  /**
+   * Ems (y up) → unrotated page points (y down) about the origin: x = m[0]·ex + m[2]·ey + x, y = m[1]·ex + m[3]·ey + y.
+   * The font size and the char matrix (skew, rotation, scale) are in it.
+   */
+  m: [number, number, number, number];
+  /** The glyph's origin, unrotated page points from the crop box's top-left, y down. */
+  x: number;
+  y: number;
+  fill: PdfColor | null;
+  stroke: PdfColor | null;
+  /** Effective size in points, as Glyph.fontSize. */
+  fontSize: number;
+  /**
+   * The bold its face gets, in ems: `x` how much wider its stems get (both sides together), `top` how far the tops of
+   * its letters rise, `bottom` how far their bottoms drop, `stem` the face's own stem width. `from`: matched to the
+   * document's own bold face of the family, a typical regular-to-bold gain, or the small gain of a face already bold.
+   */
+  bold: { x: number; top: number; bottom: number; stem: number; from: 'matched' | 'typical' | 'already-bold' };
+}
+
+/** getGlyphShapes: each distinct outline once, and the glyphs that use them. */
+export interface GlyphShapes {
+  /** PDFium's glyph paths (FPDFFont_GetGlyphPath), in ems, y up: [type, x, y, close] per segment (2 move, 0 line, 1 cubic point). */
+  shapes: Float32Array[];
+  glyphs: GlyphPlacement[];
+}
+
+/**
  * The PDF engine. It runs in a worker (or two: ENGINE_WORKERS); each worker runs its calls one at a time, in the
  * order they are made.
  *
@@ -323,6 +359,12 @@ export interface PdfBackend {
    * one outline. A Type3 glyph has no outline. In char order.
    */
   getGlyphOutlines(doc: DocHandle, pageIndex: number, charStart: number, charCount: number): Promise<GlyphOutline[]>;
+  /**
+   * The glyphs of chars [charStart, charStart + charCount) for synthetic bold (R90b): getGlyphOutlines' glyphs as em
+   * outlines (each distinct one once) and placements, with each face's bold matched to the document's own bold face
+   * where it has one. Bold word starts, bold marks and print with marks draw from this.
+   */
+  getGlyphShapes(doc: DocHandle, pageIndex: number, charStart: number, charCount: number): Promise<GlyphShapes>;
   /**
    * SHA-256 of an image object's stream data as stored in the file (FPDFImageObj_GetImageDataRaw), computed in the
    * engine. `objectIndex` counts as listPageObjects(doc, pageIndex, { recurseForms: true }) does (depth first, a form

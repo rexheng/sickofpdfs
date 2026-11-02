@@ -21,6 +21,8 @@ import type {
   FormType,
   Glyph,
   GlyphOutline,
+  GlyphPlacement,
+  GlyphShapes,
   LinkTarget,
   OutlineItem,
   PageGlyphs,
@@ -40,6 +42,8 @@ import type {
   TileRequest,
 } from '../types';
 import type { EngineApi, OpenedDocument } from './rpc';
+import { BoldFaces, type BoldGain, faceStyle } from '../../marks/bold-faces';
+import { STEM_LETTERS, type StemMeasures, stemMeasures } from '../../marks/synthetic-bold';
 
 /** FPDF_GetFormType's result (fpdf_formfill.h FORMTYPE_*), by value. */
 const FORM_TYPES: FormType[] = ['none', 'acroform', 'xfa-full', 'xfa-foreground'];
@@ -66,6 +70,8 @@ const MAX_TREE_DEPTH = 32;
 const MAX_OUTLINE_ITEMS = 100_000;
 /** FPDF_PAGEOBJ_* in fpdf_edit.h, by value. */
 const PAGE_OBJECT_TYPES: PageObjectType[] = ['unknown', 'text', 'path', 'image', 'shading', 'form'];
+const FPDF_PAGEOBJ_TEXT = 1;
+const FPDF_PAGEOBJ_FORM = 5;
 /** FPDFText_FindStart flags (fpdf_text.h). */
 const FPDF_MATCHCASE = 1;
 const FPDF_MATCHWHOLEWORD = 2;
@@ -98,6 +104,8 @@ const GLYPH_GROUP_REACH = 8;
 const FONT_FLAG_FORCE_BOLD = 1 << 18;
 /** The weight getGlyphOutlines reports for a ForceBold font whose own weight reads lower. */
 const FORCE_BOLD_WEIGHT = 700;
+/** A page's faces are read from at most this many of its objects. */
+const FACE_OBJECTS_READ = 4000;
 /** Outline coordinates are written to 1/100 pt (0.05 px at 400% on a DPR-2 screen). */
 const OUTLINE_PRECISION = 100;
 
@@ -157,6 +165,7 @@ type ExportName =
   | 'FPDFFont_GetGlyphPath'
   | 'FPDFFont_GetWeight'
   | 'FPDFFont_GetFlags'
+  | 'FPDFFont_GetBaseFontName'
   | 'FPDFGlyphPath_CountGlyphSegments'
   | 'FPDFGlyphPath_GetGlyphPathSegment'
   | 'FPDFPathSegment_GetPoint'
@@ -291,6 +300,9 @@ interface DocState {
   sizes: PageSize[];
   /** The pages whose borderless-link annotations are already hidden (hideLinkBorders), so that is done once per page. */
   linksHidden: Set<number>;
+  /** The faces met so far and each one's synthetic bold (R90b), and the pages whose faces were read. */
+  faces: BoldFaces;
+  facesRead: Set<number>;
 }
 
 export class SopPdfiumNative extends PdfiumNative implements EngineApi {
@@ -332,7 +344,7 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
       // EmbedPDF's size is PDFium's page size, which is turned by /Rotate; PageSize is the unrotated one.
       return rotation % 180 === 0 ? { width: p.size.width, height: p.size.height, rotation } : { width: p.size.height, height: p.size.width, rotation };
     });
-    this.docs.set(docId, { doc, sizes, linksHidden: new Set() });
+    this.docs.set(docId, { doc, sizes, linksHidden: new Set(), faces: new BoldFaces(), facesRead: new Set() });
     try {
       return { pageCount: doc.pageCount, pages: sizes, metadata: this.metadata(doc), encrypted: doc.isEncrypted };
     } catch (err) {
@@ -976,6 +988,76 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
    * Every PDFium call goes to the wasm exports directly (P0-5: about 3× cheaper than the wrappers).
    */
   getGlyphOutlines(docId: string, pageIndex: number, charStart: number, charCount: number): GlyphOutline[] {
+    const out: GlyphOutline[] = [];
+    this.walkGlyphs(docId, pageIndex, charStart, charCount, (g) => {
+      const { glyph, paint } = g;
+      let placed = glyph.placed.get(paint.matrixKey);
+      if (!placed) glyph.placed.set(paint.matrixKey, (placed = placeOutline(glyph.em, paint.matrix)));
+      // The origin on the 1/100 pt grid, then the glyph's own points relative to it (see placeOutline).
+      const x0 = Math.round(g.x * OUTLINE_PRECISION) + placed.x0;
+      const y0 = Math.round(g.y * OUTLINE_PRECISION) + placed.y0;
+      const outline: GlyphOutline = { charIndex: g.charIndex, d: `M${x0 / OUTLINE_PRECISION} ${y0 / OUTLINE_PRECISION}${placed.tail}`, fill: paint.fill, stroke: paint.stroke };
+      if (paint.fontSize > 0) outline.fontSize = paint.fontSize;
+      if (paint.weight > 0) outline.fontWeight = paint.weight;
+      out.push(outline);
+    });
+    return out;
+  }
+
+  /**
+   * The glyphs of chars [charStart, charStart + charCount) for synthetic bold (PdfBackend.getGlyphShapes, R90b): each
+   * distinct outline once, in ems, and each glyph's place, paint and its face's bold. The glyphs are getGlyphOutlines'
+   * (the same ligatures, joined hyphens and invisible text left out). A face's bold is matched to the document's own
+   * bold face of its family where there is one: the faces of this page are read and measured on their own l, i, n and o
+   * (BoldFaces).
+   */
+  getGlyphShapes(docId: string, pageIndex: number, charStart: number, charCount: number): GlyphShapes {
+    const state = this.state(docId);
+    const shapes: Float32Array[] = [];
+    const ids = new Map<CachedGlyph, number>();
+    const glyphs: GlyphPlacement[] = [];
+    this.walkGlyphs(
+      docId,
+      pageIndex,
+      charStart,
+      charCount,
+      (g, pageCtx, mem) => {
+        let id = ids.get(g.glyph);
+        if (id === undefined) {
+          id = shapes.length;
+          ids.set(g.glyph, id);
+          shapes.push(g.glyph.em);
+        }
+        const [a, b, c, d] = g.paint.matrix;
+        glyphs.push({ charIndex: g.charIndex, shape: id, m: [a, -b, c, -d], x: g.x, y: g.y, fill: g.paint.fill, stroke: g.paint.stroke, fontSize: g.paint.fontSize, bold: this.boldGain(state, pageCtx, g.paint.font, mem) });
+      },
+      (pageCtx, mem) => this.readFaces(state, pageIndex, pageCtx, mem),
+    );
+    return { shapes, glyphs };
+  }
+
+  /**
+   * Walks the glyphs of chars [charStart, charStart + charCount): per glyph its text object's paint, its cached em outline
+   * and its origin (unrotated page points, crop box top-left, y down). Per glyph:
+   *   1. its text object (FPDFText_GetTextObject) gives the font (FPDFTextObj_GetFont), the size (GetFontSize), the
+   *      render mode (GetTextRenderMode) and, with the char, its fill and stroke colours (FPDFText_GetFillColor and
+   *      GetStrokeColor), its effective size and its font's weight (FPDFFont_GetWeight, GetFlags' ForceBold). Invisible text is
+   *      skipped: modes 3 and 7, or nothing painted with alpha above 0;
+   *   2. the outline, in ems: FPDFFont_GetGlyphPath(font, argument, size), the argument being the char's Unicode value
+   *      (GLYPH_ARG = unicode), or the forms in glyphArguments for ligatures and joined hyphens. Outlines are cached by
+   *      font and argument for as long as the page stays loaded (see outlineCache).
+   * PDFium expands a char code with several Unicode chars (a ligature, a surrogate pair) into that many chars, which
+   * share the text object and the origin: they are one glyph, at the first of its chars in the range. Every PDFium call
+   * goes to the wasm exports directly (P0-5: about 3× cheaper than the wrappers). `before` runs first, on the loaded page.
+   */
+  private walkGlyphs(
+    docId: string,
+    pageIndex: number,
+    charStart: number,
+    charCount: number,
+    visit: (g: { charIndex: number; glyph: CachedGlyph; paint: TextObjectPaint; x: number; y: number }, pageCtx: PageContext, mem: number) => void,
+    before?: (pageCtx: PageContext, mem: number) => void,
+  ): void {
     const { doc } = this.state(docId);
     this.page(doc, pageIndex);
     const x = this.x;
@@ -986,15 +1068,14 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
       const textPage = pageCtx.getTextPage();
       const total = x.FPDFText_CountChars(textPage);
       const [start, count] = clampRange(charStart, charCount, total);
-      if (count === 0) return [];
+      if (count === 0) return;
+      before?.(pageCtx, mem);
       const end = start + count;
       const crop = this.cropBox(pageCtx.pagePtr, mem);
       let byFont = this.outlineCache.get(pageCtx);
       if (!byFont) this.outlineCache.set(pageCtx, (byFont = new Map<number, Map<number, CachedGlyph | null>>()));
 
       // Per char, over the range and a few chars either side: its text object (0 for a generated char) and origin.
-      // PDFium expands a char code with several Unicode chars (a ligature, a surrogate pair) into that many chars,
-      // which share the text object and the origin: they are one glyph.
       const lo = Math.max(0, start - GLYPH_GROUP_REACH);
       const hi = Math.min(total, end + GLYPH_GROUP_REACH);
       const objs = new Float64Array(hi - lo);
@@ -1019,7 +1100,6 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
         return paint;
       };
 
-      const out: GlyphOutline[] = [];
       const units: number[] = [];
       let i = start;
       while (i < end) {
@@ -1044,24 +1124,95 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
           glyph = this.cachedGlyph(byFont, paint.font, arg, paint.size, mem);
           if (glyph) break;
         }
-        if (glyph) {
-          let placed = glyph.placed.get(paint.matrixKey);
-          if (!placed) glyph.placed.set(paint.matrixKey, (placed = placeOutline(glyph.em, paint.matrix)));
-          // The origin on the 1/100 pt grid, then the glyph's own points relative to it (see placeOutline).
-          const x0 = Math.round(((ox[first - lo] ?? 0) - crop.left) * OUTLINE_PRECISION) + placed.x0;
-          const y0 = Math.round((crop.top - (oy[first - lo] ?? 0)) * OUTLINE_PRECISION) + placed.y0;
-          const outline: GlyphOutline = { charIndex: i, d: `M${x0 / OUTLINE_PRECISION} ${y0 / OUTLINE_PRECISION}${placed.tail}`, fill: paint.fill, stroke: paint.stroke };
-          if (paint.fontSize > 0) outline.fontSize = paint.fontSize;
-          if (paint.weight > 0) outline.fontWeight = paint.weight;
-          out.push(outline);
-        }
+        if (glyph) visit({ charIndex: i, glyph, paint, x: (ox[first - lo] ?? 0) - crop.left, y: crop.top - (oy[first - lo] ?? 0) }, pageCtx, mem);
         i = next;
       }
-      return out;
     } finally {
       x.free(mem);
       pageCtx.release();
     }
+  }
+
+  // ---- synthetic bold: the document's faces (R90b) ----
+
+  /** A font's PostScript name (FPDFFont_GetBaseFontName), per loaded page, as outlineCache keeps outlines. */
+  private readonly fontNames = new WeakMap<PageContext, Map<number, string>>();
+
+  private fontName(pageCtx: PageContext, font: number): string {
+    let names = this.fontNames.get(pageCtx);
+    if (!names) this.fontNames.set(pageCtx, (names = new Map<number, string>()));
+    const known = names.get(font);
+    if (known !== undefined) return known;
+    const x = this.x;
+    const bytes = font ? x.FPDFFont_GetBaseFontName(font, 0, 0) : 0;
+    let name = '';
+    if (bytes > 1) {
+      const buf = x.malloc(bytes);
+      try {
+        x.FPDFFont_GetBaseFontName(font, buf, bytes);
+        name = String.fromCharCode(...this.h.bytes(buf, bytes - 1));
+      } finally {
+        x.free(buf);
+      }
+    }
+    if (name === '') name = `font@${font}`;
+    names.set(font, name);
+    return name;
+  }
+
+  /** Adds `font` to the document's faces, measured on its own letters, the first time a page shows it. */
+  private addFace(state: DocState, pageCtx: PageContext, font: number, mem: number): string {
+    const name = this.fontName(pageCtx, font);
+    if (state.faces.has(name)) return name;
+    const x = this.x;
+    const raw = font ? x.FPDFFont_GetWeight(font) : -1;
+    const flags = font ? x.FPDFFont_GetFlags(font) : -1;
+    const weight = flags > 0 && (flags & FONT_FLAG_FORCE_BOLD) !== 0 ? Math.max(raw, FORCE_BOLD_WEIGHT) : raw;
+    let byFont = this.outlineCache.get(pageCtx);
+    if (!byFont) this.outlineCache.set(pageCtx, (byFont = new Map<number, Map<number, CachedGlyph | null>>()));
+    const letters = new Map<string, StemMeasures>();
+    for (const letter of STEM_LETTERS) {
+      const glyph = this.cachedGlyph(byFont, font, letter.charCodeAt(0), 1, mem);
+      if (glyph) letters.set(letter, stemMeasures(glyph.em, letter));
+    }
+    state.faces.add(name, { style: faceStyle(name, weight), weight, letters });
+    return name;
+  }
+
+  /**
+   * Reads the faces of page `pageIndex` (every text object's font, in form XObjects too), once per page, so a face's
+   * own bold is known when the page has it (a paper's title and headings are on its first page). Other pages are not
+   * loaded for this: a face met before its bold is drawn with the typical gain until the bold turns up.
+   */
+  private readFaces(state: DocState, pageIndex: number, pageCtx: PageContext, mem: number): void {
+    this.readPageFaces(state, pageIndex, pageCtx, mem);
+  }
+
+  private readPageFaces(state: DocState, pageIndex: number, pageCtx: PageContext, mem: number): void {
+    if (state.facesRead.has(pageIndex)) return;
+    state.facesRead.add(pageIndex);
+    const x = this.x;
+    const seen = new Set<number>();
+    const visit = (obj: number, depth: number): void => {
+      const type = x.FPDFPageObj_GetType(obj);
+      if (type === FPDF_PAGEOBJ_TEXT) {
+        const font = x.FPDFTextObj_GetFont(obj);
+        if (font && !seen.has(font)) {
+          seen.add(font);
+          this.addFace(state, pageCtx, font, mem);
+        }
+      } else if (type === FPDF_PAGEOBJ_FORM && depth < 4) {
+        const count = x.FPDFFormObj_CountObjects(obj);
+        for (let k = 0; k < count; k++) visit(x.FPDFFormObj_GetObject(obj, k), depth + 1);
+      }
+    };
+    const count = Math.min(x.FPDFPage_CountObjects(pageCtx.pagePtr), FACE_OBJECTS_READ);
+    for (let i = 0; i < count; i++) visit(x.FPDFPage_GetObject(pageCtx.pagePtr, i), 0);
+  }
+
+  /** The bold for a glyph of `font`: its face's own bold where the document has one, typical otherwise. */
+  private boldGain(state: DocState, pageCtx: PageContext, font: number, mem: number): BoldGain {
+    return state.faces.gainFor(this.addFace(state, pageCtx, font, mem));
   }
 
   /**
