@@ -17,7 +17,7 @@
 // a button to go on; a refusal is shown in the same dialog; "Indexing 1 of 2" is shown while text is read again (not asserted).
 import { rm } from 'node:fs/promises';
 import type { BrowserContext, Page } from '@playwright/test';
-import { EXTENSION_ID, expect, opfsList, test, type FixtureServer } from '../support/test';
+import { EXTENSION_ID, expect, hooks, opfsList, test, type FixtureServer } from '../support/test';
 import { launchExtension, waitForExtensionWorker } from '../support/launch';
 import { opfsSha256 } from '../support/save-probe.spec-blind';
 import { openViewerIn, store as storeOf, waitForStore } from '../support/store-probe.spec-blind';
@@ -66,6 +66,11 @@ async function openSaved(context: BrowserContext, id: string): Promise<Page> {
   const page = await context.newPage();
   await page.goto(`chrome-extension://${EXTENSION_ID}/viewer.html?doc=${id}`);
   return page;
+}
+
+/** Triage (S17, a wrong guess since R98): the rail stays open in a 1280 px window, so a note is a margin marker; shut it as reloadAndWait does. */
+async function shutRail(page: Page): Promise<void> {
+  if (await hooks(page).eval((h) => h.viewer.snapshot().railOpen).catch(() => false)) await page.keyboard.press('F4');
 }
 
 /** What the restore dialog says and does. Returns the dialog's text before going on, and whether it refused. */
@@ -167,6 +172,7 @@ test('on a fresh profile Restore brings back readings, notes, marks and PDFs; te
     const hitsBefore = server.requests(ATTENTION.path);
     const reopened = await openSaved(other, shaA);
     await waitViewerReady(reopened).catch(() => undefined);
+    await shutRail(reopened);
     await expect(cardWith(reopened, NOTE_A), 'a restored reading opens from its saved copy, with its note').toBeVisible({ timeout: 30_000 });
     expect(server.requests(ATTENTION.path), 'without asking the web for it').toBe(hitsBefore);
     await shotOf(reopened, testInfo, '06-opened-from-the-saved-copy');
@@ -209,6 +215,7 @@ test('on a fresh profile Restore brings back readings, notes, marks and PDFs; te
     // ---- a forgotten PDF stays gone ----
     const resnet = await openSaved(other, shaR);
     await waitViewerReady(resnet).catch(() => undefined);
+    await shutRail(resnet);
     await expect(cardWith(resnet, NOTE_R)).toBeVisible({ timeout: 30_000 });
     if (await fileMenuHas(resnet, /forget this pdf/i)) await forgetThisPdf(resnet);
     else {
