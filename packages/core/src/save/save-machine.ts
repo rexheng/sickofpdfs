@@ -35,8 +35,9 @@ export type SaveEvent =
    */
   | { type: 'undone'; reasons?: string[] }
   /**
-   * Phase 3: the owner forgot the saved PDF ("Forget this PDF", "Remove from library…"). It is not in the library, and it is
-   * not "not sure" either: a mark asks before it saves it again. `reasons` say why ("removed from your library").
+   * Phase 3: the owner forgot the saved PDF ("Forget this PDF", "Remove from library…"), here or in another tab. It is not in
+   * the library, and it is not "not sure" either: a mark asks before it saves it again. `reasons` say why ("removed from your
+   * library").
    */
   | { type: 'forgotten'; reasons: string[] }
   /** Phase 3: the owner chose "Never for this file". A mark asks before it saves; `reasons` say so. */
@@ -104,7 +105,9 @@ export function reduceSave(s: SaveState, e: SaveEvent): Step {
       // there, with the filter's own reasons.
       return s.kind === 'saved' ? stay({ kind: 'unsure', reasons: [...(e.reasons ?? STAND_IN_REASONS)] }) : stay(s);
     case 'forgotten':
-      return s.kind === 'saved' ? stay({ kind: 'not-learning', reasons: [...e.reasons] }) : stay(s);
+      // Here (from `saved`), or in another tab, which went back to "not sure" when it heard the delete and then learnt that
+      // it was the owner's Forget, not an Undo.
+      return s.kind === 'saved' || s.kind === 'unsure' ? stay({ kind: 'not-learning', reasons: [...e.reasons] }) : stay(s);
     case 'never-save':
       // Not from `memory-only` (the owner said No: the notes stay in this tab, and nothing changes that), nor while asking.
       return s.kind === 'unsure' || s.kind === 'not-learning' ? stay({ kind: 'not-learning', reasons: [...e.reasons] }) : stay(s);
