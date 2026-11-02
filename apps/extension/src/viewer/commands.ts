@@ -33,7 +33,7 @@ export type ViewerCommandId =
   | 'file.openInChrome' | 'file.openOriginal' | 'file.download' | 'file.copyLink' | 'file.print' | 'file.saveToLibrary'
   | 'file.forget' | 'file.reportDecision' // Phase 3 (S11): save/save-commands.ts
   | 'view.fitWidth' | 'view.fitPage' | 'view.zoomIn' | 'view.zoomOut' | 'view.rotateCw' | 'view.rotateCcw'
-  | 'view.twoPage' | 'view.presentation' | 'view.caretBrowsing' | 'view.toggleRail'
+  | 'view.twoPage' | 'view.presentation' | 'view.wordStarts' | 'view.caretBrowsing' | 'view.toggleRail'
   | 'tools.find' | 'tools.goToPage' | 'tools.search' | 'help.shortcuts' | 'help.about'
   // Phase 2 (plan section 7). S13 runs the marks, the menu and undo; S14 the comment commands; S15 the notes ones;
   // S16 the figure and area ones. P4 adds 'claude.ask' and 'claude.explainFigure'.
@@ -115,6 +115,8 @@ export interface ViewerContext {
   pageList: RefObject<PageListApi | null>;
   /** The marks as the screen draws them, for Print (S17). Null in Incognito and while there are no notes. */
   printMarks?: PrintMarks | null;
+  /** The bold word starts switch (R90): remembered for every PDF, the same in every tab (word-starts.ts). */
+  wordStarts?: { on(): boolean; toggle(): void };
   /** The caret browsing switch (R93): remembered for every PDF, the same in every tab (caret-browsing.ts). */
   caretBrowsing?: { on(): boolean; toggle(): void };
   ui: ViewerUi;
@@ -149,6 +151,9 @@ export const SPECS: [ViewerCommandId, CommandSpec][] = [
   ['view.rotateCcw', { label: 'Rotate counter-clockwise', icon: 'rotate_left', keys: ['Ctrl+['] }],
   ['view.twoPage', { label: 'Two-page view', icon: 'auto_stories', keys: [] }],
   ['view.presentation', { label: 'Presentation mode', icon: 'slideshow', keys: [] }],
+  // R90: a reading aid. Alt+Shift+S: no Chrome shortcut on Windows or Linux uses it (Chrome's Alt+Shift letters are A, B,
+  // C, I, N, P, R, T, W, X and Z), it is not Ctrl+Alt (AltGr), and like every Alt combo it never fires while typing.
+  ['view.wordStarts', { label: 'Bold word starts', icon: 'format_bold', keys: ['Alt+Shift+S'] }],
   // R93: F7, Chrome's own key for caret browsing. The page gets it before Chrome, and taking it stops Chrome's question.
   ['view.caretBrowsing', { label: 'Caret browsing', icon: 'text_select_start', keys: ['F7'] }],
   ['view.toggleRail', { label: 'Thumbnails and outline', icon: 'photo_library', keys: ['F4'] }],
@@ -269,6 +274,11 @@ function toggleTwoPage(store: ViewerStore): void {
   store.set({ spread: store.get().spread === 'two-page' ? 'none' : 'two-page' });
 }
 
+/** Bold word starts (R90): a switch with a check mark, for every PDF and every tab. */
+function wordStartsCommand(w: NonNullable<ViewerContext['wordStarts']>): Behaviour {
+  return { run: () => w.toggle(), enabled: always, checked: () => w.on() };
+}
+
 /** Caret browsing (R93): a switch with a check mark, for every PDF and every tab. */
 function caretBrowsingCommand(c: NonNullable<ViewerContext['caretBrowsing']>): Behaviour {
   return { run: () => c.toggle(), enabled: always, checked: () => c.on() };
@@ -313,6 +323,7 @@ export function createCommands(ctx: ViewerContext, extra: Partial<Record<ViewerC
     'view.rotateCcw': { run: () => turn(-1), enabled: always },
     'view.twoPage': { run: () => toggleTwoPage(ctx.store), enabled: always, checked: () => ctx.store.get().spread === 'two-page' },
     'view.presentation': { run: () => void enterPresentation(ctx).catch(() => {}), enabled: () => ctx.store.get().presenting === null },
+    ...(ctx.wordStarts !== undefined ? { 'view.wordStarts': wordStartsCommand(ctx.wordStarts) } : {}),
     ...(ctx.caretBrowsing !== undefined ? { 'view.caretBrowsing': caretBrowsingCommand(ctx.caretBrowsing) } : {}),
     'view.toggleRail': { run: () => ctx.store.set({ railOpen: !ctx.store.get().railOpen }), enabled: always, checked: () => ctx.store.get().railOpen },
     'tools.find': { run: () => ctx.openFind?.(), enabled: () => ctx.openFind !== undefined },
@@ -326,7 +337,7 @@ export function createCommands(ctx: ViewerContext, extra: Partial<Record<ViewerC
 /** The commands that need an open document: while there is none, they are greyed out and say why. */
 const DOCUMENT_COMMANDS: ViewerCommandId[] = [
   'file.download', 'file.print', 'file.saveToLibrary', 'view.fitWidth', 'view.fitPage', 'view.zoomIn', 'view.zoomOut',
-  'view.rotateCw', 'view.rotateCcw', 'view.twoPage', 'view.presentation', 'view.caretBrowsing', 'view.toggleRail', 'tools.find',
+  'view.rotateCw', 'view.rotateCcw', 'view.twoPage', 'view.presentation', 'view.wordStarts', 'view.caretBrowsing', 'view.toggleRail', 'tools.find',
   'tools.goToPage',
 ];
 

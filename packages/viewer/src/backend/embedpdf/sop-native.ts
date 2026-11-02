@@ -94,6 +94,10 @@ const STROKES_BY_MODE = [false, true, true, false, false, true, true, false];
 const LIGATURES: Record<string, number> = { ff: 0xfb00, fi: 0xfb01, fl: 0xfb02, ffi: 0xfb03, ffl: 0xfb04, ſt: 0xfb05, st: 0xfb06 };
 /** getGlyphOutlines reads chars this far either side of the range, to find a ligature the range starts or ends inside. */
 const GLYPH_GROUP_REACH = 8;
+/** FPDFFont_GetFlags: the font descriptor's ForceBold flag (PDF 32000-1, table 123, bit 19). */
+const FONT_FLAG_FORCE_BOLD = 1 << 18;
+/** The weight getGlyphOutlines reports for a ForceBold font whose own weight reads lower. */
+const FORCE_BOLD_WEIGHT = 700;
 /** Outline coordinates are written to 1/100 pt (0.05 px at 400% on a DPR-2 screen). */
 const OUTLINE_PRECISION = 100;
 
@@ -151,6 +155,8 @@ type ExportName =
   | 'FPDFText_GetFillColor'
   | 'FPDFText_GetStrokeColor'
   | 'FPDFFont_GetGlyphPath'
+  | 'FPDFFont_GetWeight'
+  | 'FPDFFont_GetFlags'
   | 'FPDFGlyphPath_CountGlyphSegments'
   | 'FPDFGlyphPath_GetGlyphPathSegment'
   | 'FPDFPathSegment_GetPoint'
@@ -960,7 +966,8 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
    * The glyph outlines of chars [charStart, charStart + charCount) (PdfBackend.getGlyphOutlines). Per glyph:
    *   1. its text object (FPDFText_GetTextObject) gives the font (FPDFTextObj_GetFont), the size (GetFontSize), the
    *      render mode (GetTextRenderMode) and, with the char, its fill and stroke colours (FPDFText_GetFillColor and
-   *      GetStrokeColor). Invisible text is skipped: modes 3 and 7, or nothing painted with alpha above 0;
+   *      GetStrokeColor), and its font's weight (FPDFFont_GetWeight, FPDFFont_GetFlags' ForceBold). Invisible text is
+   *      skipped: modes 3 and 7, or nothing painted with alpha above 0;
    *   2. the outline, in ems: FPDFFont_GetGlyphPath(font, argument, size), the argument being the char's Unicode value
    *      (GLYPH_ARG = unicode), or the forms in glyphArguments for ligatures and joined hyphens. Outlines are cached by
    *      font and argument for as long as the page stays loaded (see outlineCache);
@@ -1043,7 +1050,9 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
           // The origin on the 1/100 pt grid, then the glyph's own points relative to it (see placeOutline).
           const x0 = Math.round(((ox[first - lo] ?? 0) - crop.left) * OUTLINE_PRECISION) + placed.x0;
           const y0 = Math.round((crop.top - (oy[first - lo] ?? 0)) * OUTLINE_PRECISION) + placed.y0;
-          out.push({ charIndex: i, d: `M${x0 / OUTLINE_PRECISION} ${y0 / OUTLINE_PRECISION}${placed.tail}`, fill: paint.fill, stroke: paint.stroke });
+          const outline: GlyphOutline = { charIndex: i, d: `M${x0 / OUTLINE_PRECISION} ${y0 / OUTLINE_PRECISION}${placed.tail}`, fill: paint.fill, stroke: paint.stroke };
+          if (paint.weight > 0) outline.fontWeight = paint.weight;
+          out.push(outline);
         }
         i = next;
       }
@@ -1109,7 +1118,11 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
     const size = x.FPDFTextObj_GetFontSize(obj, mem) ? h.float(mem) : 0;
     x.FPDFText_GetMatrix(textPage, charIndex, mem); // FS_MATRIX: a b c d e f (floats)
     const matrix: [number, number, number, number] = [size * h.float(mem), size * h.float(mem + 4), size * h.float(mem + 8), size * h.float(mem + 12)];
-    return { font: x.FPDFTextObj_GetFont(obj), size, matrix, matrixKey: matrix.join(' '), fill, stroke };
+    const font = x.FPDFTextObj_GetFont(obj);
+    const weight = font ? x.FPDFFont_GetWeight(font) : -1;
+    const flags = font ? x.FPDFFont_GetFlags(font) : -1; // -1: PDFium could not read them
+    const forceBold = flags > 0 && (flags & FONT_FLAG_FORCE_BOLD) !== 0;
+    return { font, size, matrix, matrixKey: matrix.join(' '), fill, stroke, weight: forceBold ? Math.max(weight, FORCE_BOLD_WEIGHT) : weight };
   }
 
   /**
@@ -1308,6 +1321,8 @@ interface TextObjectPaint {
   matrixKey: string;
   fill: PdfColor | null;
   stroke: PdfColor | null;
+  /** FPDFFont_GetWeight (raised to FORCE_BOLD_WEIGHT for a ForceBold font); -1 or 0 when PDFium has none. */
+  weight: number;
 }
 
 /** A glyph in the outline cache: its em-space outline, and its placed path data by char matrix (placeOutline). */

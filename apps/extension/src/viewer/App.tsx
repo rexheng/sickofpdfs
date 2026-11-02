@@ -27,7 +27,18 @@ import {
   type ViewerStore,
   type ZoomMode,
 } from '@sop/viewer';
-import { MarkLayer, type PageLayerContext, PageList, type PageListApi, TextLayer, TextLayerController } from '@sop/viewer/react';
+import {
+  BOLD_STROKE_EM,
+  MarkLayer,
+  type PageLayerContext,
+  PageList,
+  type PageListApi,
+  TextLayer,
+  TextLayerController,
+  WORD_STARTS_STROKE_EM,
+  WordStartsController,
+  WordStartsLayer,
+} from '@sop/viewer/react';
 import { memo, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { sendRuntimeMessage } from '../shared/send-message';
 import { parseViewerUrl, type ViewerParams } from '../shared/viewer-url';
@@ -94,6 +105,7 @@ import { LocalFileCard } from './ui/LocalFileCard';
 import { PasswordDialog } from './ui/PasswordDialog';
 import { ScanHint } from './ui/ScanHint';
 import { useStore } from './use-store';
+import { noteScannedPageOnce, useWordStarts, wordStartsSwitch } from './word-starts';
 
 /**
  * The tab's one engine. Its worker starts at once, so PDFium is ready by the time the PDF has downloaded; not in a
@@ -327,7 +339,8 @@ function TabViewer({ params }: { params: ViewerParams }) {
   const viewVersion = useViewVersion(live?.store ?? null);
   const saveKind = useSaveView(save).state?.kind; // File → Save to library follows the save state
   const caretOn = useCaretBrowsing(); // View → Caret browsing shows its check
-  const menus = useMemo(() => buildMenus(commands), [commands, viewVersion, saveKind, caretOn]); // eslint-disable-line react-hooks/exhaustive-deps -- viewVersion, saveKind and caretOn are the triggers
+  const wordStartsOn = useWordStarts(); // View → Bold word starts shows its check
+  const menus = useMemo(() => buildMenus(commands), [commands, viewVersion, saveKind, caretOn, wordStartsOn]); // eslint-disable-line react-hooks/exhaustive-deps -- viewVersion, saveKind, caretOn and wordStartsOn are the triggers
 
   return (
     <div ref={root} className={styles.app}>
@@ -533,6 +546,8 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   const [scans] = useState(() => new ScanDetector(backend, doc.open.doc, doc.open.pages));
   // The page text everything reads (the text layer now; marks and find later): one glyph cache for the document.
   const [pageText] = useState(() => createPageTextProvider(backend, doc.open.doc));
+  const wordStarts = useWordStartsController(doc, pageText, scans, ui);
+  const wordStartsOn = useWordStarts();
   const api = useRef<PageListApi | null>(null);
   const [textLayers] = useState(
     () =>
@@ -577,6 +592,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       pageList: api,
       printMarks: notes === null ? null : { layer: notes.layer, text: pageText },
       caretBrowsing: { on: caretBrowsingSwitch.get, toggle: () => ui.showNote(caretBrowsingSwitch.toggle() ? CARET_ON_NOTE : CARET_OFF_NOTE) },
+      wordStarts: { on: wordStartsSwitch.get, toggle: wordStartsSwitch.toggle },
       ui,
     };
     return createCommands(ctx, { ...notes?.behaviours(), ...saveDecisionCommands(save) });
@@ -615,22 +631,34 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       }),
     [store, scans, textLayers],
   );
-  // Each page, bottom to top: its marks (and bold) and the features' page layers (Phase 2), find's highlights (Task 25),
-  // the selection and the text layer, then the links (Task 24).
+  // Each page, bottom to top: the bold word starts (R90), its marks (and bold) and the features' page layers (Phase 2),
+  // find's highlights (Task 25), the selection and the text layer, then the links (Task 24).
   const findLayer = find.pageLayer;
   const linksFor = nav.renderPage;
   const bold = useMemo(() => ({ backend, doc: doc.open.doc, text: pageText }), [doc, pageText]);
+  // With word starts on, a bold mark takes their weight, so a word the owner made bold reads as bold all through (R90).
+  const boldStrokeScale = wordStartsOn ? WORD_STARTS_STROKE_EM / BOLD_STROKE_EM : undefined;
   const renderPage = useCallback(
     (box: PageBox, ctx: PageLayerContext) => (
       <>
-        {notes !== null && <MarkLayer source={notes.layer} box={box} ctx={ctx} page={doc.open.pages[box.index]} bold={bold} />}
+        <WordStartsLayer controller={wordStarts} box={box} ctx={ctx} page={doc.open.pages[box.index]} />
+        {notes !== null && (
+          <MarkLayer
+            source={notes.layer}
+            box={box}
+            ctx={ctx}
+            page={doc.open.pages[box.index]}
+            bold={bold}
+            {...(boldStrokeScale !== undefined ? { boldStrokeScale } : {})}
+          />
+        )}
         {notes !== null && viewerFeatures().map((f) => f.PageLayer && <f.PageLayer key={f.id} host={notes.host} box={box} ctx={ctx} />)}
         {findLayer(box, ctx)}
         <TextLayer controller={textLayers} box={box} ctx={ctx} />
         {linksFor(box)}
       </>
     ),
-    [textLayers, findLayer, linksFor, notes, doc, bold],
+    [textLayers, findLayer, linksFor, notes, doc, bold, wordStarts, boldStrokeScale],
   );
   // Every render still waiting fails at once when the engine stops: the first one tells the viewer, the rest are quiet.
   const stopped = useRef(false);
@@ -712,6 +740,38 @@ function useNotes(
     };
   }, [doc, pageText, view, pageList, textLayers, save, jumps, ui]);
   return notes;
+}
+
+/**
+ * The document's bold word starts (R90), made once with the document and following the switch in every tab. A page in
+ * view with nothing to draw is checked for being a scan (no text and mostly a picture, or text with no glyphs to draw
+ * over a picture, as a scan's OCR layer is); the first such page in this tab gets R90's quiet note.
+ */
+function useWordStartsController(doc: OpenedDocument, pageText: ReturnType<typeof createPageTextProvider>, scans: ScanDetector, ui: ViewerUi): WordStartsController {
+  const [controller] = useState(() => {
+    const made: WordStartsController = new WordStartsController({
+      backend,
+      doc: doc.open.doc,
+      text: pageText,
+      onNothingToDraw: (pageIndex, hasText) => {
+        (hasText ? scans.isImagePage(pageIndex) : scans.isScannedPage(pageIndex)).then(
+          (scan) => scan && made.enabled && noteScannedPageOnce((text) => ui.showNote(text)),
+          () => {},
+        );
+      },
+    });
+    return made;
+  });
+  useEffect(() => {
+    controller.start();
+    controller.setEnabled(wordStartsSwitch.get());
+    const off = wordStartsSwitch.subscribe(() => controller.setEnabled(wordStartsSwitch.get()));
+    return () => {
+      off();
+      controller.dispose();
+    };
+  }, [controller]);
+  return controller;
 }
 
 /** The text layer's font: the engine's bundled Noto Sans (the spike measured canvas and DOM widths within 0.02 px with it). */

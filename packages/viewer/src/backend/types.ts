@@ -222,6 +222,13 @@ export interface GlyphOutline {
   fill: PdfColor | null;
   /** FPDFText_GetStrokeColor; null when the text is filled but not stroked (render modes 0 and 4). */
   stroke: PdfColor | null;
+  /**
+   * The font's weight as PDFium reads it (FPDFFont_GetWeight: the descriptor's stem width scaled to CSS weights, so a
+   * regular face reads about 350 to 540 and a bold one 570 and up), and at least 700 for a font flagged ForceBold.
+   * Missing when PDFium has no weight for the font (a standard font without a descriptor). Bold word starts (R90) draw
+   * text that is already bold lighter, so it does not smudge.
+   */
+  fontWeight?: number;
 }
 
 /**

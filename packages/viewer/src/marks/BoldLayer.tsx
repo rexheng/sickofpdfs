@@ -44,6 +44,12 @@ export interface BoldLayerProps {
   text: BoldTextSource;
   /** Runs once the bold for the current `ranges` is in the DOM (S13 records its perf mark here). */
   onDrawn?: () => void;
+  /**
+   * The stroke as a multiple of BOLD_STROKE_EM (default 1). With bold word starts on (R90), bold marks take the word
+   * starts' heavier stroke, so a word the owner made bold still reads as bold all through, not lighter than the word
+   * starts around it. Only the screen: print paints bold marks at BOLD_STROKE_EM.
+   */
+  strokeScale?: number;
 }
 
 /**
@@ -106,10 +112,13 @@ export function undrawnRuns(glyphs: readonly Glyph[], start: number, end: number
   return runs;
 }
 
-/** Reads one bold range's outlines and strong-style rects. BoldLayer draws them as SVG; print paints the same ones on a canvas. */
-export async function drawBoldRange(p: Pick<BoldLayerProps, 'backend' | 'doc' | 'pageIndex' | 'text'>, r: BoldRange): Promise<DrawnRange> {
-  const count = Math.max(0, r.end - r.start);
-  const [outlines, page] = await Promise.all([p.backend.getGlyphOutlines(p.doc, p.pageIndex, r.start, count), p.text.glyphs(p.pageIndex)]);
+/**
+ * Glyph outlines as paths to draw bold: one path per paint (fill, stroke colour and stroke width), each glyph filled in
+ * its own colour and stroked `strokeOf(outline)` points wide in it. The width is rounded to a multiple of `quantum`
+ * points, so a page in a few sizes is a few paths. Bold marks (BOLD_STROKE_EM of the font size) and bold word starts
+ * (R90, a heavier stroke) are both drawn this way.
+ */
+export function glyphPaths(outlines: Iterable<GlyphOutline>, strokeOf: (o: GlyphOutline) => number, quantum = 0.001): DrawnRange['glyphs'] {
   const byPaint = new Map<string, DrawnRange['glyphs'][number]>();
   for (const o of outlines) {
     const paint = o.fill ?? o.stroke;
@@ -117,20 +126,27 @@ export async function drawBoldRange(p: Pick<BoldLayerProps, 'backend' | 'doc' | 
     const fill = o.fill ? css(o.fill) : 'none';
     // Filled text widens in its fill colour; stroked text in its stroke colour.
     const stroke = css(o.stroke ?? paint);
-    const width = Math.round(BOLD_STROKE_EM * (page.glyphs[o.charIndex]?.fontSize ?? 0) * 1000) / 1000;
+    const width = Math.round(Math.round(strokeOf(o) / quantum) * quantum * 1000) / 1000;
     const key = `${fill} ${stroke} ${width}`;
     const group = byPaint.get(key);
     if (group) group.d += o.d;
     else byPaint.set(key, { d: o.d, fill, stroke, width });
   }
-  const glyphs = [...byPaint.values()];
+  return [...byPaint.values()];
+}
+
+/** Reads one bold range's outlines and strong-style rects. BoldLayer draws them as SVG; print paints the same ones on a canvas. */
+export async function drawBoldRange(p: Pick<BoldLayerProps, 'backend' | 'doc' | 'pageIndex' | 'text'>, r: BoldRange): Promise<DrawnRange> {
+  const count = Math.max(0, r.end - r.start);
+  const [outlines, page] = await Promise.all([p.backend.getGlyphOutlines(p.doc, p.pageIndex, r.start, count), p.text.glyphs(p.pageIndex)]);
+  const glyphs = glyphPaths(outlines, (o) => BOLD_STROKE_EM * (page.glyphs[o.charIndex]?.fontSize ?? 0));
   const strong = (await Promise.all(undrawnRuns(page.glyphs, r.start, r.end, outlines).map((u) => p.text.rects(p.pageIndex, u.start, u.end - u.start)))).flat();
   return { glyphs, strong };
 }
 
 /** The bold marks of one page. See the file comment. */
 export function BoldLayer(props: BoldLayerProps): JSX.Element {
-  const { backend, doc, pageIndex, page, viewRotation, ranges, text, onDrawn } = props;
+  const { backend, doc, pageIndex, page, viewRotation, ranges, text, onDrawn, strokeScale = 1 } = props;
   // What is on screen, for this document and page only.
   const [state, setState] = useState<{ doc: DocHandle; pageIndex: number; drawn: ReadonlyMap<string, DrawnRange> }>(() => ({ doc, pageIndex, drawn: new Map() }));
   const drawn = state.doc === doc && state.pageIndex === pageIndex ? state.drawn : NOTHING_DRAWN;
@@ -208,7 +224,7 @@ export function BoldLayer(props: BoldLayerProps): JSX.Element {
                 </g>
               ))}
               {r.glyphs.map((g, n) => (
-                <path key={`g${n}`} d={g.d} fill={g.fill} stroke={g.stroke} strokeWidth={g.width} strokeLinejoin="round" />
+                <path key={`g${n}`} d={g.d} fill={g.fill} stroke={g.stroke} strokeWidth={g.width * strokeScale} strokeLinejoin="round" />
               ))}
             </g>
           );

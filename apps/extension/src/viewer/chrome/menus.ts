@@ -15,7 +15,7 @@ const LAYOUT: { id: string; label: string; items: (ViewerCommandId | typeof SEPA
       'view.fitWidth', 'view.fitPage', 'view.zoomIn', 'view.zoomOut', SEPARATOR,
       'view.rotateCw', 'view.rotateCcw', SEPARATOR,
       'view.twoPage', 'view.presentation', SEPARATOR,
-      'view.caretBrowsing', SEPARATOR,
+      'view.wordStarts', 'view.caretBrowsing', SEPARATOR,
       'notes.panel', // Shift+F4, with a tick while it is open (TB2/TB4 critics)
       'view.toggleRail',
     ],

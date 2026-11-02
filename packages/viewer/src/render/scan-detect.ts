@@ -17,6 +17,7 @@ const BUDGET_MS = 10;
  */
 export class ScanDetector {
   private readonly answers = new Map<number, Promise<boolean>>();
+  private readonly imagePages = new Map<number, Promise<boolean>>();
 
   constructor(
     private readonly backend: PdfBackend,
@@ -25,22 +26,38 @@ export class ScanDetector {
   ) {}
 
   isScannedPage(pageIndex: number): Promise<boolean> {
-    let answer = this.answers.get(pageIndex);
-    if (!answer) {
-      answer = this.detect(pageIndex);
-      this.answers.set(pageIndex, answer);
-      answer.catch(() => this.answers.delete(pageIndex)); // an engine failure may be asked again
-    }
-    return answer;
+    return once(this.answers, pageIndex, () => this.detect(pageIndex));
+  }
+
+  /**
+   * Whether images cover at least a quarter of the page, whatever its text. A scan with an OCR text layer has text, but
+   * no glyph a reading aid can draw (bold word starts, R90): such a page is a scan too.
+   */
+  isImagePage(pageIndex: number): Promise<boolean> {
+    return once(this.imagePages, pageIndex, async () => {
+      const page = this.pages[pageIndex];
+      if (!page) return false;
+      const { objects } = await this.backend.listPageObjects(this.doc, pageIndex, { maxObjects: MAX_OBJECTS, budgetMs: BUDGET_MS });
+      const imageArea = objects.filter((o) => o.type === 'image').reduce((sum, o) => sum + o.bounds.width * o.bounds.height, 0);
+      return imageArea >= MIN_IMAGE_SHARE * page.width * page.height;
+    });
   }
 
   private async detect(pageIndex: number): Promise<boolean> {
-    const page = this.pages[pageIndex];
-    if (!page) return false;
+    if (!this.pages[pageIndex]) return false;
     const text = await this.backend.getPageText(this.doc, pageIndex);
     if (text.replace(/\s/g, '').length >= MIN_TEXT_CHARS) return false;
-    const { objects } = await this.backend.listPageObjects(this.doc, pageIndex, { maxObjects: MAX_OBJECTS, budgetMs: BUDGET_MS });
-    const imageArea = objects.filter((o) => o.type === 'image').reduce((sum, o) => sum + o.bounds.width * o.bounds.height, 0);
-    return imageArea >= MIN_IMAGE_SHARE * page.width * page.height;
+    return this.isImagePage(pageIndex);
   }
+}
+
+/** One answer per page: asked again only after an engine failure. */
+function once(answers: Map<number, Promise<boolean>>, pageIndex: number, ask: () => Promise<boolean>): Promise<boolean> {
+  let answer = answers.get(pageIndex);
+  if (!answer) {
+    answer = ask();
+    answers.set(pageIndex, answer);
+    answer.catch(() => answers.delete(pageIndex)); // an engine failure may be asked again
+  }
+  return answer;
 }

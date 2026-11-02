@@ -63,6 +63,8 @@ export interface MarkLayerProps {
   page: PageSize;
   /** What BoldLayer needs to read glyph outlines. Without it bold is not drawn. */
   bold?: Pick<BoldLayerProps, 'backend' | 'doc' | 'text'>;
+  /** BoldLayer's strokeScale: heavier while bold word starts are on (R90), so bold marks match them. */
+  boldStrokeScale?: number;
 }
 
 /** Underline and strikethrough at 100% zoom, CSS px (the token --sop-mark-line-w), and the dotted underline's dots. */
@@ -140,7 +142,7 @@ export function markPaths(items: readonly MarkLayerItem[], o: { page: PageSize; 
 }
 
 /** One page's marks. See the file comment. */
-export const MarkLayer = memo(function MarkLayer({ source, box, ctx, page, bold }: MarkLayerProps): JSX.Element {
+export const MarkLayer = memo(function MarkLayer({ source, box, ctx, page, bold, boldStrokeScale }: MarkLayerProps): JSX.Element {
   const index = box.index;
   const model = useSyncExternalStore(source.subscribe, () => source.page(index));
   const maskId = `sop-mark-focus-${useId().replace(/[^a-zA-Z0-9_-]/gu, '')}`;
@@ -192,6 +194,7 @@ export const MarkLayer = memo(function MarkLayer({ source, box, ctx, page, bold 
           viewRotation={(((rotation - page.rotation) % 360) + 360) % 360 as PageSize['rotation']}
           ranges={model.bold}
           onDrawn={() => source.drawn?.(index, 'bold')}
+          {...(boldStrokeScale !== undefined ? { strokeScale: boldStrokeScale } : {})}
         />
       )}
     </>
