@@ -310,7 +310,10 @@ The "+ New" button offers Upload PDF, Open file and Paste link. In an Incognito 
 - **Auto tags.** They appear straight away as lighter chips marked "auto". One click keeps one (it becomes the owner's own tag) or removes it. A removed auto tag never comes back on that reading. There are three kinds:
   - **Course:** a course code found in the link, the folder or page 1 (such as EC1A1, CS50 or 14.01) becomes "Course: EC1A1". This brings the Courses grouping forward as tags; the Courses page stays in Release 3.
   - **Your tags:** once the owner has given a tag to 3 or more readings, a new reading that is close in meaning to them gets that tag as auto.
-  - **Topics:** from 6 readings on, readings that are close in meaning are grouped into topics. Each topic is named from its most telling words, such as "Inflation · Monetary Policy". Renaming a topic keeps the new name.
+  - **Topics:** from 6 readings on, readings that are close in meaning are grouped into topics. Renaming a topic keeps the new name.
+    - **Naming (R92b).** A topic takes the name of the closest subject in a bundled list of about 300 academic subjects, drawn from common university course catalogues: "Machine Learning", "Econometrics", "Microeconomics", "Algorithms", "Programming", "Statistics", "Computer Vision" and so on. The match is by meaning, using the same local model, with the list's vectors made at build time.
+    - Only if no subject is close enough does a topic take its two most telling phrases, in their natural order ("Monetary Policy · Inflation").
+    - Generic words never name a topic: introduction, lecture, notes, chapter, changes, periods, think, and author names.
   - At most 3 auto topic tags go on one reading.
 - **How it works.** The bundled MiniLM model (the filter's tie-breaker) turns each saved reading's title and abstract, or its opening text, into a meaning vector. This happens on this computer, in a worker, after the save and off the reading path.
   - The vectors stay local. They are never backed up or synced, and are rebuilt when needed.
