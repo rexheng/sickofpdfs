@@ -437,7 +437,11 @@ describe('clusterTopics: names', () => {
     const { lib, topics } = names(opts);
     for (const s of GROUPS) {
       const name = topicHolding(topics, lib.groups[s.prefix][0]).name;
-      expect(new Set(wordsOf(name).map((w) => w.toLowerCase())), `name of the "${s.prefix}" topic is "${name}"`).toEqual(new Set(s.tell));
+      const got = new Set(wordsOf(name).map((w) => w.toLowerCase()));
+      // R92b (2 Nov): a term may be a two-word phrase. In the titles-only variant the two telling words sit side by side in every title, so they are one
+      // phrase and a second term follows; the name must hold both words.
+      if (opts?.titleOnly) for (const w of s.tell) expect(got, `name of the "${s.prefix}" topic is "${name}"`).toContain(w);
+      else expect(got, `name of the "${s.prefix}" topic is "${name}"`).toEqual(new Set(s.tell));
     }
   });
 
@@ -487,6 +491,8 @@ describe('clusterTopics: names', () => {
     const retitled = lib.docs.map((d) => (a.includes(d.id) ? makeDoc(d.id, d.vector, 'Sourdough fermentation starter', 'sourdough sourdough fermentation fermentation crumb') : d));
     const found = clusterTopics(retitled);
     const name = topicHolding(found, 'a1').name;
-    expect(new Set(wordsOf(name).map((w) => w.toLowerCase())), `name is "${name}"`).toEqual(new Set(['sourdough', 'fermentation']));
+    // R92b (2 Nov): a term may be a two-word phrase ("Sourdough Fermentation"), so the name holds both telling words, not only those two.
+    const words = wordsOf(name).map((w) => w.toLowerCase());
+    expect(words, `name is "${name}"`).toEqual(expect.arrayContaining(['sourdough', 'fermentation']));
   });
 });

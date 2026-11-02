@@ -21,10 +21,12 @@ import {
   withoutNames,
   type Doc,
   type DocumentId,
+  type Subject,
 } from '@sop/core';
 import { CATEGORISER_TAB } from '../store/change-bus';
 import { createStoreClient, type StoreClient } from '../store/client';
 import type { CategoriseInput } from '../store/tags-api';
+import { loadSubjects } from './load-subjects';
 import type { Embedder } from '../viewer/filter/embedder';
 import { loadEmbedder } from '../viewer/filter/load-embedder';
 
@@ -120,6 +122,8 @@ export function startCategoriseController(o: ControllerOptions): CategoriseContr
   const pending = new Map<string, number>();
   const failures = new Map<string, number>();
   const textWaits = new Map<string, number>();
+  /** The bundled academic subjects (R92b), loaded when the first topics are made. */
+  let subjects: Subject[] | null = null;
   let backfillDue = Date.now() + timing.startDelayMs;
   let backfillDone = false;
   /** Topics and suggestions need doing at this time (null: nothing to do). */
@@ -232,9 +236,11 @@ export function startCategoriseController(o: ControllerOptions): CategoriseContr
   async function refreshTopics(): Promise<void> {
     const began = performance.now();
     const corpus = await store.categoriseCorpus(CORPUS_LIMIT);
-    const docs: Doc[] = corpus.map((d) => ({ id: d.id, vector: d.vector, text: { title: d.title, abstract: d.abstract } }));
+    // The authors' names never name a topic: they are taken out of the words topic names are picked from.
+    const docs: Doc[] = corpus.map((d) => ({ id: d.id, vector: d.vector, text: { title: withoutNames(d.title, d.authors), abstract: d.abstract } }));
     await sleep(0); // the clustering is one burst on this thread; let a waiting message through first
-    const topics = clusterTopics(docs);
+    subjects ??= loadSubjects();
+    const topics = clusterTopics(docs, { subjects });
     const clustered = performance.now();
     await store.applyTopics(topics.map((t) => ({ key: t.key, docIds: t.docIds, name: t.name })));
     report('topics', { docs: docs.length, topics: topics.length, clusterMs: Math.round(clustered - began), totalMs: Math.round(performance.now() - began) });

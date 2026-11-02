@@ -6,6 +6,8 @@
 //   position in that order, and a topic's `key` is a hash of its sorted member ids, so the same members always have the same key.
 // - A topic needs at least MIN_TOPIC_SIZE readings, and there is no topic at all until the library has TOPIC_MIN_DOCS readings.
 //   A reading that fits nowhere stays out. A reading may be in up to MAX_TOPICS_PER_DOC topics.
+// - A topic is named (R92b) after the closest bundled academic subject when one is close enough, else by its two most telling terms
+//   (a word or a two-word phrase), never by a generic word (introduction, lecture, notes, chapter, changes, periods, think, ...).
 // - `suggestTags` only offers a tag the owner has given to at least TAG_MIN_DOCS readings (the 3-reading rule), never one in
 //   `removed`, and at most MAX_SUGGESTIONS.
 // - `related` is the closest readings by meaning, never the reading itself.
@@ -23,7 +25,7 @@ export interface Topic {
   /** Stable for the same member set: a hash of the sorted member ids. */
   key: string;
   docIds: string[];
-  /** The two most telling words, Title Case, joined by " · ". */
+  /** A subject from the bundled list ("Machine Learning"), else the two most telling terms in Title Case joined by " · " ("Monetary Policy · Inflation"). */
   name: string;
 }
 
@@ -43,8 +45,10 @@ export const TAG_MIN_DOCS = 3;
 export const SUGGEST_SIMILARITY = 0.25;
 /** The most tags suggested for one reading. */
 export const MAX_SUGGESTIONS = 3;
-/** Words in a topic's name. */
-export const TOPIC_NAME_WORDS = 2;
+/** Terms in a topic's name when no subject names it: a term is a word or a two-word phrase. */
+export const TOPIC_NAME_TERMS = 2;
+/** A topic takes the name of the subject closest to its centre when the cosine is at least this (R92b). */
+export const SUBJECT_SIMILARITY = 0.36;
 
 // ---- vectors ---------------------------------------------------------------------------------------------------------------------
 
@@ -193,6 +197,14 @@ export function topicKey(docIds: readonly string[]): string {
 }
 
 // ---- names ------------------------------------------------------------------------------------------------------------------------
+//
+// R92b. A topic is named, in this order, by:
+//   1. the subject closest in meaning to the topic's centre, from the bundled list of academic subjects (subjects.ts), when it is close
+//      enough (SUBJECT_SIMILARITY) and no larger topic has taken it;
+//   2. otherwise its two most telling terms, a term being a word or a two-word phrase ("Monetary Policy"), each in the order it is written,
+//      the more telling first.
+// Generic words (introduction, lecture, notes, chapter, changes, periods, think, ...) and the authors' names (taken out of the text by the
+// caller) never name a topic.
 
 const STOP_WORDS = new Set(
   (
@@ -208,13 +220,23 @@ const STOP_WORDS = new Set(
     'work works problem problems case cases example examples well often many much make makes made like need needs given provide provides different various several ' +
     'general introduction overview part parts contents preface foreword acknowledgments references appendix copyright rights reserved http https www com org pdf doi arxiv ' +
     'can cannot able even still yet since whether either neither both each every add third fourth fifth available free online book books reader readers read ' +
-    'lecturer lecturers instructor instructors professor prof dr mr ms mrs'
+    'lecturer lecturers instructor instructors professor prof dr mr ms mrs ' +
+    // generic words that name nothing (R92b): parts of a course, of a document, of a term, and fillers
+    'change changes changed changing period periods think thinking handout handouts solution solutions set sets exam exams week weeks term terms semester ' +
+    'spring fall autumn winter summer michaelmas lent hilary trinity slide slides tutorial tutorials worksheet assignment assignments homework review ' +
+    'overview summary draft published publisher springer wiley elsevier cambridge oxford mit stanford harvard college faculty authors author ' +
+    'download click pages exercise exercises question questions answer answers true false due late accepted received submitted keywords key words ' +
+    'way ways number numbers value values form forms family highlight highlights significant significantly large small high low good better best ' +
+    'important main major minor simple standard general special particular specific certain possible likely able sample samples data time times ' +
+    'year years day days part parts level levels type types kind kinds line lines point points step steps research analysis system systems ' +
+    'second third fourth fifth sixth seventh eighth ninth tenth day month months today recent recently previous following next last early late'
   ).split(/\s+/),
 );
 
-const WORD = /\p{L}[\p{L}\p{M}'’-]*\p{L}/gu;
+// A word, or the punctuation that ends a phrase (so "inflation. Monetary policy" is not the phrase "inflation monetary").
+const TOKEN = /(\p{L}[\p{L}\p{M}'’-]*\p{L})|[.,;:!?()[\]{}"“”—–/\n]+/gu;
 
-/** Lower-case letters of a word with a plural or "ing" form folded, so "networks" and "network" count as one word. */
+/** Lower-case letters of a word with a plural form folded, so "networks" and "network" count as one word. */
 function stemOf(word: string): string {
   let w = word;
   if (w.length > 4 && w.endsWith('ies')) w = `${w.slice(0, -3)}y`;
@@ -223,29 +245,43 @@ function stemOf(word: string): string {
   return w;
 }
 
-/** The meaningful words of a text: letters only (numbers and codes are left out), at least 3 letters, no stop words. Keeps the surface form. */
-function wordsOf(text: string): { stem: string; surface: string }[] {
-  const out: { stem: string; surface: string }[] = [];
-  for (const m of text.normalize('NFKC').matchAll(WORD)) {
-    const surface = m[0].replace(/[’']/g, "'").toLowerCase();
-    if (surface.length < 3 || STOP_WORDS.has(surface)) continue;
-    const stem = stemOf(surface);
-    if (STOP_WORDS.has(stem)) continue;
-    out.push({ stem, surface });
-  }
-  return out;
+interface Token {
+  stem: string;
+  surface: string;
 }
 
-const titleCase = (w: string): string => w.replace(/(^|[-'])(\p{L})/gu, (_m, pre: string, c: string) => pre + c.toUpperCase());
+/** A text as runs of meaningful words: letters only (numbers and codes are left out), at least 3 letters, no stop words. A stop word or a punctuation mark ends a run. */
+function runsOf(text: string): Token[][] {
+  const runs: Token[][] = [];
+  let run: Token[] = [];
+  const end = (): void => {
+    if (run.length > 0) runs.push(run);
+    run = [];
+  };
+  for (const m of text.normalize('NFKC').matchAll(TOKEN)) {
+    if (m[1] === undefined) {
+      end();
+      continue;
+    }
+    const surface = m[1].replace(/[’']/g, "'").toLowerCase();
+    const stem = stemOf(surface);
+    if (surface.length < 3 || STOP_WORDS.has(surface) || STOP_WORDS.has(stem)) end();
+    else run.push({ stem, surface });
+  }
+  end();
+  return runs;
+}
+
+const titleCase = (w: string): string => w.replace(/(^|[-' ])(\p{L})/gu, (_m, pre: string, c: string) => pre + c.toUpperCase());
 
 interface WordStats {
-  /** The number of readings each word is in (the whole library). */
+  /** The number of readings each term (a word, or two words with a space) is in: the whole library. */
   df: Map<string, number>;
-  /** The most used spelling of each word. */
+  /** The most used spelling of each term. */
   surface: Map<string, string>;
-  /** Each reading's words and how often it uses them. */
+  /** Each reading's terms and how often it uses them. */
   perDoc: Map<string, Map<string, number>>;
-  /** The words of each reading's title. */
+  /** The terms of each reading's title. */
   inTitle: Map<string, Set<string>>;
   n: number;
 }
@@ -256,64 +292,100 @@ function wordStats(units: readonly Unit[]): WordStats {
   const perDoc = new Map<string, Map<string, number>>();
   const inTitle = new Map<string, Set<string>>();
   for (const u of units) {
-    const titleWords = wordsOf(u.text.title);
-    inTitle.set(u.id, new Set(titleWords.map((w) => w.stem)));
-    const words = [...titleWords, ...wordsOf(u.text.abstract)];
     const counts = new Map<string, number>();
-    for (const w of words) {
-      counts.set(w.stem, (counts.get(w.stem) ?? 0) + 1);
-      const forms = spelled.get(w.stem) ?? new Map<string, number>();
-      forms.set(w.surface, (forms.get(w.surface) ?? 0) + 1);
-      spelled.set(w.stem, forms);
+    const titled = new Set<string>();
+    const see = (key: string, surface: string, inTitleText: boolean): void => {
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      const forms = spelled.get(key) ?? new Map<string, number>();
+      forms.set(surface, (forms.get(surface) ?? 0) + 1);
+      spelled.set(key, forms);
+      if (inTitleText) titled.add(key);
+    };
+    for (const [text, isTitle] of [[u.text.title, true], [u.text.abstract, false]] as const) {
+      for (const run of runsOf(text)) {
+        run.forEach((w, i) => {
+          see(w.stem, w.surface, isTitle);
+          const next = run[i + 1];
+          if (next !== undefined) see(`${w.stem} ${next.stem}`, `${w.surface} ${next.surface}`, isTitle);
+        });
+      }
     }
     perDoc.set(u.id, counts);
-    for (const stem of counts.keys()) df.set(stem, (df.get(stem) ?? 0) + 1);
+    inTitle.set(u.id, titled);
+    for (const key of counts.keys()) df.set(key, (df.get(key) ?? 0) + 1);
   }
   const surface = new Map<string, string>();
-  for (const [stem, forms] of spelled) {
+  for (const [key, forms] of spelled) {
     const best = [...forms].sort((a, b) => b[1] - a[1] || a[0].length - b[0].length || byCode(a[0], b[0]))[0];
-    if (best) surface.set(stem, best[0]);
+    if (best) surface.set(key, best[0]);
   }
   return { df, surface, perDoc, inTitle, n: units.length };
 }
 
 /**
- * The words that tell a topic apart: for each word, the share of the topic's readings that use it, times how rare it is in the whole
- * library (inverse document frequency), a little more when it is in the readings' titles. A word only one reading of the topic uses
- * does not describe the topic, so words used by two or more come first. Best first; ties by the word.
+ * The terms that tell a topic apart, best first. For each term (a word, or a two-word phrase), the share of the topic's readings that use
+ * it, times how rare it is in the whole library (inverse document frequency), a little more when it is in the readings' titles. A term only
+ * one reading of the topic uses does not describe the topic, so terms used by two or more come first; on a tie a phrase comes before a
+ * word (so a phrase is chosen when it is as telling as its words), then the term used most often, then the term itself.
  */
-function tellingWords(memberIds: readonly string[], stats: WordStats): string[] {
+function tellingTerms(memberIds: readonly string[], stats: WordStats): string[] {
   const inTopic = new Map<string, number>();
   const titled = new Map<string, number>();
   for (const id of memberIds) {
-    for (const stem of stats.perDoc.get(id)?.keys() ?? []) inTopic.set(stem, (inTopic.get(stem) ?? 0) + 1);
-    for (const stem of stats.inTitle.get(id) ?? []) titled.set(stem, (titled.get(stem) ?? 0) + 1);
+    for (const key of stats.perDoc.get(id)?.keys() ?? []) inTopic.set(key, (inTopic.get(key) ?? 0) + 1);
+    for (const key of stats.inTitle.get(id) ?? []) titled.set(key, (titled.get(key) ?? 0) + 1);
   }
   const shared = memberIds.length >= 2 ? 2 : 1;
-  const scored: { stem: string; score: number; common: boolean }[] = [];
-  for (const [stem, count] of inTopic) {
-    const idf = Math.log((stats.n + 1) / ((stats.df.get(stem) ?? 0) + 1)) + 1;
-    const titleShare = (titled.get(stem) ?? 0) / memberIds.length;
-    scored.push({ stem, score: (count / memberIds.length) * idf * (1 + 0.5 * titleShare), common: count >= shared });
+  const scored: { key: string; score: number; common: boolean; words: number; total: number }[] = [];
+  for (const [key, count] of inTopic) {
+    let total = 0;
+    for (const id of memberIds) total += stats.perDoc.get(id)?.get(key) ?? 0;
+    const idf = Math.log((stats.n + 1) / ((stats.df.get(key) ?? 0) + 1)) + 1;
+    const titleShare = (titled.get(key) ?? 0) / memberIds.length;
+    scored.push({ key, score: (count / memberIds.length) * idf * (1 + 0.5 * titleShare), common: count >= shared, words: key.includes(' ') ? 2 : 1, total });
   }
-  scored.sort((a, b) => Number(b.common) - Number(a.common) || b.score - a.score || byCode(a.stem, b.stem));
-  return scored.map((s) => s.stem);
+  scored.sort((a, b) => Number(b.common) - Number(a.common) || b.score - a.score || b.words - a.words || b.total - a.total || byCode(a.key, b.key));
+  return scored.map((t) => t.key);
 }
 
-function nameOf(words: readonly string[], count: number, stats: WordStats): string {
-  return words
-    .slice(0, count)
-    .map((stem) => titleCase(stats.surface.get(stem) ?? stem))
-    .join(' · ');
+/** The first `count` terms that share no word with an earlier one ("monetary policy" and then "policy" is not two terms), as a name. */
+function phraseName(terms: readonly string[], count: number, stats: WordStats): string {
+  const used = new Set<string>();
+  const picked: string[] = [];
+  for (const term of terms) {
+    const words = term.split(' ');
+    if (words.some((w) => used.has(w))) continue;
+    for (const w of words) used.add(w);
+    picked.push(titleCase(stats.surface.get(term) ?? term));
+    if (picked.length === count) break;
+  }
+  return picked.join(' · ');
+}
+
+/** A bundled academic subject and its meaning vector. */
+export interface Subject {
+  name: string;
+  vector: Float32Array;
 }
 
 // ---- topics -----------------------------------------------------------------------------------------------------------------------
 
+/** The centre of some readings: their unit vectors added up in the order given and scaled to length 1. */
+function centreOf(vectors: readonly Float32Array[]): Float32Array | null {
+  const first = vectors[0];
+  if (first === undefined) return null;
+  const sum = new Float32Array(first.length);
+  for (const v of vectors) for (let i = 0; i < sum.length; i++) sum[i] = (sum[i]) + (v[i]);
+  return unitOf(sum);
+}
+
 /**
  * Groups readings that are close in meaning into topics. See the file's header for what is promised. `opts.minDocs` is the number of
- * readings the library must hold before any topic is made (default TOPIC_MIN_DOCS).
+ * readings the library must hold before any topic is made (default TOPIC_MIN_DOCS). `opts.subjects` is the bundled list of academic
+ * subjects with their vectors (R92b): a topic takes the name of the closest one when it is close enough; without the list, or when none is
+ * close enough, it is named by its two most telling terms.
  */
-export function clusterTopics(docs: Doc[], opts?: { minDocs?: number }): Topic[] {
+export function clusterTopics(docs: Doc[], opts?: { minDocs?: number; subjects?: readonly Subject[] }): Topic[] {
   const minDocs = opts?.minDocs ?? TOPIC_MIN_DOCS;
   const units = prepare(docs);
   if (units.length < Math.max(minDocs, MIN_TOPIC_SIZE)) return [];
@@ -344,22 +416,49 @@ export function clusterTopics(docs: Doc[], opts?: { minDocs?: number }): Topic[]
     for (const c of candidates.slice(0, MAX_TOPICS_PER_DOC - own.length)) own.push(c.gi);
     if (own.length > 0) joined.set(i, own);
   });
-  const finalMembers: string[][] = hard.map(() => []);
-  for (const [i, gs] of joined) for (const gi of gs) (finalMembers[gi]).push((units[i]).id);
+  const finalMembers: number[][] = hard.map(() => []);
+  for (const [i, gs] of joined) for (const gi of gs) (finalMembers[gi]).push(i);
 
   const stats = wordStats(units);
-  const topics = finalMembers.map((ids) => {
-    const docIds = [...ids].sort(byCode);
-    return { key: topicKey(docIds), docIds, words: tellingWords(docIds, stats) };
+  const topics = finalMembers.map((indexes) => {
+    const docIds = indexes.map((i) => (units[i]).id).sort(byCode);
+    return { key: topicKey(docIds), docIds, indexes };
   });
   // Biggest first, then by key, so the order does not depend on how the groups were found.
   topics.sort((a, b) => b.docIds.length - a.docIds.length || byCode(a.key, b.key));
 
-  // Names are made in that order; a name already used gets one more word, and then a number, so no two topics read the same.
+  const byId = new Map(units.map((u) => [u.id, u]));
+  const subjects = (opts?.subjects ?? []).flatMap((s) => {
+    const v = unitOf(s.vector);
+    return v === null || typeof s.name !== 'string' || s.name === '' ? [] : [{ name: s.name, vector: v }];
+  });
+
+  // Names are made in that order. A subject goes to the first (biggest) topic it is close enough to; a phrase name already used gets one
+  // more term, and then a number, so no two topics read the same.
   const used = new Set<string>();
+  const subjectsTaken = new Set<string>();
   return topics.map((t) => {
-    let name = nameOf(t.words, TOPIC_NAME_WORDS, stats);
-    for (let more = TOPIC_NAME_WORDS + 1; (name === '' || used.has(name)) && more <= TOPIC_NAME_WORDS + 2; more++) name = nameOf(t.words, more, stats) || name;
+    let name = '';
+    if (subjects.length > 0) {
+      const centre = centreOf(t.docIds.map((id) => (byId.get(id) as Unit).v));
+      if (centre !== null) {
+        let best: { name: string; score: number } | null = null;
+        for (const s of subjects) {
+          if (subjectsTaken.has(s.name)) continue;
+          const score = dot(centre, s.vector);
+          if (score >= SUBJECT_SIMILARITY && (best === null || score > best.score || (score === best.score && byCode(s.name, best.name) < 0))) best = { name: s.name, score };
+        }
+        if (best !== null) {
+          name = best.name;
+          subjectsTaken.add(name);
+        }
+      }
+    }
+    if (name === '' || used.has(name)) {
+      const terms = tellingTerms(t.docIds, stats);
+      name = phraseName(terms, TOPIC_NAME_TERMS, stats);
+      for (let more = TOPIC_NAME_TERMS + 1; (name === '' || used.has(name)) && more <= TOPIC_NAME_TERMS + 2; more++) name = phraseName(terms, more, stats) || name;
+    }
     if (name === '') name = 'Related readings';
     let unique = name;
     for (let i = 2; used.has(unique); i++) unique = `${name} (${i})`;

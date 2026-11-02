@@ -95,6 +95,8 @@ export interface EmbeddingInput {
 export interface CorpusDoc {
   id: DocumentId;
   title: string;
+  /** The authors' names, so the categoriser can keep them out of topic names. */
+  authors: string[];
   abstract: string;
   vector: Float32Array;
   /** Tags taken off this reading. */
@@ -771,14 +773,21 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
           removed.set(str(r, 'document_id'), list);
         }
         return select(
-          `SELECT d.id AS id, d.title AS title, e.abstract AS abstract, e.vector AS vector, e.dim AS dim
+          `SELECT d.id AS id, d.title AS title, d.authors AS authors, e.abstract AS abstract, e.vector AS vector, e.dim AS dim
            FROM embeddings e JOIN documents d ON d.id = e.document_id WHERE ${LIVE} ORDER BY d.created_at DESC, d.id LIMIT ?`,
           [limit],
         ).flatMap((r): CorpusDoc[] => {
           const vector = vectorOf(r.vector, num(r, 'dim'));
           if (vector === null) return [];
           const id = str(r, 'id') as DocumentId;
-          return [{ id, title: maybeStr(r, 'title') ?? '', abstract: str(r, 'abstract'), vector, removed: removed.get(id) ?? [] }];
+          let authors: string[] = [];
+          try {
+            const parsed: unknown = JSON.parse(str(r, 'authors'));
+            if (Array.isArray(parsed)) authors = parsed.filter((a): a is string => typeof a === 'string');
+          } catch {
+            // no authors
+          }
+          return [{ id, title: maybeStr(r, 'title') ?? '', authors, abstract: str(r, 'abstract'), vector, removed: removed.get(id) ?? [] }];
         });
       }),
 
