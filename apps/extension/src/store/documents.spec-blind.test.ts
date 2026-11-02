@@ -208,11 +208,12 @@ describe('a PDF that was never saved leaves no trace', () => {
 describe('opening the library file', () => {
   it('migrate lands on schema v2 with the safety settings the spec asks for: foreign keys on, secure delete on, synchronous FULL', async () => {
     const db = await openMemoryDb();
-    expect(migrate(db)).toBe(3);
+    // Ruling N5 (backup re-check, 2 Nov): schema v4 adds the local forgotten list, so the newest version is 4 (was 3).
+    expect(migrate(db)).toBe(4);
     expect(value(db, 'PRAGMA foreign_keys'), 'deleting a document must cascade').toBe(1);
     expect(value(db, 'PRAGMA secure_delete'), 'R13: deleted rows are overwritten in the file').toBe(1);
     expect(value(db, 'PRAGMA synchronous'), 'FULL: a committed note is on disk').toBe(2);
-    expect(migrate(db), 'opening again changes nothing').toBe(3);
+    expect(migrate(db), 'opening again changes nothing').toBe(4);
     expect(value(db, 'PRAGMA foreign_keys')).toBe(1);
   });
 });

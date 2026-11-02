@@ -73,7 +73,8 @@ describe('Forget on the real file', () => {
     dirs.push(dir);
 
     const filled = await once('fill', dir);
-    expect(filled.settings).toMatchObject({ user_version: 3, foreign_keys: 1, secure_delete: 1, synchronous: 2 });
+    // Ruling N5 (backup re-check, 2 Nov): schema v4 adds the local forgotten list, so the newest version is 4 (was 3).
+    expect(filled.settings).toMatchObject({ user_version: 4, foreign_keys: 1, secure_delete: 1, synchronous: 2 });
     expect(String(filled.settings['journal_mode']).toLowerCase(), 'a journal left in a free slot would keep old bytes').toBe('truncate');
 
     const before = await readAllFiles(dir);

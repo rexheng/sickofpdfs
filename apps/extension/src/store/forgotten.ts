@@ -1,4 +1,4 @@
-// The readings that left the library for good (R82: Forget, an Undo of a save, a Trash purge after 30 days), kept as salted
+// The readings that left the library for good (R88: Forget and the Trash purge after 30 days, never an Undo of a save), kept as salted
 // hashes of their fingerprints. A restore never brings one back, even when the backup folder could not be cleaned (the
 // carried restore rulings), and the backup writer uses the list to tell "removed on purpose" from "lost" (writer.ts).
 //
@@ -10,14 +10,10 @@
 //   runs one request at a time, so nothing changes in between.
 // - The tables are local: they are not dump tables (never in a backup or an export) and have no outbox triggers (never synced).
 // - A fingerprint that is in the library again (saved again later, or an alias of a reading) does not count as forgotten.
-// - The tables are made by the first write that needs them, so a library that never forgot anything has none, and a read never
-//   changes the database.
+// - The tables are schema v4 (schema-v4.ts, N5). A database that was never migrated (a Node test's) gets them from the first write
+//   that needs them; a read never changes the database.
 import type { SqlDb } from './schema-v2';
-
-const TABLES = [
-  'CREATE TABLE IF NOT EXISTS forgotten (hash TEXT PRIMARY KEY, forgotten_at INTEGER NOT NULL) WITHOUT ROWID',
-  'CREATE TABLE IF NOT EXISTS local_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID',
-];
+import { FORGOTTEN_TABLES as TABLES } from './schema-v4';
 const SALT_KEY = 'forgottenSalt';
 const SHA = /^[0-9a-f]{64}$/;
 

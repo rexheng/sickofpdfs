@@ -319,7 +319,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
   async function forgetEffect(): Promise<void> {
     if (store === null || state.kind !== 'saved') return;
     const id = state.documentId;
-    await store.forgetDocument(id);
+    await store.forgetDocument(id, { undo: true }); // R88: an Undo writes no forgotten-list entry
     // R67 (e): the drafts' crash-safe copies, the save-pending records and the margin hint go with the document.
     forgetLocalTraces(id, loaded.sha256);
     await blobs?.delete(id);

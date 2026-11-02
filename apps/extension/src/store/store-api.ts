@@ -102,8 +102,11 @@ export interface StoreApi extends AnnotationsApi, PageFiguresApi, LibraryApi, Ba
   touchLocation(input: TouchLocationInput): Promise<LocationRow>;
   listLocations(documentId: DocumentId): Promise<LocationRow[]>;
   recordOpen(documentId: DocumentId, at: number): Promise<void>;
-  /** Hard delete: the document, everything that hangs off it, every outbox row naming any of it, and its indexed words. */
-  forgetDocument(documentId: DocumentId): Promise<void>;
+  /**
+   * Hard delete: the document, everything that hangs off it, every outbox row naming any of it, and its indexed words. Forget also
+   * records a salted hash of its fingerprints in the forgotten list (R88); an Undo of a save (`undo: true`) never does.
+   */
+  forgetDocument(documentId: DocumentId, o?: { undo?: boolean }): Promise<void>;
   /** Pages whose text matches every word of `query`, best first (bm25). */
   searchPages(query: string, limit: number): Promise<PageHit[]>;
 }
@@ -609,8 +612,8 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
         publish([{ table: 'history', ids: [documentId], op: 'upsert', documentId }]);
       }),
 
-    forgetDocument: (documentId) =>
-      forgetRows(documentId).then(() => forgetThumbnail(documentId)),
+    forgetDocument: (documentId, o) =>
+      forgetRows(documentId, o?.undo === true).then(() => forgetThumbnail(documentId)),
 
     searchPages: (query, limit) =>
       attempt(() => {
@@ -638,13 +641,14 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
       }),
   };
 
-  async function forgetRows(documentId: DocumentId): Promise<void> {
-    // R82: the fingerprints that leave for good (the document and its aliases) are hashed first, so the list of forgotten readings
-    // is written in the same transaction as the delete (forgotten.ts). The request queue keeps anything from changing in between.
+  async function forgetRows(documentId: DocumentId, undo: boolean): Promise<void> {
+    // R82, R88: the fingerprints that leave for good (the document and its aliases) are hashed first, so the list of forgotten readings
+    // is written in the same transaction as the delete (forgotten.ts). The request queue keeps anything from changing in between. An
+    // Undo of a save writes nothing there: it leaves no trace once the backup's queue has drained.
     const hashes = await attempt(() => {
       assertWritable();
       checkHex(documentId, 'the document id');
-      if (!documentExists(documentId)) return null;
+      if (undo || !documentExists(documentId)) return null;
       return [documentId, ...db.selectObjects('SELECT sha256 AS id FROM aliases WHERE document_id = ?', [documentId]).map((r) => text(r, 'id'))];
     }).then((ids) => (ids === null ? new Map<string, string>() : forgottenHashes(db, ids)));
     return attempt(() => {

@@ -3,6 +3,7 @@ import type { Sqlite3Database } from './store-api';
 import { SCHEMA_V1, triggersV1 } from './schema';
 import { applySchemaV2, guardNewerSchema, refreshCommentsFtsTrigger, userVersion } from './schema-v2';
 import { applySchemaV3 } from './schema-v3';
+import { applySchemaV4 } from './schema-v4';
 
 /**
  * The connection settings, set on every open. Deleted rows are overwritten in the file (secure_delete), and the journal
@@ -12,7 +13,7 @@ import { applySchemaV3 } from './schema-v3';
 const CONNECTION_PRAGMAS = ['PRAGMA foreign_keys = ON', 'PRAGMA journal_mode = TRUNCATE', 'PRAGMA synchronous = FULL', 'PRAGMA secure_delete = ON'];
 
 /**
- * Brings the database up to the newest schema this code knows and returns its `user_version` (3 now). Safe to run on
+ * Brings the database up to the newest schema this code knows and returns its `user_version` (4 now). Safe to run on
  * every open: a step runs only when the version is below it. A database written by a newer version is opened read-only
  * and left exactly as it is; its version is returned, and every write is refused ("Update sickofpdfs").
  */
@@ -31,7 +32,8 @@ export function migrate(db: Sqlite3Database): number {
   }
   if (userVersion(db) < 2) applySchemaV2(db);
   if (userVersion(db) < 3) applySchemaV3(db);
-  // R67: drafts never touch comments_fts. Idempotent; repairs databases made before the fix (v2 or v3).
-  if (userVersion(db) >= 2 && userVersion(db) <= 3) refreshCommentsFtsTrigger(db);
+  if (userVersion(db) < 4) applySchemaV4(db);
+  // R67: drafts never touch comments_fts. Idempotent; repairs databases made before the fix (v2 to v4).
+  if (userVersion(db) >= 2 && userVersion(db) <= 4) refreshCommentsFtsTrigger(db);
   return userVersion(db);
 }
