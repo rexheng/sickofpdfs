@@ -382,3 +382,29 @@ test('replies stack under the note in the order they were sent; the quiet card s
     note(testInfo, 'skipped part', `reload: ${NO_SAVING}`);
   }
 });
+
+// Regression (TB4 code-security critic, finding 2; no lost text): a layout change never closes or unfocuses an open note box.
+// Rotating (Ctrl+]) or zooming in (Ctrl+=) while typing folds the margin cards; the box moves into the notes panel with its
+// text and its caret, and the letters typed straight after the key land in the note. The repro is the critic's p2/p3 run.
+for (const [key, what] of [['Control+]', 'rotating'], ['Control+=', 'zooming in']] as const) {
+  test(`${what} while typing a note keeps the box, its text and the caret: the next letters land in the note`, async ({ openViewer, server }, testInfo) => {
+    const page = await openPaper(openViewer, server, ATTENTION);
+    await selectPassage(page, ATTENTION, LINES.l3);
+    await startNote(page);
+    await page.keyboard.type('half a thought', { delay: 10 });
+    await page.keyboard.press(key);
+    await page.keyboard.type(' MORE', { delay: 10 });
+    const moved = noteBox(page);
+    await expect.poll(async () => (await moved.count()) === 1 && (await readBox(moved)).text, { message: `after ${key} the note box is still there with all the text` }).toBe('half a thought MORE');
+    expect((await readBox(moved)).focused, `and it still has the keyboard after ${key}`).toBe(true);
+    await shot(page, testInfo, `${what.replace(' ', '-')}-box-kept`);
+
+    await page.keyboard.press('Enter');
+    await expect(page.getByText('half a thought MORE').first(), 'Enter sends the whole note').toBeVisible({ timeout: 5000 });
+    await expect(noteBox(page), 'and the new-note box closes').toHaveCount(0);
+    if (SAVING_AVAILABLE) {
+      await waitSaved(page);
+      await waitStored(page, (a) => a.comments.some((c) => c.body === 'half a thought MORE' && c.draftOfTab === null && c.deletedAt === null), 'the whole note is stored');
+    }
+  });
+}
