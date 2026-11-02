@@ -3,8 +3,8 @@
 // drawing is BoldLayer's glyph-outline overlay with a heavier stroke (react/WordStartsLayer.tsx).
 //
 // The rule (R90, the Medium strength):
-// - A word of 1 to 3 letters gets its first letter bold; a longer word its first half, rounded up ("Rea·ding",
-//   "meth·od", "facili·tating").
+// - A word of 1 to 3 letters gets its first letter bold; a longer word its first half, rounded up ("Read·ing", 4 of 7;
+//   "met·hod", 3 of 6; "facili·tating", 6 of 12).
 // - Only letters count. A pure number, a maths symbol or punctuation is left alone. In a word that mixes letters and
 //   digits ("2nd", "H2O"), the bold runs from the word's first char to its last bold letter.
 // - Words are split on whitespace and punctuation, so each part of a hyphenated word is a word of its own. A word broken

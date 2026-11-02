@@ -82,7 +82,15 @@ export function MenuBar({ menus, returnFocus }: MenuBarProps) {
               loop
               // Radix's own handler (after this one) focuses the menu's button. Closed with the pointer, the focus then
               // moves on to returnFocus's place; the chosen action runs after that, so it can move the focus itself.
-              onCloseAutoFocus={() => {
+              onCloseAutoFocus={(event) => {
+                // A key pressed while the menu was going (Escape, then Ctrl+F at once) may already have put the focus
+                // somewhere else, such as the find box: it stays there, rather than going back to the menu's button.
+                const a = document.activeElement;
+                if (a instanceof HTMLElement && a !== document.body && a.isConnected && a.closest('[role="menubar"], [role="menu"]') === null) {
+                  event.preventDefault();
+                  if (pending.current !== null) queueMicrotask(runPending);
+                  return;
+                }
                 if (returnFocus !== undefined && openMenu.current === '' && lastInputWasPointer()) queueMicrotask(returnFocus);
                 if (pending.current !== null) queueMicrotask(runPending);
               }}
