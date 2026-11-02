@@ -189,7 +189,13 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
   - Each part of a hyphenated word counts as its own word. A word broken across lines counts per line.
   - An apostrophe does not split a word ("do·n't"). A word that mixes letters and digits is bold from its first character ("2n·d"). Single maths letters set in a text font are bolded like any word.
   - Text that is already bold gets a lighter stroke, so it never smudges. With the switch on, the owner's own bold marks take the same heavier weight.
-- **How it is drawn.** It reuses the bold mark's glyph-outline overlay (BoldLayer), with a heavier stroke, so it reads as clearly bold at 100%, as in common examples. It is drawn over the page's render and never changes the file.
+- **How it is drawn (R90b, Nov 2, owner: "as if it's part of the font").** It is true synthetic bold, as font engines make it, never an outline stroke.
+  - Each glyph's outline is pushed outward along its own edges, as in FreeType's `FT_Outline_EmboldenXY`. Upright stems gain about twice what horizontal strokes gain.
+  - Corners stay sharp. Counters (the holes in "e", "a" and "o") stay open, so the strength is capped for small or tight glyphs. The x-height and baseline don't move.
+  - The amount matches the PDF's own bold where the document has a bold face of the same family. Otherwise it uses a typical regular-to-bold gain.
+  - The shapes are filled, never stroked, in the glyph's own colour. They are drawn into a canvas on exactly the page bitmap's device-pixel grid, so each edge is anti-aliased once, like the text.
+  - Outlines are cached per page in points, so at any zoom the bold appears in the same frame as the page.
+  - The owner's bold marks and print with marks use the same method, so there is one bold look.
   - Selecting, copying, Find, links, marks and comments work exactly as without it.
   - The owner's own bold marks still show whole words bold.
   - It turns with the page (rotation) and works in two-page view and presentation mode.
