@@ -23,3 +23,8 @@
 [data-presenting][data-cursor-hidden] {
   cursor: none;
 }
+
+/* Everything but the page area, while presenting (presentation.ts hideAllBut): hidden, its layout kept. */
+[data-presenting-hidden] {
+  visibility: hidden;
+}

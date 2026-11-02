@@ -26,33 +26,30 @@ function fitScale(page: PageSize, viewport: { width: number; height: number }, v
 }
 
 /**
- * Presentation mode's one scale for all pages: page `index` fits the screen edge to edge, and so do the pages either
- * side of it (a larger neighbour makes it a little smaller), so no neighbour ever reaches into the page on screen. A
- * deck of one page size fits every slide exactly. Never below 1%.
+ * Presentation mode's scale (1 = 100%): page `index` fits the screen edge to edge, turned as shown. One scale is drawn at
+ * a time, so stepping to a page of another size changes it. Never below 1%.
  */
 export function presentationScale(pages: readonly PageSize[], index: number, viewport: { width: number; height: number }, viewRotation: Rotation): number {
   if (pages.length === 0 || viewport.width <= 0 || viewport.height <= 0) return 1;
-  const i = Math.min(pages.length - 1, Math.max(0, index));
-  let best = Infinity;
-  for (let k = Math.max(0, i - 1); k <= Math.min(pages.length - 1, i + 1); k++) best = Math.min(best, fitScale(pages[k], viewport, viewRotation));
-  return Number.isFinite(best) && best > 0 ? Math.max(0.01, best) : 1;
+  const fit = fitScale(pages[Math.min(pages.length - 1, Math.max(0, index))], viewport, viewRotation);
+  return Number.isFinite(fit) && fit > 0 ? Math.max(0.01, fit) : 1;
 }
 
 /**
- * Presentation mode's layout: one screen per page. Page i fills the slot [i·H, (i+1)·H) of a viewport W × H, centred
- * in it both ways, on the black page area, so showing page i is scrolling to i·H (presentationTop) and no other page
- * is in view.
+ * Presentation mode's layout: one slot per page, each centred in its slot both ways, on the black page area. A slot is
+ * the viewport's height, or the tallest page's at this scale when that is taller (pages of other sizes), so with the
+ * page shown centred in the view (presentationTop) no other page reaches into it.
  */
 export function presentationLayout(pages: readonly PageSize[], o: { scale: number; viewRotation: Rotation; viewport: { width: number; height: number } }): PageLayout {
   const { width: W, height: H } = o.viewport;
-  const boxes: PageBox[] = pages.map((p, i) => {
+  const shown = pages.map((p) => {
     const d = displayedSize(p, o.viewRotation);
-    const width = cssAt(d.width, o.scale);
-    const height = cssAt(d.height, o.scale);
-    return { index: i, top: i * H + (H - height) / 2, left: (W - width) / 2, width, height, rotation: d.rotation };
+    return { width: cssAt(d.width, o.scale), height: cssAt(d.height, o.scale), rotation: d.rotation };
   });
-  return { boxes, width: W, height: pages.length * H };
+  const slot = Math.max(H, ...shown.map((s) => s.height));
+  const boxes: PageBox[] = shown.map((s, i) => ({ index: i, top: i * slot + (slot - s.height) / 2, left: (W - s.width) / 2, width: s.width, height: s.height, rotation: s.rotation }));
+  return { boxes, width: W, height: pages.length * slot };
 }
 
-/** The scroll position that shows page `index` in presentation mode (presentationLayout). */
-export const presentationTop = (index: number, viewportHeight: number): number => index * viewportHeight;
+/** The scroll position that shows page box `box` centred in a view `viewportHeight` tall (presentation mode). */
+export const presentationTop = (box: PageBox, viewportHeight: number): number => box.top + box.height / 2 - viewportHeight / 2;

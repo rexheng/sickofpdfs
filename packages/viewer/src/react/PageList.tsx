@@ -129,6 +129,8 @@ interface Anchor {
   /** The anchor's offset from the scroller's top-left, in CSS px. */
   dx: number;
   dy: number;
+  /** A turn's or a spread change's anchor (R81): remembered for the next one (turnAnchor). */
+  turn?: boolean;
 }
 
 function scaleFor(zoom: ZoomMode, viewport: Viewport, pages: PageSize[], fitPage: number, viewRotation: Rotation, spread: Spread): number {
@@ -228,6 +230,11 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
   const [driver] = useState(() => new PageDriver(scheduler, pages, store.get().currentPage));
   const fitPage = useRef(store.get().currentPage);
   const pendingAnchor = useRef<Anchor | null>(null);
+  /**
+   * The last turn's anchor and the scroll position it left. The next turn keeps that same passage (not whatever a
+   * sideways clamp left at the centre) while the reader has not moved the pages since, so turns in a row never drift.
+   */
+  const turnAnchor = useRef<{ anchor: Anchor; top: number; left: number } | null>(null);
   const reserveMode = useRef(false);
   const opened = useRef(false);
   const reportError = useRef(onError);
@@ -284,7 +291,13 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
         const s = store.get();
         const v = latest.current;
         if (s.presenting !== null || v.presenting || pendingAnchor.current) return; // presentation places its own page
-        if (s.viewRotation !== v.viewRotation || s.spread !== v.spread) pendingAnchor.current = anchorAt();
+        if (s.viewRotation === v.viewRotation && s.spread === v.spread) return;
+        const el = scrollerRef.current;
+        const kept = turnAnchor.current;
+        const centre = el ? { dx: el.clientWidth / 2, dy: el.clientHeight / 2 } : null;
+        const still = el !== null && kept !== null && centre !== null && el.scrollTop === kept.top && el.scrollLeft === kept.left;
+        const a = still ? { ...kept.anchor, ...centre } : anchorAt();
+        pendingAnchor.current = a && { ...a, turn: true };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- anchorAt reads refs only
     [store],
@@ -371,11 +384,12 @@ export function PageList({ doc, store, scheduler, renderPage, apiRef, onError, i
       const page = Math.min(pages.length - 1, Math.max(0, presenting.page));
       if (page !== presenting.page) store.set({ presenting: { page } });
       el.scrollLeft = 0;
-      el.scrollTop = presentationTop(page, viewport.height);
+      el.scrollTop = presentationTop(layout.boxes[page], viewport.height);
     } else if (a && layout.boxes[a.pageIndex]) {
       const c = pagePointToContent(layout.boxes[a.pageIndex], pages[a.pageIndex], a.point);
       el.scrollLeft = c.x - a.dx;
       el.scrollTop = c.y - a.dy;
+      turnAnchor.current = a.turn ? { anchor: a, top: el.scrollTop, left: el.scrollLeft } : null;
     } else if (!opened.current) {
       const first = layout.boxes[store.get().currentPage];
       if (first) el.scrollTop = first.top - PAGE_GAP;

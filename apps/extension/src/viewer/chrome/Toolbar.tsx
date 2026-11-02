@@ -225,7 +225,9 @@ function PageField({ store, pageCount, onGoToPage, inputRef }: PageFieldProps) {
     else setNote(null);
     onGoToPage(page - 1);
     const landed = store.get().currentPage;
-    setJump(landed === page - 1 ? null : { target: page - 1, landed });
+    // In two-page view a page lands with its pair, and the box shows the pair's left page (Task 26).
+    const pairLanded = store.get().spread === 'two-page' && Math.floor(landed / 2) === Math.floor((page - 1) / 2);
+    setJump(landed === page - 1 || pairLanded ? null : { target: page - 1, landed });
     inputRef.current?.blur();
   };
 

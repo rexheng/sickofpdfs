@@ -6,7 +6,7 @@
 //   reading keys need nothing of their own here. A click on the right half of the screen goes forward, on the left
 //   half back, and a turn of the wheel steps one page.
 // - Every other command is off while presenting (commands.ts), and every other listener of the page is kept from the
-//   pointer and the keys, so nothing opens behind the black screen.
+//   pointer and the keys, so nothing opens behind the black screen. The rest of the viewer is hidden and inert.
 // - The cursor hides after 2 s without moving.
 // - Esc, or leaving full screen any other way (F11, the browser's own Esc, another window), ends it and puts back the
 //   zoom, the scroll position and the page exactly as they were. Nothing of it is saved.
@@ -60,6 +60,30 @@ export function settlePresentation(): void {
   if (running?.left()) running.finish();
 }
 
+/**
+ * Hides everything on the page but `area` (and the elements that hold it): the header, the toolbar, the rail, the
+ * notes panel and any note are made invisible and inert, so they are not shown, read aloud or reached with Tab behind
+ * the full screen (or the window, where full screen was refused). Their layout is kept, so leaving puts the pages back
+ * exactly. Returns the function that shows them again.
+ */
+function hideAllBut(area: HTMLElement): () => void {
+  const hidden: { el: HTMLElement; inert: boolean }[] = [];
+  for (let el: HTMLElement = area; el.parentElement && el !== document.body; el = el.parentElement) {
+    for (const other of el.parentElement.children) {
+      if (other === el || !(other instanceof HTMLElement)) continue;
+      hidden.push({ el: other, inert: other.inert });
+      other.inert = true;
+      other.setAttribute('data-presenting-hidden', '');
+    }
+  }
+  return () => {
+    for (const h of hidden) {
+      h.el.inert = h.inert;
+      h.el.removeAttribute('data-presenting-hidden');
+    }
+  };
+}
+
 /** The page area: `root` itself when it is the page list's scroller, else the one inside it. */
 function pageArea(root: HTMLElement): HTMLElement | null {
   return root.matches('[role="document"]') ? root : root.querySelector<HTMLElement>('[role="document"]');
@@ -106,6 +130,7 @@ export async function enterPresentation(ctx: PresentationContext): Promise<() =>
     cursorTimer = setTimeout(() => area.setAttribute('data-cursor-hidden', ''), CURSOR_HIDE_MS);
   };
 
+  const showAll = hideAllBut(area);
   const finish = () => {
     if (ended) return;
     ended = true;
@@ -113,6 +138,7 @@ export async function enterPresentation(ctx: PresentationContext): Promise<() =>
     signal.abort();
     clearTimeout(cursorTimer);
     area.removeAttribute('data-cursor-hidden');
+    showAll();
     // The page list lays the pages out at the old size in this same call (it measures its area when presenting ends).
     flushSync(() => store.set({ presenting: null, zoom: before.zoom }));
     holdPlace(area, store, before);

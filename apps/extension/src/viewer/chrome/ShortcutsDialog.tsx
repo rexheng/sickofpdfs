@@ -29,7 +29,12 @@ interface Row {
   label: string;
   /** As people read them (formatCombo), each once. */
   keys: string[];
+  /** For a row with no key: where to find it instead ("View menu"). */
+  where?: string;
 }
+
+/** View commands with no key that the sheet still lists, so it names every view (Task 26): where to find them. */
+const KEYLESS: Partial<Record<string, string>> = { 'view.twoPage': 'View menu', 'view.presentation': 'View menu' };
 
 /** The keys that move the pages (App.tsx readerShortcuts), as Chrome's viewer has them. They work while reading. */
 const READING: Row[] = [
@@ -57,15 +62,16 @@ const FOCUSED_MARK: Row[] = [
 
 /**
  * "?" and Help → Keyboard shortcuts: the reading keys, then every command that has keys and works (`built`), in
- * command order, grouped as the menus are. Each row is the command's name (a row header) and its keys, each in a
- * <kbd>. Two keys that read the same (Ctrl+= and Ctrl++ are both "Ctrl+Plus") show once.
+ * command order, grouped as the menus are; two-page view and presentation mode too, with where to find them. Each
+ * row is the command's name (a row header) and its keys, each in a <kbd>. Two keys that read the same (Ctrl+= and
+ * Ctrl++ are both "Ctrl+Plus") show once.
  */
 export function ShortcutsDialog({ open, onOpenChange, commands }: ShortcutsDialogProps) {
   const rows: Row[] = [
     ...READING,
     ...[...commands.values()]
-      .filter((c) => c.built && c.keys.length > 0)
-      .map((c) => ({ id: c.id, label: c.label, keys: [...new Set(c.keys.map(formatCombo))] })),
+      .filter((c) => c.built && (c.keys.length > 0 || KEYLESS[c.id] !== undefined))
+      .map((c) => ({ id: c.id, label: c.label, keys: [...new Set(c.keys.map(formatCombo))], ...(c.keys.length === 0 ? { where: KEYLESS[c.id] } : {}) })),
     ...(commands.get('view.presentation')?.built === true ? PRESENTING : []),
     // Marks exist only where they can be made (not in Incognito).
     ...(commands.get('marks.highlight')?.built === true ? FOCUSED_MARK : []),
@@ -87,6 +93,7 @@ export function ShortcutsDialog({ open, onOpenChange, commands }: ShortcutsDialo
                       {c.label}
                     </th>
                     <td className={styles.keys}>
+                      {c.where !== undefined && <span className={styles.or}>{c.where}</span>}
                       {c.keys.map((k, i) => (
                         <Fragment key={k}>
                           {i > 0 && <span className={styles.or}>or</span>}
