@@ -48,8 +48,17 @@ interface Before {
   height: number;
 }
 
-/** The presentation running in this tab, if any. */
-let running: { area: HTMLElement; exit: () => void; finish: () => void } | null = null;
+/** The presentation running in this tab, if any. `left`: it was full screen and is not any more. */
+let running: { area: HTMLElement; exit: () => void; finish: () => void; left: () => boolean } | null = null;
+
+/**
+ * Ends the presentation now if its page area has left full screen and the browser's fullscreenchange (which comes a
+ * frame after document.fullscreenElement is null) has not come yet. Whatever reads the view state (the viewer's test
+ * hooks) calls this first, so nothing ever reads the page out of full screen but still presenting.
+ */
+export function settlePresentation(): void {
+  if (running?.left()) running.finish();
+}
 
 /** The page area: `root` itself when it is the page list's scroller, else the one inside it. */
 function pageArea(root: HTMLElement): HTMLElement | null {
@@ -102,7 +111,6 @@ export async function enterPresentation(ctx: PresentationContext): Promise<() =>
     ended = true;
     running = null;
     signal.abort();
-    if (Object.hasOwn(document, 'exitFullscreen')) Reflect.deleteProperty(document, 'exitFullscreen');
     clearTimeout(cursorTimer);
     area.removeAttribute('data-cursor-hidden');
     // The page list lays the pages out at the old size in this same call (it measures its area when presenting ends).
@@ -112,7 +120,8 @@ export async function enterPresentation(ctx: PresentationContext): Promise<() =>
 
   const exit = () => {
     if (ended) return;
-    if (document.fullscreenElement === area) void document.exitFullscreen().catch(finish);
+    // Put back as the way out settles (the same task that leaves full screen), not a frame later with the event.
+    if (document.fullscreenElement === area) document.exitFullscreen().then(finish, finish);
     else finish();
   };
 
@@ -171,19 +180,9 @@ export async function enterPresentation(ctx: PresentationContext): Promise<() =>
     { passive: false },
   );
 
-  // ---- full screen: leaving it any way ends the presentation. The browser leaving it (its own Esc, F11, another
-  // window) is told by fullscreenchange, a frame after document.fullscreenElement is null. A script leaving it (Esc
-  // here, or any other caller of document.exitFullscreen) puts the place back as its promise settles, in the same task
-  // that leaves full screen, so nothing ever reads the page out of full screen but still presenting.
-  const leaveFullscreen = Document.prototype.exitFullscreen.bind(document);
-  Object.defineProperty(document, 'exitFullscreen', {
-    configurable: true,
-    value: () => {
-      const left = leaveFullscreen();
-      left.then(finish, () => {});
-      return left;
-    },
-  });
+  // ---- full screen: leaving it any way (Esc, F11, another window, a script) ends the presentation, on fullscreenchange.
+  // That event comes a frame after document.fullscreenElement is null; in between, settlePresentation() ends it for
+  // whatever reads the view state.
   document.addEventListener(
     'fullscreenchange',
     () => {
@@ -193,7 +192,7 @@ export async function enterPresentation(ctx: PresentationContext): Promise<() =>
     { signal: signal.signal },
   );
 
-  running = { area, exit, finish };
+  running = { area, exit, finish, left: () => wasFullscreen && document.fullscreenElement !== area };
   flushSync(() => store.set({ presenting: { page: before.page }, zoom: { kind: 'fit-page' } }));
   area.focus({ preventScroll: true });
   showCursor();

@@ -61,6 +61,7 @@ import {
 import { notesPanelFeature } from './notes-panel/feature';
 import { publishRuntime, type ViewerHooks, type ViewerState } from './runtime';
 import { atPage, openInChrome } from './open-in-chrome';
+import { settlePresentation } from './presentation';
 import type { SaveControllerImpl } from './save/save-controller';
 import { SaveAskDialog } from './save/SaveAskDialog';
 import { StatusChip, useSaveView } from './save/StatusChip';
@@ -761,17 +762,22 @@ function readerShortcuts(api: RefObject<PageListApi | null>): ShortcutDef[] {
 const SCROLL_TO_TIMEOUT_MS = 10_000;
 
 function viewerHooks(api: RefObject<PageListApi | null>, store: ViewerStore, scans: ScanDetector, textLayers: TextLayerController): ViewerHooks {
-  const a = () => api.current;
+  // A presentation whose full screen has just ended is ended before anything is read (presentation.ts).
+  const read = <T,>(f: () => T): T => {
+    settlePresentation();
+    return f();
+  };
+  const a = () => read(() => api.current);
   return {
-    scale: () => store.get().scale,
+    scale: () => read(() => store.get().scale),
     setScale: (s) => a()?.zoomTo({ kind: 'scale', scale: s }),
-    currentPage: () => store.get().currentPage,
+    currentPage: () => read(() => store.get().currentPage),
     scrollTo: (i) =>
       Promise.race([
         (a()?.goToPage(i) ?? Promise.resolve()).then(() => textLayers.whenReady(i)),
         new Promise<void>((resolve) => setTimeout(resolve, SCROLL_TO_TIMEOUT_MS)),
       ]),
-    snapshot: () => ({ ...store.get(), twoPage: store.get().spread === 'two-page' }),
+    snapshot: () => read(() => ({ ...store.get(), twoPage: store.get().spread === 'two-page' })),
     scrollTop: () => a()?.scrollTop() ?? 0,
     maxScrollTop: () => a()?.maxScrollTop() ?? 0,
     viewportHeight: () => a()?.viewportHeight() ?? 0,
