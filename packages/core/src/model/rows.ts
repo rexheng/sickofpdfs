@@ -112,6 +112,50 @@ export interface PageHit {
   rank: number;
 }
 
+// ---- tags (schema v5, spec R92) ----
+
+/** Where a tag came from: a course code in the link, folder or page 1; a group of readings close in meaning; or the owner's own word. */
+export type TagKind = 'topic' | 'course' | 'tag';
+/** Who put a tag on a reading: the owner, or the local categoriser (shown as "auto" until the owner keeps it). */
+export type TagSource = 'owner' | 'auto';
+
+export interface TagRow {
+  id: string;
+  name: string;
+  kind: TagKind;
+  /** Topic tags: the key of the member set the topic was last seen with (categorise/topics.ts). */
+  topicKey: string | null;
+  /** True once the owner renamed it: the categoriser never changes its name again. */
+  renamed: boolean;
+  createdAt: number;
+  updatedAt: number;
+  /** Set when the owner deleted the tag. The categoriser never uses a deleted course or topic tag again. */
+  deletedAt: number | null;
+  rev: number;
+  hlc: HlcStamp;
+}
+
+/** A tag on a reading. Its id is `<documentId>:<tagId>`, so two computers that tag the same reading the same way make the same row. */
+export interface ReadingTagRow {
+  id: string;
+  documentId: DocumentId;
+  tagId: string;
+  source: TagSource;
+  createdAt: number;
+  rev: number;
+  hlc: HlcStamp;
+}
+
+/** "This tag was taken off this reading": the categoriser never puts it back. Same id form as a reading tag. */
+export interface AutoTagRemovedRow {
+  id: string;
+  documentId: DocumentId;
+  tagId: string;
+  removedAt: number;
+  rev: number;
+  hlc: HlcStamp;
+}
+
 /** Row counts, for tests and the library's health check. */
 export interface StoreStats {
   documents: number;
