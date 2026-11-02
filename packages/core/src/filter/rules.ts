@@ -26,13 +26,17 @@ export const MAX_LIST_ENTRY = 2048;
  * ("google.com" holds mail.google.com and drive.google.com).
  */
 export const CATCH_ALL_HOSTS: readonly string[] = [
-  // mail attachments (Gmail, Outlook and other webmail)
+  // mail attachments (Gmail, Outlook and other webmail: Yahoo, Proton, Zoho, AOL, Fastmail)
   'mail.google.com', 'googleusercontent.com', 'outlook.com', 'outlook.live.com', 'outlook.office.com',
-  'outlook.office365.com', 'attachments.office.net', 'mail.yahoo.com', 'proton.me',
+  'outlook.office365.com', 'attachments.office.net', 'mail.yahoo.com', 'proton.me', 'protonmail.com', 'protonmail.ch',
+  'mail.zoho.com', 'mail.zoho.eu', 'mail.zoho.in', 'mail.zoho.com.au', 'mail.zoho.jp', 'mail.zoho.com.cn', 'mail.zoho.sa',
+  'aol.com', 'fastmail.com', 'fastmailusercontent.com',
   // Drive, OneDrive, Dropbox and iCloud downloads, and file-sending services
   'drive.google.com', 'docs.google.com', 'usercontent.google.com', 'onedrive.live.com', 'onedrive.com', '1drv.ms',
   '1drv.com', 'sharepoint.com', 'dropbox.com', 'dropboxusercontent.com', 'icloud.com', 'icloud-content.com', 'box.com',
-  'boxcloud.com', 'wetransfer.com',
+  'boxcloud.com', 'wetransfer.com', 'mega.nz', 'mega.co.nz', 'mega.io',
+  // user uploads: Messenger attachments, GitHub issue and comment uploads, Notion files
+  'fbsbx.com', 'githubusercontent.com', 'file.notion.so', 'notion-static.com', 'notionusercontent.com',
   // shared object stores (and Google Cloud Storage, matched by GOOGLE_APIS below)
   'amazonaws.com', 'storage.cloud.google.com', 'blob.core.windows.net',
   'digitaloceanspaces.com', 'r2.dev', 'r2.cloudflarestorage.com', 'backblazeb2.com', 'wasabisys.com',
@@ -55,6 +59,8 @@ const CATCH_ALL_FOLDERS: ReadonlySet<string> = new Set([
 
 /** Second-level names that many sites share ("co.uk", "ac.jp"): as a whole entry they name every site under them. */
 const SHARED_SUFFIX = /^(?:co|com|ac|edu|gov|govt|org|net|or|ne|go|nhs|sch|ltd|plc|me|mil|nic|police|nom|gob|gv)\.[a-z]{2}$/;
+/** Names under which anyone can have a site of their own: as a whole entry they name every one of those sites. */
+const SHARED_HOSTS: ReadonlySet<string> = new Set(['github.io', 'blogspot.com', 'cloudfront.net', 'uk.com']);
 
 /**
  * Google's API hosts, Google Cloud Storage among them (storage.<this>.com). Written as a pattern because the plain address
@@ -157,7 +163,7 @@ function folderProblem(path: string, list: ListKind): string | null {
 function webProblem(host: string, list: ListKind): string | null {
   const bare = host.replace(/^\[|\]$/g, '');
   if (!bare.includes('.') && !bare.includes(':')) return 'a top-level domain, or a single name';
-  if (SHARED_SUFFIX.test(bare)) return 'a name many sites share';
+  if (SHARED_SUFFIX.test(bare) || SHARED_HOSTS.has(bare)) return 'a name many sites share';
   if (list === 'allow' && isCatchAllHost(bare)) return 'a place that serves everyone’s files';
   return null;
 }

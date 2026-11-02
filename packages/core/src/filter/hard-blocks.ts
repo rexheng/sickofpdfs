@@ -4,7 +4,7 @@
 // Each detector is narrow on purpose. A match needs a checksum or a label, so arXiv ids, DOIs, ISBNs, page numbers and
 // tables of numbers do not fire.
 
-import { capPages } from './limits';
+import { capPages, PAGE_CHAR_CAP } from './limits';
 import type { HardBlock } from './types';
 import {
   ibanLength,
@@ -142,6 +142,28 @@ export function detectHardBlocks(texts: readonly string[]): HardBlock[] {
     if (!found.has('utr') && UTR.test(text)) found.add('utr');
     if (!found.has('passport-line') && hasPassportLine(text)) found.add('passport-line');
     if (!found.has('boarding-pass') && BOARDING_PASS.test(text)) found.add('boarding-pass');
+  }
+  return HARD_BLOCK_KINDS.filter((k) => found.has(k));
+}
+
+/** Characters two windows of one page share, so a number across the edge of a window is still read whole. */
+const WINDOW_OVERLAP = 256;
+
+/**
+ * R91: the kinds on EVERY page of a PDF, for the check at save time (the filter itself reads only its sample). Each page is
+ * read in full, in windows of PAGE_CHAR_CAP characters that overlap, so no page and no part of a long page is skipped,
+ * and the work stays linear in the text.
+ */
+export function detectHardBlocksOnEveryPage(pages: readonly string[]): HardBlock[] {
+  const found = new Set<HardBlock>();
+  const step = PAGE_CHAR_CAP - WINDOW_OVERLAP;
+  for (const page of pages) {
+    if (typeof page !== 'string' || page === '') continue;
+    for (let at = 0; at < page.length; at += step) {
+      for (const k of detectHardBlocks([page.slice(at, at + PAGE_CHAR_CAP)])) found.add(k);
+      if (found.size === HARD_BLOCK_KINDS.length) return [...HARD_BLOCK_KINDS];
+      if (at + PAGE_CHAR_CAP >= page.length) break;
+    }
   }
   return HARD_BLOCK_KINDS.filter((k) => found.has(k));
 }

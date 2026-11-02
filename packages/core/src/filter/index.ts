@@ -1,5 +1,15 @@
-export { classify, HARD_BLOCK_OVERRIDE, HARD_BLOCK_REASON, HARD_BLOCK_WARNING, LOOKS_LIKE, NOT_SAVE_AT, SAVE_AT } from './classify';
-export { detectHardBlocks, hardBlockApplies, HARD_BLOCK_KINDS } from './hard-blocks';
+export {
+  classify,
+  HARD_BLOCK_OVERRIDE,
+  HARD_BLOCK_REASON,
+  HARD_BLOCK_WARNING,
+  hardBlockDecision,
+  hardBlockOnEveryPage,
+  LOOKS_LIKE,
+  NOT_SAVE_AT,
+  SAVE_AT,
+} from './classify';
+export { detectHardBlocks, detectHardBlocksOnEveryPage, hardBlockApplies, HARD_BLOCK_KINDS } from './hard-blocks';
 export { CATCH_ALL_HOSTS, cleanList, isCatchAllHost, isListEntryOk, listEntryProblem, listMatches, MAX_LIST_ENTRY } from './rules';
 export type { ListKind } from './rules';
 export { EDGE_PAGES, needsSecondLook, sampleIndexes, SECOND_LOOK_PAGES, secondLookIndexes } from './sample';

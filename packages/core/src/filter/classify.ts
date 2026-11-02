@@ -11,7 +11,7 @@
 //
 // A FilterDecision never holds PDF text. Every reason is a fixed phrase from this file.
 
-import { detectHardBlocks, hardBlockApplies } from './hard-blocks';
+import { detectHardBlocks, detectHardBlocksOnEveryPage, hardBlockApplies } from './hard-blocks';
 import { listMatches } from './rules';
 import { gatherEvidence, NO_TEXT_WORDS, rankKinds, type Evidence } from './signals';
 import { ADMIN_GROUPS, labelPoints, type AdminKind } from './terms';
@@ -101,6 +101,29 @@ export function looksLikeFromSignals(signals: readonly FilterSignal[] | undefine
 
 function ownerSave(blocks: readonly HardBlock[]): Pick<FilterDecision, 'hardBlocks' | 'ownerSave'> {
   return { hardBlocks: [...blocks], ownerSave: { warning: HARD_BLOCK_WARNING, indexText: false } };
+}
+
+/**
+ * R91: the hard-block check at save time, over every page of the PDF (the filter itself read only its sample). The kinds
+ * found and the D9 policy when they block, or null. As in `classify`, positive evidence of 8 or more in the filter's own
+ * input overrides the block (a paper quoting an example IBAN); without that input, nothing overrides it.
+ */
+export function hardBlockOnEveryPage(input: FilterInput | null, pages: readonly string[]): Required<Pick<FilterDecision, 'hardBlocks' | 'ownerSave'>> | null {
+  const blocks = detectHardBlocksOnEveryPage(pages);
+  if (!hardBlockApplies(blocks)) return null;
+  if (input !== null && gatherEvidence(input).positive >= HARD_BLOCK_OVERRIDE) return null;
+  return { hardBlocks: [...blocks], ownerSave: { warning: HARD_BLOCK_WARNING, indexText: false } };
+}
+
+/** The decision for a PDF whose hard block was found at save time: "Not saved: has card or bank numbers", with D9. */
+export function hardBlockDecision(found: Required<Pick<FilterDecision, 'hardBlocks' | 'ownerSave'>>): FilterDecision {
+  return {
+    verdict: 'not-learning',
+    reasons: [HARD_BLOCK_REASON, ...found.hardBlocks.map((b) => BLOCK_LABEL[b])],
+    rule: 'hard-block',
+    hardBlocks: [...found.hardBlocks],
+    ownerSave: { ...found.ownerSave },
+  };
 }
 
 function noText(e: Evidence): FilterDecision {
