@@ -2,8 +2,9 @@
 // - With notes or marks (notes still being typed count), it asks first: "It will be removed from your library and your
 //   backups", what goes with it, and a "Never save this file" box.
 // - With none, it forgets at once: there is nothing of the owner's to lose (plan S11: "asks first if there are notes").
-// - Then a note says what happened, in the backup writer's words (S13): "Removed from your library and your backups", or
-//   that the backup folder could not be reached and the next backup cleans it, or "Removed from your library".
+// - Then a note says what happened: "Removed from your library and your backups. Google Drive or OneDrive may keep their
+//   own copy in their trash for a while." (binding wording), or, in the backup writer's words (S13), that the backup folder
+//   could not be reached and the next backup cleans it, or "Removed from your library" when there is no backup folder.
 import { Dialog } from '@sop/ui';
 import { useEffect, useState } from 'react';
 import type { ViewerUi } from '../commands';
@@ -33,9 +34,15 @@ export function whatGoes(marks: number, notes: number): string {
   return parts.length === 0 ? '' : `Its ${parts.join(' and ')} will be deleted too.`;
 }
 
+/**
+ * What the note says once the backups are clean too (binding wording, from the backup security read): the cloud folder the
+ * backups sync to may still hold a copy in its own trash.
+ */
+export const REMOVED_EVERYWHERE = 'Removed from your library and your backups. Google Drive or OneDrive may keep their own copy in their trash for a while.';
+
 /** What a Forget did, as one or two short sentences for the note. */
 export function forgottenNote(outcome: ForgetOutcome): string {
-  const m = outcome.backups.message;
+  const m = outcome.backups.status === 'removed' ? REMOVED_EVERYWHERE : outcome.backups.message;
   const first = /[.!?]$/.test(m) ? m : `${m}.`;
   if (outcome.neverSave === 'kept') return `${first} It won’t be saved again.`;
   if (outcome.neverSave === 'failed') return `${first} “Never save this file” couldn’t be kept.`;

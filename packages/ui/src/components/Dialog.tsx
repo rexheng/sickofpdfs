@@ -29,6 +29,11 @@ export interface DialogProps {
    * question whose main answer is safe, such as "Print with marks".
    */
   focusPrimary?: boolean;
+  /**
+   * Asked as the dialog closes: the element that takes the focus now (the viewer's note box that a question was asked
+   * for), instead of the one that had it before the dialog opened. Null keeps the usual return.
+   */
+  focusOnClose?: () => HTMLElement | null;
 }
 
 /**
@@ -36,7 +41,7 @@ export interface DialogProps {
  * chrome), radius 28 px, over a 32% scrim. It traps focus, closes on Escape and on a click outside (both through
  * onOpenChange(false)), and puts focus back where it was.
  */
-export function Dialog({ open, title, children, actions, onOpenChange, nameFromTitleAttribute = false, focusPrimary = false }: DialogProps) {
+export function Dialog({ open, title, children, actions, onOpenChange, nameFromTitleAttribute = false, focusPrimary = false, focusOnClose }: DialogProps) {
   // An empty title stops the dialog's own title attribute from showing as a tooltip over its content.
   const quiet = nameFromTitleAttribute ? { title: '' } : {};
   // The dialog has no trigger, so a hidden probe where it is placed tells it the theme of that place.
@@ -64,6 +69,13 @@ export function Dialog({ open, title, children, actions, onOpenChange, nameFromT
               }
             }}
             onCloseAutoFocus={(event) => {
+              const next = focusOnClose?.() ?? null;
+              if (next?.isConnected === true) {
+                event.preventDefault();
+                opener.current = null;
+                next.focus({ preventScroll: true });
+                return;
+              }
               if (opener.current?.isConnected !== true) return;
               event.preventDefault();
               opener.current.focus();
