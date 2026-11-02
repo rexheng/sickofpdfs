@@ -234,3 +234,4 @@ Library: Home; My library list (plain, row hover, selected, keyboard focus); gri
     - skips forgotten fingerprints;
     - refuses a folder with no readable `library.json`;
     - checks every row's ids against its own reading, so a crafted row can never move a note to another reading.
+- **From S11 triage (2 Nov):** walkthrough `20-journal-paper-link` steps 5–6 ("reopens where you stopped", and the history behind it) fail until S16 lands. S16 must make them pass unchanged.
