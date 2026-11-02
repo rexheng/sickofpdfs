@@ -318,10 +318,12 @@ describe('rule order: your choice, hard block, lists, force save, score', () => 
       expect(d.rule).toBe('allow-list');
     });
 
-    it('an allow-list match saves a document the score would reject (no hard block)', () => {
+    // Triage (filterfix, rule 7): spec R91 (Nov 2) changed this ruling. "The allow list only turns 'not sure' into 'save'. It
+    // never saves a PDF the filter calls 'not learning'." So the row now checks the opposite of what it did.
+    it('an allow-list match never saves a document the score would reject (R91)', () => {
       const d = run({ pageCount: 1, first: lines('Subtotal', 'VAT', 'Payment method'), url: 'https://shop.example.com/a.pdf' }, { allow: ['shop.example.com'] });
-      expect(d.verdict).toBe('learning');
-      expect(d.rule).toBe('allow-list');
+      expect(d.verdict).toBe('not-learning');
+      expect(d.rule).not.toBe('allow-list');
     });
 
     // GUESS (research B.7: "per-file decision > deny > allow > classifier"): when both lists match, deny wins.
@@ -480,14 +482,17 @@ describe('lists match hosts and folder prefixes properly (a look-alike address n
     { name: 'folder prefix (web) does not match a sibling folder that starts the same', entry: 'https://example.org/readings/', url: 'https://example.org/readings-private/x.pdf', match: false },
     { name: 'folder prefix (web) does not match the same path on another host', entry: 'https://example.org/readings/', url: 'https://evil.example/readings/x.pdf', match: false },
     { name: 'folder prefix (web) does not match the same words deeper in another path', entry: 'https://example.org/readings/', url: 'https://example.org/other/readings/x.pdf', match: false },
-    { name: 'folder prefix (file) matches a file inside it', entry: 'file:///C:/Users/me/Readings/', url: 'file:///C:/Users/me/Readings/week1.pdf', match: true },
-    { name: 'folder prefix (file) does not match a sibling folder', entry: 'file:///C:/Users/me/Readings/', url: 'file:///C:/Users/me/Receipts/a.pdf', match: false },
-    { name: 'folder prefix (file) does not match a folder that starts the same', entry: 'file:///C:/Users/me/Readings/', url: 'file:///C:/Users/me/Readings-old/a.pdf', match: false },
+    // Triage (filterfix, rule 7): R91 refuses an allow-list folder "less than two levels below home", so the file rows use a
+    // folder two levels below C:/Users/me.
+    { name: 'folder prefix (file) matches a file inside it', entry: 'file:///C:/Users/me/Courses/Readings/', url: 'file:///C:/Users/me/Courses/Readings/week1.pdf', match: true },
+    { name: 'folder prefix (file) does not match a sibling folder', entry: 'file:///C:/Users/me/Courses/Readings/', url: 'file:///C:/Users/me/Courses/Receipts/a.pdf', match: false },
+    { name: 'folder prefix (file) does not match a folder that starts the same', entry: 'file:///C:/Users/me/Courses/Readings/', url: 'file:///C:/Users/me/Courses/Readings-old/a.pdf', match: false },
   ];
 
-  // the allow list saves a document the score would not
+  // the allow list saves a document the score would not. Triage (filterfix, rule 7): under R91 only a "not sure" one, so the
+  // document is 4 pages made by LaTeX (score 0.5), not 4 plain pages (score -1, "not learning").
   it.each(rows)('allow: $name', ({ entry, url, fileName, match }) => {
-    const d = run({ pageCount: 4, url, ...(fileName ? { fileName } : {}) }, { allow: [entry] });
+    const d = run({ pageCount: 4, metadata: LATEX, url, ...(fileName ? { fileName } : {}) }, { allow: [entry] });
     if (match) {
       expect([d.verdict, d.rule]).toEqual(['learning', 'allow-list']);
     } else {

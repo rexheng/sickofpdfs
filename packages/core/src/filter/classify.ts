@@ -1,10 +1,13 @@
 // The learning filter, steps 1 and 2 of the spec. Pure and synchronous. Rule order:
 //   1. your choice for this exact file
 //   2. hard block (card and ID numbers), unless positive evidence is 8 or more
-//   3. your deny list, then your allow list
+//   3. your deny list
 //   4. force save (an arXiv id with References, or a DOI with Abstract and References)
 //   5. the score: 3 or more saves, 0 or less does not, between is "unsure" and may go to the tie-breaker
-// A PDF with no text is never saved by score: "unsure" from a scholarly or course site, otherwise "not-learning".
+// A PDF with no text is never saved by score: "unsure" from a scholarly or course site, otherwise "not-learning". A CV is
+// never saved by score.
+// R91: your allow list only turns "unsure" (by the score) into a save. It never saves what the filter calls not learning
+// (no text, a CV, a receipt, a bank statement, a payslip), and the hard block and the deny list still come first.
 //
 // A FilterDecision never holds PDF text. Every reason is a fixed phrase from this file.
 
@@ -152,12 +155,9 @@ export function classify(input: FilterInput, rules: FilterRules): FilterDecision
     };
   }
 
-  // 3. your lists: deny beats allow
-  if (listMatches(rules.deny, input.url, input.viaPage)) {
+  // 3. your deny list (the allow list comes last: it only decides a PDF the score is not sure about, R91)
+  if (listMatches(rules.deny, input.url, input.viaPage, 'deny')) {
     return { verdict: 'not-learning', reasons: ['matches your deny list'], rule: 'deny-list' };
-  }
-  if (listMatches(rules.allow, input.url, input.viaPage)) {
-    return { verdict: 'learning', reasons: ['matches your allow list'], rule: 'allow-list' };
   }
 
   // 4. force save
@@ -207,6 +207,10 @@ export function classify(input: FilterInput, rules: FilterRules): FilterDecision
       rule: 'score',
       signals: e.signals,
     };
+  }
+  // R91: your allow list turns "not sure" into a save, and nothing else
+  if (listMatches(rules.allow, input.url, input.viaPage, 'allow')) {
+    return { verdict: 'learning', reasons: ['matches your allow list'], score, rule: 'allow-list', signals: e.signals };
   }
   return {
     verdict: 'unsure',
