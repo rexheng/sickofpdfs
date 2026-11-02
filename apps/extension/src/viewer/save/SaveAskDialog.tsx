@@ -23,7 +23,9 @@ import styles from './SaveDialogs.module.css';
  * is open it holds the keyboard, so the note box could not take it. As the question closes, the box gets the caret
  * (`focusOnClose`), and again if the box is drawn anew as the save lands; never over a field that has it already.
  */
-const openNoteBox = (): HTMLTextAreaElement | null => document.querySelector<HTMLTextAreaElement>(`[id^="${CARD_ID_PREFIX}"] textarea`);
+// The box is in its margin card, or in the notes panel when the cards are folded (R98: the rail no longer folds for them).
+const openNoteBox = (): HTMLTextAreaElement | null =>
+  document.querySelector<HTMLTextAreaElement>(`[id^="${CARD_ID_PREFIX}"] textarea, [id^="sop-panel-note-"] textarea`);
 
 /** How long letters typed right after the answer are kept for the note box, at most. */
 const TYPE_AHEAD_MS = 1500;

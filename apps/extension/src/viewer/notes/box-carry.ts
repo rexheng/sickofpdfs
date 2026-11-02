@@ -18,6 +18,14 @@ export interface CarriedBox {
 /** How long the new box may take to appear (frames, about one second). */
 const MAX_FRAMES = 60;
 
+/** The note whose box is moving now: its new box must not take the caret by itself (the carry puts it where it was). */
+let moving: string | null = null;
+
+/** Whether the box of note `threadId` is being moved: a box that appears for it does not focus itself (autoFocus). */
+export function isBoxMoving(threadId: string): boolean {
+  return moving === threadId;
+}
+
 /** The box in `el` that had the caret, if any, read before it goes. `cardOf` names the note a box belongs to. */
 export function openBoxIn(el: Element | null, cardOf: (box: HTMLTextAreaElement) => string | null): CarriedBox | null {
   const box = document.activeElement;
@@ -54,13 +62,18 @@ export function carryBox(b: CarriedBox, find: () => HTMLTextAreaElement | null):
   });
   document.body.append(holder);
   holder.focus({ preventScroll: true });
+  moving = b.threadId;
   let frames = 0;
+  const done = () => {
+    holder.remove();
+    if (moving === b.threadId) moving = null;
+  };
   const look = () => {
     const box = find();
     if (box?.isConnected === true) {
       const typed = holder.value;
       box.focus({ preventScroll: true });
-      holder.remove();
+      done();
       const length = box.value.length;
       box.setSelectionRange(Math.min(b.start, length), Math.min(b.end, length));
       // Through insertText, so the box's own input handler (the draft) sees it, and Ctrl+Z can take it back.
@@ -71,7 +84,7 @@ export function carryBox(b: CarriedBox, find: () => HTMLTextAreaElement | null):
       return;
     }
     if (++frames > MAX_FRAMES || !holder.isConnected) {
-      holder.remove();
+      done();
       return;
     }
     requestAnimationFrame(look);

@@ -15,7 +15,7 @@ import type { PageListApi } from '@sop/viewer/react';
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { AnnotationSession } from '../annotations/session';
 import { Snackbar } from '../chrome/Snackbar';
-import { boxOfKind, type CarriedBox, carryBox, isEditBox } from '../notes/box-carry';
+import { boxOfKind, type CarriedBox, carryBox, isBoxMoving, isEditBox } from '../notes/box-carry';
 import { CARD_ID_PREFIX } from '../notes/CardColumn';
 import { keptOf } from '../notes/kept';
 import { installShortcuts } from '../shortcuts';
@@ -268,7 +268,9 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
   }, [open, raised, state.active, entry, pageList, pages]);
 
   const activeEntry = entry(state.active);
-  const focusNote = activeEntry !== undefined && activeEntry.comments.length === 0 ? activeEntry.id : null;
+  // A new note's box takes the caret when it appears, unless it is a box moving in from the margin (box-carry.ts puts
+  // the caret back where it was, after the letters typed meanwhile).
+  const focusNote = activeEntry !== undefined && activeEntry.comments.length === 0 && !isBoxMoving(activeEntry.id) ? activeEntry.id : null;
 
   const onDraftChange = useCallback((e: NoteEntry, body: string) => {
     const id = e.draft?.id ?? session.startReply(e.id);
