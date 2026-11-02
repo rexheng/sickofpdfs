@@ -222,6 +222,15 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 - **Elsewhere.** It works on rotated pages and in two-page view. A Find hit, on Enter, puts the cursor at the hit. Scanned pages without text are skipped, with a quiet note once per tab. A screen reader hears the line the cursor moves to.
 - **Without the switch,** the arrow keys scroll as before.
 
+**R98 (Nov 2, TB4 critics): a note never vanishes from view.**
+- When the cards fold (no room, the rail open, or slides), each note shows a small numbered marker in the page margin at its anchor, and a click opens it.
+- The rail never closes by itself. On slides, the slide refits beside the panel.
+- The first-note glide (R79) moves the page no more than needed, and at most 120 px.
+
+**R99: presentation and print keep the reader's place.**
+- Esc in presentation mode keeps the slide you are on, and restores zoom and the rail only. This replaces "restores the exact page".
+- Ctrl+P's first step asks for the range (All, This page, Pages) as well as marks, and renders only those pages. Enter means the primary choice.
+
 **Shortcuts.** Single-key and Ctrl+Alt shortcuts never fire while you are typing, because on some keyboards Ctrl+Alt is AltGr. Letters and symbols are matched by the character they type, so shortcuts follow your keyboard layout; only the number row (Alt+Shift+5, 1 to 5) is matched by position. Ctrl+= and Ctrl++ both zoom in. All are rebindable in Settings, and Ctrl+U only acts when text is selected.
 
 | Action | Keys | When |
@@ -400,6 +409,13 @@ One reference implementation in TypeScript, with its test cases, defines these r
 
 - The chip in the top bar always shows the decision; click it, or press Ctrl+Alt+S, to save. Saving back-fills the history.
 - "Not sure" PDFs show a quiet banner after 20 seconds: Save, Not now, Never for this file, or Always for this site.
+- **R95 (Nov 2, TB4 critics): the not-sure banner never covers the page.** It is an inline bar directly under the toolbar that pushes the pages down, centred on the reading area. Esc means "Not now". In the Tab order it comes right after the chip. Its choices are also in the chip's menu.
+- **R96: the save question never eats typing.**
+  - Letters typed while it is open go into the note box, in order. Only Enter (Save) or Esc (No) answers it; Space and letters never press a button.
+  - Closing a tab whose notes are only in memory brings up the browser's "Leave site?" prompt.
+  - A click on a "Not saved" chip asks "This looks like <kind>. Save it to your library anyway?", with Cancel as the default.
+  - Report "It's for learning" offers "Save now".
+- **R97: "Never" and Forget also keep a salted text fingerprint** (a hash of the normalised text of the first pages), so a re-download with different bytes is still recognised. It is salted like R88/R89 and never kept as the text itself.
 - **R91 (Nov 2, from the filter's privacy read): the owner's choices can only make the filter more careful, never less.**
   - **The allow list only turns "not sure" into "save".** It never saves a PDF the filter calls "not learning": no text, a CV, a receipt, a bank statement or a payslip. Hard blocks still beat everything.
   - **"Always for this site" names the place** on its button and in its note, for example "Always for moodle.lse.ac.uk" or "Always for the folder Week 3 readings". It is never offered for catch-all places:
