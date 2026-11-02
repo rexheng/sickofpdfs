@@ -45,9 +45,16 @@ export interface AboutData {
   documentNote(this: void, documentId: DocumentId): Promise<DocumentNote | null>;
   /**
    * Writes "Your context": a new document note, or the note's new words. Emptying it moves the note to Trash (Notes →
-   * Trash keeps it 30 days), as emptying any note does. Answers the note as it now is.
+   * Trash keeps it 30 days), as emptying any note does. Answers the note as it now is. A new note is made with `fresh`'s ids
+   * when given: the ids its words were journaled under (context-journal.ts), so a crash copy and the note are one note.
    */
-  saveDocumentNote(this: void, documentId: DocumentId, text: string, current: DocumentNote | null): Promise<DocumentNote | null>;
+  saveDocumentNote(
+    this: void,
+    documentId: DocumentId,
+    text: string,
+    current: DocumentNote | null,
+    fresh?: { threadId: ThreadId; commentId: CommentId } | null,
+  ): Promise<DocumentNote | null>;
   setTitle(this: void, documentId: DocumentId, title: string): Promise<void>;
   /** Calls `cb` after a change to this reading: its row, places, history, notes or tags. */
   onReadingChange(this: void, documentId: DocumentId, cb: () => void): () => void;
@@ -99,7 +106,7 @@ export function createStoreAboutData(client: AboutStore): AboutData {
       const { threads, comments } = await client.listAnnotations(id);
       return findDocumentNote(threads, comments);
     },
-    async saveDocumentNote(id, raw, current) {
+    async saveDocumentNote(id, raw, current, fresh) {
       const text = raw.slice(0, MAX_CONTEXT);
       const now = Date.now();
       if (text.trim() === '') {
@@ -118,7 +125,7 @@ export function createStoreAboutData(client: AboutStore): AboutData {
         return { ...current, comment };
       }
       const thread: ThreadRow = {
-        id: crypto.randomUUID() as ThreadId,
+        id: fresh?.threadId ?? (crypto.randomUUID() as ThreadId),
         documentId: id,
         anchor: { kind: 'document' },
         pageIndex: null,
@@ -132,7 +139,7 @@ export function createStoreAboutData(client: AboutStore): AboutData {
         hlc: '',
       };
       const comment: CommentRow = {
-        id: crypto.randomUUID() as CommentId,
+        id: fresh?.commentId ?? (crypto.randomUUID() as CommentId),
         threadId: thread.id,
         documentId: id,
         author: 'me',

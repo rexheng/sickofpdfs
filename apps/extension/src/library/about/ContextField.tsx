@@ -1,19 +1,21 @@
 // "Your context" (R92): a short note on why the owner is reading this PDF. It is the reading's document note, so it also
-// shows in the viewer's notes and on the Notes page. The words are saved as they are typed (a moment after the last key)
-// and when the box loses the focus.
+// shows in the viewer's notes and on the Notes page. Each key goes to the drafts journal at once (the box's `typed`, see
+// context-journal.ts); the words reach the store a moment after the last key and when the box loses the focus.
 import { type ChangeEvent, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import styles from './ContextField.module.css';
 import { MAX_CONTEXT } from './about-data';
 
-export type ContextStatus = 'idle' | 'saving' | 'saved' | 'failed';
+export type ContextStatus = 'idle' | 'saving' | 'saved' | 'failed' | 'restored';
 
 export interface ContextFieldProps {
   /** The stored words; null while they load. A change from elsewhere shows unless the owner is typing here. */
   stored: string | null;
   /** Saves the words (an empty box removes the note). */
   save(this: void, text: string): Promise<void>;
-  /** Each keystroke, for a keeper that holds unsent words safe (the viewer's draft keeper). */
+  /** Each keystroke: the keeper puts the words in the drafts journal at once (context-journal.ts). */
   typed?(this: void, text: string): void;
+  /** Words brought back after a crash: they show at once, and are saved. */
+  restored?: string | null;
   disabled?: boolean;
   /** Why it is off ("Save this PDF to your library to add your context."). */
   disabledText?: string;
@@ -22,7 +24,7 @@ export interface ContextFieldProps {
 /** How long after the last key the words are saved. */
 const SAVE_AFTER_MS = 700;
 
-export function ContextField({ stored, save, typed, disabled = false, disabledText }: ContextFieldProps) {
+export function ContextField({ stored, save, typed, restored = null, disabled = false, disabledText }: ContextFieldProps) {
   const [text, setText] = useState(stored ?? '');
   const [status, setStatus] = useState<ContextStatus>('idle');
   const dirty = useRef(false);
@@ -51,9 +53,9 @@ export function ContextField({ stored, save, typed, disabled = false, disabledTe
     if (!dirty.current) return;
     dirty.current = false;
     const words = latest.current.text;
-    setStatus('saving');
+    setStatus((s) => (s === 'restored' ? s : 'saving'));
     latest.current.save(words).then(
-      () => setStatus((s) => (s === 'saving' ? 'saved' : s)),
+      () => setStatus((s) => (s === 'saving' || s === 'restored' ? 'saved' : s)),
       () => {
         dirty.current = true; // kept, and tried again with the next key or when the box is left
         setStatus('failed');
@@ -62,6 +64,17 @@ export function ContextField({ stored, save, typed, disabled = false, disabledTe
   };
   const flushRef = useRef(flush);
   flushRef.current = flush;
+
+  // Words brought back after a crash take the box's place and are saved straight away.
+  useEffect(() => {
+    if (restored === null) return;
+    setText(restored);
+    latest.current = { ...latest.current, text: restored }; // the save below must send these words, not the box's old ones
+    dirty.current = true;
+    setStatus('restored');
+    const t = setTimeout(() => flushRef.current(), 0);
+    return () => clearTimeout(t);
+  }, [restored]);
 
   // The box going away (the panel closed, another reading picked) saves what was typed.
   useEffect(() => () => flushRef.current(), []);
@@ -90,7 +103,9 @@ export function ContextField({ stored, save, typed, disabled = false, disabledTe
           ? 'Saved'
           : status === 'failed'
             ? 'Couldn’t save. Your words are still here; keep typing or click away to try again.'
-            : 'Saved as you type. It also shows as a note on the whole PDF.';
+            : status === 'restored'
+              ? 'Brought back the words you were typing before. Saving them now.'
+              : 'Saved as you type. It also shows as a note on the whole PDF.';
 
   return (
     <div className={styles.field}>

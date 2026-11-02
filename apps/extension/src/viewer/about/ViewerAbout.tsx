@@ -6,6 +6,9 @@ import { IconButton, TextButton } from '@sop/ui';
 import { useEffect, useMemo, useState } from 'react';
 import { AboutDetails } from '../../library/about/AboutDetails';
 import { createStoreAboutData } from '../../library/about/about-data';
+import { ContextBox } from '../../library/about/ContextBox';
+import { createContextKeeper } from '../../library/about/context-journal';
+import { localDraftJournal } from '../annotations/draft-journal';
 import { createStoreTagsData } from '../../library/tags/tags-data';
 import { openTargetInNewTab } from '../../shared/palette';
 import type { StoreClient } from '../../store/client';
@@ -17,7 +20,6 @@ import type { SaveControllerImpl } from '../save/save-controller';
 import { useSaveView } from '../save/StatusChip';
 import { libraryStore } from '../use-store';
 import { aboutPanel, useAboutPanelOpen } from './about-panel-state';
-import { SessionContextBox } from './SessionContextBox';
 import styles from './ViewerAbout.module.css';
 
 export interface ViewerAboutProps {
@@ -52,6 +54,9 @@ function Panel({ doc, save, session, ui }: ViewerAboutProps) {
   }, []);
   const about = useMemo(() => (store === null ? null : createStoreAboutData(store)), [store]);
   const tags = useMemo(() => (store === null ? null : createStoreTagsData(store)), [store]);
+  // "Your context" journals every key under this tab's id, as the tab's own note drafts are, so after a crash the notes
+  // session brings the words back when the PDF opens again (and the library's About can, if this tab is gone).
+  const keeper = useMemo(() => (session === null ? null : createContextKeeper({ journal: localDraftJournal(), tabId: session.tabId, liveTabs: () => Promise.resolve([]) })), [session]);
   const savedId: DocumentId | null = state?.kind === 'saved' ? state.documentId : null;
   const say = (text: string, undo?: () => void) => ui.showNote(text, undo === undefined ? undefined : { label: 'Undo', run: undo });
 
@@ -78,7 +83,7 @@ function Panel({ doc, save, session, ui }: ViewerAboutProps) {
             about={about}
             tags={tags}
             say={say}
-            contextBox={session === null ? null : <SessionContextBox session={session} />}
+            contextBox={keeper === null ? null : <ContextBox about={about} documentId={savedId} keeper={keeper} recover={false} />}
             onOpenRelated={(r) => {
               if (store !== null) void openTargetInNewTab({ kind: 'reading', documentId: r.id }, store).then((problem) => problem !== null && ui.showNote(problem));
             }}

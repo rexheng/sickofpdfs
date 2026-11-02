@@ -331,8 +331,8 @@ function renewAttempt(b: Batch): void {
   b.firstAttempt = new Promise<void>((r) => (b.attempted = r));
 }
 
-/** What a draft carries to be restored in its card. */
-function stashMeta(thread: ThreadRow, highlight: MarkColor | null): CommentRow['meta'] {
+/** What a draft carries to be restored in its card (also written by About this PDF's context journal, S18). */
+export function stashMeta(thread: ThreadRow, highlight: MarkColor | null): CommentRow['meta'] {
   return { [STASH_KEY]: { thread, highlight } } as unknown as CommentRow['meta'];
 }
 

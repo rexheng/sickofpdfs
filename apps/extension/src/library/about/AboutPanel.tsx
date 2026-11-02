@@ -2,13 +2,15 @@
 // opened from a row's menu, the title row's (i) button or the "i" key. It follows the selected reading.
 import type { DocumentId } from '@sop/core';
 import { FileTypeIcon, IconButton } from '@sop/ui';
+import { useState } from 'react';
 import { useLibrary } from '../app/context';
 import { CardThumbnail } from '../components/CardThumbnail';
 import { openTargetInNewTab } from '../../shared/palette';
 import { sayWith } from '../tags/say';
 import { AboutDetails } from './AboutDetails';
 import styles from './AboutPanel.module.css';
-import { LibraryContextBox } from './LibraryContextBox';
+import { ContextBox } from './ContextBox';
+import { libraryContextKeeper } from './context-journal';
 
 export interface AboutPanelProps {
   /** The reading it is about; null: none is selected. */
@@ -19,6 +21,7 @@ export interface AboutPanelProps {
 export function AboutPanel({ documentId, onClose }: AboutPanelProps) {
   const { data, notify } = useLibrary();
   const say = sayWith(notify);
+  const [keeper] = useState(libraryContextKeeper); // this page's tab id, as the viewer's drafts have theirs
   const about = data.about;
   return (
     <aside
@@ -52,7 +55,7 @@ export function AboutPanel({ documentId, onClose }: AboutPanelProps) {
             tags={data.tags ?? null}
             say={say}
             thumbnail={(stored) => <CardThumbnail id={documentId} stored={stored} />}
-            contextBox={<LibraryContextBox about={about} documentId={documentId} />}
+            contextBox={<ContextBox about={about} documentId={documentId} keeper={keeper} recover />}
             onOpenRelated={(r) => {
               const store = data.palette;
               if (store === undefined) return;
