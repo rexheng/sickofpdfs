@@ -14,6 +14,7 @@ import { ViewNote } from '../../components/ReadingsView';
 import { NoteCard, onWhat } from './NoteCard';
 import styles from './Notes.module.css';
 import { openNoteReading } from './open-note';
+import { RestoreLeftOut } from '../../settings/RestoreLeftOut';
 import { RecoveredNotes } from './RecoveredNotes';
 import { useNotes } from './use-notes';
 
@@ -186,6 +187,7 @@ export function NotesPage() {
   return (
     <ContentCard header={header}>
       <div id="notes-panel" role="tabpanel" aria-labelledby={`notes-tab-${tab}`} className={styles.panel}>
+        {(tab === 'all' || tab === 'mine') && !searching && <RestoreLeftOut />}
         {(tab === 'all' || tab === 'mine') && !searching && <RecoveredNotes now={now} />}
         {tab === 'trash' && <ViewNote>Notes in Trash are deleted for good after 30 days. Restore puts one back on its reading.</ViewNote>}
         {list}

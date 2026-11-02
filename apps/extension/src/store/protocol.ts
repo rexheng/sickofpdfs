@@ -11,12 +11,13 @@ import { ANNOTATION_METHODS } from './annotations';
 import { BACKUP_API_METHODS, BACKUP_READ_METHODS } from './backup-api';
 import { LIBRARY_API_METHODS, LIBRARY_READ_METHODS } from './library-api';
 import { PAGE_FIGURES_METHODS } from './page-figures';
+import { RESTORE_API_METHODS, RESTORE_READ_METHODS } from './restore-api';
 import { SETTINGS_API_METHODS, SETTINGS_READ_METHODS } from './settings-api';
 import { LIBRARY_METHODS, type StoreApi } from './store-api';
 import { TAGS_API_METHODS, TAGS_READ_METHODS } from './tags-api';
 
 /** Every method a store port serves. */
-export const STORE_METHODS = [...LIBRARY_METHODS, ...ANNOTATION_METHODS, ...PAGE_FIGURES_METHODS, ...LIBRARY_API_METHODS, ...BACKUP_API_METHODS, ...SETTINGS_API_METHODS, ...TAGS_API_METHODS] as const;
+export const STORE_METHODS = [...LIBRARY_METHODS, ...ANNOTATION_METHODS, ...PAGE_FIGURES_METHODS, ...LIBRARY_API_METHODS, ...BACKUP_API_METHODS, ...RESTORE_API_METHODS, ...SETTINGS_API_METHODS, ...TAGS_API_METHODS] as const;
 export type StoreMethod = (typeof STORE_METHODS)[number];
 
 // Every StoreApi method must be served: this line stops compiling when one is missing from the lists above.
@@ -43,6 +44,7 @@ const READ_METHODS: ReadonlySet<string> = new Set<StoreMethod>([
   'getPageFigures',
   ...LIBRARY_READ_METHODS,
   ...BACKUP_READ_METHODS,
+  ...RESTORE_READ_METHODS,
   ...SETTINGS_READ_METHODS,
   ...TAGS_READ_METHODS,
 ]);

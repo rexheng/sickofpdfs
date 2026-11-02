@@ -1,6 +1,7 @@
 // The offscreen document: a hidden page the service worker creates (background/offscreen.ts). It owns the local store:
 // it starts the store worker (SQLite on OPFS) and hands it every store port the service worker brokers.
 import { startBackupHost } from '../../backup/host';
+import { startReindexHost } from '../../backup/reindex';
 import { startCategoriseHost } from '../../categorise/host';
 import { isMessageOf, STORE_PORT, type StorePortMessage } from '../../store/transport';
 
@@ -19,3 +20,6 @@ startBackupHost(worker);
 
 // The auto categoriser runs in a worker of its own too (categorise/host.ts): the model, the codes, the topics. Local only.
 startCategoriseHost(worker);
+
+// Restored readings have their page text read again here, in the background, with a worker of its own (backup/reindex.ts).
+startReindexHost(worker);

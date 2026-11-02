@@ -6,9 +6,9 @@ import type { ComponentType } from 'react';
 import { LibraryRulesSection } from '../pages/Settings/sections/LibraryRules';
 import { OnlineLookupsSection } from '../pages/Settings/sections/OnlineLookups';
 import { ReadingSection } from '../pages/Settings/sections/Reading';
-import { RestoreSection } from '../pages/Settings/sections/Restore';
 import { ShortcutsSection } from '../pages/Settings/sections/Shortcuts';
 import { BackupSection } from './BackupSection';
+import { RestoreSection } from './RestoreSection';
 
 export interface SettingsSectionDef {
   /** Lower-case letters: the address `#/settings/<id>`. */

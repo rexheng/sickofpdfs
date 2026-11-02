@@ -33,6 +33,7 @@ import { type BackupApi, createBackupApi } from './backup-api';
 import type { StoreChange } from './change-bus';
 import { ftsQuery } from './fts-query';
 import { createLibraryApi, type LibraryApi } from './library-api';
+import { createRestoreApi, type RestoreApi } from './restore-api';
 import { createSettingsApi, type SettingsApi } from './settings-api';
 import { clearTagOutbox, createTagsApi, dropOrphanAutoTags, tagRowIds, type TagsApi } from './tags-api';
 import { createPageFiguresApi, type PageFiguresApi } from './page-figures';
@@ -88,7 +89,7 @@ export interface TouchLocationInput {
   at: number;
 }
 
-export interface StoreApi extends AnnotationsApi, PageFiguresApi, LibraryApi, BackupApi, SettingsApi, TagsApi {
+export interface StoreApi extends AnnotationsApi, PageFiguresApi, LibraryApi, BackupApi, RestoreApi, SettingsApi, TagsApi {
   schemaVersion(): Promise<number>;
   stats(): Promise<StoreStats>;
   /** The library document these bytes are: `documents.id`, or the document an alias (a stamped copy) points to. */
@@ -713,6 +714,7 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
     ...createPageFiguresApi(db, deps),
     ...createLibraryApi(db, deps, { document: documentFromRow, location: locationFromRow }),
     ...createBackupApi(db, deps),
+    ...createRestoreApi(db, deps),
     ...createSettingsApi(db, deps),
     ...createTagsApi(db, deps),
   };

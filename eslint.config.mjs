@@ -116,7 +116,7 @@ export default defineConfig(
   // block above already; it is named here on purpose, with the Backup section, which sits in the settings folder that is allowed.
   // These entries come after the allowed list, so they win.
   {
-    files: ['apps/extension/src/backup/**', 'apps/extension/src/store/backup-api.ts', 'apps/extension/src/library/settings/{Backup*,use-backup}.{ts,tsx}'],
+    files: ['apps/extension/src/backup/**', 'apps/extension/src/store/backup-api.ts', 'apps/extension/src/library/settings/{Backup*,Restore*,use-backup}.{ts,tsx}', 'apps/extension/src/store/restore-api.ts'],
     rules: {
       'no-restricted-imports': ['error', { patterns: [LOCAL_ONLY_IMPORT_PATTERN] }],
       'no-restricted-syntax': ['error', ...LOCAL_ONLY_SYNTAX],
