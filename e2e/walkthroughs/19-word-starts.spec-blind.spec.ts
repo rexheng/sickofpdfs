@@ -583,7 +583,8 @@ test('a scanned page shows nothing bold and a quiet note says why, once for this
 
   // The page itself is as the file draws it.
   await waitForTextOrPicture(scan);
-  const around = (): Box[] => (where === null ? [{ left: 0, top: 0, right: 100_000, bottom: 120 }, { left: 0, top: 640, right: 100_000, bottom: 100_000 }] : [grown({ left: where.x, top: where.y, right: where.x + where.width, bottom: where.y + where.height }, 16)]);
+  // Triage (word starts round 2): the note is now a snackbar with padding and a shadow reaching about 30 px past its text.
+  const around = (): Box[] => (where === null ? [{ left: 0, top: 0, right: 100_000, bottom: 120 }, { left: 0, top: 640, right: 100_000, bottom: 100_000 }] : [grown({ left: where.x, top: where.y, right: where.x + where.width, bottom: where.y + where.height }, 36)]);
   expect(await drawnShare(scan, 0, { except: around, name: '19-scan', testInfo }), 'a scanned page shows nothing bold: the page is the same with the switch on and off').toBeLessThan(0.0003);
   expect((await noteWatch(scan)).appeared, 'turning the switch off and on again does not bring the note back: it is once per tab').toBe(1);
 
