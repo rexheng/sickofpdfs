@@ -187,6 +187,8 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
   - Words of 1 to 3 letters get their first letter bold. Longer words get their first half bold, rounded up: "Read·ing" (4 of 7), "met·hod" (3 of 6), "facili·tating" (6 of 12), as in the owner's reference.
   - Only letters count. Pure numbers, maths symbols and punctuation are left alone.
   - Each part of a hyphenated word counts as its own word. A word broken across lines counts per line.
+  - An apostrophe does not split a word ("do·n't"). A word that mixes letters and digits is bold from its first character ("2n·d"). Single maths letters set in a text font are bolded like any word.
+  - Text that is already bold gets a lighter stroke, so it never smudges. With the switch on, the owner's own bold marks take the same heavier weight.
 - **How it is drawn.** It reuses the bold mark's glyph-outline overlay (BoldLayer), with a heavier stroke, so it reads as clearly bold at 100%, as in common examples. It is drawn over the page's render and never changes the file.
   - Selecting, copying, Find, links, marks and comments work exactly as without it.
   - The owner's own bold marks still show whole words bold.
@@ -231,6 +233,7 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
 | Find / go to page | Ctrl+F / Ctrl+G | Reading |
 | Zoom in / out / fit width | Ctrl+= / Ctrl+− / Ctrl+0 | Reading |
 | Rotate | Ctrl+\] / Ctrl+\[ | Reading |
+| Bold word starts | Alt+Shift+S | Reading |
 | Print / download original | Ctrl+P / Ctrl+S | Reading |
 | Notes panel / thumbnails and outline | Shift+F4 / F4 | Reading |
 | Save to library | Ctrl+Alt+S | Reading |
