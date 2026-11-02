@@ -41,8 +41,11 @@ export interface CaretHost {
   /** The page's glyphs, read from the source when they are not cached. */
   glyphs(pageIndex: number): Promise<PageGlyphs>;
   selection(): TextSelection | null;
-  /** Makes `s` the selection (null, or an empty one, clears it), as the keys and a drag do. */
-  select(s: TextSelection | null): void;
+  /**
+   * Makes `s` the selection (null, or an empty one, clears it), as the keys and a drag do. `soon`: a held key is
+   * repeating, so the DOM selection may follow once it stops (the model, its paint and Copy are up to date at once).
+   */
+  select(s: TextSelection | null, soon?: boolean): void;
   /** A mounted page's box and the element the caret is drawn in; null when the page is not mounted. */
   mounted(pageIndex: number): { box: PageBox; caret: HTMLElement } | null;
   /** The page list's scroll area (`[role="document"]`). */
@@ -62,6 +65,8 @@ interface Move {
   extend: boolean;
   /** The key, for scrolling instead when there is no text to put the caret in. */
   key: string;
+  /** The key is held down and repeating. */
+  repeat: boolean;
 }
 
 /**
@@ -90,7 +95,7 @@ const cmpPos = (a: CharPos, b: CharPos) => a.pageIndex - b.pageIndex || a.charIn
 function moveOf(e: KeyboardEvent): Move | null {
   const ctrl = e.ctrlKey || e.metaKey;
   const extend = e.shiftKey;
-  const m = (kind: MoveKind, dir: 1 | -1): Move => ({ kind, dir, extend, key: e.key });
+  const m = (kind: MoveKind, dir: 1 | -1): Move => ({ kind, dir, extend, key: e.key, repeat: e.repeat });
   switch (e.key) {
     case 'ArrowRight':
       return m(ctrl ? 'word' : 'char', 1);
@@ -377,7 +382,8 @@ export class CaretBrowsing {
     if (!to) return;
     if (move.extend) {
       const anchor = sel?.anchor ?? { pageIndex: at.pageIndex, charIndex: at.charIndex };
-      this.place(to, { select: { anchor, focus: { pageIndex: to.pageIndex, charIndex: to.charIndex } }, screen: move.kind === 'screen' ? move.dir : 0 });
+      const focus = { pageIndex: to.pageIndex, charIndex: to.charIndex };
+      this.place(to, { select: { anchor, focus }, soon: move.repeat, screen: move.kind === 'screen' ? move.dir : 0 });
     } else {
       this.place(to, { clear: true, screen: move.kind === 'screen' ? move.dir : 0, docStart: move.kind === 'docEdge' && move.dir < 0 });
     }
@@ -516,12 +522,15 @@ export class CaretBrowsing {
    * Puts the caret at `to`: the selection is set (`select`) or cleared (`clear`), the caret drawn, the view scrolled to
    * keep it in sight (by a screen first for Page Up/Down) and its line told to a screen reader.
    */
-  private place(to: CaretPos, o: { select?: TextSelection; clear?: boolean; scroll?: boolean; tell?: boolean; screen?: number; docStart?: boolean } = {}): void {
+  private place(
+    to: CaretPos,
+    o: { select?: TextSelection; soon?: boolean; clear?: boolean; scroll?: boolean; tell?: boolean; screen?: number; docStart?: boolean } = {},
+  ): void {
     this.pos = to;
     if (o.select || (o.clear && this.host.selection())) {
       this.selecting = true;
       try {
-        this.host.select(o.select ?? null);
+        this.host.select(o.select ?? null, o.soon === true);
       } finally {
         this.selecting = false;
       }

@@ -125,8 +125,9 @@ const REBUILD_ABOVE = 1.1;
 /** Glyphs are read only after scrolling has paused this long. */
 const SCROLL_IDLE_MS = 150;
 /**
- * A selection moved by the keys is shown in the DOM this long after the last key (see setModel's 'soon'): rewriting the
- * DOM selection over thousands of spans is most of a key's cost, and only the browser and screen readers read it.
+ * While a held key repeats, the selection it moves is shown in the DOM this long after the last repeat (setModel's
+ * 'soon'): rewriting the DOM selection over thousands of spans is most of a key's cost, and only the browser and screen
+ * readers read it. A single press shows it at once.
  */
 const DOM_FOLLOW_MS = 120;
 /** Selection rect requests a page may have with the engine at once (two, so a drag never waits for a whole round trip). */
@@ -306,9 +307,9 @@ export class TextLayerController {
         cachedGlyphs: (i) => this.glyphCache.get(i),
         glyphs: (i) => this.glyphs(i),
         selection: () => this.model,
-        select: (sel) => {
+        select: (sel, soon) => {
           this.clickedAt = null;
-          this.setModel(sel, sel ? 'soon' : true);
+          this.setModel(sel, sel && soon ? 'soon' : true);
         },
         mounted: (i) => {
           const s = this.pages.get(i);

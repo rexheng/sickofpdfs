@@ -374,10 +374,10 @@ const NEVER_THE_BROWSERS: Partial<Record<ViewerCommandId, KeyCombo[]>> = { 'mark
 const BY_PHYSICAL_KEY = new Set<ViewerCommandId>(['marks.comment', 'marks.documentNote']);
 
 /**
- * Single keys that are taken in a text field too, because they type nothing and the browser's own action is not wanted
- * anywhere in the viewer: F7 would ask to turn on Chrome's caret browsing over the viewer's own.
+ * Single keys that do nothing in a text field (single keys never fire while typing), not even the browser's own action:
+ * F7 there would ask to turn on Chrome's caret browsing over the viewer's own.
  */
-const EVEN_WHILE_TYPING = new Set<ViewerCommandId>(['view.caretBrowsing']);
+const SWALLOWED_WHILE_TYPING = new Set<ViewerCommandId>(['view.caretBrowsing']);
 
 /** The key was pressed in a text field (the note box, the page box). */
 function inTextField(e: KeyboardEvent): boolean {
@@ -405,7 +405,7 @@ export function commandShortcuts(cmds: ViewerCommands): ShortcutDef[] {
     const keys = [...c.keys, ...(HIDDEN_KEYS[c.id] ?? [])].filter((k) => !taken.includes(k));
     const ours = keys.filter((k) => alwaysOurs(c.id, k));
     const others = keys.filter((k) => !alwaysOurs(c.id, k));
-    const typing = EDITING_KEYS.has(c.id) ? { whileTyping: 'yield' as const } : EVEN_WHILE_TYPING.has(c.id) ? { whileTyping: 'run' as const } : {};
+    const typing = EDITING_KEYS.has(c.id) ? { whileTyping: 'yield' as const } : SWALLOWED_WHILE_TYPING.has(c.id) ? { whileTyping: 'swallow' as const } : {};
     if (taken.length > 0) defs.push({ id: c.id, keys: taken, run: (e) => !inTextField(e) && keysFree(c.id) && c.enabled() && c.run() });
     if (ours.length > 0) defs.push({ id: c.id, keys: ours, run: () => keysFree(c.id) && c.enabled() && c.run() });
     const physical = BY_PHYSICAL_KEY.has(c.id) ? { byPhysicalKey: true } : {};

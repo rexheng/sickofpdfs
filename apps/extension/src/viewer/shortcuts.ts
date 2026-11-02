@@ -26,10 +26,10 @@ export interface ShortcutDef {
   enabled?(): boolean;
   /**
    * In a text field: 'yield' leaves the key to the field (Ctrl+B, Ctrl+Z and Ctrl+C belong to the note box there);
-   * 'run' runs it there too (a key that types nothing, such as F7). Default: single keys and Ctrl+Alt combos yield,
-   * other Ctrl combos run (Ctrl+= zooms from the page box too).
+   * 'swallow' does nothing there, not even the browser's own action (F7: Chrome would ask to turn on its caret
+   * browsing). Default: single keys and Ctrl+Alt combos yield, other Ctrl combos run (Ctrl+= zooms from the page box too).
    */
-  whileTyping?: 'yield' | 'run' | 'default';
+  whileTyping?: 'yield' | 'swallow' | 'default';
   /**
    * A Ctrl+Alt letter combo also matches the physical key of that letter when the key typed another character (the
    * AltGr layouts; see the file comment). Only for keys that must work there: Ctrl+Alt+M.
@@ -181,7 +181,11 @@ export function installShortcuts(defs: ShortcutDef[], target: Window = window): 
         for (const combo of def.keys) {
           if (match === matchesOnLayout && def.byPhysicalKey !== true) continue;
           if (!match(e, combo)) continue;
-          if (typing && def.whileTyping !== 'run' && (def.whileTyping === 'yield' || yieldsToTyping(combo))) continue;
+          if (typing && def.whileTyping === 'swallow') {
+            e.preventDefault();
+            return;
+          }
+          if (typing && (def.whileTyping === 'yield' || yieldsToTyping(combo))) continue;
           if (def.enabled && !def.enabled()) continue;
           e.preventDefault();
           def.run(e);
