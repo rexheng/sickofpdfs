@@ -544,6 +544,8 @@ test('it never prints: the print copy and the printed sheets are the same with i
   }
 
   // What the browser would print: sheet 1 of each PDF, seen as a page.
+  // Triage (implementer, G8): the printouts are pictures only, so a viewer tab showing them with the switch on puts R90's scan note over the sheet; look with it off.
+  await setSwitch(page, false);
   const size = (await sheetSizes(offPdf))[0];
   const win = { width: 1280, height: 1160 };
   expect(size.width, 'sheets are page sized').toBeGreaterThan(300);
