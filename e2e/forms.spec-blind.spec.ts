@@ -73,7 +73,8 @@ test('a LaTeX paper whose only widgets are link boxes (NBER w29000) stays in our
 
   expect(isOurViewer(page.url()), 'still our viewer').toBe(true);
   await expect(bannerOf(page), 'it is not a form, so no banner about one').toHaveCount(0);
-  await expect(headerButton(page, CHIP.unsure), 'the library chip is untouched').toBeVisible();
+  // Triage (S11, rule 7): with the real filter this working paper is learning, so the chip says it is saved (by the filter).
+  await expect(headerButton(page, CHIP.saved), 'the library chip is untouched').toBeVisible();
   expect(server.requests(NBER), 'the paper was fetched once; a probe for a PDF that is not a form would be a second request').toBeLessThanOrEqual(1);
 });
 

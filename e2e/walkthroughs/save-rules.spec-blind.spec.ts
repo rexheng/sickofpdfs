@@ -14,6 +14,7 @@
 //
 // GUESSES: the chip's words ("Not sure", "Not saved", "Saved to library") are the spec's; the Undo chip is a button named "Undo"; the
 // question has buttons "Yes" and "No".
+import { forceVerdict } from '../support/filter-verdict';
 import { expect, hooks, test } from '../support/test';
 import { store as storeOf, waitForStore } from '../support/store-probe.spec-blind';
 import {
@@ -54,6 +55,9 @@ const undoChip = (page: Parameters<typeof libraryId>[0]) => page.getByRole('butt
 
 test.describe('on a PDF the filter is not sure about', () => {
   test.skip(!SAVING_AVAILABLE, NO_SAVING);
+  // Triage (S11, rule 7): the real filter's tie-breaker now saves the MIT handout by itself (+2), so these save-flow tests force
+  // "not sure" with the test build's verdict switch. The "not learning" tests below run under the real filter.
+  test.beforeEach(async ({ context }) => forceVerdict(context, 'unsure'));
 
   test('the first mark saves it and shows an Undo chip; Undo removes both the save and the mark', async ({ openViewer, server }, testInfo) => {
     const page = await openPaper(openViewer, server, UNSURE);

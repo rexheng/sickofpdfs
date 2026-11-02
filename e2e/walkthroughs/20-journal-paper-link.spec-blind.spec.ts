@@ -36,7 +36,10 @@ test('a journal paper is saved by itself, listed with its real title, and reopen
   // 2. The tooltip gives the reasons.
   const tip = await chipTooltip(page);
   note(testInfo, 'the chip tooltip says', tip);
-  expect(tip, 'the reasons include the References section').toMatch(/references/i);
+  // Triage (S11, rule 7): Attention's References heading is on page 10 of 15, outside the first and last 5 pages the filter reads
+  // (spec, Learning filter step 1), so it is saved on its arXiv number, citations and Abstract. The hover lists those, strongest first.
+  expect(tip, 'the reasons name what the filter found, strongest first').toMatch(/^arXiv number/i);
+  expect(tip.split(',').length, 'up to four of them').toBeGreaterThanOrEqual(3);
   await shot(page, testInfo, 'chip-reasons');
 
   const id = await libraryId(page);

@@ -41,7 +41,8 @@ export const headerButton = (page: Page, name: string | RegExp): Locator => head
 
 export const CHIP = {
   saved: /Saved to library/,
-  unsure: /Not sure: Save\?/,
+  // Triage (S11): the "not sure" chip reads "Not sure: Save to library" (R73's plain words after "Not sure").
+  unsure: /^Not sure: Save/,
   incognito: /Incognito: view only/,
 } as const;
 

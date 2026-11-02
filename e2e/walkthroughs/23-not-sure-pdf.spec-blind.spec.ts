@@ -72,7 +72,15 @@ async function openUnsure(openViewer: (u: string) => Promise<Page>, serverUrl: (
 }
 
 test('after 20 seconds a quiet banner offers Save, Not now, Never for this file and Always for this site', async ({ openViewer, server }, testInfo) => {
-  const page = await openUnsure(openViewer, (p) => server.url(p), BOOKLET_A);
+  // Triage (S11, rule 7): booklet A scores 1.5, and the tie-breaker (S10, spec step 3) reads it as study material (+1.63), so it is
+  // saved by itself. B and C stay "not sure" (2.30 and 2.42), so B is the "not sure" PDF here and C below.
+  const a = await openViewer(server.url(BOOKLET_A.path));
+  await waitViewerReady(a);
+  await waitForStore(a);
+  expect(await decided(a), 'booklet A is saved by itself: the tie-breaker reads it as study material').toBe('saved');
+  await a.close();
+
+  const page = await openUnsure(openViewer, (p) => server.url(p), BOOKLET_B);
   const decidedAt = Date.now();
 
   await sleep(8000);
@@ -150,7 +158,8 @@ test('Always for this site saves the next PDF from that site, but a card number 
   expect(await libraryId(baseline), 'before the rule, a not-sure PDF from this site is not saved').toBeNull();
   await baseline.close();
 
-  const page = await openUnsure(openViewer, (p) => server.url(p), BOOKLET_A);
+  // Triage (S11, rule 7): B, not A, which the tie-breaker saves by itself (see the first test).
+  const page = await openUnsure(openViewer, (p) => server.url(p), BOOKLET_B);
   await expect(banner(page, ALWAYS)).toBeVisible({ timeout: 40_000 });
   await banner(page, ALWAYS).click();
   await expect(banner(page, ALWAYS), 'the banner goes').toHaveCount(0);
@@ -189,5 +198,5 @@ test('Always for this site saves the next PDF from that site, but a card number 
   const ids = (await allReadings(next)).map((r) => r.id);
   expect(ids, 'the library holds the PDF the rule saved').toContain(await shaOf(BOOKLET_C));
   expect(ids, 'and never the card statement').not.toContain(cardSha);
-  note(testInfo, 'the PDF whose banner was answered "Always for this site"', ids.includes(await shaOf(BOOKLET_A)) ? 'was saved too' : 'was not saved');
+  note(testInfo, 'the PDF whose banner was answered "Always for this site"', ids.includes(await shaOf(BOOKLET_B)) ? 'was saved too' : 'was not saved');
 });

@@ -60,6 +60,7 @@ test('No keeps the note in the tab until it closes; the library stays empty and 
   // No: the note box opens; write the note
   expect(await answerSavePrompt(page, 'No')).toBe(true);
   await expect(noteBox(page), 'after No the note box opens').toBeVisible({ timeout: 5000 });
+  await expect(savePrompt(page), 'the question has closed').toHaveCount(0); // Triage (S11, rule 7): type once it has gone
   await page.keyboard.type(NOTE, { delay: 8 });
   await page.keyboard.press('Enter');
   await expect(cardWith(page, NOTE), 'the note is a card in the margin').toBeVisible({ timeout: 5000 });
@@ -96,6 +97,7 @@ test('Yes saves the PDF with the note, and the library lists it with the note', 
   await expect(savePrompt(page).first(), 'it asks right away').toBeVisible({ timeout: 5000 });
   expect(await answerSavePrompt(page, 'Yes')).toBe(true);
   await expect(noteBox(page), 'after Yes the note box opens').toBeVisible({ timeout: 5000 });
+  await expect(savePrompt(page), 'the question has closed').toHaveCount(0); // Triage (S11, rule 7): type once it has gone
   await page.keyboard.type(NOTE, { delay: 8 });
   await page.keyboard.press('Enter');
   await expect(cardWith(page, NOTE)).toBeVisible({ timeout: 5000 });

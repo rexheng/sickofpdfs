@@ -646,6 +646,10 @@ test('on scan-120.pdf an Alt+drag area takes a note, which is saved with the PDF
   const dragNorm = await normOfBox(page, 2, dragBox);
 
   // Comment on it. The question about saving a scan is answered Yes, so the area and its note are kept.
+  // Triage (S11, rule 7): the area is the first mark on a scan judged not learning, so the question opens on the drag itself.
+  // As the owner does, it is answered first, and then Ctrl+Alt+M comments on the area.
+  expect(await answerSavePrompt(page, 'Yes', 5000), 'the area, the first mark on the scan, asks the question').toBe(true);
+  await expect(page.getByText(/save this pdf to keep your notes/i), 'and the question goes').toHaveCount(0);
   await page.mouse.move(AWAY.x, AWAY.y);
   const area = centreOf(dragBox);
   await page.mouse.move(area.x, area.y);

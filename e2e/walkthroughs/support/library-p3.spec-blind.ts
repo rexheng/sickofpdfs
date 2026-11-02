@@ -168,15 +168,31 @@ export const headerButton = (page: Page, name: string | RegExp): Locator => page
 
 /** Opens the viewer's File menu and chooses an item by what it says. */
 export async function chooseFileMenuItem(page: Page, name: RegExp): Promise<void> {
-  await page.getByRole('menubar').getByRole('menuitem', { name: 'File', exact: true }).click();
+  await openFileMenu(page);
   await page.getByRole('menu').getByRole('menuitem', { name }).click();
+}
+
+/**
+ * Triage (S11, rule 7): under load a click on "File" could land while the menu from the step before was still closing, and so
+ * close it again; the item was then waited for until the test ran out of time (2d). Open it, and make sure it is open.
+ */
+async function openFileMenu(page: Page): Promise<void> {
+  const file = page.getByRole('menubar').getByRole('menuitem', { name: 'File', exact: true });
+  await expect(page.getByRole('menu'), 'no menu is still open').toHaveCount(0, { timeout: 10_000 });
+  await file.click();
+  if (!(await page.getByRole('menu').first().isVisible().catch(() => false))) {
+    await page.waitForTimeout(300);
+    if (!(await page.getByRole('menu').first().isVisible().catch(() => false))) await file.click();
+  }
+  await expect(page.getByRole('menu').first(), 'the File menu is open').toBeVisible({ timeout: 10_000 });
 }
 
 /** True when the viewer's File menu has an item with this name. */
 export async function fileMenuHas(page: Page, name: RegExp): Promise<boolean> {
-  await page.getByRole('menubar').getByRole('menuitem', { name: 'File', exact: true }).click();
+  await openFileMenu(page);
   const has = (await page.getByRole('menu').getByRole('menuitem', { name }).count()) > 0;
   await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu'), 'the File menu closes').toHaveCount(0, { timeout: 10_000 }); // Triage (S11): see openFileMenu
   return has;
 }
 

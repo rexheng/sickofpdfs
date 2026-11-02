@@ -19,6 +19,7 @@
 // GUESSES (the spec names no markup; written down in task-30-tests-report.md): the chip is a button inside the page's <header>, found by
 // its words; "Undo" is a button in the same header; with the stand-in filter every ordinary PDF opens as "Not sure: Save?"; one history
 // row per document, however often it is opened; the tooltip appears on hover.
+import { forceVerdict } from './support/filter-verdict';
 import { ensureSamplePdf } from './support/sample-pdf.spec-blind';
 import { opfsFilesContaining, blobPathOf, CHIP, headerButton, listOpfs, opfsSha256, save, waitDecided } from './support/save-probe.spec-blind';
 import { makeStampedPdf } from './support/stamped-pdf';
@@ -47,6 +48,10 @@ test.beforeAll(async () => {
   await ensureSamplePdf(SAMPLE);
 });
 
+// Triage (S11, rule 7): these are about the save flow on a "not sure" PDF, written when the stand-in called every PDF that. The
+// real filter calls the one-page sample "not learning", so the test build's verdict switch makes these PDFs "not sure" again.
+test.beforeEach(async ({ context }) => forceVerdict(context, 'unsure'));
+
 test('reading a new PDF writes nothing; Ctrl+Alt+S then saves it, and the chip, the rows and the stored copy all say so', async ({ openViewer, server }, testInfo) => {
   const url = server.url(SAMPLE_PATH);
   const { page, state } = await openDecided(openViewer, url);
@@ -70,7 +75,8 @@ test('reading a new PDF writes nothing; Ctrl+Alt+S then saves it, and the chip, 
 
   await test.step('the chip explains itself on hover', async () => {
     await headerButton(page, CHIP.unsure).hover();
-    await expect.soft(page.getByText('No filter yet: your first mark saves it').first()).toBeVisible({ timeout: 5000 });
+    // Triage (S11): "No filter yet" never shows (R73); the hover says why to save.
+    await expect.soft(page.getByText(/this pdf isn.t in your library yet/i).first()).toBeVisible({ timeout: 5000 });
     await page.mouse.move(600, 400);
   });
 
