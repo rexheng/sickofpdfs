@@ -200,6 +200,20 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
   - The Settings page (S14) will later add a strength choice (Light, Medium or Strong, where Medium is the rule above).
 - **Speed.** It is drawn for visible pages first, after the page's own render, so it never delays the first paint or scrolling. It is cached per page and zoom. Turning it on shows bold on the visible pages within 300 ms on the reference laptop.
 
+**R93: Text cursor (Nov 2, owner request).** A text cursor (caret) for reading and selecting by keyboard, like Chrome's caret browsing and Foxit's text cursor.
+- **The switch.** View → "Text cursor", with a check mark and a shortcut. It is remembered on this computer and off at first. F7 is used if Chrome lets the viewer have it; otherwise a key that clashes with nothing.
+- **Placing it.** With the switch on, a click in the text puts a thin blinking cursor between letters. With reduced motion, it doesn't blink. A drag still selects as before.
+- **Moving.** The cursor follows reading order, so two-column papers go down one column and then the next. The page scrolls to keep it in view.
+  - ←/→ move one letter, and Ctrl+←/→ one word.
+  - ↑/↓ move one line, keeping roughly the same position across.
+  - Home/End go to the start or end of the line, and Ctrl+Home/End to the start or end of the PDF.
+  - PageUp/PageDown move one screen.
+- **Selecting.** Shift plus any of those keys extends the selection from the cursor. This works with or without the switch: after a mouse selection, Shift+arrows adjust its end.
+  - The selection is the same as a mouse selection, so copy, the mark keys, Shift+F10 (the mark menu) and comments all work on it.
+  - Esc collapses the selection back to the cursor.
+- **Elsewhere.** It works on rotated pages and in two-page view. A Find hit, on Enter, puts the cursor at the hit. Scanned pages without text are skipped, with a quiet note once per tab. A screen reader hears the line the cursor moves to.
+- **Without the switch,** the arrow keys scroll as before.
+
 **Shortcuts.** Single-key and Ctrl+Alt shortcuts never fire while you are typing, because on some keyboards Ctrl+Alt is AltGr. Letters and symbols are matched by the character they type, so shortcuts follow your keyboard layout; only the number row (Alt+Shift+5, 1 to 5) is matched by position. Ctrl+= and Ctrl++ both zoom in. All are rebindable in Settings, and Ctrl+U only acts when text is selected.
 
 | Action | Keys | When |
@@ -268,6 +282,31 @@ Each document keeps its locations (links and file paths, first and last seen). L
 | Courses | Groups by course code found in the link, folder or first page (such as EC1A1); rename or merge freely | 3 |
 
 The "+ New" button offers Upload PDF, Open file and Paste link. In an Incognito window the extension only views PDFs: no marks, notes or saving.
+
+**R92: Tags, the auto categoriser and smart sorting (Nov 2, owner request).** The owner chose two things: auto tags are applied, marked "auto"; and everything runs on the laptop only, with no network.
+- **Tags.** Any reading can carry tags.
+  - Add or remove them from the library (a row's menu, or several rows at once), from the viewer's "Saved to library" menu, and from File → "About this PDF".
+  - The library's left column lists every tag with its count; a click filters the list.
+  - Tags can be renamed, merged and deleted.
+  - Tags are kept in backups, and sync in Release 2.
+- **Auto tags.** They appear straight away as lighter chips marked "auto". One click keeps one (it becomes the owner's own tag) or removes it. A removed auto tag never comes back on that reading. There are three kinds:
+  - **Course:** a course code found in the link, the folder or page 1 (such as EC1A1, CS50 or 14.01) becomes "Course: EC1A1". This brings the Courses grouping forward as tags; the Courses page stays in Release 3.
+  - **Your tags:** once the owner has given a tag to 3 or more readings, a new reading that is close in meaning to them gets that tag as auto.
+  - **Topics:** from 6 readings on, readings that are close in meaning are grouped into topics. Each topic is named from its most telling words, such as "Inflation · Monetary Policy". Renaming a topic keeps the new name.
+  - At most 3 auto topic tags go on one reading.
+- **How it works.** The bundled MiniLM model (the filter's tie-breaker) turns each saved reading's title and abstract, or its opening text, into a meaning vector. This happens on this computer, in a worker, after the save and off the reading path.
+  - The vectors stay local. They are never backed up or synced, and are rebuilt when needed.
+  - Nothing goes over the network. Unsaved PDFs are never categorised.
+- **About this PDF.** A details panel, like Drive's file details, opens in the library (from a row) and in the viewer (File → About this PDF). It shows:
+  - the title (editable), authors, year, DOI or arXiv id, kind, course and tags;
+  - where it came from (the page and link) and when;
+  - pages, first and last opened, and reading time;
+  - "Your context": a short note on why the owner is reading it. This is the reading's document note.
+  The original file is never changed. "Download with notes" (Release 3) writes the tags into the PDF's Keywords and the context into its Subject.
+- **Smart sorting.**
+  - The library can group by Topic, Course, Tag or Kind; within a group, the most recently opened comes first.
+  - "Related readings" lists the 5 closest readings by meaning, in About this PDF and in the library's details panel.
+  - Search (Ctrl+K) accepts `tag:` and `course:`.
 
 ## Learning filter and privacy
 
