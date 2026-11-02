@@ -59,6 +59,7 @@ import {
   reopenDocument,
 } from './open-document';
 import { notesPanelFeature } from './notes-panel/feature';
+import { useReadingHistory } from './history/use-reading-history';
 import { publishRuntime, type ViewerHooks, type ViewerState } from './runtime';
 import { atPage, openInChrome } from './open-in-chrome';
 import { settlePresentation } from './presentation';
@@ -535,6 +536,8 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   const find = useReaderFind({ backend, doc, store, api, pageText, textLayers, jumps: nav.jumps, root: rootRef, scans });
   // The document's notes: marks, comments and drafts (Phase 2). Null in Incognito, which has none.
   const notes = useNotes(doc, pageText, store, api, textLayers, save, nav.jumps, ui);
+  // Reading time, the last spot and the pages visited (kept once the PDF is saved), and the return to the last spot.
+  useReadingHistory({ doc, params, view: store, pageList: api, save, ui, restarted: resume !== undefined });
   const commands = useMemo(() => {
     const ctx: ViewerContext = {
       params,
