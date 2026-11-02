@@ -546,7 +546,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   const [scans] = useState(() => new ScanDetector(backend, doc.open.doc, doc.open.pages));
   // The page text everything reads (the text layer now; marks and find later): one glyph cache for the document.
   const [pageText] = useState(() => createPageTextProvider(backend, doc.open.doc));
-  const wordStarts = useWordStartsController(doc, pageText, scans, ui);
+  const wordStarts = useWordStartsController(doc, pageText, scans, scheduler, ui);
   const wordStartsOn = useWordStarts();
   const api = useRef<PageListApi | null>(null);
   const [textLayers] = useState(
@@ -747,12 +747,19 @@ function useNotes(
  * view with nothing to draw is checked for being a scan (no text and mostly a picture, or text with no glyphs to draw
  * over a picture, as a scan's OCR layer is); the first such page in this tab gets R90's quiet note.
  */
-function useWordStartsController(doc: OpenedDocument, pageText: ReturnType<typeof createPageTextProvider>, scans: ScanDetector, ui: ViewerUi): WordStartsController {
+function useWordStartsController(
+  doc: OpenedDocument,
+  pageText: ReturnType<typeof createPageTextProvider>,
+  scans: ScanDetector,
+  scheduler: RenderScheduler,
+  ui: ViewerUi,
+): WordStartsController {
   const [controller] = useState(() => {
     const made: WordStartsController = new WordStartsController({
       backend,
       doc: doc.open.doc,
       text: pageText,
+      renderIdle: () => scheduler.isIdle(),
       onNothingToDraw: (pageIndex, hasText) => {
         (hasText ? scans.isImagePage(pageIndex) : scans.isScannedPage(pageIndex)).then(
           (scan) => scan && made.enabled && noteScannedPageOnce((text) => ui.showNote(text)),

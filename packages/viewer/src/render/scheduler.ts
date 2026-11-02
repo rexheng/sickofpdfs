@@ -91,6 +91,18 @@ export class RenderScheduler {
     return this.fullCost;
   }
 
+  /**
+   * Whether background engine work may run now (bold word starts, R90): no page-list render is queued or drawing, and no
+   * full render has been asked for or finished in the last IDLE_AFTER_FULL_MS, the same wait the rail's idle previews
+   * keep. Each engine call holds the worker, so such work asks before every call.
+   */
+  isIdle(): boolean {
+    if (this.disposed) return false;
+    for (const job of this.running.values()) if (!job.idle) return false;
+    if (this.queue.some((job) => !job.idle)) return false;
+    return performance.now() - this.lastFullAt >= IDLE_AFTER_FULL_MS;
+  }
+
   /** How many previews the cache keeps. */
   get previewCapacity(): number {
     return this.o.previewCache;

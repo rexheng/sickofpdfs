@@ -9,15 +9,16 @@
 //   page turn), so it turns with the page and fits any zoom. The paths are made once per page: zooming, rotating,
 //   two-page view and presentation mode only redraw them. A few paths a page (one per colour and stroke width), never a
 //   node per glyph.
-// - The work for a page (its glyphs, then its outlines a few hundred chars per engine call) starts only after the
-//   page's own render is on screen, and only while the reader is not scrolling. Visible pages go first, then the pages
-//   mounted around them. The engine worker also draws the pages, so each call is kept short, and one call is out at a
-//   time. A page's paths are kept while the page is mounted, and dropped with it.
+// - The work for a page (its chars, then its outlines a few hundred chars per engine call) starts only after the
+//   page's own render is on screen, and only while the reader is not scrolling and the engine is not drawing pages.
+//   Visible pages go first, then the pages mounted around them. The engine worker also draws the pages, so each call is
+//   kept short, one call is out at a time, and each waits until no page render is queued (RenderScheduler.isIdle). A
+//   page's paths are kept while the page is mounted, and dropped with it.
 // - A page with no outline to draw (a scan, whose OCR text is invisible; a page with no text) is left as it is, and the
 //   controller says so (onNothingToDraw) when such a page is in view, for R90's quiet note.
 import { memo, useLayoutEffect, useRef, useSyncExternalStore, type JSX } from 'react';
 import { PdfEngineCrashedError } from '../backend/errors';
-import type { DocHandle, GlyphOutline, PageGlyphs, PageSize, PdfBackend, Rotation } from '../backend/types';
+import type { DocHandle, GlyphOutline, PageSize, PdfBackend, Rotation } from '../backend/types';
 import type { PageBox } from '../layout/page-layout';
 import { type BoldRange, displayTransform, type DrawnRange, glyphPaths } from '../marks/BoldLayer';
 import { type WordStartChunk, wordStartChunks, wordStartRanges } from '../marks/word-starts';
@@ -41,6 +42,8 @@ const STROKE_QUANTUM_PT = 0.05;
 const CHARS_PER_CALL = 512;
 /** The work waits until the page list has not scrolled for this long. */
 const SCROLL_IDLE_MS = 120;
+/** While the pages are being drawn, the work looks again this often. */
+const BUSY_RECHECK_MS = 50;
 /** The perf mark made when a page's word starts are on screen. */
 export const WORD_STARTS_PERF_MARK = 'sop:word-starts-drawn';
 
@@ -53,8 +56,13 @@ export interface WordStartsPage {
 export interface WordStartsControllerOptions {
   backend: Pick<PdfBackend, 'getGlyphOutlines'>;
   doc: DocHandle;
-  /** The page text provider's glyphs (cached per page, shared with the text layer). */
-  text: { glyphs(pageIndex: number): Promise<PageGlyphs> };
+  /** The page's chars, one UTF-16 unit each (the page text provider's rawText: getPageChars, cached per page). */
+  text: { rawText(pageIndex: number): Promise<string> };
+  /**
+   * Whether the engine is free of page drawing (RenderScheduler.isIdle). Every engine call waits for it, so a jump or a
+   * zoom never waits behind word starts. Without it, only the scrolling is waited for.
+   */
+  renderIdle?: () => boolean;
   /**
    * A page in view with the switch on has nothing to draw: no words (`hasText` false), or words with no outline (a
    * scan's invisible OCR text, Type3 fonts). Called each time such a page comes into view while the switch is on.
@@ -62,9 +70,8 @@ export interface WordStartsControllerOptions {
   onNothingToDraw?: (pageIndex: number, hasText: boolean) => void;
 }
 
-/** A page being worked on: its glyphs, its word starts in engine calls, and the outlines kept so far. */
+/** A page being worked on: its word starts, in engine calls, and the outlines kept so far. */
 interface Work {
-  glyphs: PageGlyphs;
   ranges: BoldRange[];
   chunks: WordStartChunk[];
   next: number;
@@ -80,7 +87,7 @@ interface Slot {
   painted: boolean;
   work: Work | null;
   drawn: WordStartsPage | null;
-  /** The engine could not give its glyphs or outlines: left undrawn until the page is mounted again. */
+  /** The engine could not give its chars or outlines: left undrawn until the page is mounted again. */
   failed: boolean;
 }
 
@@ -218,7 +225,7 @@ export class WordStartsController {
     try {
       for (;;) {
         if (!this.on || this.disposed || this.crashed) return;
-        await this.scrollIdle();
+        await this.engineFree();
         if (!this.on || this.disposed) return;
         const slot = this.next();
         if (slot === null) return;
@@ -239,16 +246,14 @@ export class WordStartsController {
     }
   }
 
-  /** One engine call for `slot`: its glyphs first, then its outlines a chunk at a time; the last one draws the page. */
+  /** One engine call for `slot`: its chars first, then its outlines a chunk at a time; the last one draws the page. */
   private async step(slot: Slot): Promise<void> {
     const live = () => this.slots.get(slot.index) === slot && !this.disposed;
     if (slot.work === null) {
-      const glyphs = await this.o.text.glyphs(slot.index);
+      const chars = await this.o.text.rawText(slot.index);
       if (!live()) return;
-      let chars = '';
-      for (const g of glyphs.glyphs) chars += g.text;
       const ranges = wordStartRanges(chars);
-      slot.work = { glyphs, ranges, chunks: wordStartChunks(ranges, CHARS_PER_CALL), next: 0, kept: [] };
+      slot.work = { ranges, chunks: wordStartChunks(ranges, CHARS_PER_CALL), next: 0, kept: [] };
     }
     const w = slot.work;
     const chunk = w.chunks[w.next];
@@ -259,20 +264,20 @@ export class WordStartsController {
       w.next++;
     }
     if (w.next < w.chunks.length) return;
-    const page = w.glyphs.glyphs;
-    const strokeOf = (o: GlyphOutline) => ((o.fontWeight ?? 0) >= BOLD_FONT_WEIGHT ? WORD_STARTS_ON_BOLD_STROKE_EM : WORD_STARTS_STROKE_EM) * (page[o.charIndex]?.fontSize ?? 0);
+    const strokeOf = (o: GlyphOutline) => ((o.fontWeight ?? 0) >= BOLD_FONT_WEIGHT ? WORD_STARTS_ON_BOLD_STROKE_EM : WORD_STARTS_STROKE_EM) * (o.fontSize ?? 0);
     slot.drawn = { glyphs: glyphPaths(w.kept, strokeOf, STROKE_QUANTUM_PT), hasText: w.ranges.length > 0 };
     slot.work = null;
     this.emit();
     this.tellIfEmpty(slot);
   }
 
-  /** Waits until the page list has not scrolled for SCROLL_IDLE_MS. */
-  private async scrollIdle(): Promise<void> {
+  /** Waits until the page list has not scrolled for SCROLL_IDLE_MS and the engine is not drawing pages (renderIdle). */
+  private async engineFree(): Promise<void> {
     for (;;) {
       const wait = this.lastScrollAt + SCROLL_IDLE_MS - performance.now();
-      if (wait <= 0) return;
-      await new Promise((resolve) => setTimeout(resolve, wait));
+      if (wait <= 0 && (this.o.renderIdle?.() ?? true)) return;
+      await new Promise((resolve) => setTimeout(resolve, Math.max(wait, BUSY_RECHECK_MS)));
+      if (this.disposed) return;
     }
   }
 }

@@ -966,7 +966,7 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
    * The glyph outlines of chars [charStart, charStart + charCount) (PdfBackend.getGlyphOutlines). Per glyph:
    *   1. its text object (FPDFText_GetTextObject) gives the font (FPDFTextObj_GetFont), the size (GetFontSize), the
    *      render mode (GetTextRenderMode) and, with the char, its fill and stroke colours (FPDFText_GetFillColor and
-   *      GetStrokeColor), and its font's weight (FPDFFont_GetWeight, FPDFFont_GetFlags' ForceBold). Invisible text is
+   *      GetStrokeColor), its effective size and its font's weight (FPDFFont_GetWeight, GetFlags' ForceBold). Invisible text is
    *      skipped: modes 3 and 7, or nothing painted with alpha above 0;
    *   2. the outline, in ems: FPDFFont_GetGlyphPath(font, argument, size), the argument being the char's Unicode value
    *      (GLYPH_ARG = unicode), or the forms in glyphArguments for ligatures and joined hyphens. Outlines are cached by
@@ -1051,6 +1051,7 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
           const x0 = Math.round(((ox[first - lo] ?? 0) - crop.left) * OUTLINE_PRECISION) + placed.x0;
           const y0 = Math.round((crop.top - (oy[first - lo] ?? 0)) * OUTLINE_PRECISION) + placed.y0;
           const outline: GlyphOutline = { charIndex: i, d: `M${x0 / OUTLINE_PRECISION} ${y0 / OUTLINE_PRECISION}${placed.tail}`, fill: paint.fill, stroke: paint.stroke };
+          if (paint.fontSize > 0) outline.fontSize = paint.fontSize;
           if (paint.weight > 0) outline.fontWeight = paint.weight;
           out.push(outline);
         }
@@ -1122,7 +1123,9 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
     const weight = font ? x.FPDFFont_GetWeight(font) : -1;
     const flags = font ? x.FPDFFont_GetFlags(font) : -1; // -1: PDFium could not read them
     const forceBold = flags > 0 && (flags & FONT_FLAG_FORCE_BOLD) !== 0;
-    return { font, size, matrix, matrixKey: matrix.join(' '), fill, stroke, weight: forceBold ? Math.max(weight, FORCE_BOLD_WEIGHT) : weight };
+    // As Glyph.fontSize (R30): the text object's size × the char matrix's vertical scale.
+    const fontSize = Math.hypot(matrix[2], matrix[3]);
+    return { font, size, matrix, matrixKey: matrix.join(' '), fill, stroke, fontSize, weight: forceBold ? Math.max(weight, FORCE_BOLD_WEIGHT) : weight };
   }
 
   /**
@@ -1321,6 +1324,8 @@ interface TextObjectPaint {
   matrixKey: string;
   fill: PdfColor | null;
   stroke: PdfColor | null;
+  /** The effective font size in points, as Glyph.fontSize. */
+  fontSize: number;
   /** FPDFFont_GetWeight (raised to FORCE_BOLD_WEIGHT for a ForceBold font); -1 or 0 when PDFium has none. */
   weight: number;
 }
