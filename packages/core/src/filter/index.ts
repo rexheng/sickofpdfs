@@ -8,6 +8,7 @@ export {
   LOOKS_LIKE,
   NOT_SAVE_AT,
   SAVE_AT,
+  SCAN_TITLE_REASON,
 } from './classify';
 export { detectHardBlocks, detectHardBlocksOnEveryPage, hardBlockApplies, HARD_BLOCK_KINDS } from './hard-blocks';
 export { CATCH_ALL_HOSTS, cleanList, isCatchAllHost, isListEntryOk, listEntryProblem, listMatches, MAX_LIST_ENTRY } from './rules';

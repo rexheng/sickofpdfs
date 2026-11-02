@@ -134,3 +134,18 @@ export function nameWords(link: LinkParts | null, fileName: string, title: strin
     /(?:^|[^a-z0-9])[a-z]{2}\d[a-z]\d(?:[^a-z0-9]|$)/i.test(joined);
   return { negative, course };
 }
+
+// R94: a scan has no text to read, so its title is all there is: the link's path, the file name and the PDF's own title.
+const PRIVATE_TITLE_WORDS = new Set(['bank', 'tax', 'cv', 'resume', 'passport']);
+/** A camera or scanner name: IMG_1234, DSC01234, Scan_2023-01-02. */
+const DEVICE_NAME = /(?:^|[^a-z0-9])(?:img|dsc[nf]?|pxl|mvimg|scan|image|photo|cam)[ _-]?\d{3,}/;
+/** A course code: CS50, MATH101, EC1A1, 14.01. */
+const COURSE_CODE = /(?:^|[^a-z0-9])(?:[a-z]{2,4}\d{2,3}[a-z]?|[a-z]{2}\d[a-z]\d)(?![a-z0-9])|(?:^|[\s_-])\d{1,2}\.\d{2,3}(?![a-z0-9]|\.\d)/;
+
+/** True when a no-text scan's title looks like a course reading and not like paperwork or a camera's file name (R94). */
+export function scanTitleLooksLikeLearning(link: LinkParts | null, fileName: string, title: string | null): boolean {
+  const text = `${link?.path ?? ''} ${fileName} ${title ?? ''}`.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replaceAll('.pdf', ' ');
+  const { negative, course } = nameWords(link, fileName, title);
+  if (negative || DEVICE_NAME.test(text) || text.split(/[^a-z0-9]+/).some((w) => PRIVATE_TITLE_WORDS.has(w))) return false;
+  return course || /problem[ _-]?sets?/.test(text) || COURSE_CODE.test(text);
+}

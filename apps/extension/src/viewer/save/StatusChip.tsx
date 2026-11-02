@@ -4,10 +4,11 @@
 //
 // Wording (R73: plain, for an owner who reads best in short sentences):
 //   not sure      "Not sure: Save to library"                     hover: "This PDF isn't in your library yet. Save it to keep your notes."
+//   a scan        "Not sure: scanned pages · Save to library"     hover: "It's a scan, but its title looks like a course reading." (R94)
 //   not learning  "Not saved: looks like an invoice or receipt"   hover: "Click to save it to your library anyway." and what else it saw
 //   saved         "Saved to library"                              hover: the reasons ("References section, DOI, 40 pages")
 // "No filter yet" never shows.
-import { STAND_IN_REASONS, type SaveState } from '@sop/core';
+import { SCAN_TITLE_REASON, STAND_IN_REASONS, type SaveState } from '@sop/core';
 import { Chip, type ChipProps, DropdownMenu, TextButton } from '@sop/ui';
 import { useCallback, useState, useSyncExternalStore } from 'react';
 import type { SaveControllerImpl } from './save-controller';
@@ -92,6 +93,10 @@ export function chipFor(state: SaveState, busy: SaveControllerImpl['busy'], save
         menu,
       };
     case 'unsure': {
+      // R94: a scan with no text whose title looks like a reading. The hover is the reason, in one plain sentence.
+      if (state.reasons.includes(SCAN_TITLE_REASON)) {
+        return { label: 'Not sure: scanned pages · Save to library', icon: 'library_add', tone: 'attention', tooltip: `${SCAN_TITLE_REASON} ${NOT_IN_LIBRARY}`, saves: true };
+      }
       const why = reasonsLine(state.reasons.filter((r) => !QUIET_REASONS.has(r)).slice(0, 2));
       return {
         // The plan's "Not sure: Save?" with R73's plain "Save to library": the filter really is not sure now, and says so.

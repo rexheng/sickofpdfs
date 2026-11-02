@@ -4,14 +4,16 @@
 //   3. your deny list
 //   4. force save (an arXiv id with References, or a DOI with Abstract and References)
 //   5. the score: 3 or more saves, 0 or less does not, between is "unsure" and may go to the tie-breaker
-// A PDF with no text is never saved by score: "unsure" from a scholarly or course site, otherwise "not-learning". A CV is
-// never saved by score.
+// A PDF with no text is never saved by score: "unsure" from a scholarly or course site, or (R94) when its title looks like
+// a course reading, otherwise "not-learning". A CV is never saved by score.
 // R91: your allow list only turns "unsure" (by the score) into a save. It never saves what the filter calls not learning
 // (no text, a CV, a receipt, a bank statement, a payslip), and the hard block and the deny list still come first.
 //
 // A FilterDecision never holds PDF text. Every reason is a fixed phrase from this file.
 
 import { detectHardBlocks, detectHardBlocksOnEveryPage, hardBlockApplies } from './hard-blocks';
+import { scanTitleLooksLikeLearning } from './hosts';
+import { capField } from './limits';
 import { listMatches } from './rules';
 import { gatherEvidence, NO_TEXT_WORDS, rankKinds, type Evidence } from './signals';
 import { ADMIN_GROUPS, labelPoints, type AdminKind } from './terms';
@@ -35,6 +37,9 @@ export const LOOKS_LIKE: Readonly<Record<AdminKind, string>> = {
   cv: 'looks like a CV or job application',
   personal: 'looks like a personal document',
 };
+
+/** R94: the reason of a scan that asks because its title looks like a course reading. The chip shows it as it is. */
+export const SCAN_TITLE_REASON = 'It’s a scan, but its title looks like a course reading.';
 
 export const HARD_BLOCK_REASON = 'has card or bank numbers';
 export const HARD_BLOCK_WARNING =
@@ -126,7 +131,7 @@ export function hardBlockDecision(found: Required<Pick<FilterDecision, 'hardBloc
   };
 }
 
-function noText(e: Evidence): FilterDecision {
+function noText(input: FilterInput, e: Evidence): FilterDecision {
   // A scan from a scholarly or course page asks. So does an image-only slide deck whose title or file name has course
   // words. Anything else is left alone. Ask never saves: it only shows the chip.
   const hostAsks = e.host.scholarly || e.host.lms;
@@ -141,6 +146,10 @@ function noText(e: Evidence): FilterDecision {
       rule: 'no-text',
       signals: e.signals.filter((s) => s.id.startsWith('host-') || s.id === 'slides' || s.id === 'name-course'),
     };
+  }
+  // R94: the title (file name, PDF title, link words) can lift a scan to "not sure"; a private-looking title or none keeps it out
+  if (!e.host.negative && scanTitleLooksLikeLearning(e.link, capField(input.fileName), capField(input.metadata.title))) {
+    return { verdict: 'unsure', reasons: [SCAN_TITLE_REASON], rule: 'no-text' };
   }
   return { verdict: 'not-learning', reasons: ['looks like a scan with no text'], rule: 'no-text' };
 }
@@ -204,7 +213,7 @@ export function classify(input: FilterInput, rules: FilterRules): FilterDecision
   }
 
   // a PDF with no text is never saved by score
-  if (e.words < NO_TEXT_WORDS) return noText(e);
+  if (e.words < NO_TEXT_WORDS) return noText(input, e);
 
   // A CV is a private document however many papers it lists. No score saves it.
   if (e.cvLike) {
