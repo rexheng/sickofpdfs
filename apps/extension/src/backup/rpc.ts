@@ -16,13 +16,15 @@ export type RpcRequest =
   /** A folder was chosen, or cleared: look at it again. With a folder, the first backup starts at once. */
   | { type: 'configure'; id: string; now?: number }
   /** A reading was forgotten: remove it from every backup file (ruling R75). */
-  | { type: 'scrub'; id: string; documentId: string };
+  | { type: 'scrub'; id: string; documentId: string }
+  /** Finish the removals waiting for the chosen folder and for folders the owner moved away from, now ("Change folder", "Turn off", "Try now"). */
+  | { type: 'drain'; id: string };
 
 export type RunSummary =
   | { ok: true; bytes: number; counts: BackupCounts; wrote: { pdfs: number; notes: number }; missingPdfs: number; at: number }
   | { ok: false; reason: 'no-folder' | 'permission' | 'held' | 'failed' | 'busy'; message: string; /** Test builds only: what went wrong, for a test to read. */ detail?: string };
 
-export type ScrubSummary = { status: 'removed' | 'no-backup' } | { status: 'pending'; reason: 'permission' | 'failed' | 'busy'; message: string };
+export type ScrubSummary = { status: 'removed' | 'no-backup' } | { status: 'pending'; reason: 'permission' | 'failed' | 'busy' | 'unreadable'; message: string };
 
 export interface RpcReply {
   type: 'reply';
@@ -42,6 +44,8 @@ export function asRequest(x: unknown): RpcRequest | null {
       return { type: 'configure', id: x.id, ...(typeof x.now === 'number' && Number.isFinite(x.now) ? { now: x.now } : {}) };
     case 'scrub':
       return typeof x.documentId === 'string' && /^[0-9a-f]{64}$/.test(x.documentId) ? { type: 'scrub', id: x.id, documentId: x.documentId } : null;
+    case 'drain':
+      return { type: 'drain', id: x.id };
     default:
       return null;
   }

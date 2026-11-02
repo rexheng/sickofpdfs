@@ -244,6 +244,10 @@
   --type-dialog-title: 400 24px/32px var(--font-display);
   --scrim-opacity: 32%;
 
+  /* Popover: a small card under its trigger (GM3 rich tooltip's width) [inf] */
+  --popover-max-w: 320px;
+  --shape-popover: 12px;
+
   /* Banner (the viewer's notice row) */
   --banner-min-h: 48px;
   --shape-banner: 12px;

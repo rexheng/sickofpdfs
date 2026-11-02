@@ -2,10 +2,14 @@
 // A worker has its own thread, so none of the work below (turning the library into files, streaming PDFs out) can hold up a viewer tab,
 // which shares a renderer process with the offscreen document.
 //
-//  - It answers requests from pages (rpc.ts): back up now, a folder was chosen or cleared, a reading was forgotten.
+//  - It answers requests from pages (rpc.ts): back up now, a folder was chosen or cleared, a reading was forgotten, finish the
+//    removals waiting for a folder.
 //  - It runs the schedule (schedule.ts): every night, and after a session with new notes.
 //  - It keeps the status record (handle-store.ts) true, tells pages when it changes, and asks the service worker for the badge
-//    while the folder waits for the owner's click.
+//    while the folder waits for the owner's click or a run is on hold (R86).
+//  - Gone for good means gone from backups (R82): when the store announces that a reading was deleted (Forget, a Trash purge after
+//    30 days, an Undo of a save), its removal is queued for the chosen folder, and every run removes what is queued first, then
+//    what is still waiting for folders the owner moved away from. Moving a reading to the Trash is not a delete and removes nothing.
 //
 // Rules this file keeps:
 // - One run at a time. A run takes the Web Lock `sop-backup-run`; a second "back up now" answers "busy". A forgotten reading's removal
@@ -23,13 +27,17 @@ import { asRequest, RPC_CHANNEL, type RpcReply, type RpcRequest, type RunSummary
 import { decide, type LastOutcome, NOTES_QUIET_MS } from './schedule';
 import { scrubFolder, type ScrubOutcome } from './scrub';
 import {
+  badgeOf,
   type BackupStatus,
+  type BadgeState,
   emptyStatus,
   failureMessage,
   HELD_MESSAGES,
+  sameBadge,
+  UNREADABLE_SCRUB_MESSAGE,
   WAITING_MESSAGE,
 } from './status';
-import { currentTarget, type BackupTarget } from './target';
+import { currentTarget, retiredRecord, targetFrom, type BackupTarget } from './target';
 import { type RunOutcome, runBackup } from './writer';
 import { VIEWER_PATH } from '../shared/viewer-url';
 
@@ -51,7 +59,7 @@ export interface ControllerOptions {
   /** A new port to the store worker (the offscreen document makes it and hands it over, host.ts). */
   openStorePort: () => Promise<MessagePort>;
   /** Show or clear the badge on the toolbar icon. A worker has no `chrome.*`, so the offscreen document sends the message (host.ts). */
-  announceBadge: (waiting: boolean) => void;
+  announceBadge: (badge: BadgeState) => void;
 }
 
 export interface BackupController {
@@ -102,22 +110,65 @@ export function startBackupController(o: ControllerOptions): BackupController {
     } catch {
       // The channel is closed: the controller was stopped.
     }
-    if ((seen.before?.phase === 'waiting') !== (next.phase === 'waiting')) o.announceBadge(next.phase === 'waiting');
+    const before = seen.before === null ? null : badgeOf(seen.before);
+    const after = badgeOf(next);
+    if (before === null || !sameBadge(before, after)) o.announceBadge(after);
     return next;
   }
 
-  // ---- removing forgotten readings (R75) ------------------------------------------------------------------------------------------
+  // ---- removing readings that left for good (R75, R82) ----------------------------------------------------------------------------
 
-  /** Removes every forgotten reading in the pending list from the folder. The caller holds the lock. */
+  /**
+   * Removes every reading in the chosen folder's pending list from it. The caller holds the lock. A reading stays pending while a file
+   * that names it cannot be read (it is tried again at each run, and Settings names the file).
+   */
   async function drainScrubs(target: BackupTarget): Promise<ScrubOutcome> {
     const handles = await handlesOf();
     const pending = await handles.listScrubs();
-    if (pending.length === 0) return { ok: true };
+    if (pending.length === 0) {
+      await setStatus((s) => (s.scrubsPending === 0 && s.unreadable.length === 0 ? s : { ...s, scrubsPending: 0, unreadable: [] }));
+      return { ok: true, unreadable: [] };
+    }
     const ids = pending.map((p) => p.documentId);
     const outcome = await scrubFolder(target, ids, handles);
-    if (outcome.ok) await handles.removeScrubs(ids);
-    await setStatus((s) => ({ ...s, scrubsPending: outcome.ok ? 0 : ids.length }));
+    const done = outcome.ok && outcome.unreadable.length === 0;
+    if (done) await handles.removeScrubs(ids);
+    await setStatus((s) => ({ ...s, scrubsPending: done ? 0 : ids.length, unreadable: outcome.ok ? outcome.unreadable : s.unreadable }));
     return outcome;
+  }
+
+  /** Tries the removals still waiting for folders the owner moved away from. Never asks for permission. The caller holds the lock. */
+  async function drainRetired(): Promise<number> {
+    const handles = await handlesOf();
+    let left = 0;
+    for (const r of await handles.listRetired()) {
+      const target = targetFrom(r.target, handles, retiredRecord(handles, r.id));
+      const ids = r.scrubs.map((p) => p.documentId);
+      if (target === null) continue;
+      const outcome = await scrubFolder(target, ids);
+      if (outcome.ok && outcome.unreadable.length === 0) await handles.doneRetired(r.id, ids);
+      else left += ids.length;
+    }
+    await setStatus((s) => s); // the pages read the retired list again
+    return left;
+  }
+
+  /** With no folder chosen there are no runs: the removals still waiting for old folders are tried on the schedule's tick instead. */
+  async function drainRetiredWhileOff(): Promise<void> {
+    const handles = await handlesOf();
+    if ((await handles.listRetired()).length === 0) return;
+    await navigator.locks.request(RUN_LOCK, { ifAvailable: true }, async (lock) => {
+      if (lock !== null) await drainRetired();
+    });
+  }
+
+  /** Queues a removal for the chosen folder. Nothing is queued when no folder is chosen: there is nothing to remove from. */
+  async function queueScrub(documentIds: readonly string[]): Promise<void> {
+    const handles = await handlesOf();
+    if ((await handles.getTarget()) === null) return;
+    for (const id of documentIds) await handles.addScrub(id, Date.now());
+    const pending = (await handles.listScrubs()).length;
+    await setStatus((s) => ({ ...s, scrubsPending: pending }));
   }
 
   async function scrubNow(documentId: string): Promise<ScrubSummary> {
@@ -128,12 +179,28 @@ export function startBackupController(o: ControllerOptions): BackupController {
     await setStatus((s) => ({ ...s, scrubsPending: Math.max(s.scrubsPending, 1) }));
     // Waits for a run in progress: the removal never cuts through a run.
     const outcome = await navigator.locks.request(RUN_LOCK, () => drainScrubs(cur.target));
-    if (outcome.ok) return { status: 'removed' };
+    return summaryOf(outcome);
+  }
+
+  function summaryOf(outcome: ScrubOutcome): ScrubSummary {
+    if (outcome.ok) return outcome.unreadable.length === 0 ? { status: 'removed' } : { status: 'pending', reason: 'unreadable', message: UNREADABLE_SCRUB_MESSAGE };
     if (outcome.kind === 'permission') {
-      await setStatus((s) => ({ ...s, phase: s.phase === 'running' ? s.phase : 'waiting', message: WAITING_MESSAGE }));
+      void setStatus((s) => ({ ...s, phase: s.phase === 'running' ? s.phase : 'waiting', message: WAITING_MESSAGE })).catch(() => {});
       return { status: 'pending', reason: 'permission', message: WAITING_MESSAGE };
     }
     return { status: 'pending', reason: 'failed', message: failureMessage(outcome.failure) };
+  }
+
+  /** "Change folder", "Turn off" and "Try now": the removals waiting for the chosen folder and for retired ones, now. */
+  async function drainNow(): Promise<ScrubSummary> {
+    const handles = await handlesOf();
+    const cur = await currentTarget(handles);
+    return await navigator.locks.request(RUN_LOCK, async () => {
+      const outcome = cur === null ? ({ ok: true, unreadable: [] } as ScrubOutcome) : await drainScrubs(cur.target);
+      const left = await drainRetired();
+      if (!outcome.ok || outcome.unreadable.length > 0) return summaryOf(outcome);
+      return left === 0 ? { status: 'removed' } : { status: 'pending', reason: 'failed', message: failureMessage('other') };
+    });
   }
 
   // ---- running a backup -----------------------------------------------------------------------------------------------------------
@@ -172,9 +239,10 @@ export function startBackupController(o: ControllerOptions): BackupController {
       changedAt = null;
       await setStatus((s) => ({ ...s, phase: 'running', folderName: cur.target.name, lastAttemptAt: at, held: null, message: null, progress: { done: 0, total: 0 } }));
       try {
-        // Forgotten readings first, so a reading the owner removed is never in a file this run goes on to write.
+        // Readings that left for good first (R82), so a reading the owner removed is never in a file this run goes on to write.
         const scrubbed = await drainScrubs(cur.target);
         if (!scrubbed.ok && scrubbed.kind === 'permission') return await finish({ ok: false, kind: 'permission' }, at);
+        await drainRetired();
         let lastProgress = 0;
         const outcome = await runBackup(
           cur.target,
@@ -182,6 +250,10 @@ export function startBackupController(o: ControllerOptions): BackupController {
             store,
             blobs: await blobsOf(),
             handles,
+            scrub: async (ids) => {
+              for (const id of ids) await handles.addScrub(id, Date.now());
+              return await drainScrubs(cur.target);
+            },
             now: clock,
             appVersion: await appVersion(),
             viewerBase: new URL(VIEWER_PATH, location.origin).href,
@@ -236,7 +308,7 @@ export function startBackupController(o: ControllerOptions): BackupController {
     try {
       const handles = await handlesOf();
       const cur = await currentTarget(handles);
-      if (cur === null) return;
+      if (cur === null) return await drainRetiredWhileOff();
       const st = await handles.getStatus();
       if (st.phase === 'running') return;
       if (st.phase === 'waiting') {
@@ -260,6 +332,12 @@ export function startBackupController(o: ControllerOptions): BackupController {
   }
 
   const unsubscribe = store.onChange((c) => {
+    // R82: a reading deleted from the library (Forget, a Trash purge, an Undo of a save) is removed from the backup too. Trash is an
+    // upsert (the reading is kept for 30 days) and removes nothing. Each run also asks the store, so a lost event is caught there.
+    if (c.table === 'documents' && c.op === 'delete') {
+      queueScrub(c.ids).catch((error: unknown) => console.error('sickofpdfs: a backup removal was not queued', error instanceof Error ? error.name : 'error'));
+      return;
+    }
     if (!NOTE_TABLES.has(c.table)) return;
     const t = Date.now();
     dirtySince ??= t;
@@ -294,6 +372,8 @@ export function startBackupController(o: ControllerOptions): BackupController {
         return await configure(now);
       case 'scrub':
         return await scrubNow(request.documentId);
+      case 'drain':
+        return await drainNow();
     }
   }
 
@@ -304,7 +384,7 @@ export function startBackupController(o: ControllerOptions): BackupController {
       .catch((error: unknown): RunSummary | ScrubSummary => {
         const message = failureMessage('other');
         console.error('sickofpdfs: a backup request failed', error instanceof Error ? error.name : 'error');
-        return request.type === 'scrub' ? { status: 'pending', reason: 'failed', message } : { ok: false, reason: 'failed', message };
+        return request.type === 'scrub' || request.type === 'drain' ? { status: 'pending', reason: 'failed', message } : { ok: false, reason: 'failed', message };
       })
       .then((result) => {
         const reply: RpcReply = { type: 'reply', id: request.id, result };
@@ -326,7 +406,8 @@ export function startBackupController(o: ControllerOptions): BackupController {
       const pending = (await handles.listScrubs()).length;
       if (cur === null) {
         if ((await handles.getStatus()).phase !== 'off') await setStatus(() => emptyStatus());
-        return;
+        else o.announceBadge({ attention: null });
+        return await drainRetiredWhileOff();
       }
       // A run that was cut off when the browser closed is not running any more.
       await setStatus((s) => ({ ...s, phase: s.phase === 'running' || s.phase === 'off' ? 'idle' : s.phase, folderName: cur.target.name, progress: null, scrubsPending: pending }));

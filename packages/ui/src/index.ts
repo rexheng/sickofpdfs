@@ -8,6 +8,7 @@ export { IconButton, type IconButtonProps } from './components/IconButton';
 export { DropdownMenu, type DropdownMenuProps, type MenuDef, type MenuItemDef } from './components/Menu';
 export { MenuBar, type MenuBarProps } from './components/MenuBar';
 export { PillToolbar, type PillToolbarProps, ToolbarSeparator } from './components/PillToolbar';
+export { Popover, type PopoverProps } from './components/Popover';
 export { TextButton, type TextButtonProps } from './components/TextButton';
 export { TextField, type TextFieldProps } from './components/TextField';
 export { Tooltip, type TooltipProps } from './components/Tooltip';

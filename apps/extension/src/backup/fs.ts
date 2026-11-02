@@ -69,6 +69,78 @@ export async function writeFile(root: FileSystemDirectoryHandle, path: string, d
   }
 }
 
+/** The name a PDF copy is written under until it is whole (`<sha>.pdf.part`). */
+export const PART_SUFFIX = '.part';
+/** Chrome's own swap files: `createWritable()` writes into `<name>.crswap` and puts it in place when the stream closes. */
+export const SWAP_SUFFIX = '.crswap';
+
+/** lib.dom does not have `move` yet. */
+interface MovableHandle extends FileSystemFileHandle {
+  move?(newName: string): Promise<void>;
+}
+
+/**
+ * Writes a stream to `path` by way of `<path>.part`, then moves it into place, so a quit while writing never leaves a short or empty
+ * file under the real name (a copy that is there under its real name is whole). The real name is removed first if it is there,
+ * since a copy is only rewritten when the one in place is wrong. Where the browser cannot move a file, it writes in place.
+ */
+export async function writeFileViaPart(root: FileSystemDirectoryHandle, path: string, data: ReadableStream<Uint8Array>): Promise<void> {
+  const { dir, name } = split(path);
+  const folder = await openDir(root, dir, true);
+  if (folder === null) throw new DOMException('The folder could not be made.', 'NotFoundError');
+  const part = `${name}${PART_SUFFIX}`;
+  await writeFile(root, dir === '' ? part : `${dir}/${part}`, data);
+  const handle: MovableHandle = await folder.getFileHandle(part);
+  if (typeof handle.move === 'function') {
+    await folder.removeEntry(name).catch((error: unknown) => {
+      if (!isNotFound(error)) throw error;
+    });
+    try {
+      await handle.move(name);
+      return;
+    } catch {
+      // A folder where Chrome cannot move a file (some synced folders may refuse): copy it into place below instead.
+    }
+  }
+  // The whole copy is in the part file: write it in place from there (createWritable keeps any old file until the new one is whole).
+  await writeFile(root, path, (await handle.getFile()).stream());
+  await folder.removeEntry(part).catch(() => {});
+}
+
+/**
+ * Removes what an earlier run that stopped (the browser quit) left behind under `root`, at any depth: `*.crswap` files last changed
+ * before `swapsBefore` (one still in use is newer; Chrome or a sync tool may be writing it), and every `*.part` file in `parts` (the
+ * folders only a run writes to, under the run lock). Returns how many went. Errors are ignored: it is tidying, and the next run tries again.
+ */
+export async function removeLeftovers(root: FileSystemDirectoryHandle, o: { swapsBefore: number; parts: readonly string[] }): Promise<number> {
+  let removed = 0;
+  const partDirs = new Set(o.parts);
+  async function walk(dir: FileSystemDirectoryHandle, path: string): Promise<void> {
+    const names: { name: string; kind: string }[] = [];
+    for await (const [name, handle] of dir.entries()) names.push({ name, kind: handle.kind });
+    for (const { name, kind } of names) {
+      try {
+        if (kind === 'directory') {
+          await walk(await dir.getDirectoryHandle(name), path === '' ? name : `${path}/${name}`);
+          continue;
+        }
+        const top = path.split('/')[0] ?? '';
+        const stale =
+          (name.endsWith(SWAP_SUFFIX) && (await (await dir.getFileHandle(name)).getFile()).lastModified < o.swapsBefore) ||
+          (name.endsWith(PART_SUFFIX) && partDirs.has(top));
+        if (stale) {
+          await dir.removeEntry(name);
+          removed += 1;
+        }
+      } catch {
+        // Tidying only.
+      }
+    }
+  }
+  await walk(root, '').catch(() => {});
+  return removed;
+}
+
 /** Deletes the file at `path`. Nothing happens when it is not there. */
 export async function removeFile(root: FileSystemDirectoryHandle, path: string): Promise<void> {
   const { dir, name } = split(path);

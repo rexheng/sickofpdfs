@@ -12,7 +12,7 @@ startBackupController({
       waiting.push(resolve);
       self.postMessage({ type: WORKER_PORT_REQUEST });
     }),
-  announceBadge: (on) => self.postMessage({ type: WORKER_BADGE, waiting: on }),
+  announceBadge: (badge) => self.postMessage({ type: WORKER_BADGE, badge }),
 });
 
 self.onmessage = (e: MessageEvent) => {

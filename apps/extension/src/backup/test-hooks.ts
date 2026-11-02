@@ -3,7 +3,8 @@
 // Forget dialog does). The real folder picker cannot be driven headless (Phase 0, P0-8), so a user test uses an OPFS folder in its
 // place: it is a `FileSystemDirectoryHandle` too, and the writer cannot tell the two apart.
 //
-//   useFolder(name)      Makes the OPFS folder `name` the backup folder, as picking a folder does, and waits for the first backup (its result).
+//   useFolder(name)      Makes the OPFS folder `name` the backup folder, as picking a folder does (the same code: picking the folder that is
+//                        chosen now again keeps what it holds and its waiting removals), and waits for the first backup (its result).
 //                        { start: false } only chooses the folder.
 //   useHandle(name)      Like useFolder, but stores the OPFS folder's own handle as the picked folder (the code path a real pick takes).
 //   setPermission(p)     Makes the folder (a stand-in, or one picked through a faked picker) report 'prompt' (what Chrome says after a restart: the badge shows) or 'granted'.
@@ -18,14 +19,17 @@
 //   exportZip(file)      "Export library" into an OPFS file `file`; returns its size.
 //   removeFolder(name)   Deletes the OPFS folder itself (what renaming the real folder in Explorer does to a handle that was picked): the writer must
 //                        say "can't be found", never "nothing to remove".
-//   turnOff()            Stops backing up.
+//   turnOff()            Stops backing up (the removals waiting for the folder are finished first, or kept with it).
+//   finishRemovals()     What "Try now" does: the removals waiting for any folder, now.
+//   readBackup(name)     What a restore reads from the OPFS folder `name` (restore-read.ts): { ok, reason, message, documents }.
 //   clear(name)          Empties the folder `name`.
 import type { DocumentId } from '@sop/core';
 import { pathSegments } from '@sop/core';
-import type { AllowOutcome, BackupClient, ForgetBackupResult } from './client';
-import { exportZipTo, forgetFromBackups } from './client';
+import type { AllowOutcome, BackupClient, ForgetBackupResult, RemovalsOutcome } from './client';
+import { adoptFolder, exportZipTo, forgetFromBackups } from './client';
 import { openDir, readText, removeFile as removeFileIn, writeFile as writeFileIn } from './fs';
 import { openHandleStore } from './handle-store';
+import { readBackupFolder } from './restore-read';
 import { ask, newRequestId, type RunSummary } from './rpc';
 import type { BackupStatus } from './status';
 
@@ -45,6 +49,8 @@ export interface BackupTestHooks {
   exportZip(file: string): Promise<number>;
   removeFolder(name: string): Promise<void>;
   turnOff(): Promise<void>;
+  finishRemovals(): Promise<RemovalsOutcome>;
+  readBackup(name: string): Promise<{ ok: boolean; reason: string | null; message: string | null; documents: number }>;
   clear(name: string): Promise<void>;
 }
 
@@ -70,14 +76,8 @@ export function installBackupTestHooks(client: BackupClient): void {
   const hooks: BackupTestHooks = {
     async useFolder(name, o = {}) {
       await opfsFolder(name, true);
-      const h = await openHandleStore();
-      try {
-        await h.clearTarget();
-        await h.setTarget({ kind: 'test-opfs', folder: name, permission: o.permission ?? 'granted', name, pickedAt: Date.now() });
-        await h.updateStatus((s) => ({ ...s, phase: 'idle', folderName: name, lastBackupAt: null, lastAttemptAt: null, message: null }));
-      } finally {
-        h.close();
-      }
+      // What a pick does (client.ts `chooseFolder`), with the stand-in folder in place of the picked one.
+      await adoptFolder({ kind: 'test-opfs', folder: name, permission: o.permission ?? 'granted', name, pickedAt: Date.now() });
       if (o.start === false) return null;
       return await ask<RunSummary>({ type: 'configure', id: newRequestId() }, 120_000);
     },
@@ -85,14 +85,7 @@ export function installBackupTestHooks(client: BackupClient): void {
     async useHandle(name) {
       const dir = await opfsFolder(name, true);
       if (dir === null) throw new Error('the folder could not be made');
-      const h = await openHandleStore();
-      try {
-        await h.clearTarget();
-        await h.setTarget({ kind: 'folder', handle: dir, name, pickedAt: Date.now() });
-        await h.updateStatus((s) => ({ ...s, phase: 'idle', folderName: name, lastBackupAt: null, lastAttemptAt: null, message: null }));
-      } finally {
-        h.close();
-      }
+      await adoptFolder({ kind: 'folder', handle: dir, name, pickedAt: Date.now() });
       return await ask<RunSummary>({ type: 'configure', id: newRequestId() }, 120_000);
     },
 
@@ -172,6 +165,15 @@ export function installBackupTestHooks(client: BackupClient): void {
     },
 
     turnOff: () => client.turnOff(),
+
+    finishRemovals: () => client.finishRemovals(),
+
+    async readBackup(name) {
+      const dir = await opfsFolder(name);
+      if (dir === null) return { ok: false, reason: 'no-backup', message: null, documents: 0 };
+      const r = await readBackupFolder(dir);
+      return r.ok ? { ok: true, reason: null, message: null, documents: r.dump.tables.documents.length } : { ok: false, reason: r.reason, message: r.message, documents: 0 };
+    },
 
     async clear(name) {
       const root = await navigator.storage.getDirectory();

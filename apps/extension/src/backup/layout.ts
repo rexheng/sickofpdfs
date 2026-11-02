@@ -67,6 +67,13 @@ export function notesFiles(dump: LibraryDump, o: LayoutOptions): NotesFile[] {
 /** The documents of a dump that are saved PDFs the library keeps a copy of. */
 export const documentsWithCopy = (dump: LibraryDump): DocumentRow[] => dump.tables.documents.filter((d) => isSha(d.id) && d.blobStored);
 
+/** The number of notes of each reading: its live marks and comments (what the notes guard counts, writer.ts). */
+export function noteCounts(dump: LibraryDump): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const r of [...dump.tables.marks, ...dump.tables.comments]) if (live(r)) out.set(r.documentId, (out.get(r.documentId) ?? 0) + 1);
+  return out;
+}
+
 /** The ids of every document in a dump, in Trash or not. */
 export const documentIds = (dump: LibraryDump): Set<string> => new Set(dump.tables.documents.map((d) => d.id));
 

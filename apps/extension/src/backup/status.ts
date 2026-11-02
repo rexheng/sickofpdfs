@@ -15,12 +15,24 @@ import type { BackupCounts } from '@sop/core';
  */
 export type BackupPhase = 'off' | 'idle' | 'running' | 'waiting' | 'held' | 'failed';
 
-/** Why a run was held. */
+/** Why a run was held (R86). */
 export type HeldReason =
   /** The folder holds readings that this library does not have and never wrote there: probably another computer's backup, or a backup not restored yet. */
   | 'other-library'
-  /** Many readings that were in the last backup are gone from the library: probably a problem here, not a clean-up. */
-  | 'many-missing';
+  /** The folder's `library.json` is there but cannot be read (damaged, cut short by a sync tool): it may be the only copy of something. */
+  | 'unreadable'
+  /** Readings that were in the last backup are gone from the library without being removed on purpose (every one, or many at once). */
+  | 'many-missing'
+  /** Many notes that were in the last backup are gone from the library (at least 20, and at least half). */
+  | 'notes-missing';
+
+/** A folder the owner moved away from, with removals still waiting for it (handle-store.ts `retired`). */
+export interface RetiredSummary {
+  id: number;
+  folderName: string;
+  /** Readings still to be removed from that folder. */
+  count: number;
+}
 
 export interface BackupStatus {
   phase: BackupPhase;
@@ -40,6 +52,13 @@ export interface BackupStatus {
   progress: { done: number; total: number } | null;
   /** Forgotten readings whose copies in the folder are not removed yet. */
   scrubsPending: number;
+  /**
+   * Files in the backup folder that the last removal could not read (paths inside `sickofpdfs-backup`, such as
+   * `snapshots/library-2026-10-30.json`). They are left as they are, and the removal is tried again at each run.
+   */
+  unreadable: string[];
+  /** Folders the owner moved away from with removals still waiting for them. Filled in when a page reads the status (client.ts). */
+  retired: RetiredSummary[];
 }
 
 export const emptyStatus = (): BackupStatus => ({
@@ -53,18 +72,59 @@ export const emptyStatus = (): BackupStatus => ({
   message: null,
   progress: null,
   scrubsPending: 0,
+  unreadable: [],
+  retired: [],
 });
 
 // ---- the words ---------------------------------------------------------------------------------------------------------
 
 export const WAITING_MESSAGE = 'Backup is waiting. Click to allow.';
 
+/** Why the backup is on hold, in plain words (Settings, the pill's popover). The folder was not changed. */
 export const HELD_MESSAGES: Readonly<Record<HeldReason, string>> = {
-  'other-library':
-    'This folder already holds a backup that isn’t from this library. It was left as it is. Restore from it, or choose a different folder.',
-  'many-missing':
-    'Many readings are missing from your library since the last backup. The backup was left as it is, so nothing is lost. If you removed them on purpose, back up anyway.',
+  'other-library': 'This folder already holds a backup that isn’t from this library. It was left as it is.',
+  unreadable: 'The library file in the backup folder can’t be read. It was left as it is, in case it is the only copy of something.',
+  'many-missing': 'Readings that were in your last backup are missing from your library. The backup was left as it is, so nothing is lost.',
+  'notes-missing': 'Many notes that were in your last backup are missing from your library. The backup was left as it is, so nothing is lost.',
 };
+
+/** What "Back up anyway" will do, for each hold. */
+export const ANYWAY_MESSAGES: Readonly<Record<HeldReason, string>> = {
+  'other-library': 'Back up anyway replaces that backup with this library. To keep it, choose a different folder.',
+  unreadable: 'Back up anyway replaces that file with this library. The daily copies in the folder stay.',
+  'many-missing': 'If you removed them on purpose, back up anyway. They will be removed from the backup.',
+  'notes-missing': 'If you deleted them on purpose, back up anyway. They will be removed from the backup.',
+};
+
+/** The toolbar icon's tooltip while a backup is on hold (R86). */
+export const HELD_TITLES: Readonly<Record<HeldReason, string>> = {
+  'other-library': 'Backup is on hold: the folder holds another library’s backup. Open your library to choose.',
+  unreadable: 'Backup is on hold: the backup file in the folder can’t be read. Open your library to choose.',
+  'many-missing': 'Backup is on hold: readings are missing from your library. Open your library to choose.',
+  'notes-missing': 'Backup is on hold: many notes are missing from your library. Open your library to choose.',
+};
+
+/** What the toolbar badge shows: nothing, "waiting for a click", or "on hold" and why (R86). */
+export type BadgeState = { attention: null } | { attention: 'waiting' } | { attention: 'held'; held: HeldReason };
+
+export const badgeOf = (s: Pick<BackupStatus, 'phase' | 'held'>): BadgeState =>
+  s.phase === 'waiting' ? { attention: 'waiting' } : s.phase === 'held' && s.held !== null ? { attention: 'held', held: s.held } : { attention: null };
+
+export const sameBadge = (a: BadgeState, b: BadgeState): boolean => a.attention === b.attention && (a.attention !== 'held' || (b.attention === 'held' && a.held === b.held));
+
+/** What the Forget dialog says when the folder was cleaned except for a file that cannot be read. */
+export const UNREADABLE_SCRUB_MESSAGE =
+  'Removed from your library. One file in your backup folder can’t be read, so it was left as it is and may still name this PDF.';
+
+/** "1 removal is waiting for Backups." The line Settings shows for a folder the owner moved away from. */
+export const retiredLine = (r: Pick<RetiredSummary, 'count' | 'folderName'>): string =>
+  `${r.count === 1 ? '1 removal is' : `${r.count} removals are`} waiting for ${r.folderName}.`;
+
+/** The line Settings shows when a removal found files it could not read. */
+export function unreadableLine(paths: readonly string[]): string {
+  const files = paths.length === 1 ? `This file in the backup folder can’t be read: ${paths[0]}.` : `These files in the backup folder can’t be read: ${paths.join(', ')}.`;
+  return `A removal couldn’t finish. ${files} ${paths.length === 1 ? 'It was' : 'They were'} left as ${paths.length === 1 ? 'it is' : 'they are'}. It is tried again at each backup.`;
+}
 
 export const FOLDER_GONE_MESSAGE = 'The backup folder can’t be found. Choose it again.';
 export const FOLDER_FULL_MESSAGE = 'The backup folder is full. Free some space, then back up again.';

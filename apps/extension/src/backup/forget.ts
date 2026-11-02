@@ -8,8 +8,8 @@ import { ask, newRequestId, type ScrubSummary } from './rpc';
 let handles: Promise<HandleStore> | null = null;
 const handlesOf = (): Promise<HandleStore> => (handles ??= openHandleStore());
 
-/** What the Forget dialog says when the copies in the backup folder are gone too. */
-export const FORGOTTEN_EVERYWHERE = 'Removed from your library and your backups';
+/** What the Forget dialog says when the copies in the backup folder are gone too. Drive and OneDrive keep deleted files in their own trash. */
+export const FORGOTTEN_EVERYWHERE = 'Removed from your library and your backups. Google Drive or OneDrive may keep their own copy in their trash for a while.';
 /** What it says when the backup folder could not be reached yet. */
 export const FORGOTTEN_BACKUP_PENDING = 'Removed from your library. Your backup folder can’t be reached yet, so it will be cleaned at the next backup.';
 /** What it says when there is no backup folder. */
@@ -42,6 +42,8 @@ export async function forgetFromBackups(documentId: DocumentId): Promise<ForgetB
     const reply = await ask<ScrubSummary>({ type: 'scrub', id: newRequestId(), documentId }, FORGET_WAIT_MS);
     if (reply?.status === 'removed') return { status: 'removed', message: FORGOTTEN_EVERYWHERE };
     if (reply?.status === 'no-backup') return { status: 'no-backup', message: FORGOTTEN_LIBRARY_ONLY };
+    // A file that names it cannot be read: the dialog says that plainly (the removal stays pending and is tried again).
+    if (reply?.status === 'pending' && reply.reason === 'unreadable') return { status: 'pending', message: reply.message };
     return { status: 'pending', message: FORGOTTEN_BACKUP_PENDING };
   } catch {
     return { status: 'pending', message: FORGOTTEN_BACKUP_PENDING };

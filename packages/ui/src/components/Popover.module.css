@@ -1,0 +1,99 @@
+/*
+ * A small card under its trigger [inf, GM3 rich tooltip with Drive's colours]: surface-container (#f0f4f9 on light pages, the
+ * library menus' surface), radius 12 px, elevation 2 (the menus' shadow), 320 px wide at most. 12 px above the title, 16 px at the
+ * sides; actions 12 px below the body, 8 px from the bottom, with 40 px text-button pills (the main one tonal).
+ */
+.card {
+  z-index: var(--z-menu);
+  box-sizing: border-box;
+  inline-size: max-content;
+  max-inline-size: min(var(--popover-max-w), calc(100vw - var(--space-8)));
+  padding: var(--space-3) var(--space-4) var(--space-2);
+  border-radius: var(--shape-popover);
+  background-color: var(--gm3-sys-color-surface-container);
+  box-shadow: var(--elev-2);
+  color: var(--gm3-sys-color-on-surface);
+  outline: none;
+  animation: fade-in 100ms ease-out;
+}
+
+.title {
+  margin: 0 0 var(--space-1);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-row-name);
+  font-variation-settings: "opsz" 17;
+}
+
+.body {
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+.body p {
+  margin: 0;
+}
+
+.body p + p {
+  margin-block-start: var(--space-2);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  margin-block-start: var(--space-3);
+  margin-inline-end: calc(-1 * var(--space-2));
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  block-size: var(--btn-h);
+  margin: 0;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--shape-full);
+  background-color: transparent;
+  color: var(--gm3-sys-color-primary);
+  font: var(--type-text-button);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.action:hover {
+  background-color: color-mix(in srgb, currentColor calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.primary {
+  padding: 0 var(--space-4);
+  background-color: var(--gm3-sys-color-secondary-container);
+  color: var(--gm3-sys-color-on-secondary-container);
+}
+
+.primary:hover {
+  background-color: color-mix(
+    in srgb,
+    var(--gm3-sys-color-on-secondary-container) calc(var(--gm3-state-hover) * 100%),
+    var(--gm3-sys-color-secondary-container)
+  );
+}
+
+.action:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    animation: none;
+  }
+}

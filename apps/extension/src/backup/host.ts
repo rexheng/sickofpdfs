@@ -1,7 +1,7 @@
 // The offscreen document's side of the backup: it starts the backup worker, gives it ports to the store worker, and sends the
 // badge message (a worker has no `chrome.*`). All of the backup itself runs in the worker (worker.ts, controller.ts).
 import { STORE_PORT, type StorePortMessage } from '../store/transport';
-import { announceBackupBadge } from './badge';
+import { announceBackupBadge, asBadge } from './badge';
 import { isHostMessage, WORKER_BADGE, WORKER_PORT, WORKER_PORT_REQUEST } from './host-protocol';
 
 export function startBackupHost(storeWorker: Worker): Worker {
@@ -15,7 +15,8 @@ export function startBackupHost(storeWorker: Worker): Worker {
       storeWorker.postMessage(toStore, [port2]);
       worker.postMessage({ type: WORKER_PORT }, [port1]);
     } else if (isHostMessage(e.data, WORKER_BADGE)) {
-      announceBackupBadge((e.data as { waiting?: unknown }).waiting === true);
+      const badge = asBadge((e.data as { badge?: unknown }).badge);
+      if (badge !== null) announceBackupBadge(badge);
     }
   };
   return worker;

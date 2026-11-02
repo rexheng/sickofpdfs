@@ -7,7 +7,7 @@ import { describeBackup } from '@sop/core';
 import { Dialog, TextButton } from '@sop/ui';
 import { useContext, useState } from 'react';
 import { backupClient } from '../../backup/client';
-import { type BackupStatus, summaryLabel, summaryLine } from '../../backup/status';
+import { ANYWAY_MESSAGES, type BackupStatus, retiredLine, summaryLabel, summaryLine, unreadableLine } from '../../backup/status';
 import { LibraryContext } from '../app/context';
 import styles from './BackupSection.module.css';
 import { useBackupStatus, useNow } from './use-backup';
@@ -49,6 +49,15 @@ export function BackupSection() {
     }
   };
 
+  const finishRemovals = async (): Promise<void> => {
+    try {
+      if ((await backupClient.finishRemovals()) === 'done') notify('The waiting removals are done.');
+      else notify('Some removals are still waiting. They are tried again at each backup.');
+    } catch {
+      notify('Couldn’t reach the folder. Try again.');
+    }
+  };
+
   const exportZip = async (): Promise<void> => {
     setExporting(true);
     try {
@@ -64,6 +73,19 @@ export function BackupSection() {
   const attention = status.phase === 'waiting' || status.phase === 'held' || status.phase === 'failed';
   const contents = holds(status);
   const pending = status.scrubsPending;
+
+  // Removals still waiting for folders the owner moved away from (Change folder, Turn off): said plainly, with "Try now".
+  const retiredRows = status.retired.map((r) => (
+    <div key={r.id} className={styles.row}>
+      <div className={styles.text}>
+        <span className={styles.label}>Removing PDFs you forgot</span>
+        <span className={styles.value}>{retiredLine(r)} It is tried again at each backup.</span>
+      </div>
+      <div className={styles.actions}>
+        <TextButton label="Try now" onClick={() => void finishRemovals()} />
+      </div>
+    </div>
+  ));
 
   const exportRow = (
     <div className={styles.row}>
@@ -113,6 +135,7 @@ export function BackupSection() {
                 <span className={attention ? `${styles.value} ${styles.attention}` : styles.value}>{summaryLine(status, now)}</span>
                 {status.phase === 'idle' && contents !== null && <span className={styles.value}>{contents}</span>}
                 {status.phase === 'idle' && status.message !== null && <span className={styles.value}>{status.message}</span>}
+                {status.phase === 'held' && status.held !== null && <span className={styles.value}>{ANYWAY_MESSAGES[status.held]}</span>}
               </div>
               <div className={styles.actions}>
                 {status.phase === 'waiting' && <TextButton label="Allow" variant="tonal" onClick={() => void allow()} />}
@@ -131,11 +154,13 @@ export function BackupSection() {
                     {pending === 1 ? 'One PDF you forgot is' : `${pending} PDFs you forgot are`} still in your backup folder. {pending === 1 ? 'It' : 'They'} will be
                     removed at the next backup.
                   </span>
+                  {status.unreadable.length > 0 && <span className={`${styles.value} ${styles.attention}`}>{unreadableLine(status.unreadable)}</span>}
                 </div>
               </div>
             )}
           </>
         )}
+        {retiredRows}
         {exportRow}
       </div>
 
@@ -155,7 +180,10 @@ export function BackupSection() {
           },
         ]}
       >
-        <p className={styles.dialogText}>Backups stop. The files already in the folder stay where they are.</p>
+        <p className={styles.dialogText}>
+          Backups stop. The files already in the folder stay where they are.
+          {pending > 0 ? ' The PDFs you forgot are removed from it first.' : ''}
+        </p>
       </Dialog>
 
       <Dialog
@@ -175,9 +203,11 @@ export function BackupSection() {
         ]}
       >
         <p className={styles.dialogText}>
-          {status.held === 'other-library'
-            ? 'The readings and notes that are in this folder now will be replaced by a backup of this library.'
-            : 'The readings that are missing from your library will be removed from the backup.'}
+          {status.held === 'other-library' || status.held === 'unreadable'
+            ? 'What is in this folder now will be replaced by a backup of this library.'
+            : status.held === 'notes-missing'
+              ? 'The notes that are missing from your library will be removed from the backup.'
+              : 'The readings that are missing from your library will be removed from the backup.'}
         </p>
       </Dialog>
     </section>

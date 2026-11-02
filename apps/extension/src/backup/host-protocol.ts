@@ -2,7 +2,7 @@
 //
 //   worker → host   { type: 'backup:port-request' }          "give me a new port to the store worker"
 //   host   → worker { type: 'backup:port' } + the port       the answer (the host made a channel and gave one end to the store worker)
-//   worker → host   { type: 'backup:badge', waiting }        "show or clear the badge on the toolbar icon"
+//   worker → host   { type: 'backup:badge', badge }          "show or clear the badge on the toolbar icon" (a BadgeState)
 export const WORKER_PORT_REQUEST = 'backup:port-request';
 export const WORKER_PORT = 'backup:port';
 export const WORKER_BADGE = 'backup:badge';

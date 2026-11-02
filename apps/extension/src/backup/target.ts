@@ -36,19 +36,34 @@ function folderTarget(stored: FolderTarget): BackupTarget {
   };
 }
 
+/** Where a stored target is kept: the chosen folder, or a retired one (handle-store.ts). Test builds keep their fake permission there. */
+export interface TargetRecord {
+  get(): Promise<StoredTarget | null>;
+  set(target: StoredTarget): Promise<void>;
+}
+
+/** The record of the folder that is chosen now. */
+export const currentRecord = (handles: HandleStore): TargetRecord => ({ get: () => handles.getTarget(), set: (t) => handles.setTarget(t) });
+
+/** The record of a retired folder. */
+export const retiredRecord = (handles: HandleStore, id: number): TargetRecord => ({
+  get: async () => (await handles.listRetired()).find((r) => r.id === id)?.target ?? null,
+  set: (t) => handles.setRetiredTarget(id, t),
+});
+
 /** Test builds only. The permission the stand-in reports is kept in `sop-handles`, so a test can lose it and an "Allow" click can win it back. */
-function testTarget(stored: TestFolderTarget, handles: HandleStore): BackupTarget {
+function testTarget(stored: TestFolderTarget, record: TargetRecord): BackupTarget {
   return {
     kind: 'test-opfs',
     name: stored.name,
     async queryPermission() {
-      const current = await handles.getTarget();
-      return current?.kind === 'test-opfs' ? current.permission : 'denied';
+      const current = await record.get();
+      return current?.kind === 'test-opfs' && current.folder === stored.folder ? current.permission : 'denied';
     },
     async requestPermission() {
-      const current = await handles.getTarget();
-      if (current?.kind !== 'test-opfs') return 'denied';
-      await handles.setTarget({ ...current, permission: 'granted' });
+      const current = await record.get();
+      if (current?.kind !== 'test-opfs' || current.folder !== stored.folder) return 'denied';
+      await record.set({ ...current, permission: 'granted' });
       return 'granted';
     },
     async directory() {
@@ -62,29 +77,43 @@ function testTarget(stored: TestFolderTarget, handles: HandleStore): BackupTarge
  * as the stand-in folder does: the backup runs in a worker, and a worker's `queryPermission` cannot be patched from a page. Asking again
  * wins the permission back only inside a click, as Chrome insists (Phase 0, P0-8c).
  */
-function withTestPermission(real: BackupTarget, handles: HandleStore): BackupTarget {
+function withTestPermission(real: BackupTarget, record: TargetRecord): BackupTarget {
   return {
     ...real,
     async queryPermission() {
-      const current = await handles.getTarget();
+      const current = await record.get();
       return current?.kind === 'folder' && current.testPermission !== undefined ? current.testPermission : real.queryPermission();
     },
     async requestPermission() {
-      const current = await handles.getTarget();
+      const current = await record.get();
       if (current?.kind !== 'folder' || current.testPermission !== 'prompt') return real.requestPermission();
       if (typeof navigator.userActivation !== 'undefined' && !navigator.userActivation.isActive) {
         throw new DOMException('A click is needed to ask for permission.', 'SecurityError');
       }
-      await handles.setTarget({ ...current, testPermission: 'granted' });
+      await record.set({ ...current, testPermission: 'granted' });
       return 'granted';
     },
   };
 }
 
-/** The target for a stored one, or null when this build cannot use it (a test folder in a production build). */
-export function targetFrom(stored: StoredTarget, handles: HandleStore): BackupTarget | null {
-  if (stored.kind === 'folder') return import.meta.env.MODE === 'test' ? withTestPermission(folderTarget(stored), handles) : folderTarget(stored);
-  return import.meta.env.MODE === 'test' ? testTarget(stored, handles) : null;
+/**
+ * The target for a stored one, or null when this build cannot use it (a test folder in a production build). `record` is where the
+ * stored target is kept (the chosen folder by default; a retired folder's record for one of those).
+ */
+export function targetFrom(stored: StoredTarget, handles: HandleStore, record: TargetRecord = currentRecord(handles)): BackupTarget | null {
+  if (stored.kind === 'folder') return import.meta.env.MODE === 'test' ? withTestPermission(folderTarget(stored), record) : folderTarget(stored);
+  return import.meta.env.MODE === 'test' ? testTarget(stored, record) : null;
+}
+
+/** True when two stored targets are the same folder (a folder picked again). Never throws. */
+export async function sameFolder(a: StoredTarget, b: StoredTarget): Promise<boolean> {
+  if (a.kind === 'test-opfs' && b.kind === 'test-opfs') return import.meta.env.MODE === 'test' && a.folder === b.folder; // test builds only
+  if (a.kind !== 'folder' || b.kind !== 'folder') return false;
+  try {
+    return await a.handle.isSameEntry(b.handle);
+  } catch {
+    return false;
+  }
 }
 
 /** The chosen folder as a target, or null when none is chosen. */

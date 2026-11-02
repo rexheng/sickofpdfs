@@ -5,18 +5,25 @@
 // import boundary in eslint.config.mjs bars it). It is never backed up and never synced: a folder handle means nothing on
 // another computer.
 //
-// Object stores (all out-of-line keys):
+// Object stores:
 //   target  'backup'     StoredTarget: the folder handle (or, in test builds, an OPFS folder standing in for it)
 //   status  'backup'     BackupStatus
-//   known   'backup'     string[]: ids of the readings this computer wrote into the folder. It is what lets a run tell
-//                        "removed here on purpose" from "never mine" (writer.ts: the guards).
-//   scrub   <documentId> { documentId, requestedAt }: a forgotten reading. The copies are removed from the folder and from
-//                        every snapshot (R75); the entry goes only when that is done, so a folder that is offline now is
-//                        cleaned at the next run.
+//   known   'backup'     KnownRecord: the readings this computer wrote into the folder, each with its number of notes (live marks
+//                        and comments) at the last good run. It is what lets a run tell "removed here on purpose" from "never
+//                        mine", and notice notes that vanished (writer.ts: the guards). Version 1 kept a plain string[].
+//   scrub   <documentId> { documentId, requestedAt }: a reading that left the library for good (R82: Forget, a Trash purge, an Undo
+//                        of a save). Its copies are removed from the chosen folder and from every snapshot; the entry goes only when
+//                        that is done, so a folder that is offline now is cleaned at the next run.
+//   retired <auto id>    RetiredFolder: a folder the owner moved away from (Change folder, Turn off) while removals were still
+//                        waiting for it. Its handle and its list stay until the removals are done there (each run tries again);
+//                        then the record goes. Nothing else is ever written to a retired folder.
+//
+// The pending lists belong to the folder they must be removed from: choosing the same folder again keeps them (and `known`), and
+// changing folders moves them to `retired`, never drops them (secread4 M3).
 import { emptyStatus, type BackupStatus } from './status';
 
 export const HANDLES_DB = 'sop-handles';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 /** The folder the owner chose. */
 export interface FolderTarget {
@@ -50,23 +57,77 @@ export interface PendingScrub {
   requestedAt: number;
 }
 
+/** A folder the owner moved away from while removals were still waiting for it. */
+export interface RetiredFolder {
+  id: number;
+  target: StoredTarget;
+  scrubs: PendingScrub[];
+  retiredAt: number;
+}
+
+/**
+ * The readings this computer wrote into the folder, each with its number of notes (live marks and comments) at the last good run.
+ * `null` is "not known": a record from before notes were counted. The notes guard leaves such a reading out.
+ */
+export type KnownReadings = Map<string, number | null>;
+
 export interface HandleStore {
   getTarget(): Promise<StoredTarget | null>;
+  /** Puts a new handle for the folder that is chosen now (its permission changed, say). Use `changeTarget` to choose a folder. */
   setTarget(target: StoredTarget): Promise<void>;
-  /** Forgets the folder, the status, what was written and the forgotten readings still to be removed there. Files already in the folder stay where they are. */
-  clearTarget(): Promise<void>;
+  /**
+   * Chooses `next` (null: backup is turned off), in one transaction. `same`: it is the folder that is chosen now, picked again, so
+   * what was written there and its pending removals are kept. Otherwise the old folder's pending removals move to `retired` with its
+   * handle (nothing is dropped), and the status and the written list start afresh. Files already in a folder stay where they are.
+   */
+  changeTarget(next: StoredTarget | null, o: { same: boolean; at: number }): Promise<void>;
   getStatus(): Promise<BackupStatus>;
   /** Reads, changes and writes the status in one transaction, so a page and the offscreen document never overwrite each other. */
   updateStatus(change: (current: BackupStatus) => BackupStatus): Promise<BackupStatus>;
-  getKnown(): Promise<Set<string>>;
-  setKnown(ids: Iterable<string>): Promise<void>;
+  getKnown(): Promise<KnownReadings>;
+  /** Records what the folder holds now. A plain list of ids keeps the note counts already known for them. */
+  setKnown(readings: KnownReadings | Iterable<string>): Promise<void>;
   addScrub(documentId: string, at: number): Promise<void>;
   listScrubs(): Promise<PendingScrub[]>;
   removeScrubs(documentIds: readonly string[]): Promise<void>;
+  listRetired(): Promise<RetiredFolder[]>;
+  /** Removals done in a retired folder. When none is left, the record (and its handle) goes. */
+  doneRetired(id: number, documentIds: readonly string[]): Promise<void>;
+  /** A new handle for a retired folder (its permission was granted again). */
+  setRetiredTarget(id: number, target: StoredTarget): Promise<void>;
   close(): void;
 }
 
 const KEY = 'backup';
+
+/** `known` as stored: version 2 keeps the note counts. */
+interface KnownRecord {
+  v: 2;
+  readings: Record<string, number | null>;
+}
+
+function asKnown(v: unknown): KnownReadings {
+  const out: KnownReadings = new Map();
+  if (Array.isArray(v)) {
+    for (const id of v) if (typeof id === 'string') out.set(id, null);
+  } else if (typeof v === 'object' && v !== null && (v as { v?: unknown }).v === 2) {
+    const readings = (v as { readings?: unknown }).readings;
+    if (typeof readings === 'object' && readings !== null) {
+      for (const [id, n] of Object.entries(readings)) out.set(id, typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : null);
+    }
+  }
+  return out;
+}
+
+function asRetired(v: unknown): RetiredFolder | null {
+  if (!isRecord(v) || typeof v.id !== 'number') return null;
+  const target = asTarget(v.target);
+  if (target === null) return null;
+  const scrubs = Array.isArray(v.scrubs)
+    ? v.scrubs.flatMap((r: unknown) => (isRecord(r) && typeof r.documentId === 'string' ? [{ documentId: r.documentId, requestedAt: typeof r.requestedAt === 'number' ? r.requestedAt : 0 }] : []))
+    : [];
+  return { id: v.id, target, scrubs, retiredAt: typeof v.retiredAt === 'number' ? v.retiredAt : 0 };
+}
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -75,6 +136,7 @@ function openDatabase(): Promise<IDBDatabase> {
       const db = request.result;
       for (const name of ['target', 'status', 'known']) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
       if (!db.objectStoreNames.contains('scrub')) db.createObjectStore('scrub', { keyPath: 'documentId' });
+      if (!db.objectStoreNames.contains('retired')) db.createObjectStore('retired', { keyPath: 'id', autoIncrement: true });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new Error('The backup settings did not open.'));
@@ -82,7 +144,7 @@ function openDatabase(): Promise<IDBDatabase> {
   });
 }
 
-type StoreName = 'target' | 'status' | 'known' | 'scrub';
+type StoreName = 'target' | 'status' | 'known' | 'scrub' | 'retired';
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 
@@ -169,13 +231,31 @@ export async function openHandleStore(): Promise<HandleStore> {
         open('target').put(target, KEY);
       }),
 
-    clearTarget: () =>
-      transact<void>(['target', 'status', 'known', 'scrub'], 'readwrite', (open) => {
-        open('target').delete(KEY);
-        open('status').delete(KEY);
-        open('known').delete(KEY);
-        // A folder that is no longer ours has nothing to be cleaned, and the forgotten readings' ids do not stay on this computer.
-        open('scrub').clear();
+    changeTarget: (next, o) =>
+      transact<void>(['target', 'status', 'known', 'scrub', 'retired'], 'readwrite', (open) => {
+        const target = open('target');
+        if (o.same && next !== null) {
+          // The same folder, picked again: it keeps what was written there and what is still to be removed from it.
+          target.put(next, KEY);
+          return;
+        }
+        const old = target.get(KEY);
+        const pending = open('scrub').getAll();
+        // Requests in a transaction finish in order, so `old` has its result when `pending` has.
+        pending.onsuccess = () => {
+          const was = asTarget(old.result);
+          const rows: unknown[] = pending.result;
+          const scrubs = rows.flatMap((r) =>
+            isRecord(r) && typeof r.documentId === 'string' ? [{ documentId: r.documentId, requestedAt: typeof r.requestedAt === 'number' ? r.requestedAt : 0 }] : [],
+          );
+          // Removals still waiting for the old folder stay with it (and its handle) until they are done there.
+          if (was !== null && scrubs.length > 0) open('retired').add({ target: was, scrubs, retiredAt: o.at });
+          open('scrub').clear();
+          open('known').delete(KEY);
+          open('status').delete(KEY);
+          if (next === null) target.delete(KEY);
+          else target.put(next, KEY);
+        };
       }),
 
     getStatus: () =>
@@ -196,17 +276,22 @@ export async function openHandleStore(): Promise<HandleStore> {
       }),
 
     getKnown: () =>
-      transact<Set<string>>('known', 'readonly', (open, answer) => {
+      transact<KnownReadings>('known', 'readonly', (open, answer) => {
         const request = open('known').get(KEY);
-        request.onsuccess = () => {
-          const v: unknown = request.result;
-          answer(new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []));
-        };
+        request.onsuccess = () => answer(asKnown(request.result));
       }),
 
-    setKnown: (ids) =>
+    setKnown: (readings) =>
       transact<void>('known', 'readwrite', (open) => {
-        open('known').put([...ids], KEY);
+        const store = open('known');
+        const request = store.get(KEY);
+        request.onsuccess = () => {
+          const before = asKnown(request.result);
+          const next: KnownRecord = { v: 2, readings: {} };
+          if (readings instanceof Map) for (const [id, n] of readings) next.readings[id] = n;
+          else for (const id of readings) next.readings[id] = before.get(id) ?? null;
+          store.put(next, KEY);
+        };
       }),
 
     addScrub: (documentId, at) =>
@@ -236,6 +321,39 @@ export async function openHandleStore(): Promise<HandleStore> {
       transact<void>('scrub', 'readwrite', (open) => {
         const store = open('scrub');
         for (const id of documentIds) store.delete(id);
+      }),
+
+    listRetired: () =>
+      transact<RetiredFolder[]>('retired', 'readonly', (open, answer) => {
+        const request = open('retired').getAll();
+        request.onsuccess = () => {
+          const rows: unknown[] = request.result;
+          answer(rows.flatMap((r) => asRetired(r) ?? []));
+        };
+      }),
+
+    doneRetired: (id, documentIds) =>
+      transact<void>('retired', 'readwrite', (open) => {
+        const store = open('retired');
+        const request = store.get(id);
+        request.onsuccess = () => {
+          const cur = asRetired(request.result);
+          if (cur === null) return;
+          const done = new Set(documentIds);
+          const scrubs = cur.scrubs.filter((p) => !done.has(p.documentId));
+          if (scrubs.length === 0) store.delete(id);
+          else store.put({ ...cur, scrubs });
+        };
+      }),
+
+    setRetiredTarget: (id, target) =>
+      transact<void>('retired', 'readwrite', (open) => {
+        const store = open('retired');
+        const request = store.get(id);
+        request.onsuccess = () => {
+          const cur = asRetired(request.result);
+          if (cur !== null) store.put({ ...cur, target });
+        };
       }),
 
     close() {
