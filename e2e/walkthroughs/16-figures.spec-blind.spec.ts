@@ -671,6 +671,8 @@ test('on scan-120.pdf an Alt+drag area takes a note, which is saved with the PDF
 
     await page.reload();
     await page.waitForFunction(() => (globalThis as unknown as { __sopTest?: { viewerState?: () => string } }).__sopTest?.viewerState?.() === 'ready', undefined, { timeout: 60_000 });
+    // R98: the rail never closes for the margin (it used to start folded here), so it is shut as reloadAndWait does.
+    if (await hooks(page).eval((h) => h.viewer.snapshot().railOpen)) await page.keyboard.press('F4');
     await hooks(page).eval((h) => h.viewer.setScale(1));
     await hooks(page).eval((h, i) => h.viewer.scrollTo(i), 2);
     await expect(cardWith(page, 'Table of results, handwritten'), 'the area note is back after a reload').toBeVisible({ timeout: 20_000 });
