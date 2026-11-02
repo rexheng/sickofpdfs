@@ -11,6 +11,7 @@ import {
   backUpNowButton,
   chooseFolderButton,
   fakeApiKey,
+  findBackup,
   hasBackupSection,
   installBackupFakes,
   openSettings,
@@ -69,7 +70,8 @@ export async function backedUp(context: BrowserContext, openViewer: OpenViewer, 
   // the session ends: the tabs that made notes close
   await a.close();
   await r.close();
-  if (await backUpNowButton(settings).isVisible()) await backUpNowButton(settings).click();
+  // Triage (backupfix2, secread4 re-check N3): a click after the first backup has finished starts a second one, so click only while there is none.
+  if ((await backUpNowButton(settings).isVisible()) && (await findBackup(settings, PICKER_FOLDER)) === null) await backUpNowButton(settings).click();
   const backup = await waitForBackup(settings, PICKER_FOLDER, { message: 'a backup should appear in the picked folder after the folder is chosen and the session has ended' });
   await shotOf(settings, testInfo, '03-settings-after-backup');
   return { settings, key, attentionId, resnetId, backup };

@@ -237,9 +237,12 @@ CREATE INDEX comment_edits_owner ON comment_edits(document_id, draft_of_tab);
 | 1 | Task 28 | the normative v1 |
 | 2 | Phase 2 | the deltas above |
 | 3 | Phase 3 | `documents_fts` skips trashed documents (trigger rewrite and rebuild); index `history(last_opened)` |
-| 4 | Phase 5 | `sync_state(key TEXT PRIMARY KEY, value TEXT)`: cursor, device registration. Local only |
-| 5 | Phase 7 | `page_ocr` (§9) |
-| 6 | Phase 8 | `pdf_import_refs(document_id, pdf_ref, row_table, row_id, PRIMARY KEY (document_id, pdf_ref))` |
+| 4 | Phase 3 (backup, N5, 2 Nov) | `forgotten(hash TEXT PRIMARY KEY, forgotten_at INTEGER NOT NULL)` and `local_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)`, both `WITHOUT ROWID`, `IF NOT EXISTS` (a v3 database may already have them). Local only (R88) |
+| 5 | Phase 5 | `sync_state(key TEXT PRIMARY KEY, value TEXT)`: cursor, device registration. Local only |
+| 6 | Phase 7 | `page_ocr` (§9) |
+| 7 | Phase 8 | `pdf_import_refs(document_id, pdf_ref, row_table, row_id, PRIMARY KEY (document_id, pdf_ref))` |
+
+  The backup re-check took v4 (ruling N5, 2 Nov), so the reserved steps after it moved up by one: Phase 5 is v5, Phase 7 v6, Phase 8 v7.
 
 - **Migration rules:**
   - Only add: columns with defaults, tables, indexes, re-created triggers, and dropped and rebuilt derived data (FTS, `page_figures`). Never drop, rename or change the meaning of a column or value in a synced table. Never change a CHECK, because that needs a table rebuild.
@@ -336,19 +339,22 @@ sickofpdfs-backup/
 // apps/extension/src/store/backup-api.ts (StoreApi extends BackupApi)
 applyRestorePlan(backup: LibraryDump): Promise<RestoreResult>   // was (plan: RestorePlan): Promise<void>. Plans with planRestore against the rows as they are
                                                                 // now and writes, in ONE transaction; never deletes; same backup twice changes nothing
-interface RestoreResult { summary: RestoreSummary; needsPdf: DocumentId[]; forgotten: number /* readings left out */; skipped: number }
+interface RestoreResult { summary: RestoreSummary; needsPdf: DocumentId[]; forgotten: number /* readings left out: S17 says "N readings you removed here were left out" */; skipped: number }
 forgottenAmong(ids: readonly string[]): Promise<string[]>        // ≤ 10,000 ids; read-only. Fingerprints that left for good and are not in the library now
-// apps/extension/src/backup/restore-read.ts (S17 uses it)
+forgetDocument(documentId, o?: { undo?: boolean }): Promise<void> // R88: `undo: true` (an Undo of a save, or a save taken back) writes no forgotten-list entry
+// apps/extension/src/backup/restore-read.ts (S17 uses it; S17 parses library.json in a worker)
 readBackupFolder(folder: FileSystemDirectoryHandle): Promise<{ ok: true; manifest; dump; root } | { ok: false; reason: 'no-backup' | 'no-library' | 'too-big' | 'too-new' | 'damaged'; message }>
-openBackupPdf(root, sha, manifest): Promise<File | null>         // caps: manifest 16 MiB, library.json 256 MiB, a PDF 1 GiB and the manifest's size
+openBackupPdf(root, sha, manifest): Promise<File | null>         // caps: manifest 16 MiB, library.json 64 MiB (N4), a PDF 1 GiB and the manifest's size
 ```
 
-  - **Forgotten list.** Forget, a Trash purge and an Undo of a save record salted SHA-256 hashes of the reading's fingerprint and its aliases in the store's local tables `forgotten (hash, forgotten_at)` and `local_meta` (`forgottenSalt`), in the same transaction as the delete. Never exported, backed up or synced. A restore leaves those readings out, with everything hanging off them.
+  - **Forgotten list (R88).** Only Forget and the 30-day Trash purge record salted SHA-256 hashes of the reading's fingerprint and its aliases, in the local tables of schema v4 `forgotten (hash, forgotten_at)` and `local_meta` (`forgottenSalt`), in the same transaction as the delete. An Undo of a save never does. Never exported, backed up or synced. A restore leaves those readings out, with everything hanging off them, and says how many (`RestoreResult.forgotten`).
   - **A restore never moves a note.** A mark, thread, comment or location keeps its reading; a comment keeps its thread and author; a new comment must hang off a thread of its own reading. Such rows are dropped before planning (so no conflict copy is made from them) and again when written.
   - **Scrub (R75, R82).** Removes only the reading's own rows, PDF copy (and `.part`), and notes file. A readable file is rewritten without those rows; another reading's note that mentions the id stays as it is. A file is never deleted to clean it; one that cannot be read is left and named in the status (`unreadable`), and the removal stays pending.
-  - **Queue (R82).** A `documents` delete event queues a removal for the chosen folder; each run drains it first, then asks `forgottenAmong` about readings it wrote that the library no longer has (a lost event). Trash alone does not scrub.
-  - **Holds (R86).** `HeldReason` = `'other-library' | 'unreadable' | 'many-missing' | 'notes-missing'`: a `library.json` that is there but cannot be read; readings this library never wrote; every known reading gone (any count), or ≥ 5 and > a quarter; notes (live marks + comments) down by ≥ 20 and ≥ half since the last good run. Readings on the scrub list or the forgotten list never count. The badge shows "!" for a hold too, with the reason as its tooltip; the library pill "Backup needs a look" opens a card with the reason, "Not now" and "Back up anyway".
-  - **`sop-handles` v2.** `known` holds `{ v: 2, readings: { <id>: <notes at the last good run> } }` (a v1 `string[]` still reads). New store `retired` (auto id): `{ target, scrubs, retiredAt }`, a folder the owner moved away from with removals still waiting. `changeTarget(next, { same })` replaces `clearTarget`: the same folder picked again keeps `known` and its pending list; another folder (or Turn off) moves the pending list to `retired`. "Change folder" and "Turn off" first try to finish the removals (asking Chrome inside the click). Settings says "1 removal is waiting for <folder>" with "Try now" (`backupClient.finishRemovals()`); each run retries.
+  - **Queue (R82, R88).** A `documents` delete event queues a removal for the chosen folder: always for Forget and the purge (on the forgotten list); for an Undo only when a run may already hold the reading (this computer wrote it there, or a run is going). Each run drains the queue first, skipping ids that are back in the library (N6), then asks `forgottenAmong` about readings it wrote that the library no longer has (a lost event). A drained id is dropped; a raw id waits at most 30 days. Trash alone does not scrub.
+  - **Nothing is deleted that was not removed on purpose (R87).** No run, forced or not, deletes the PDF copy or notes file of a reading missing without being on the queue or the forgotten list. "Back up anyway" backs up what the library has now and keeps those copies (still listed in the manifest's `pdfs`).
+  - **Damaged library copies (N7).** A PDF copy is hashed as it is written; a library copy whose SHA-256 is not its id never replaces the folder's copy (`RunSummary.damagedPdfs`, and a plain line in Settings).
+  - **Holds (R86).** `HeldReason` = `'other-library' | 'unreadable' | 'many-missing' | 'notes-missing'`: a `library.json` that is there but cannot be read; readings this library never wrote; every known reading gone (any count), or ≥ 5 and > a quarter; notes (live marks + comments) down by ≥ 20 and ≥ half since the last good run. Readings on the scrub list or the forgotten list never count. The badge shows "!" for a hold too, with the reason as its tooltip; the library pill "Backup needs a look" opens a card with the reason, "Back up anyway" and "Not now" (the main button, R87). The `many-missing` card says R87's words.
+  - **`sop-handles` v2.** `known` holds `{ v: 2, readings: { <id>: <notes at the last good run> } }` (a v1 `string[]` still reads). New store `retired` (auto id): `{ target, scrubs, retiredAt }`, a folder the owner moved away from with removals still waiting. `changeTarget(next, { same })` replaces `clearTarget`: the same folder picked again keeps `known` and its pending list; another folder (or Turn off) moves the pending list to `retired`. "Change folder" and "Turn off" first try to finish the removals (asking Chrome inside the click). Settings says "1 removal is waiting for <folder>" with "Try now" (`backupClient.finishRemovals()`); each run retries. A retired folder that no longer exists, or a removal that waited 30 days, is dropped (R88), and Settings says so (`status.dropped`, cleared by "OK", `backupClient.clearDropped()`).
   - **PDF copies** are written to `<sha>.pdf.part` and moved into place. Each run removes `*.crswap` older than a day and leftover `*.part` files.
   - **Forget dialog:** "Removed from your library and your backups. Google Drive or OneDrive may keep their own copy in their trash for a while." (`FORGOTTEN_EVERYWHERE`).
 - **Markdown export** (`exportMarkdown(doc, marks, threads, comments): string`):
@@ -523,7 +529,7 @@ export interface OcrWord { text: string; box: PdfRect /* pt, unrotated page spac
 export interface OcrPageResult { documentId: DocumentId; pageIndex: number; engine: string; engineVersion: string; langs: string[];
   words: OcrWord[]; text: string /* words in reading order; offsets into it are this page's char indices */; createdAt: number }
 export function ocrToPageGlyphs(r: OcrPageResult): PageGlyphs;   // one Glyph per char, boxes split across each word, so the text layer needs no change
-// v5 table: page_ocr(document_id, page_index, engine, engine_version, words TEXT /* JSON OcrWord[] */, created_at, PRIMARY KEY (document_id, page_index))
+// v6 table (was v5 before the 2 Nov ladder move): page_ocr(document_id, page_index, engine, engine_version, words TEXT /* JSON OcrWord[] */, created_at, PRIMARY KEY (document_id, page_index))
 ```
 
 - **OCR results merge at `PageTextProvider`.**

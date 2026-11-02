@@ -13,6 +13,8 @@
 //   6  a restore is planned in the store against the library as it is, so a note typed while the dialog was open survives;
 //   8  a damaged library.json holds the run;
 //   9  a quit while a PDF is copied never leaves a short file under its real name.
+// The re-check probes N1 to N5 follow (R87, R88): "Back up anyway" never deletes a lost reading's copies; a waiting removal for a folder
+// that is gone is dropped; the writer never starts a second run on its own; the forgotten list stays local; a hold's badge says why.
 // Run: npx playwright test -c e2e/playwright.config.ts 2e-backup-safety --workers=1
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -38,6 +40,10 @@ interface BackupHooks {
   writeFile(path: string, text: string, name: string): Promise<void>;
   exportZip(file: string): Promise<number>;
   turnOff(): Promise<void>;
+  // used by the re-check probes (N1 to N5)
+  useHandle(name: string): Promise<Record<string, unknown> | null>;
+  removeFolder(name: string): Promise<void>;
+  finishRemovals(): Promise<string>;
 }
 const B = <T, A = undefined>(page: Page, fn: (b: BackupHooks, a: A) => Promise<T> | T, arg?: A): Promise<T> =>
   page.evaluate<T>(`(${fn.toString()})(globalThis.__sopBackup, ${JSON.stringify(arg) ?? 'undefined'})`);
@@ -423,4 +429,154 @@ test('9 interrupted: browser quit mid-run leaves the folder whole', async ({ pro
   expect(again?.ok).toBe(true);
   expect((await B(lib, (x) => x.files('intr')))[bigPath]).toBe(big.size);
   await ctx.close();
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The re-check of the fixes (secread4, "Re-check of 5451e8c", 2 Nov): probes N1 to N5, written by the reviewer, kept as regression checks
+// for R87 and R88. Copied with only what the harness needs (one shared storePage, lint's cast fixes); the assertions are the reviewer's.
+const idbAll = (page: Page, store: string): Promise<unknown[]> =>
+  page.evaluate(
+    (s) =>
+      new Promise<unknown[]>((resolve, reject) => {
+        const r = indexedDB.open('sop-handles');
+        r.onsuccess = () => {
+          const g = r.result.transaction(s).objectStore(s).getAll();
+          g.onsuccess = () => resolve(g.result as unknown[]);
+          g.onerror = () => reject(g.error ?? new Error('the read failed'));
+        };
+      }),
+    store,
+  );
+
+// ---------------------------------------------------------------------------------------------------------------------
+// N1. The database is lost (M2). The run is now held. The owner then does what the new pill invites: "Backup needs a look" → "Back up anyway".
+test('N1 many-missing hold: "Back up anyway" from the pill deletes the only PDF copies', async ({ context, server, openViewer, sw }, testInfo) => {
+  const page = await storePage(context, openViewer, server);
+  for (let i = 0; i < 3; i++) await seedNote(page, await seedDoc(page, 10 + i, `Lost library reading ${i}`), `secread4b note ${i}`);
+  let lib = await openLibrary(context);
+  expect((await B(lib, (x) => x.useFolder('anyway')))?.ok).toBe(true);
+  expect((await B(lib, (x, n: number) => x.run({ now: n }), Date.now() - DAY))?.ok).toBe(true);
+  expect((await B(lib, (x) => x.run()))?.ok).toBe(true);
+  console.log('before: pdfs', (await fileList(lib, 'anyway')).filter((p) => p.endsWith('.pdf')).length);
+
+  for (const p of context.pages()) await p.close();
+  await sw.evaluate(async () => {
+    if ((await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] })).length > 0) await chrome.offscreen.closeDocument();
+    await new Promise((r) => setTimeout(r, 1000));
+    const root = await navigator.storage.getDirectory();
+    for (const name of ['.sop-db', 'pdf']) await root.removeEntry(name, { recursive: true }).catch(() => {});
+  });
+  lib = await openLibrary(context);
+  await storePage(context, openViewer, server);
+  const held = await B(lib, (x) => x.run());
+  const badge = await sw.evaluate(async () => ({ text: await chrome.action.getBadgeText({}), title: await chrome.action.getTitle({}) }));
+  console.log('run after the loss', JSON.stringify(held), 'badge', JSON.stringify(badge));
+  expect(held?.reason, 'control: M2 is fixed, the run holds').toBe('held');
+
+  // What the owner sees on any library page: the pill, then the card.
+  await lib.bringToFront();
+  await lib.reload();
+  const pill = lib.getByRole('button', { name: 'Backup needs a look' });
+  await expect(pill).toBeVisible({ timeout: 15_000 });
+  await pill.click();
+  const card = lib.getByRole('dialog').or(lib.locator('[data-radix-popper-content-wrapper]'));
+  await expect(card.first()).toBeVisible();
+  console.log('the card says:', (await card.first().innerText()).replace(/\s+/g, ' '));
+  await lib.screenshot({ path: testInfo.outputPath('n1-card.png') });
+  await lib.getByRole('button', { name: 'Back up anyway' }).click();
+  await lib.waitForTimeout(1500);
+  await B(lib, (x) => x.whenIdle());
+  const after = await fileList(lib, 'anyway');
+  const dump = JSON.parse((await B(lib, (x) => x.readFile('sickofpdfs-backup/library.json', 'anyway')))!) as { tables: { documents: unknown[] } };
+  console.log('after Back up anyway: pdfs', after.filter((p) => p.endsWith('.pdf')).length, 'notes files', after.filter((p) => p.includes('/notes/')).length, 'library.json documents', dump.tables.documents.length);
+  console.log(after.join('\n'));
+  expect.soft(after.filter((p) => p.endsWith('.pdf')).length, 'the PDF copies of readings that were lost (not forgotten) stay in the folder').toBe(3);
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// N2. Change folder while a removal waits for a folder that is gone (renamed or deleted in Explorer). The retired record never goes.
+test('N2 retired folder that is gone: the removal waits for ever, with its raw fingerprint', async ({ context, server, openViewer }) => {
+  const page = await storePage(context, openViewer, server);
+  const a = await seedDoc(page, 20, 'Forgotten before a folder change');
+  await seedNote(page, a, 'secread4b note on the forgotten one');
+  await seedNote(page, await seedDoc(page, 21, 'Kept'), 'secread4b note kept');
+  const lib = await openLibrary(context);
+  expect((await B(lib, (x) => x.useHandle('oldh')))?.ok).toBe(true);
+  await B(lib, (x) => x.setPermission('prompt'));
+  await storeOf(page).call('forgetDocument', a);
+  await lib.waitForTimeout(1500);
+  console.log('pending after forget', (await B(lib, (x) => x.status())).scrubsPending);
+  await B(lib, (x) => x.removeFolder('oldh')); // the owner renamed or deleted the folder in Explorer
+  expect((await B(lib, (x) => x.useFolder('newf')))?.ok).toBe(true);
+  for (let i = 0; i < 3; i++) await B(lib, (x) => x.run());
+  const tryNow = await B(lib, (x) => x.finishRemovals());
+  const st = await B(lib, (x) => x.status());
+  const retired = (await idbAll(lib, 'retired')) as { scrubs: { documentId: string }[]; retiredAt: number }[];
+  console.log('Try now says', tryNow, '| status.retired', JSON.stringify(st.retired), '| raw ids kept in sop-handles', JSON.stringify(retired.map((r) => r.scrubs.map((s) => s.documentId.slice(0, 12)))));
+  expect.soft(retired.some((r) => r.scrubs.some((s) => s.documentId === a)), 'a raw fingerprint of a forgotten PDF stays in sop-handles').toBe(false);
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// N3. Walkthrough 2a's flake: does the writer start a second backup on its own, or only when asked? And what does a test that reads the
+//     manifest right after a "Back up now" see?
+test('N3 2a mechanism: a second run only comes from the extra "Back up now", and the manifest read right after it is the old one', async ({ context, server, openViewer }) => {
+  const page = await storePage(context, openViewer, server);
+  await seedNote(page, await seedDoc(page, 30, 'Flake check'), 'secread4b flake note');
+  const lib = await openLibrary(context);
+  expect((await B(lib, (x) => x.useFolder('flake')))?.ok).toBe(true);
+  const created = async (): Promise<number> => (JSON.parse((await B(lib, (x) => x.readFile('sickofpdfs-backup/manifest.json', 'flake')))!) as { createdAt: number }).createdAt;
+  const first = await created();
+  await lib.waitForTimeout(8000);
+  const quiet = await created();
+  console.log('no click for 8 s: a new manifest?', quiet !== first);
+  // what backedUp() does after the first backup has finished: a "Back up now" click, then waitForBackup with no `after`
+  await lib.evaluate(() => {
+    const c = new BroadcastChannel('sop-backup-rpc');
+    c.postMessage({ type: 'run', id: crypto.randomUUID() });
+    c.close();
+  });
+  const readRightAway = await created();
+  await B(lib, (x) => x.whenIdle());
+  await lib.waitForTimeout(300);
+  const later = await created();
+  console.log(`manifest read right after the click is the first one: ${readRightAway === first}; a second backup landed after it: ${later > readRightAway}`);
+  expect(quiet).toBe(first);
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// N4. The new store tables never leave: after a Forget and a purge, nothing in the backup or the zip names them or their salt key.
+test('N4 forgotten and local_meta stay local', async ({ context, server, openViewer }) => {
+  const page = await storePage(context, openViewer, server);
+  const a = await seedDoc(page, 40, 'Forget me');
+  const b = await seedDoc(page, 41, 'Purge me');
+  await seedNote(page, await seedDoc(page, 42, 'Keep me'), 'secread4b keep');
+  const lib = await openLibrary(context);
+  expect((await B(lib, (x) => x.useFolder('local'))))?.toBeTruthy();
+  const outbox0 = ((await storeOf(page).stats()) as unknown as { outbox: number }).outbox;
+  await storeOf(page).call('forgetDocument', a);
+  await storeOf(page).call('trashDocument', b);
+  await storeOf(page).call('purgeTrash', Date.now() + 1000);
+  const outbox1 = ((await storeOf(page).stats()) as unknown as { outbox: number }).outbox;
+  expect((await B(lib, (x) => x.run()))?.ok).toBe(true);
+  const dump = await storeOf(page).call<{ tables: Record<string, unknown> }>('exportLibrary');
+  console.log('dump tables', Object.keys(dump.tables).join(','), '| outbox before/after', outbox0, outbox1);
+  for (const needle of ['forgottenSalt', 'local_meta', 'forgotten_at', a, b]) console.log(`backup names ${needle.slice(0, 16)}:`, await grepOpfs(lib, 'local', needle));
+  console.log('forgottenAmong([a, b])', JSON.stringify(await storeOf(page).call('forgottenAmong', [a, b])));
+});
+
+// N5. The held badge's tooltip (R86: "Settings and the badge then say why").
+test('N5 held badge tooltip', async ({ context, server, openViewer, sw }) => {
+  await storePage(context, openViewer, server);
+  const lib = await openLibrary(context);
+  await lib.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    const d = await (await root.getDirectoryHandle('badge', { create: true })).getDirectoryHandle('sickofpdfs-backup', { create: true });
+    const w = await (await d.getFileHandle('library.json', { create: true })).createWritable();
+    await w.write('{"tables": {"documents": [ cut short');
+    await w.close();
+  });
+  const r = await B(lib, (x) => x.useFolder('badge'));
+  console.log('run', JSON.stringify(r));
+  await lib.waitForTimeout(3000);
+  console.log('badge after 3 s', JSON.stringify(await sw.evaluate(async () => ({ text: await chrome.action.getBadgeText({}), title: await chrome.action.getTitle({}) }))));
 });
