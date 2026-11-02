@@ -126,6 +126,9 @@ const KEY_COLUMN: Readonly<Record<DumpTable, string>> = {
   comments: 'id',
   history: 'document_id',
   settings: 'key',
+  tags: 'id',
+  reading_tags: 'id',
+  auto_tag_removed: 'id',
 };
 
 /** The field of a wire row that is its id (and the column's camelCase name). */
@@ -138,6 +141,9 @@ const KEY_FIELD: Readonly<Record<DumpTable, string>> = {
   comments: 'id',
   history: 'documentId',
   settings: 'key',
+  tags: 'id',
+  reading_tags: 'id',
+  auto_tag_removed: 'id',
 };
 
 /** Which rows go in a backup: a draft thread, a draft comment, and a comment of a draft thread are not backed up. */
@@ -150,6 +156,9 @@ const EXPORT_FILTER: Readonly<Record<DumpTable, string>> = {
   comments: 'draft_of_tab IS NULL AND thread_id IN (SELECT id FROM threads WHERE draft_of_tab IS NULL)',
   history: '',
   settings: '',
+  tags: '',
+  reading_tags: '',
+  auto_tag_removed: '',
 };
 
 /** The rows `exportLibrary` reads in one go, in pieces of this size. */
@@ -248,6 +257,21 @@ export function createBackupApi(db: SqlDb, deps: BackupDeps): BackupApi {
       case 'history':
         if (!has('SELECT 1 AS x FROM documents WHERE id = ?', [text(wire.documentId)])) return false;
         break;
+      case 'tags': {
+        // A live tag name is unique here: a backup tag that would take another live tag's name is left out (the plan folds the usual cases).
+        if (wire.deletedAt == null && has('SELECT 1 AS x FROM tags WHERE name = ? COLLATE NOCASE AND id <> ? AND deleted_at IS NULL', [text(wire.name), key])) return false;
+        break;
+      }
+      case 'reading_tags':
+      case 'auto_tag_removed': {
+        const doc = text(wire.documentId);
+        const tag = text(wire.tagId);
+        // The row names a reading and a tag that are both here, and its id says so. An auto tag the owner took off this reading stays off.
+        if (key !== `${doc}:${tag}`) return false;
+        if (!has('SELECT 1 AS x FROM documents WHERE id = ?', [doc]) || !has('SELECT 1 AS x FROM tags WHERE id = ?', [tag])) return false;
+        if (table === 'reading_tags' && wire.source === 'auto' && has('SELECT 1 AS x FROM auto_tag_removed WHERE document_id = ? AND tag_id = ?', [doc, tag])) return false;
+        break;
+      }
     }
 
     const data = wireToDb(table, wire, { rev: 0, hlc });
@@ -409,6 +433,9 @@ function screenBackup(local: LibraryDump, backup: LibraryDump, forgotten: Readon
   out.aliases = B.aliases.filter((a) => !forgotten.has(text(a.sha256)) && notForgotten(a));
   out.history = B.history.filter(notForgotten);
   out.settings = B.settings;
+  out.tags = B.tags;
+  out.reading_tags = B.reading_tags.filter(notForgotten);
+  out.auto_tag_removed = B.auto_tag_removed.filter(notForgotten);
   out.locations = B.locations.filter(notForgotten).filter((b) => keep(sameReading(here.locations.get(text(b.id)), b)));
   out.threads = B.threads.filter(notForgotten).filter((b) => keep(sameReading(here.threads.get(text(b.id)), b)));
   out.marks = B.marks.filter(notForgotten).filter((b) => {

@@ -238,11 +238,20 @@ CREATE INDEX comment_edits_owner ON comment_edits(document_id, draft_of_tab);
 | 2 | Phase 2 | the deltas above |
 | 3 | Phase 3 | `documents_fts` skips trashed documents (trigger rewrite and rebuild); index `history(last_opened)` |
 | 4 | Phase 3 (backup, N5, 2 Nov) | `forgotten(hash TEXT PRIMARY KEY, forgotten_at INTEGER NOT NULL)` and `local_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)`, both `WITHOUT ROWID`, `IF NOT EXISTS` (a v3 database may already have them). Local only (R88) |
-| 5 | Phase 5 | `sync_state(key TEXT PRIMARY KEY, value TEXT)`: cursor, device registration. Local only |
-| 6 | Phase 7 | `page_ocr` (§9) |
-| 7 | Phase 8 | `pdf_import_refs(document_id, pdf_ref, row_table, row_id, PRIMARY KEY (document_id, pdf_ref))` |
+| 5 | Tags and the auto categoriser (R92, 2 Nov) | `tags`, `reading_tags`, `auto_tag_removed` (synced: outbox triggers, in the backup, `SYNCED_TABLES`) and `embeddings` (local only: never in a backup, an export or the outbox). See "Tags and the categoriser" below |
+| 6 | Phase 5 | `sync_state(key TEXT PRIMARY KEY, value TEXT)`: cursor, device registration. Local only |
+| 7 | Phase 7 | `page_ocr` (§9) |
+| 8 | Phase 8 | `pdf_import_refs(document_id, pdf_ref, row_table, row_id, PRIMARY KEY (document_id, pdf_ref))` |
 
-  The backup re-check took v4 (ruling N5, 2 Nov), so the reserved steps after it moved up by one: Phase 5 is v5, Phase 7 v6, Phase 8 v7.
+  The backup re-check took v4 (ruling N5, 2 Nov) and R92's tags took v5 the same day, so the reserved steps after them moved up: Phase 5 is v6, Phase 7 v7, Phase 8 v8.
+
+- **Tags and the categoriser (v5, R92).**
+  - `tags(id, name, kind 'topic'|'course'|'tag', topic_key, renamed, created_at, updated_at, deleted_at, rev, hlc)`. A live tag's name is unique, ignoring case. A tag the owner deletes keeps its row (`deleted_at`), so a deleted course or topic tag is not made again.
+  - `reading_tags(id = '<document_id>:<tag_id>', document_id, tag_id, source 'owner'|'auto', created_at, rev, hlc)` and `auto_tag_removed(id, document_id, tag_id, removed_at, rev, hlc)`: a tag taken off a reading is never put back there by the categoriser. Both cascade from `documents`.
+  - These three are synced tables: `SyncedTable` and `SYNCED_TABLES` list them, `TABLE_SPECS` has their wire rows, the outbox triggers are the usual three, and `DUMP_TABLES` has them after `settings` (so a restore on a new computer brings tags and removals back; the restore folds two tags with the same name into one). Phase 5 must add the three to the D1 mirror and the apply order (tags before the rows that name them).
+  - `embeddings(document_id, model, dim, vector BLOB, text_hash, abstract, pages_used, created_at)`: the meaning vector of a reading, from the bundled MiniLM. Local only. Rebuilt when needed.
+  - `forgetDocument`, the Trash purge and an Undo of a save remove a reading's tag rows, removals, vector and outbox entries in the same transaction, and delete any auto course or topic tag nothing uses any more.
+  - A reading with `index_text = 0` is never given a vector or an auto tag.
 
 - **Migration rules:**
   - Only add: columns with defaults, tables, indexes, re-created triggers, and dropped and rebuilt derived data (FTS, `page_figures`). Never drop, rename or change the meaning of a column or value in a synced table. Never change a CHECK, because that needs a table rebuild.
@@ -255,7 +264,7 @@ CREATE INDEX comment_edits_owner ON comment_edits(document_id, draft_of_tab);
 - **Change events** extend Task 28's `StoreChange` without breaking it:
 
 ```ts
-export type StoreTable = 'documents' | 'aliases' | 'locations' | 'page_text' | 'history' | 'marks' | 'threads' | 'comments' | 'settings' | 'page_figures' | 'page_ocr';
+export type StoreTable = 'documents' | 'aliases' | 'locations' | 'page_text' | 'history' | 'marks' | 'threads' | 'comments' | 'settings' | 'page_figures' | 'page_ocr' | 'tags' | 'reading_tags' | 'auto_tag_removed';
 export interface StoreChange { table: StoreTable; ids: string[]; op: 'upsert' | 'delete'; documentId?: DocumentId; origin?: 'tab' | 'sync' | 'restore'; tabId?: TabId }
 ```
 
@@ -447,7 +456,7 @@ export interface ClaudeTurnRunner { run(req: ClaudeTurnRequest, onEvent: (e: Cla
 
 ```ts
 // packages/core/src/sync/protocol.ts. The local outbox (Task 28) is the queue; a ChangeEntry is the wire form of one queued row.
-export type SyncedTable = 'documents' | 'aliases' | 'locations' | 'marks' | 'threads' | 'comments' | 'history' | 'settings';   // = v1 SYNCED_TABLES
+export type SyncedTable = 'documents' | 'aliases' | 'locations' | 'marks' | 'threads' | 'comments' | 'history' | 'settings' | 'tags' | 'reading_tags' | 'auto_tag_removed';   // = the v1 SYNCED_TABLES and the three tag tables of local schema v5 (R92)
 export interface ChangeEntry { table: SyncedTable; id: string; baseRev: number; hlc: HlcStamp; row: Record<string, unknown> /* camelCase row without rev */; label?: 'learning' /* documents only */ }
 export interface PushRequest { device: string; entries: ChangeEntry[] /* ≤ 200 */ }
 export interface PushResponse { applied: { table: SyncedTable; id: string; rev: number; seq: number }[]; rebased: (ChangeEntry & { rev: number; seq: number })[]; needBlobs: Sha256[]; needText: DocumentId[] }
@@ -529,7 +538,7 @@ export interface OcrWord { text: string; box: PdfRect /* pt, unrotated page spac
 export interface OcrPageResult { documentId: DocumentId; pageIndex: number; engine: string; engineVersion: string; langs: string[];
   words: OcrWord[]; text: string /* words in reading order; offsets into it are this page's char indices */; createdAt: number }
 export function ocrToPageGlyphs(r: OcrPageResult): PageGlyphs;   // one Glyph per char, boxes split across each word, so the text layer needs no change
-// v6 table (was v5 before the 2 Nov ladder move): page_ocr(document_id, page_index, engine, engine_version, words TEXT /* JSON OcrWord[] */, created_at, PRIMARY KEY (document_id, page_index))
+// v7 table (was v5 before the 2 Nov ladder moves): page_ocr(document_id, page_index, engine, engine_version, words TEXT /* JSON OcrWord[] */, created_at, PRIMARY KEY (document_id, page_index))
 ```
 
 - **OCR results merge at `PageTextProvider`.**

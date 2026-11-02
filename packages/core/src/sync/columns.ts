@@ -226,6 +226,40 @@ export const TABLE_SPECS: Readonly<Record<SyncedTable, TableSpec>> = {
     serverColumns: ['seq', 'device'],
     columns: [text('key', { maxLength: 256 }), text('value', { maxLength: 262_144 })],
   },
+  // Local schema v5 (R92). A tag is a row of its own; a reading's tags and the removals are rows keyed `<documentId>:<tagId>`.
+  tags: {
+    table: 'tags',
+    idField: 'id',
+    softDelete: true,
+    documentField: null,
+    serverColumns: ['seq', 'device'],
+    columns: [
+      text('id', NOTE_ID),
+      text('name', { maxLength: 200 }),
+      text('kind', { oneOf: ['topic', 'course', 'tag'] }),
+      text('topicKey', { nullable: true, maxLength: 64 }),
+      bool('renamed'),
+      int('createdAt'),
+      int('updatedAt'),
+      int('deletedAt', { nullable: true }),
+    ],
+  },
+  reading_tags: {
+    table: 'reading_tags',
+    idField: 'id',
+    softDelete: false,
+    documentField: 'documentId',
+    serverColumns: ['seq', 'device'],
+    columns: [text('id', NOTE_ID), hex64('documentId'), text('tagId', NOTE_ID), text('source', { oneOf: ['owner', 'auto'] }), int('createdAt')],
+  },
+  auto_tag_removed: {
+    table: 'auto_tag_removed',
+    idField: 'id',
+    softDelete: false,
+    documentField: 'documentId',
+    serverColumns: ['seq', 'device'],
+    columns: [text('id', NOTE_ID), hex64('documentId'), text('tagId', NOTE_ID), int('removedAt')],
+  },
 };
 
 /** The two columns every synced row has beside its data: the base revision and the hybrid-clock stamp. */

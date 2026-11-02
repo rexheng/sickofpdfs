@@ -34,6 +34,7 @@ import type { StoreChange } from './change-bus';
 import { ftsQuery } from './fts-query';
 import { createLibraryApi, type LibraryApi } from './library-api';
 import { createSettingsApi, type SettingsApi } from './settings-api';
+import { clearTagOutbox, createTagsApi, dropOrphanAutoTags, tagRowIds, type TagsApi } from './tags-api';
 import { createPageFiguresApi, type PageFiguresApi } from './page-figures';
 import { forgottenHashes, recordForgotten } from './forgotten';
 import { FTS_TABLES } from './schema';
@@ -87,7 +88,7 @@ export interface TouchLocationInput {
   at: number;
 }
 
-export interface StoreApi extends AnnotationsApi, PageFiguresApi, LibraryApi, BackupApi, SettingsApi {
+export interface StoreApi extends AnnotationsApi, PageFiguresApi, LibraryApi, BackupApi, SettingsApi, TagsApi {
   schemaVersion(): Promise<number>;
   stats(): Promise<StoreStats>;
   /** The library document these bytes are: `documents.id`, or the document an alias (a stamped copy) points to. */
@@ -107,7 +108,8 @@ export interface StoreApi extends AnnotationsApi, PageFiguresApi, LibraryApi, Ba
   recordOpen(documentId: DocumentId, at: number): Promise<void>;
   /**
    * Hard delete: the document, everything that hangs off it, every outbox row naming any of it, and its indexed words. Forget also
-   * records a salted hash of its fingerprints in the forgotten list (R88); an Undo of a save (`undo: true`) never does.
+   * records a salted hash of its fingerprints in the forgotten list (R88); an Undo of a save (`undo: true`) never does. Its tags, the
+   * tags taken off it and its meaning vector go in the same transaction (R92), and so does any auto course or topic tag nothing uses now.
    */
   forgetDocument(documentId: DocumentId, o?: { undo?: boolean }): Promise<void>;
   /** Pages whose text matches every word of `query`, best first (bm25). */
@@ -666,6 +668,7 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
       assertWritable();
       checkHex(documentId, 'the document id');
       let existed = false;
+      let orphaned: string[] = [];
       db.savepoint(() => {
         existed = documentExists(documentId);
         if (existed) recordForgotten(db, hashes.values(), deps.now());
@@ -680,15 +683,20 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
         ]) {
           for (const r of db.selectObjects(sql, [documentId])) ids.add(text(r, 'id'));
         }
-        // 2. The cascade removes aliases, locations, page text, marks, threads, comments, history and the figure cache;
-        // the index triggers remove their words from page_text_fts, documents_fts and comments_fts.
+        for (const id of tagRowIds(db, [documentId])) ids.add(id);
+        // 2. The cascade removes aliases, locations, page text, marks, threads, comments, history, the figure cache, tags, removed-tag
+        // records and the meaning vector; the index triggers remove their words from page_text_fts, documents_fts and comments_fts.
         run('DELETE FROM documents WHERE id = ?', [documentId]);
         // 3. Every outbox row naming any of them, including the delete rows the cascade itself just queued.
         run('DELETE FROM outbox WHERE row_id IN (SELECT value FROM json_each(?))', [JSON.stringify([...ids])]);
+        clearTagOutbox(db, [documentId]);
+        // A topic or course tag that only this reading kept alive is deleted too (its name came from this reading's words).
+        if (existed) orphaned = dropOrphanAutoTags(db);
         // 4. Merge each index into one fresh segment, so the deleted words are gone from the index files too (R13).
         if (existed) for (const t of FTS_TABLES) db.exec(`INSERT INTO ${t} (${t}) VALUES ('optimize')`);
       });
       if (existed) publish([{ table: 'documents', ids: [documentId], op: 'delete', documentId }]);
+      if (orphaned.length > 0) publish([{ table: 'tags', ids: orphaned, op: 'delete' }]);
     });
   }
 
@@ -706,5 +714,6 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
     ...createLibraryApi(db, deps, { document: documentFromRow, location: locationFromRow }),
     ...createBackupApi(db, deps),
     ...createSettingsApi(db, deps),
+    ...createTagsApi(db, deps),
   };
 }

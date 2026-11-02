@@ -3,7 +3,8 @@
 //
 //   sickofpdfs-backup/
 //     manifest.json                          BackupManifest (written last, so a half-finished backup is never taken for a whole one)
-//     library.json                           LibraryDump: { tables: { documents, aliases, locations, marks, threads, comments, history, settings } }
+//     library.json                           LibraryDump: { tables: { documents, aliases, locations, marks, threads, comments, history, settings,
+//                                                              tags, reading_tags, auto_tag_removed } }
 //     snapshots/library-<YYYY-MM-DD>.json    the last 7 nightly copies of library.json (rotate.ts)
 //     pdf/<sha[0..2]>/<sha>.pdf              saved copies, once per fingerprint
 //     notes/<title-slug>-<sha[0..8]>.md      the Markdown export of each document with notes (export/markdown.ts)
@@ -15,7 +16,7 @@
 // fingerprints (a path is never built from anything else), and a dump's rows must carry the keys the merge relies on.
 import type { HlcStamp } from '../hlc';
 import type { DocumentId, Sha256 } from '../ids';
-import type { CommentRow, DocumentRow, LocationRow, MarkRow, ThreadRow } from '../model/rows';
+import type { AutoTagRemovedRow, CommentRow, DocumentRow, LocationRow, MarkRow, ReadingTagRow, TagRow, ThreadRow } from '../model/rows';
 import { notesFileName } from '../export/markdown';
 
 export const BACKUP_FORMAT = 'sop-backup';
@@ -66,8 +67,11 @@ export interface SettingRow extends Stamped {
   value: string;
 }
 
-/** The tables a backup holds, in the order they are written and restored (parents first). */
-export const DUMP_TABLES = ['documents', 'aliases', 'locations', 'marks', 'threads', 'comments', 'history', 'settings'] as const;
+/**
+ * The tables a backup holds, in the order they are written and restored (parents first). The three tag tables (local schema v5, R92)
+ * come last: tags before the rows that name them. The categoriser's vectors (`embeddings`) are never in a backup.
+ */
+export const DUMP_TABLES = ['documents', 'aliases', 'locations', 'marks', 'threads', 'comments', 'history', 'settings', 'tags', 'reading_tags', 'auto_tag_removed'] as const;
 export type DumpTable = (typeof DUMP_TABLES)[number];
 
 export interface LibraryTables {
@@ -79,6 +83,9 @@ export interface LibraryTables {
   comments: CommentRow[];
   history: HistoryRow[];
   settings: SettingRow[];
+  tags: TagRow[];
+  reading_tags: ReadingTagRow[];
+  auto_tag_removed: AutoTagRemovedRow[];
 }
 
 /** `library.json`: camelCase rows, drafts excluded. */
@@ -86,7 +93,19 @@ export interface LibraryDump {
   tables: LibraryTables;
 }
 
-export const emptyTables = (): LibraryTables => ({ documents: [], aliases: [], locations: [], marks: [], threads: [], comments: [], history: [], settings: [] });
+export const emptyTables = (): LibraryTables => ({
+  documents: [],
+  aliases: [],
+  locations: [],
+  marks: [],
+  threads: [],
+  comments: [],
+  history: [],
+  settings: [],
+  tags: [],
+  reading_tags: [],
+  auto_tag_removed: [],
+});
 export const emptyDump = (): LibraryDump => ({ tables: emptyTables() });
 
 // ---- the manifest ----------------------------------------------------------------------------------------------------
@@ -185,9 +204,12 @@ const KEY_OF: Readonly<Record<DumpTable, string>> = {
   comments: 'id',
   history: 'documentId',
   settings: 'key',
+  tags: 'id',
+  reading_tags: 'id',
+  auto_tag_removed: 'id',
 };
 
-/** The field that names a row's document (settings have none). */
+/** The field that names a row's document (settings and tags have none). */
 const DOCUMENT_OF: Readonly<Record<DumpTable, string | null>> = {
   documents: 'id',
   aliases: 'documentId',
@@ -197,6 +219,9 @@ const DOCUMENT_OF: Readonly<Record<DumpTable, string | null>> = {
   comments: 'documentId',
   history: 'documentId',
   settings: null,
+  tags: null,
+  reading_tags: 'documentId',
+  auto_tag_removed: 'documentId',
 };
 
 /** A row that is an unsent draft. Drafts belong to the tab that is typing them and are never backed up or restored. */

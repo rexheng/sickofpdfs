@@ -19,6 +19,7 @@ import type { StoreChange } from './change-bus';
 import { forgottenHashes, recordForgotten } from './forgotten';
 import { FTS_TABLES } from './schema';
 import type { SqlDb } from './schema-v2';
+import { clearTagOutbox, dropOrphanAutoTags, tagRowIds } from './tags-api';
 
 /** Days a removed reading or note stays in Trash. */
 export const TRASH_KEEP_DAYS = 30;
@@ -54,6 +55,7 @@ function idsOf(db: SqlDb, documentIds: readonly string[]): string[] {
   ]) {
     for (const r of db.selectObjects(sql, [list])) ids.add(str(r, 'id'));
   }
+  for (const id of tagRowIds(db, documentIds)) ids.add(id);
   return [...ids];
 }
 
@@ -99,6 +101,7 @@ export async function purgeTrashRows(db: SqlDb, deps: TrashDeps, olderThan: numb
 
   // 3. The rows, in one transaction.
   const forgotten: string[] = [];
+  const orphaned: string[] = [];
   const blanked = new Map<string, string[]>();
   db.savepoint((tx) => {
     if (copiesGone.length > 0) {
@@ -123,6 +126,9 @@ export async function purgeTrashRows(db: SqlDb, deps: TrashDeps, olderThan: numb
           Date.now(),
         );
         forgotten.push(...still);
+        clearTagOutbox(tx, still);
+        // A topic or course tag only these readings kept alive goes too (R92).
+        orphaned.push(...dropOrphanAutoTags(tx));
       }
     }
 
@@ -157,6 +163,13 @@ export async function purgeTrashRows(db: SqlDb, deps: TrashDeps, olderThan: numb
       deps.publish({ table: 'documents', ids: [id], op: 'delete', documentId: id as DocumentId });
     } catch {
       // The purge is committed. Other tabs catch up on their next read.
+    }
+  }
+  if (orphaned.length > 0) {
+    try {
+      deps.publish({ table: 'tags', ids: orphaned, op: 'delete' });
+    } catch {
+      // As above.
     }
   }
   for (const [documentId, ids] of blanked) {

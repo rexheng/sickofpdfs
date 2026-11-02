@@ -22,6 +22,11 @@
 //     an alias, never both. A backup alias whose fingerprint is a document here is not written (the two copies keep their own
 //     notes: split, never lost). A backup document that this library knows as an alias of one of its documents is not
 //     written as a document: its notes, marks, locations, history and aliases are written onto that document instead.
+//   - Tags (local schema v5, R92): a tag is a row like a note (the newer stamp wins; an edit beats a delete). Two tags with the same name
+//     are one tag: a backup tag whose name a live tag here already has is folded into that one, and the rows that name it follow. A
+//     tag on a reading, and a "taken off this reading" row, are rows keyed `<documentId>:<tagId>`; they are written only when their
+//     reading and tag are known, and a tag the owner took off a reading here is not put back by a backup (an auto tag whose removal
+//     is recorded on either side is left out).
 //   - Drafts never come back. A row whose document (or, for a comment, whose thread) is not known is left out. A setting
 //     that looks like a secret is left out. `author` never changes: a backup row that disagrees about it is ignored.
 //   - It is idempotent: apply the plan, plan again, and the second plan is empty.
@@ -76,9 +81,24 @@ const KEY: Readonly<Record<DumpTable, string>> = {
   comments: 'id',
   history: 'documentId',
   settings: 'key',
+  tags: 'id',
+  reading_tags: 'id',
+  auto_tag_removed: 'id',
 };
 
-const zeros = (): TableCounts => ({ documents: 0, aliases: 0, locations: 0, marks: 0, threads: 0, comments: 0, history: 0, settings: 0 });
+const zeros = (): TableCounts => ({
+  documents: 0,
+  aliases: 0,
+  locations: 0,
+  marks: 0,
+  threads: 0,
+  comments: 0,
+  history: 0,
+  settings: 0,
+  tags: 0,
+  reading_tags: 0,
+  auto_tag_removed: 0,
+});
 const hlcOf = (r: Row): string => (typeof r.hlc === 'string' ? r.hlc : '');
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
@@ -227,6 +247,17 @@ function foldAliasedDocuments(L: Record<DumpTable, Row[]>, B: Record<DumpTable, 
       return to === undefined ? r : { ...r, documentId: to };
     });
   }
+  // A tag row's id carries its reading's id, so the id follows; two rows that now share an id keep the newer.
+  for (const t of ['reading_tags', 'auto_tag_removed'] as const) {
+    const byId = new Map<string, Row>();
+    for (const r of B[t]) {
+      const to = fold.get(str(r.documentId));
+      const row: Row = to === undefined ? r : { ...r, documentId: to, id: `${to}:${str(r.tagId)}` };
+      const other = byId.get(str(row.id));
+      if (!other || cmp(hlcOf(row), hlcOf(other)) > 0) byId.set(str(row.id), row);
+    }
+    B[t] = [...byId.values()];
+  }
   const history = new Map<string, Row>();
   for (const h of B.history) {
     const id = str(h.documentId);
@@ -241,6 +272,38 @@ function foldAliasedDocuments(L: Record<DumpTable, Row[]>, B: Record<DumpTable, 
   B.history = [...history.values()];
 }
 
+const lower = (v: unknown): string => str(v).trim().toLowerCase();
+
+/**
+ * Two tags with the same name are one tag. A live backup tag whose name a live tag here already has (under another id) is taken out
+ * of the backup, and the reading tags and removals that name it are moved onto the tag here. Within the backup the first tag (by id)
+ * of a name wins. Edits `B` in place.
+ */
+function foldSameNameTags(L: Record<DumpTable, Row[]>, B: Record<DumpTable, Row[]>, cmp: CompareHlc): void {
+  const holder = new Map<string, string>(); // lower-case name -> id of the live tag that has it
+  for (const t of L.tags) if (!isDeleted(t)) holder.set(lower(t.name), str(t.id));
+  const remap = new Map<string, string>();
+  for (const t of [...B.tags].sort(byKey('id'))) {
+    if (isDeleted(t)) continue;
+    const name = lower(t.name);
+    const has = holder.get(name);
+    if (has === undefined) holder.set(name, str(t.id));
+    else if (has !== str(t.id)) remap.set(str(t.id), has);
+  }
+  if (remap.size === 0) return;
+  B.tags = B.tags.filter((t) => !remap.has(str(t.id)));
+  for (const table of ['reading_tags', 'auto_tag_removed'] as const) {
+    const byId = new Map<string, Row>();
+    for (const r of B[table]) {
+      const to = remap.get(str(r.tagId));
+      const row: Row = to === undefined ? r : { ...r, tagId: to, id: `${str(r.documentId)}:${to}` };
+      const other = byId.get(str(row.id));
+      if (!other || cmp(hlcOf(row), hlcOf(other)) > 0) byId.set(str(row.id), row);
+    }
+    B[table] = [...byId.values()];
+  }
+}
+
 /**
  * What to write so that the library here holds everything in `backup`. See the file's header for the rules.
  * `local` is the library as it is now (`exportLibrary()`); `compareHlc` orders two stamps (negative, zero, positive).
@@ -250,6 +313,7 @@ export function planRestore(local: LibraryDump, backup: LibraryDump, compareHlc:
   const L = rowsOf(local, undefined, false);
   const B = rowsOf(backup, options.now, true);
   foldAliasedDocuments(L, B, cmp);
+  foldSameNameTags(L, B, cmp);
   const rows = {} as Record<DumpTable, Row[]>;
   const added = zeros();
   const updated = zeros();
@@ -367,6 +431,14 @@ export function planRestore(local: LibraryDump, backup: LibraryDump, compareHlc:
 
   // settings: newest wins; a key that looks like a secret never comes back
   done('settings', mergeLww('settings', L.settings, B.settings, cmp, { skip: (b) => !restorableSetting(str(b.key)) }));
+
+  // tags (R92): rows like notes, soft-deleted; a reading's tags and removals follow once their reading and tag are known
+  done('tags', mergeLww('tags', L.tags, B.tags, cmp, { softDelete: true }));
+  const tagIds = new Set<string>([...L.tags.map((t) => str(t.id)), ...B.tags.map((t) => str(t.id))]);
+  const knownTag = (b: Row): boolean => known(b) && tagIds.has(str(b.tagId));
+  const removedKeys = new Set<string>([...L.auto_tag_removed, ...B.auto_tag_removed].map((r) => `${str(r.documentId)}:${str(r.tagId)}`));
+  done('reading_tags', mergeLww('reading_tags', L.reading_tags, B.reading_tags, cmp, { skip: (b) => !knownTag(b) || (b.source === 'auto' && removedKeys.has(`${str(b.documentId)}:${str(b.tagId)}`)) }));
+  done('auto_tag_removed', mergeLww('auto_tag_removed', L.auto_tag_removed, B.auto_tag_removed, cmp, { skip: (b) => !knownTag(b) }));
 
   // documents of the backup whose PDF is not held here
   const finalDocs = new Map(lDocs);

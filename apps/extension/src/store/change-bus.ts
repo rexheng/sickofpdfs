@@ -4,7 +4,10 @@ import type { DocumentId, TabId } from '@sop/core';
 
 export const CHANGES_CHANNEL = 'sop-changes';
 
-/** Every table a change event can name (contracts §4). The ladder reserves `page_ocr` for Phase 7. */
+/** The `tabId` on the change events of the auto categoriser's writes, so the categoriser can tell its own echo from the owner's edits. */
+export const CATEGORISER_TAB = 'sop-categoriser' as TabId;
+
+/** Every table a change event can name (contracts §4). The ladder reserves `page_ocr` for Phase 7. The tag tables are schema v5 (R92). */
 export type StoreTable =
   | 'documents'
   | 'aliases'
@@ -16,7 +19,10 @@ export type StoreTable =
   | 'comments'
   | 'settings'
   | 'page_figures'
-  | 'page_ocr';
+  | 'page_ocr'
+  | 'tags'
+  | 'reading_tags'
+  | 'auto_tag_removed';
 
 const STORE_TABLES: ReadonlySet<string> = new Set<StoreTable>([
   'documents',
@@ -30,6 +36,9 @@ const STORE_TABLES: ReadonlySet<string> = new Set<StoreTable>([
   'settings',
   'page_figures',
   'page_ocr',
+  'tags',
+  'reading_tags',
+  'auto_tag_removed',
 ]);
 
 /**

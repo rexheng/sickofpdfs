@@ -112,7 +112,7 @@ const NOW_MS = `CAST(unixepoch('subsec') * 1000 AS INTEGER)`;
  * base_rev 0, an update an upsert at OLD.rev, a delete a delete at OLD.rev. Unsent comment drafts never queue (they never
  * sync), so `comments` guards each trigger on `draft_of_tab`.
  */
-export function outboxTriggers(table: SyncedTable, pk: string = PRIMARY_KEY[table]): string[] {
+export function outboxTriggers(table: string, pk: string = PRIMARY_KEY[table as SyncedTable]): string[] {
   const queue = (op: 'upsert' | 'delete', row: 'NEW' | 'OLD', rev: string, hlc: string) =>
     `INSERT INTO outbox (table_name, row_id, op, base_rev, hlc, created_at) VALUES ('${table}', ${row}.${pk}, '${op}', ${rev}, ${hlc}, ${NOW_MS});`;
   const draftGuard = (row: 'NEW' | 'OLD') => (table === 'comments' ? ` WHEN ${row}.draft_of_tab IS NULL` : '');

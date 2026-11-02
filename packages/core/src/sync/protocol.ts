@@ -8,10 +8,26 @@
 import type { HlcStamp } from '../hlc';
 import type { DocumentId, Sha256 } from '../ids';
 
-/** The v1 `SYNCED_TABLES`. Nothing else ever syncs: not drafts, `page_figures`, FTS tables or caches. */
-export type SyncedTable = 'documents' | 'aliases' | 'locations' | 'marks' | 'threads' | 'comments' | 'history' | 'settings';
+/**
+ * The synced tables: the v1 eight, and the three tag tables of local schema v5 (R92). Nothing else ever syncs: not drafts,
+ * `page_figures`, FTS tables, caches or `embeddings` (the categoriser's vectors stay on the computer they were made on).
+ */
+export type SyncedTable =
+  | 'documents'
+  | 'aliases'
+  | 'locations'
+  | 'marks'
+  | 'threads'
+  | 'comments'
+  | 'history'
+  | 'settings'
+  | 'tags'
+  | 'reading_tags'
+  | 'auto_tag_removed';
 
-export const SYNCED_TABLES: readonly SyncedTable[] = ['documents', 'aliases', 'locations', 'marks', 'threads', 'comments', 'history', 'settings'];
+export const SYNCED_TABLES: readonly SyncedTable[] = [
+  'documents', 'aliases', 'locations', 'marks', 'threads', 'comments', 'history', 'settings', 'tags', 'reading_tags', 'auto_tag_removed',
+];
 
 export interface ChangeEntry {
   table: SyncedTable;

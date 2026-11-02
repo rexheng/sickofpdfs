@@ -107,7 +107,7 @@ Goal: everything needed to put staging, then production, on your account, writte
 
 **CL9 · Local store: the sync side** [P5] · high · sonnet · M
 Goal: the local database can queue, send, receive and apply changes without echoing, dropping or overwriting a note.
-- **Owns:** `apps/extension/src/store/{schema-v5,sync-store}.ts`; one-line mix-ins in `store-api.ts`, `protocol.ts`, `migrate.ts`. Makes schema v5 (CA4; v4 is the backup's forgotten list since 2 Nov, contracts §4) and `SyncStoreApi` (CA5).
+- **Owns:** `apps/extension/src/store/{schema-v6,sync-store}.ts`; one-line mix-ins in `store-api.ts`, `protocol.ts`, `migrate.ts`. Makes schema v6 (CA4; v4 is the backup's forgotten list and v5 the tags, both since 2 Nov, contracts §4) and `SyncStoreApi` (CA5). The synced tables are now eleven: the D1 mirror and the apply order also carry `tags`, `reading_tags` and `auto_tag_removed` (tags first); a pulled tag whose name a live local tag already has is folded into that tag, as a restore does (`backup/merge.ts`); `embeddings` never syncs.
 - **Sending:** one entry per queued row, with the oldest queued `baseRev`. A row created and deleted before any push is dropped. File locations leave as file names. Drafts, unsaved PDFs, `owner-override` documents (CD1) and "never sync" ones never leave.
 - **Receiving:** a pulled row skips any row with a queued edit (the server decides at the next push). Pulled rows never enter the outbox. The remote `blobStored` is ignored, and a pulled file location never overwrites a local path.
 - **Duplicates:** a pulled alias that names a local document as a duplicate re-parents its notes into the smaller id (`planReparent`).
@@ -222,7 +222,7 @@ Each next to its Drive reference, at 360 px and on desktop.
 - **CA3 · Routes.**
   - Bearer `sync`: `POST /api/devices`, `GET /api/sync/{head,pull}`, `POST /api/sync/push`, `PUT|GET /api/text/:sha`, `HEAD|PUT|GET /api/blobs/:sha`, `/api/blobs/:sha/multipart…`, `PUT|GET /api/thumbs/:sha` (R2 `thumb/<sha>.webp`), `DELETE /api/documents/:sha` (Forget).
   - Library reads, bearer or cookie: `GET /api/{search,documents,notes,activity,me}`. Cookie only: `/login`, `/logout`, `/api/grants`. `/api/export` and `/api/backup` take the export token.
-- **CA4 · Local schema v5** (was v4; the backup took v4 on 2 Nov). `sync_state(key, value)` with keys `cursor`, `deviceRegistered`, `uploadPdfs`, `keepLocal:<id>`, `neverSync:<id>`, `textSent:<id>`. The eight outbox triggers are re-created with `WHEN NOT sop_sync_applying()`, and the store worker registers that function.
+- **CA4 · Local schema v6** (was v4; the backup took v4 and the tags v5 on 2 Nov). `sync_state(key, value)` with keys `cursor`, `deviceRegistered`, `uploadPdfs`, `keepLocal:<id>`, `neverSync:<id>`, `textSent:<id>`. The outbox triggers of all eleven synced tables (the eight of v1 and the three tag tables of v5) are re-created with `WHEN NOT sop_sync_applying()`, and the store worker registers that function.
 - **CA5 · `SyncStoreApi`.** `collectPush(limit)`, `ackPush(result)`, `applyPulled(entries)`, `getSyncState/setSyncState`, `unsyncedCount()`, `pendingBlobs()`, `pendingText()`, `forgetLocally(id)` (for a pulled `forgotten: true` row). `unsynced` counts queued rows plus PDFs and text still waiting.
 - **CA6 · What the web reuses (Phases 2 and 3 must agree).**
   - From Phase 3: `LibraryData`, the pages, `buildFilterInput`, `classify`.

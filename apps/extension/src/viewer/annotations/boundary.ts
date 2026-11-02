@@ -144,7 +144,21 @@ export { planStyle, resolveAnchor } from '@sop/core';
 
 // ---------------------------------------------------------------- S2 and Task 28 (the store)
 
-export type StoreTable = 'documents' | 'aliases' | 'locations' | 'page_text' | 'history' | 'marks' | 'threads' | 'comments' | 'settings' | 'page_figures' | 'page_ocr';
+export type StoreTable =
+  | 'documents'
+  | 'aliases'
+  | 'locations'
+  | 'page_text'
+  | 'history'
+  | 'marks'
+  | 'threads'
+  | 'comments'
+  | 'settings'
+  | 'page_figures'
+  | 'page_ocr'
+  | 'tags'
+  | 'reading_tags'
+  | 'auto_tag_removed';
 export interface StoreChange {
   table: StoreTable;
   ids: string[];

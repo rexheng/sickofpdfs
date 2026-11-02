@@ -22,8 +22,8 @@ const POOL_RETRY_STEP_MS = 150;
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/** Every table whose rows carry an HLC stamp (schema v1). */
-const STAMPED_TABLES = ['documents', 'aliases', 'locations', 'marks', 'threads', 'comments', 'history', 'settings', 'outbox'];
+/** Every table whose rows carry an HLC stamp (schema v1; the tag tables are v5). */
+const STAMPED_TABLES = ['documents', 'aliases', 'locations', 'marks', 'threads', 'comments', 'history', 'settings', 'tags', 'reading_tags', 'auto_tag_removed', 'outbox'];
 
 /** The newest HLC stamp on any row: the clock's floor after a restart. */
 function newestStampSql(): string {
