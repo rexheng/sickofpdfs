@@ -196,6 +196,13 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
   - The shapes are filled, never stroked, in the glyph's own colour. They are drawn into a canvas on exactly the page bitmap's device-pixel grid, so each edge is anti-aliased once, like the text.
   - Outlines are cached per page in points, so at any zoom the bold appears in the same frame as the page.
   - The owner's bold marks and print with marks use the same method, so there is one bold look.
+  - **R90c (Nov 2, TB5 critics): the bold never closes the gap between letters.**
+    - Each glyph grows on each side only as far as leaves at least 0.75 device px, and at least 45% of the original gap, to its neighbour. So "cl" never reads as "d", and letters never touch.
+    - At small sizes on a 1× screen, the gain shrinks so every counter keeps at least 1 device px.
+    - The strengths are clearly different steps: on body text at 100% on a 1× screen, Light adds about 15% ink, Medium about 28% and Strong about 42%.
+    - Light-coloured text (white on slides) gets bold too.
+    - Maths glyphs (maths fonts, single italic maths letters) are left alone.
+    - The View menu offers Off, Light, Medium and Strong directly, so the strength can be changed while reading.
   - Selecting, copying, Find, links, marks and comments work exactly as without it.
   - The owner's own bold marks still show whole words bold.
   - It turns with the page (rotation) and works in two-page view and presentation mode.
