@@ -62,6 +62,11 @@ interface MoreContent {
    */
   checking?: boolean;
   pageCount?: number;
+  /**
+   * N1 (re-check of R67): false for an empty note box, which ends a first-mark Undo but is not content: it does not stop
+   * an erased note's save from being taken back. A message without it counts as content.
+   */
+  content?: boolean;
 }
 
 export interface SaveLocation {
@@ -138,6 +143,8 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
   let failed = false;
   /** R67 tightened (4): a save the owner started in a tab that went is being finished: "Saving your notes…". */
   let resuming = false;
+  /** N1: a note box opened (here or in another tab) while the save that is running now was on its way: it lands with no Undo. */
+  let boxDuringSave = false;
   /** R67 tightened (3): a note started a save here since the PDF was last forgotten; no later save gets an Undo. */
   let noteSeen = false;
   /** R67 tightened (1): how many mark rows the last first mark made; Undo may remove no more than these. */
@@ -297,7 +304,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     createdHere = created && (cause === 'first-mark' || cause === 'first-note');
     // R67 (c): Undo only ever removes the save and the one mark that caused it. Not when this tab did not create the
     // document, nor when more was made meanwhile, here or in another tab.
-    await dispatch({ type: 'saved', documentId: id, undoable: undoable && created && !moreHere && !othersAdded });
+    await dispatch({ type: 'saved', documentId: id, undoable: undoable && created && !moreHere && !othersAdded && !boxDuringSave });
   }
 
   /** The copy this tab stored, when the document did not get saved after all (another tab may have saved it). */
@@ -334,19 +341,26 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     set(step.state.kind === 'unsure' && decision?.verdict === 'unsure' ? { kind: 'unsure', reasons: decision.reasons } : step.state);
   }
 
+  /** An open, empty note box (N1): the first-mark Undo chip goes (or the save on its way lands without one), and nothing else changes. */
+  function expireUndo(): void {
+    if (busy?.kind === 'save') boxDuringSave = true;
+    if (state.kind === 'saved' && state.undoable) void dispatch({ type: 'undo-expired' });
+  }
+
   /** R67 (c): no Undo for what is saved here, or for the save on its way. */
   function endUndoHere(): void {
     moreHere = true;
     if (state.kind === 'saved' && state.undoable) void dispatch({ type: 'undo-expired' });
   }
 
-  function tellOthers(): void {
+  function tellOthers(content: boolean): void {
     try {
       const msg: MoreContent = {
         type: 'more-content',
         ids: [loaded.sha256, ...(state.kind === 'saved' ? [state.documentId] : [])],
         checking: state.kind === 'checking',
         pageCount: open.pageCount,
+        content,
       };
       channel?.postMessage(msg);
     } catch {
@@ -360,6 +374,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     const mine =
       m.ids.includes(loaded.sha256) || (state.kind === 'saved' && m.ids.includes(state.documentId)) || (m.checking === true && m.pageCount === open.pageCount);
     if (!mine) return;
+    if (m.content === false) return expireUndo(); // an empty note box in another tab (N1)
     othersAdded = true;
     endUndoHere();
   }
@@ -397,7 +412,10 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       );
     }
     const kind = effect.kind;
-    if (kind === 'save') failed = false;
+    if (kind === 'save') {
+      failed = false;
+      boxDuringSave = false;
+    }
     const done = (kind === 'save' ? saveEffect(effect.undoable, cause) : forgetEffect()).then(
       () => {
         busy = null;
@@ -586,17 +604,19 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       moreHere = false;
       byNote = o?.undoable === false;
       triggerRows = typeof o?.rows === 'number' && o.rows > 0 ? o.rows : null;
-      tellOthers(); // for the other tabs this mark or note is more than their first mark
+      tellOthers(o?.content !== false); // for the other tabs this mark or note is more than their first mark
       await afterStart();
       await dispatch({ type: 'first-mark', ...(undoable ? {} : { undoable: false }) });
     },
-    endUndo() {
+    endUndo(o) {
       if (disposed) return;
-      endUndoHere();
-      tellOthers(); // R67 tightened (1): always, so a tab on a copy still being identified counts it too
+      const content = o?.content !== false;
+      if (content) endUndoHere();
+      else expireUndo(); // N1: an empty note box ends the Undo chip, and is not content
+      tellOthers(content); // R67 tightened (1): always, so a tab on a copy still being identified counts it too
     },
-    announce() {
-      if (!disposed) tellOthers();
+    announce(o) {
+      if (!disposed) tellOthers(o?.content !== false);
     },
     async withdraw() {
       // R67 (b): the note that saved the PDF was emptied and closed before anything else was made, in any tab.

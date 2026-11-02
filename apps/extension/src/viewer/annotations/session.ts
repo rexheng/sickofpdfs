@@ -546,11 +546,15 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     return queue.some((b) => b.ops.length > 0) || parked.some((b) => b.ops.length > 0);
   }
 
-  function contentAdded(): void {
-    typedTrigger = null;
-    if (kick) kickNoUndo = true;
+  function contentAdded(o: { content: boolean } = { content: true }): void {
+    // N1 (re-check of R67): an empty note box ends the first-mark Undo, but it is not content. It does not stop a note that
+    // was typed and erased from taking its save back, here or in another tab.
+    if (o.content) {
+      typedTrigger = null;
+      if (kick) kickNoUndo = true;
+    }
     try {
-      d.save?.endUndo?.();
+      d.save?.endUndo?.({ content: o.content });
     } catch (e) {
       report(e, 'endUndo');
     }
@@ -560,7 +564,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
    * Called by every change that creates rows. On a PDF that is not saved yet it asks the save controller to save it
    * ("your first mark saves it"). Returns whether this call started the save.
    */
-  function startSaveIfNeeded(triggerKeys: string[], o: { note?: boolean } = {}): boolean {
+  function startSaveIfNeeded(triggerKeys: string[], o: { note?: boolean; content?: boolean } = {}): boolean {
     const save = d.save;
     if (mode !== 'pending-save' || !save || kick) return false;
     const s = save.state;
@@ -574,7 +578,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     if (s.kind === 'checking' || s.kind === 'unsure') markOwnerSave();
     // R67 tightened (1): every other tab on this PDF, or on a copy still being identified, loses its first-mark Undo now.
     try {
-      save.announce?.();
+      save.announce?.({ content: o.content !== false });
     } catch (e) {
       report(e, 'announce');
     }
@@ -587,7 +591,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
         if (!disposed && (now.kind === 'unsure' || now.kind === 'not-learning')) {
           // A "not sure" PDF saves now: what is made from here on is save-pending (R67 a). A "not learning" one asks first.
           if (now.kind === 'unsure') markOwnerSave();
-          await save.firstMark(kickNoUndo ? { undoable: false, rows } : { rows });
+          await save.firstMark({ ...(kickNoUndo ? { undoable: false } : {}), rows, content: o.content !== false });
         } else if (!disposed && now.kind === 'saved') {
           // The PDF turned out to be saved already (another tab's save, or a copy of a saved one): what this change made
           // is more than that save's first mark, so its Undo goes everywhere (R67 tightened 1).
@@ -642,7 +646,9 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     if (s.kind === 'saved') docGone = false;
     mode = computeMode();
     if (mode === 'pending-save' && d.save?.busy === 'save') markOwnerSave(); // Save, Yes, or a learning PDF's own save
-    if (mode === 'memory-only' || mode === 'view-only' || (s.kind === 'asking' && d.save?.busy !== 'save')) {
+    // N2 (re-check of R67): a save finished for a tab that crashed may ask first (not learning). Its notes were already kept,
+    // so the record stays while the question is open, and goes only on No (memory-only).
+    if (mode === 'memory-only' || mode === 'view-only' || (s.kind === 'asking' && d.save?.busy !== 'save' && d.save?.resuming !== true)) {
       // The owner said No, or the question "Save this PDF?" is open: nothing of this PDF is kept anywhere but this tab.
       ownerSave = false;
       dropPending();
@@ -1472,8 +1478,8 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     }
     // R67 (b): an open, empty note box saves nothing; its first keystroke does (typeDraft). A PDF judged not learning
     // asks its question now, before any typing (asking is not saving).
-    if (d.save?.state.kind === 'not-learning') startSaveIfNeeded(triggers);
-    contentAdded(); // R67 (c): there is no Undo while a note box is open
+    if (d.save?.state.kind === 'not-learning') startSaveIfNeeded(triggers, { content: false });
+    contentAdded({ content: false }); // R67 (c): there is no Undo while a note box is open; an empty box is not content (N1)
     emit();
     return { threadId, commentId };
   }
@@ -2079,7 +2085,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
         editedAt: null,
       };
       drafts.set(commentId, row);
-      contentAdded(); // R67 (c)
+      contentAdded({ content: false }); // R67 (c); an empty reply box is not content (N1)
       emit();
       return commentId;
     },
