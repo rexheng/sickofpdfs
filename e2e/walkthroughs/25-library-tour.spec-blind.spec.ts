@@ -162,7 +162,8 @@ test('the library tour: list and grid, sort, star, trash and restore, Recent, Ho
   else {
     await expect(lib.getByRole('heading', { name: /welcome/i })).toBeVisible();
     const continueBtn = lib.getByRole('button', { name: /continue reading/i }).first();
-    await expect(continueBtn.or(lib.getByRole('heading', { name: /continue reading/i }).first()), 'Home has "Continue reading"').toBeVisible();
+    // Triage (S14), wrong guess: the heading holds the fold button (WAI disclosure pattern), so both match; either one shows it.
+    await expect(continueBtn.or(lib.getByRole('heading', { name: /continue reading/i }).first()).first(), 'Home has "Continue reading"').toBeVisible();
     await expect(lib.getByText(/recent notes/i).first(), 'and "Recent notes"').toBeVisible();
     const text = await lib.evaluate(() => document.body.innerText);
     const from = text.search(/continue reading/i);
