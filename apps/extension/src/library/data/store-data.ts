@@ -43,5 +43,6 @@ export function createStoreLibraryData(client: StoreClient, blobs: BlobStore | n
         cb({ forgotten: c.table === 'documents' && c.op === 'delete' ? (c.ids as DocumentId[]) : [] });
       });
     },
+    palette: client,
   };
 }

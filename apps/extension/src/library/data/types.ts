@@ -1,6 +1,7 @@
 // What the library pages read and change, and nothing else: the contract §5 library queries. Pages never talk to the
 // store directly, so the in-memory fake (fake.ts) and the real store (store-data.ts) are interchangeable.
 import type { DocumentId } from '@sop/core';
+import type { PaletteStore } from '../../shared/palette';
 import type { LibraryApi, LibraryQuery } from '../../store/library-api';
 
 // ---- contract §5 shapes: the store's own (S9) ------------------------------------------------------------------------
@@ -37,4 +38,6 @@ export interface LibraryData {
   hasDocument(this: void, documentId: DocumentId): Promise<boolean>;
   /** Calls `cb` after any change to what the library shows, from any tab. Returns the function that stops it. */
   onChange(this: void, cb: (change: LibraryChange) => void): () => void;
+  /** What the Ctrl+K palette searches (S15): the store. Absent where there is no search (the sample library). */
+  palette?: PaletteStore;
 }

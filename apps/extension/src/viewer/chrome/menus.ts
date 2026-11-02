@@ -7,7 +7,7 @@ const SEPARATOR = '-';
 
 /** Each menu's commands, with a separator between groups (Drive's dark viewer menus, 02 section 4.10). */
 const LAYOUT: { id: string; label: string; items: (ViewerCommandId | typeof SEPARATOR)[] }[] = [
-  { id: 'file', label: 'File', items: ['file.openInChrome', SEPARATOR, 'file.download', 'file.copyLink', SEPARATOR, 'file.print', SEPARATOR, 'file.saveToLibrary', 'file.forget', 'file.reportDecision'] },
+  { id: 'file', label: 'File', items: ['file.openInChrome', 'file.openOriginal', SEPARATOR, 'file.download', 'file.copyLink', SEPARATOR, 'file.print', SEPARATOR, 'file.saveToLibrary', 'file.forget', 'file.reportDecision'] },
   {
     id: 'view',
     label: 'View',
@@ -18,7 +18,7 @@ const LAYOUT: { id: string; label: string; items: (ViewerCommandId | typeof SEPA
       'view.toggleRail',
     ],
   },
-  { id: 'tools', label: 'Tools', items: ['tools.find', 'tools.goToPage', 'tools.area'] },
+  { id: 'tools', label: 'Tools', items: ['tools.find', 'tools.goToPage', 'tools.search', 'tools.area'] },
   { id: 'help', label: 'Help', items: ['help.shortcuts', 'help.about'] },
 ];
 

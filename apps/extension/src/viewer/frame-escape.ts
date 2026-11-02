@@ -4,10 +4,11 @@ import type { ViewerParams } from '../shared/viewer-url';
 /**
  * True when the viewer sits in a frame of some page (a PDF in an `<iframe>`) and has a PDF to show. Such a viewer
  * never loads the PDF itself: any web page can put the viewer in a frame and name any address, and a page could lay
- * its own buttons over what the frame shows. It asks for the whole tab instead, or offers a new tab.
+ * its own buttons over what the frame shows. It asks for the whole tab instead, or offers a new tab. A saved copy
+ * (`?doc=`, S15) is the owner's own file: a page that frames it learns nothing, but it is never shown in a frame.
  */
 export function wantsFullTab(p: ViewerParams): boolean {
-  return window.top !== window && p.source !== null;
+  return window.top !== window && (p.source !== null || (p.doc ?? null) !== null);
 }
 
 /**
@@ -18,6 +19,11 @@ export function wantsFullTab(p: ViewerParams): boolean {
  */
 export function maybeLeaveFrame(p: ViewerParams, onStay: () => void): void {
   if (!wantsFullTab(p)) return;
+  // A saved copy has no address to ask the service worker about, and no page it came from: it stays out of the frame.
+  if (p.source === null) {
+    onStay();
+    return;
+  }
   const pageSuffix = p.page === null ? '' : `#page=${p.page}`;
   sendRuntimeMessage({ type: 'takeover:embedded', url: `${p.source}${pageSuffix}` }).then(
     (reply) => {

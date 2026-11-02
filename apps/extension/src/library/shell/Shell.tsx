@@ -1,6 +1,7 @@
 import { IconButton } from '@sop/ui';
 import { LibraryShell, NavList, ProductMark, SearchPill } from '@sop/ui/library';
 import { type ReactNode, type Ref, useEffect, useRef } from 'react';
+import { palette } from '../../shared/palette';
 import { BackupAttention } from '../settings/BackupAttention';
 import { DEFAULT_ROUTE } from '../routes/pages';
 import { ROUTES, type RouteId, routeHref } from '../routes/routes';
@@ -47,7 +48,8 @@ export function Shell({ route, search, onSearch, onNotify, newMenu, onUpload, ch
           <ProductMark label="Library" />
         </a>
       }
-      search={<SearchPill ref={field} value={search} onChange={onSearch} label="Search in library" />}
+      // Enter looks deeper: the same words in the Ctrl+K palette, which also searches pages and notes (S15).
+      search={<SearchPill ref={field} value={search} onChange={onSearch} label="Search in library" onEnter={() => palette.open({ query: search.trim() })} />}
       topEnd={
         <>
           <BackupAttention />

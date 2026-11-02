@@ -10,20 +10,21 @@ export function readingLink(item: LibraryItem): string | null {
 }
 
 /**
- * Opens a reading in a new tab: from its link, where the takeover shows it in the viewer, which finds its notes by its
- * fingerprint; or, for one that has no link (an Upload), from its saved copy, through a blob: link that lives as long as
- * this library tab (until S15's `?doc=` opens saved copies itself). False when there is neither.
+ * Opens a reading in a new tab, from its saved copy (`viewer.html?doc=`, S15), so a dead or changed link never lands on
+ * Chrome's error page. The viewer then offers "Open original link". A reading with no copy opens from its link, where
+ * the takeover shows it in the viewer (or its error card). False when there is neither. The viewer finds the reading's
+ * place itself (S16's resume).
  */
 export async function openReading(item: LibraryItem, savedPdf: (id: LibraryItem['doc']['id']) => Promise<Blob | null>): Promise<boolean> {
-  const link = readingLink(item);
-  if (link !== null) {
-    await chrome.tabs.create({ url: link });
+  const copy = item.doc.blobStored ? await savedPdf(item.doc.id) : null;
+  if (copy !== null) {
+    const name = /\.pdf$/i.test(readingTitle(item)) ? readingTitle(item) : `${readingTitle(item)}.pdf`;
+    await chrome.tabs.create({ url: buildViewerUrl({ source: null, back: null, page: null, name, doc: item.doc.id }) });
     return true;
   }
-  const copy = item.doc.blobStored ? await savedPdf(item.doc.id) : null;
-  if (copy === null) return false;
-  const name = /\.pdf$/i.test(readingTitle(item)) ? readingTitle(item) : `${readingTitle(item)}.pdf`;
-  await chrome.tabs.create({ url: buildViewerUrl({ source: URL.createObjectURL(copy), back: null, page: null, name }) });
+  const link = readingLink(item);
+  if (link === null) return false;
+  await chrome.tabs.create({ url: link });
   return true;
 }
 

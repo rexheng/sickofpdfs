@@ -85,6 +85,8 @@ export const ICON_NAMES = [
   'check_box_outline_blank',
   'radio_button_checked',
   'radio_button_unchecked',
+  // Phase 3, the search palette (S15): a page hit
+  'description',
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

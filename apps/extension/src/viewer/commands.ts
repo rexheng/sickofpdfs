@@ -17,6 +17,7 @@ import type { PageListApi } from '@sop/viewer/react';
 import type { RefObject } from 'react';
 import type { ViewerParams } from '../shared/viewer-url';
 import { downloadOriginal } from './actions/download';
+import { palette } from '../shared/palette/state';
 import type { OpenedDocument } from './open-document';
 import { enterPresentation } from './presentation';
 import { printDocument } from './print/print';
@@ -28,11 +29,11 @@ export { downloadOriginal } from './actions/download';
 export { linkForCopy } from './actions/copy-link';
 
 export type ViewerCommandId =
-  | 'file.openInChrome' | 'file.download' | 'file.copyLink' | 'file.print' | 'file.saveToLibrary'
+  | 'file.openInChrome' | 'file.openOriginal' | 'file.download' | 'file.copyLink' | 'file.print' | 'file.saveToLibrary'
   | 'file.forget' | 'file.reportDecision' // Phase 3 (S11): save/save-commands.ts
   | 'view.fitWidth' | 'view.fitPage' | 'view.zoomIn' | 'view.zoomOut' | 'view.rotateCw' | 'view.rotateCcw'
   | 'view.twoPage' | 'view.presentation' | 'view.toggleRail'
-  | 'tools.find' | 'tools.goToPage' | 'help.shortcuts' | 'help.about'
+  | 'tools.find' | 'tools.goToPage' | 'tools.search' | 'help.shortcuts' | 'help.about'
   // Phase 2 (plan section 7). S13 runs the marks, the menu and undo; S14 the comment commands; S15 the notes ones;
   // S16 the figure and area ones. P4 adds 'claude.ask' and 'claude.explainFigure'.
   | 'marks.highlight' | 'marks.underline' | 'marks.bold' | 'marks.strike' | 'marks.comment' | 'marks.documentNote' | 'marks.menu'
@@ -107,6 +108,8 @@ export interface ViewerContext {
   openFind?: () => void;
   /** Filled by Task 30. */
   save: SaveController | null;
+  /** S15: for a reading opened from its saved copy, the link it was last opened from (null while unknown, and for any other PDF). */
+  originalLink?: string | null;
   /** The page list's zoom and scroll moves, while it is mounted. */
   pageList: RefObject<PageListApi | null>;
   /** The marks as the screen draws them, for Print (S17). Null in Incognito and while there are no notes. */
@@ -125,6 +128,8 @@ interface CommandSpec {
 /** Every command, in the order of the shortcut sheet. (Dark pages were dropped: ruling R41.) */
 const SPECS: [ViewerCommandId, CommandSpec][] = [
   ['file.openInChrome', { label: 'Open in Chrome’s viewer', icon: 'open_in_new', keys: [] }],
+  // Phase 3 (S15): only for a reading opened from its saved copy (`?doc=`).
+  ['file.openOriginal', { label: 'Open original link', icon: 'link', keys: [] }],
   ['file.download', { label: 'Download', icon: 'download', keys: ['Ctrl+S'] }],
   ['file.copyLink', { label: 'Copy link', icon: 'link', keys: [] }],
   ['file.print', { label: 'Print', icon: 'print', keys: ['Ctrl+P'] }],
@@ -144,6 +149,8 @@ const SPECS: [ViewerCommandId, CommandSpec][] = [
   ['tools.find', { label: 'Find', icon: 'find_in_page', keys: ['Ctrl+F'] }],
   // Not 'pageview' (a page and a magnifier), which looks like Find's icon beside it in the Tools menu.
   ['tools.goToPage', { label: 'Go to page', icon: 'move_down', keys: ['Ctrl+G'] }],
+  // Phase 3 (S15): the search palette. It searches the library, so it works with or without a PDF open.
+  ['tools.search', { label: 'Search your library', icon: 'search', keys: ['Ctrl+K'] }],
   ['help.shortcuts', { label: 'Keyboard shortcuts', icon: 'keyboard', keys: ['?'] }],
   ['help.about', { label: 'About sickofpdfs', icon: 'info', keys: [] }],
   // Phase 2. The mark keys act on the selected text. Alt+Shift+5 is matched by position (the number row); the letters
@@ -193,9 +200,9 @@ function offBecause(reason: string): Behaviour {
 /** The reason a command with no web address to use is off. */
 const NO_ADDRESS = 'this PDF has no web address';
 
-/** The link "Copy link" copies: the address the PDF was opened from. A file picked from disk has none. */
-function linkOf(ctx: Pick<ViewerContext, 'params' | 'opened'>): string | null {
-  return ctx.opened.loaded.sourceUrl === null ? null : (ctx.params.source ?? ctx.opened.loaded.sourceUrl);
+/** The link "Copy link" copies: the address the PDF was opened from (for a saved copy, the link it came from). A file picked from disk has none. */
+function linkOf(ctx: Pick<ViewerContext, 'params' | 'opened' | 'originalLink'>): string | null {
+  return ctx.opened.loaded.sourceUrl === null ? (ctx.originalLink ?? null) : (ctx.params.source ?? ctx.opened.loaded.sourceUrl);
 }
 
 /**
@@ -266,6 +273,18 @@ export function createCommands(ctx: ViewerContext, extra: Partial<Record<ViewerC
     ...extra,
     // The page in view goes with it (#page=N), so Chrome's viewer opens where the reader was.
     'file.openInChrome': { run: () => source !== null && ctx.ui.openInChrome(source, ctx.store.get().currentPage + 1), enabled: () => source !== null, disabledReason: () => NO_ADDRESS },
+    // A reading opened from its saved copy: its original link, in a new tab. Left out of the menu for any other PDF.
+    ...(ctx.params.doc
+      ? {
+          'file.openOriginal': {
+            run: () => {
+              if (ctx.originalLink) void chrome.tabs.create({ url: ctx.originalLink });
+            },
+            enabled: () => !!ctx.originalLink,
+            disabledReason: () => 'this PDF has no saved link',
+          } satisfies Behaviour,
+        }
+      : {}),
     'file.download': { run: () => downloadOriginal(ctx.opened.loaded.blob, ctx.opened.loaded.displayName), enabled: always },
     'file.copyLink': { run: () => link !== null && ctx.ui.copyLink(link), enabled: () => link !== null, disabledReason: () => NO_ADDRESS },
     'file.saveToLibrary': saveToLibrary(ctx.save),
@@ -282,6 +301,7 @@ export function createCommands(ctx: ViewerContext, extra: Partial<Record<ViewerC
     'view.toggleRail': { run: () => ctx.store.set({ railOpen: !ctx.store.get().railOpen }), enabled: always, checked: () => ctx.store.get().railOpen },
     'tools.find': { run: () => ctx.openFind?.(), enabled: () => ctx.openFind !== undefined },
     'tools.goToPage': { run: () => ctx.ui.focusPageField(), enabled: always },
+    'tools.search': { run: () => palette.toggle(), enabled: always },
     'help.shortcuts': { run: () => ctx.ui.showShortcuts(), enabled: always },
     'help.about': { run: () => ctx.ui.showAbout(), enabled: always },
   }));
@@ -309,6 +329,7 @@ export function createIdleCommands(o: { source: string | null; canOpenInChrome: 
       disabledReason: () => (source === null ? NO_ADDRESS : 'Chrome can’t open this file from here'),
     },
     'file.copyLink': { run: () => source !== null && ui.copyLink(source), enabled: () => source !== null, disabledReason: () => NO_ADDRESS },
+    'tools.search': { run: () => palette.toggle(), enabled: always },
     'help.shortcuts': { run: () => ui.showShortcuts(), enabled: always },
     'help.about': { run: () => ui.showAbout(), enabled: always },
   });
@@ -356,6 +377,9 @@ function alwaysOurs(id: ViewerCommandId, combo: KeyCombo): boolean {
   return combo.startsWith('Ctrl+') && !combo.includes('Alt+') && !EDITING_KEYS.has(id);
 }
 
+/** While the search palette is open its keys are its own: no command's key runs behind it, except Ctrl+K, which closes it (S15). */
+const keysFree = (id: ViewerCommandId): boolean => id === 'tools.search' || !palette.isOpen();
+
 /** The shortcuts for installShortcuts: every command's keys, in command order. */
 export function commandShortcuts(cmds: ViewerCommands): ShortcutDef[] {
   const defs: ShortcutDef[] = [];
@@ -365,10 +389,10 @@ export function commandShortcuts(cmds: ViewerCommands): ShortcutDef[] {
     const ours = keys.filter((k) => alwaysOurs(c.id, k));
     const others = keys.filter((k) => !alwaysOurs(c.id, k));
     const typing = EDITING_KEYS.has(c.id) ? { whileTyping: 'yield' as const } : {};
-    if (taken.length > 0) defs.push({ id: c.id, keys: taken, run: (e) => !inTextField(e) && c.enabled() && c.run() });
-    if (ours.length > 0) defs.push({ id: c.id, keys: ours, run: () => c.enabled() && c.run() });
+    if (taken.length > 0) defs.push({ id: c.id, keys: taken, run: (e) => !inTextField(e) && keysFree(c.id) && c.enabled() && c.run() });
+    if (ours.length > 0) defs.push({ id: c.id, keys: ours, run: () => keysFree(c.id) && c.enabled() && c.run() });
     const physical = BY_PHYSICAL_KEY.has(c.id) ? { byPhysicalKey: true } : {};
-    if (others.length > 0) defs.push({ id: c.id, keys: others, run: () => c.run(), enabled: () => c.enabled(), ...typing, ...physical });
+    if (others.length > 0) defs.push({ id: c.id, keys: others, run: () => c.run(), enabled: () => keysFree(c.id) && c.enabled(), ...typing, ...physical });
   }
   return defs;
 }

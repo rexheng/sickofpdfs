@@ -3,6 +3,7 @@
 // production build does not contain it. Nothing here is written anywhere.
 import type { DocumentId, DocumentRow, LocationId, LocationRow } from '@sop/core';
 import { compareTitles, shownTitle } from '../../shared/shown-title';
+import type { SearchHit } from '../../store/library-api';
 import type { LibraryChange, LibraryData, LibraryItem, LibraryPage, LibraryQuery } from './types';
 
 export interface FakeLibraryOptions {
@@ -145,7 +146,7 @@ export function createFakeLibraryData(o: FakeLibraryOptions): LibraryData {
     changed();
   };
 
-  return {
+  const data: LibraryData = {
     listDocuments(q: LibraryQuery): Promise<LibraryPage> {
       const f = q.filter ?? {};
       const rows = [...items.values()].filter((i) => {
@@ -188,6 +189,32 @@ export function createFakeLibraryData(o: FakeLibraryOptions): LibraryData {
     onChange(cb) {
       listeners.add(cb);
       return () => listeners.delete(cb);
+    },
+  };
+
+  // The Ctrl+K palette over the sample readings: their titles and authors only (the samples have no page text or notes).
+  return {
+    ...data,
+    palette: {
+      listDocuments: (q) => data.listDocuments(q),
+      getDocument: (id) => Promise.resolve(items.get(id)?.doc ?? null),
+      listLocations(id) {
+        const seen = items.get(id)?.location;
+        return Promise.resolve(seen ? [seen] : []);
+      },
+      async search(q) {
+        const terms = q.text.toLowerCase().split(/\s+/u).filter((t) => t !== '');
+        if (terms.length === 0 || !(q.kinds ?? ['reading']).includes('reading')) return [];
+        const { items: readings } = await data.listDocuments({ view: 'all', sort: { by: 'title', dir: 'asc' }, ...(q.filter ? { filter: q.filter } : {}), limit: 1000 });
+        const hits: SearchHit[] = [];
+        for (const r of readings) {
+          const title = shownTitle(r.doc.title, r.location?.raw ?? null);
+          if (!terms.every((t) => `${title} ${r.doc.authors.join(' ')}`.toLowerCase().includes(t))) continue;
+          const marked = terms.reduce((text, t) => text.replace(new RegExp(t.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'iu'), (m) => `<b>${m}</b>`), title);
+          hits.push({ kind: 'reading', documentId: r.doc.id, title, snippet: marked, rank: hits.length });
+        }
+        return hits.slice(0, q.limit);
+      },
     },
   };
 }

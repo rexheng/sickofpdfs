@@ -1,0 +1,363 @@
+/*
+ * The search palette (S15), drawn as Drive draws its expanded search (02 section 4.2): a 28 px panel with the 48 px
+ * search field at the top, Drive's filter chips (32 px, radius 8) under it, and the answers in groups, each a 56 px row
+ * with a 40 px icon. In the library it is white; in the viewer it takes the dark chrome (#282a2c, like the menus).
+ * The row Enter would open is lit as a selected row is in Drive's lists (#c2e7ff). Colours and sizes are tokens.
+ */
+.layer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 10vh var(--space-4) var(--space-4);
+  background-color: color-mix(in srgb, var(--gm3-sys-color-scrim) var(--scrim-opacity), transparent);
+  animation: fade-in 120ms ease-out;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: var(--search-max-w);
+  max-block-size: 76vh;
+  overflow: hidden;
+  border-radius: var(--shape-dialog);
+  background-color: var(--dialog-bg);
+  box-shadow: var(--elev-3);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+.top {
+  flex: none;
+  padding: var(--space-2) var(--space-2) 0;
+}
+
+/* The search field: Drive's pill, 48 px with round ends, a little darker than the panel. */
+.field {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  block-size: var(--search-h);
+  padding: 0 var(--space-1);
+  border-radius: var(--shape-search);
+  background-color: color-mix(in srgb, var(--gm3-sys-color-primary) 9%, var(--dialog-bg));
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.lead {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--icon-btn-lg);
+  block-size: var(--icon-btn-lg);
+}
+
+.input {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  block-size: 100%;
+  margin: 0;
+  padding: 0 var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-lib-search);
+  font-variation-settings: "opsz" 17;
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--gm3-sys-color-on-surface-variant);
+  opacity: 1;
+}
+
+/* ---- chips ---- */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-3) var(--space-2) var(--space-3);
+}
+
+.chip {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-2);
+  align-items: center;
+  box-sizing: border-box;
+  block-size: var(--chip-h);
+  margin: 0;
+  padding: 0 var(--space-2) 0 var(--space-4);
+  border: 1px solid var(--gm3-sys-color-outline);
+  border-radius: var(--shape-chip);
+  background-color: transparent;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-chip);
+  font-family: var(--font-display);
+  font-variation-settings: "opsz" 18;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chip[aria-pressed] {
+  padding-inline-end: var(--space-4);
+}
+
+.chip[aria-pressed='true'] {
+  padding-inline-start: var(--space-2);
+}
+
+.chip:hover,
+.chip[aria-expanded='true'] {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface-variant) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.chipOn {
+  border-color: transparent;
+  background-color: var(--gm3-sys-color-secondary-container);
+  color: var(--gm3-sys-color-on-secondary-container);
+}
+
+.chipOn:hover,
+.chipOn[aria-expanded='true'] {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-secondary-container) calc(var(--gm3-state-hover) * 100%), var(--gm3-sys-color-secondary-container));
+}
+
+.clearFilters {
+  margin: 0;
+  padding: 0 var(--space-3);
+  block-size: var(--chip-h);
+  border: 0;
+  border-radius: var(--shape-full);
+  background: transparent;
+  color: var(--gm3-sys-color-primary);
+  font: var(--type-text-button);
+  cursor: pointer;
+}
+
+.clearFilters:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-primary) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.chip:focus-visible,
+.clearFilters:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ---- answers ---- */
+
+.results {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow-y: auto;
+  border-block-start: 1px solid var(--gm3-sys-color-outline-variant);
+  padding-block: var(--space-1) var(--space-2);
+  transition: opacity 120ms ease 150ms;
+}
+
+/* The old answers stay until the new ones arrive; after a moment they dim, so it is clear they are being replaced. */
+.results[data-stale='true'] {
+  opacity: 0.6;
+}
+
+.list {
+  display: block;
+}
+
+.heading {
+  padding: var(--space-3) var(--space-4) var(--space-1);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-lib-section);
+  font-variation-settings: "opsz" 18;
+}
+
+.row,
+.compactRow {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-4);
+  scroll-margin-block: var(--space-8);
+  cursor: pointer;
+}
+
+.row {
+  min-block-size: var(--space-14);
+}
+
+.compactRow {
+  min-block-size: var(--space-10);
+  padding-block: var(--space-1);
+}
+
+.row[data-lit='true'],
+.compactRow[data-lit='true'] {
+  background-color: var(--gm3-sys-color-secondary-container);
+  color: var(--gm3-sys-color-on-secondary-container);
+}
+
+.icon,
+.smallIcon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.icon {
+  inline-size: var(--space-10);
+  block-size: var(--space-10);
+  border-radius: var(--shape-full);
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface-variant) 10%, transparent);
+}
+
+/* A reading's own icon is the PDF tile, with no circle behind it. */
+.icon:has(svg) {
+  background-color: transparent;
+}
+
+.smallIcon {
+  inline-size: var(--space-6);
+  block-size: var(--space-6);
+}
+
+[data-lit='true'] > .icon,
+[data-lit='true'] > .smallIcon {
+  color: inherit;
+}
+
+.text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.title,
+.label {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-row-name);
+  font-variation-settings: "opsz" 17;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.label {
+  display: block;
+  font: var(--type-menu-item);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail {
+  overflow: hidden;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-row);
+  font-variation-settings: "opsz" 17;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-lit='true'] .title,
+[data-lit='true'] .label,
+[data-lit='true'] .detail {
+  color: inherit;
+}
+
+.title b,
+.detail b,
+.label b {
+  font-weight: 700;
+}
+
+.trail {
+  flex: none;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-menu-shortcut);
+  font-size: var(--sop-menu-shortcut-size);
+  letter-spacing: var(--tracking-tight);
+}
+
+[data-lit='true'] > .trail {
+  color: inherit;
+}
+
+.note {
+  margin: 0;
+  padding: var(--space-6) var(--space-6) var(--space-4);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  text-align: center;
+}
+
+/* ---- footer ---- */
+
+.footer {
+  display: flex;
+  flex: none;
+  gap: var(--space-6);
+  align-items: center;
+  box-sizing: border-box;
+  min-block-size: var(--space-10);
+  padding: 0 var(--space-6);
+  border-block-start: 1px solid var(--gm3-sys-color-outline-variant);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-tooltip);
+}
+
+.key {
+  display: inline-block;
+  padding: var(--kbd-pad);
+  border: 1px solid var(--gm3-sys-color-outline-variant);
+  border-radius: var(--shape-menu);
+  font: inherit;
+}
+
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .layer {
+    animation: none;
+  }
+
+  .results {
+    transition: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .footer {
+    display: none;
+  }
+}

@@ -1,5 +1,6 @@
 import { Icon, TextButton } from '@sop/ui';
 import { type PdfFormatError, PdfLoadError } from '@sop/viewer';
+import { SavedCopyMissingError } from '../open-saved';
 import styles from './cards.module.css';
 import { useFilePicker } from './FilePicker';
 
@@ -29,6 +30,10 @@ export function tooLargeText(bytes: number): string {
 /** The card's words. Plain and short; a status code is named "code", not "error". */
 function copyFor(error: PdfLoadError | PdfFormatError, sourceUrl: string | null): { title: string; lines: string[] } {
   const couldNot = 'Couldn’t load this PDF';
+  // S15: a reading opened from its saved copy, and the library has no copy. Its notes are in the library either way.
+  if (error instanceof SavedCopyMissingError) {
+    return { title: 'This saved copy isn’t here', lines: ['sickofpdfs has no copy of this PDF.', 'Your notes are safe. Choose the file from your computer, and it opens with its notes.'] };
+  }
   if (!(error instanceof PdfLoadError)) return { title: couldNot, lines: ['The file is damaged or incomplete.'] };
   switch (error.code) {
     case 'not-pdf':

@@ -60,6 +60,11 @@ import {
 } from './open-document';
 import { notesPanelFeature } from './notes-panel/feature';
 import { useReadingHistory } from './history/use-reading-history';
+import { hitFlashFeature } from './hit-flash';
+import { createHitJumper, type HitJumper, useOpenTarget } from './jump-to-hit';
+import { openSavedCopy, savedCopyName } from './open-saved';
+import { useOriginalLink } from './original-link';
+import { ViewerPalette } from './palette-host';
 import { publishRuntime, type ViewerHooks, type ViewerState } from './runtime';
 import { atPage, openInChrome } from './open-in-chrome';
 import { settlePresentation } from './presentation';
@@ -98,6 +103,8 @@ const backend = createEmbedPdfBackend(engineAssets((p) => chrome.runtime.getURL(
 registerViewerFeature(commentsFeature);
 registerViewerFeature(notesPanelFeature);
 registerViewerFeature(figuresFeature);
+// Phase 3 (S15): the words a search jump landed on, picked out for a moment.
+registerViewerFeature(hitFlashFeature);
 
 /** Where the reader was when the engine stopped, so the document opens again at the same place. */
 type Resume = Pick<ViewerSnapshot, 'zoom' | 'currentPage' | 'viewRotation' | 'spread' | 'railOpen'>;
@@ -206,11 +213,12 @@ function TabViewer({ params }: { params: ViewerParams }) {
     if (started.current) return;
     started.current = true;
     void registerFonts().catch(() => {}); // text falls back to the next font until the files load
-    void openDocument(params, deps).then(show);
+    // A saved copy (`?doc=`, from the library or the search palette) is read from the extension's own storage.
+    void (params.doc ? openSavedCopy(params, deps) : openDocument(params, deps)).then(show);
   }, [params, deps, show]);
 
   useEffect(() => {
-    document.title = view.kind === 'ready' ? tabTitle(view.doc) : (pickedFileName(params) ?? displayNameFor(params.source, null));
+    document.title = view.kind === 'ready' ? tabTitle(view.doc) : (pickedFileName(params) ?? savedCopyName(params) ?? displayNameFor(params.source, null));
   }, [view, params]);
 
   /**
@@ -257,7 +265,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
   const fileAccess = view.kind === 'error' && view.error instanceof PdfLoadError && view.error.code === 'file-access';
   const back = backTarget(backPage);
   const source = params.source;
-  const name = view.kind === 'ready' ? view.doc.loaded.displayName : (pickedFileName(params) ?? displayNameFor(source, null));
+  const name = view.kind === 'ready' ? view.doc.loaded.displayName : (pickedFileName(params) ?? savedCopyName(params) ?? displayNameFor(source, null));
 
   // The chrome: dialogs, the page box (Ctrl+G), the copy-link note, and the commands everything runs.
   const root = useRef<HTMLDivElement>(null);
@@ -379,6 +387,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
       {prompt !== null && <PasswordDialog retry={prompt.retry} attempt={prompt.attempt} onSubmit={prompt.resolve} />}
       <ShortcutsDialog open={dialog === 'shortcuts'} onOpenChange={(open) => !open && setDialog(null)} commands={commands} />
       <AboutDialog open={dialog === 'about'} onOpenChange={(open) => !open && setDialog(null)} />
+      <ViewerPalette commands={commands} jumper={live?.jumper ?? null} ui={ui} />
       <SaveAskDialog save={save} />
       {printAsk !== null && <PrintMarksDialog onAnswer={printAsk.answer} />}
       <SaveDialogs save={save} ui={ui} />
@@ -466,6 +475,8 @@ function useKeyboardFocusMark(): void {
 interface ReaderChrome {
   commands: ViewerCommands;
   store: ViewerStore;
+  /** Shows a search hit in this document (S15). */
+  jumper: HitJumper;
 }
 
 /** The view state while no document is open: it never changes. */
@@ -538,8 +549,10 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   const notes = useNotes(doc, pageText, store, api, textLayers, save, nav.jumps, ui);
   // Reading time, the last spot and the pages visited (kept once the PDF is saved), and the return to the last spot.
   useReadingHistory({ doc, params, view: store, pageList: api, save, ui, restarted: resume !== undefined });
+  const originalLink = useOriginalLink(params);
   const commands = useMemo(() => {
     const ctx: ViewerContext = {
+      originalLink,
       params,
       backend,
       opened: doc,
@@ -555,11 +568,29 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       ui,
     };
     return createCommands(ctx, { ...notes?.behaviours(), ...saveDecisionCommands(save) });
-  }, [params, doc, store, scheduler, rootRef, ui, save, nav.jumps, find.controller, find.open, notes, pageText]);
+  }, [params, doc, store, scheduler, rootRef, ui, save, nav.jumps, find.controller, find.open, notes, pageText, originalLink]);
+  // Search hits in this document (S15): a jump in place, through the same history as links and find.
+  const jumper = useMemo(
+    () =>
+      createHitJumper({
+        api,
+        text: pageText,
+        pages: doc.open.pages,
+        jumps: nav.jumps,
+        view: store,
+        session: notes?.host.session ?? null,
+        documentId: () => (save?.state.kind === 'saved' ? save.state.documentId : null),
+      }),
+    [pageText, doc, nav.jumps, store, notes, save],
+  );
+  // What the address of a saved copy asked for: its note, or its words on the page.
+  const settled = useMemo(() => (notes === null ? null : () => notes.host.notesSettled()), [notes]);
+  const say = useCallback((text: string) => ui.showNote(text), [ui]);
+  useOpenTarget({ params, jumper, api, settled, say });
   useEffect(() => {
-    onChrome({ commands, store });
+    onChrome({ commands, store, jumper });
     return () => onChrome(null);
-  }, [commands, store, onChrome]);
+  }, [commands, store, jumper, onChrome]);
   useEffect(() => installShortcuts(readerShortcuts(api)), []);
   useEffect(() => () => textLayers.dispose(), [textLayers]);
   useEffect(

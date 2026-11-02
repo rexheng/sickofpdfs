@@ -8,6 +8,7 @@ import { createThumbnailCache } from '../data/thumbnails';
 import type { LibraryData } from '../data/types';
 import { PAGES } from '../routes/pages';
 import { ROUTES } from '../routes/routes';
+import { LibraryPalette, useLibraryPaletteKey } from '../shell/LibraryPalette';
 import { useRoute } from '../routes/use-route';
 import type { NewMenuHandle } from '../shell/NewMenu';
 import { Shell } from '../shell/Shell';
@@ -46,6 +47,7 @@ function Frame({ start, retry }: { start: Start; retry(this: void): void }) {
   const notify = useCallback((m: Omit<SnackbarMessage, 'id'>) => setMessage({ ...m, id: nextId.current++ }), []);
   const dismiss = useCallback(() => setMessage(null), []);
   const def = ROUTES.find((r) => r.id === route);
+  useLibraryPaletteKey();
 
   useEffect(() => {
     document.title = `${def?.label ?? 'Library'} - sickofpdfs`;
@@ -105,8 +107,17 @@ function Frame({ start, retry }: { start: Start; retry(this: void): void }) {
     <>
       {context === null ? shell : <LibraryContext.Provider value={context}>{shell}</LibraryContext.Provider>}
       <Snackbar message={message} onDismiss={dismiss} />
+      <LibraryPalette store={data?.palette ?? null} unavailable={paletteUnavailable(start, data)} />
     </>
   );
+}
+
+/** Why Ctrl+K has nothing to search: null while the library is still opening, or when it is open and can search. */
+function paletteUnavailable(start: Start, data: LibraryData | null): string | null {
+  if (start.kind === 'incognito') return 'Your library isn’t available in an Incognito window. Nothing is saved there.';
+  if (start.kind === 'failed') return 'Couldn’t open your library. Your readings and notes are safe.';
+  if (data !== null && data.palette === undefined) return 'Search isn’t available in this sample library.';
+  return null;
 }
 
 /** A page-sized message in the content card: the library cannot be shown, or the page is not built yet. */

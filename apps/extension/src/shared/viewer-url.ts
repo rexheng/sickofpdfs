@@ -11,6 +11,15 @@ export interface ViewerParams {
    * Only shown, and only for a `blob:` link of this extension (`pickedFileName` in the viewer); absent otherwise.
    */
   name?: string | null;
+  /**
+   * Phase 3 (S15): a reading of the library, opened from its saved copy (the SHA-256 that is its document id), not from
+   * an address. Present only on an address that has one; `source` is then null.
+   */
+  doc?: string | null;
+  /** Phase 3 (S15): the note (thread id) to show once the PDF is open. */
+  note?: string | null;
+  /** Phase 3 (S15): the words searched for; the first one found on `page` is brought into view. */
+  q?: string | null;
 }
 
 /** The viewer page, relative to the extension root. */
@@ -31,7 +40,8 @@ function decode(value: string | undefined): string | null {
 /**
  * Reads a viewer address in either form:
  * - `viewer.html?DNR:<raw url>`, which is what the takeover rules redirect to;
- * - `viewer.html?file=<enc>[&back=<enc>][&name=<enc>]`, which is what `buildViewerUrl` writes.
+ * - `viewer.html?file=<enc>[&back=<enc>][&name=<enc>]`, which is what `buildViewerUrl` writes; a saved copy is `viewer.html?doc=<id>`
+ *   (S15: the library, the search palette), with `&note=` and `&q=` saying what to show.
  * `#page=N` (a PDF "open parameter") sets the page in both. Anything missing or malformed reads as null.
  */
 export function parseViewerUrl(href: string): ViewerParams {
@@ -52,18 +62,32 @@ export function parseViewerUrl(href: string): ViewerParams {
     if (eq > 0 && !fields.has(part.slice(0, eq))) fields.set(part.slice(0, eq), part.slice(eq + 1));
   }
   const name = decode(fields.get('name'));
-  return { source: decode(fields.get('file')), back: decode(fields.get('back')), page, ...(name !== null ? { name } : {}) };
+  const doc = decode(fields.get('doc'));
+  const note = decode(fields.get('note'));
+  const q = decode(fields.get('q'));
+  return {
+    source: decode(fields.get('file')),
+    back: decode(fields.get('back')),
+    page,
+    ...(name !== null ? { name } : {}),
+    ...(doc !== null ? { doc } : {}),
+    ...(note !== null ? { note } : {}),
+    ...(q !== null ? { q } : {}),
+  };
 }
 
 /**
- * The viewer address for `p`: `<base>?file=<enc>[&back=<enc>][#page=N]`. `base` defaults to this extension's
- * viewer page; Node callers (tests) pass their own.
+ * The viewer address for `p`: `<base>?file=<enc>[&back=<enc>][&doc=<enc>&note=<enc>&q=<enc>][#page=N]`. `base`
+ * defaults to this extension's viewer page; Node callers (tests) pass their own.
  */
 export function buildViewerUrl(p: ViewerParams, base: string = chrome.runtime.getURL(VIEWER_PATH)): string {
   const query = [
     p.source !== null && `file=${encodeURIComponent(p.source)}`,
     p.back !== null && `back=${encodeURIComponent(p.back)}`,
     typeof p.name === 'string' && p.name !== '' && `name=${encodeURIComponent(p.name)}`,
+    typeof p.doc === 'string' && p.doc !== '' && `doc=${encodeURIComponent(p.doc)}`,
+    typeof p.note === 'string' && p.note !== '' && `note=${encodeURIComponent(p.note)}`,
+    typeof p.q === 'string' && p.q !== '' && `q=${encodeURIComponent(p.q)}`,
   ].filter(Boolean);
   return `${base}${query.length > 0 ? `?${query.join('&')}` : ''}${p.page !== null ? `#page=${p.page}` : ''}`;
 }
@@ -97,7 +121,7 @@ export function withRefusal(href: string, refused: boolean): string {
   const queryAt = href.search(/[?#]/);
   const base = queryAt < 0 ? href : href.slice(0, queryAt);
   const p = parseViewerUrl(href);
-  const plain = buildViewerUrl({ source: p.source, back: p.back, page: null, name: p.name ?? null }, base);
+  const plain = buildViewerUrl({ source: p.source, back: p.back, page: null, name: p.name ?? null, doc: p.doc ?? null, note: p.note ?? null, q: p.q ?? null }, base);
   const marker = refused ? `${plain.includes('?') ? '&' : '?'}${REFUSED_FIELD}` : '';
   return `${plain}${marker}${fragment}`;
 }

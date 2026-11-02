@@ -1,0 +1,33 @@
+/*
+ * The words a search jump landed on (S15): picked out in Find's orange for a moment, then gone. It is drawn on the page
+ * under the text layer, so it never gets in the way of the pointer or the selection.
+ */
+.flash {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.flash path {
+  fill: var(--find-current);
+  animation: flash-out 2400ms ease-in forwards;
+}
+
+@keyframes flash-out {
+  0%,
+  55% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flash path {
+    animation: none;
+  }
+}

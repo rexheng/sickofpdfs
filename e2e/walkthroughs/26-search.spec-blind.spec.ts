@@ -119,7 +119,8 @@ test('Ctrl+K in the viewer: a title word, a page phrase and a word from your not
   await expect(palette(did), 'Enter closes the palette').toBeHidden();
   await expect.poll(() => hooks(did).eval((h) => h.viewer.currentPage()), { message: 'and lands on page 8', timeout: 15_000 }).toBe(DID_PAGE8_INDEX);
   expect(did.url().split('#')[0], 'in the same tab and the same document').toBe(before.split('#')[0]);
-  const where = await findOnPage(did, DID_PAGE8_INDEX, DID_PAGE8_PHRASE);
+  // Triage (S15): page 8 reads "choose” treatment status" (a closing quote after "choose"), so the whole phrase is not on it as one run; the last two words are.
+  const where = await findOnPage(did, DID_PAGE8_INDEX, 'treatment status');
   const spot = await hooks(did).eval((h, a) => ({ c: h.glyphCenter(a.p, a.i), height: h.viewer.viewportHeight() }), { p: DID_PAGE8_INDEX, i: where.start });
   expect(Number.isFinite(spot.c.y) && spot.c.y > 0 && spot.c.y < spot.height + 80, `the passage itself is on the screen (at y=${spot.c.y} of ${spot.height})`).toBe(true);
   await shotOf(did, testInfo, '05-landed-on-the-passage');
