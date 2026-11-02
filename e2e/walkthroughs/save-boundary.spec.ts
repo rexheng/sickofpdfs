@@ -24,6 +24,8 @@ import { store as storeOf, waitForStore, ZERO_STATS } from '../support/store-pro
 import { expect, hooks, test, type FixtureServer } from '../support/test';
 import {
   ATTENTION,
+  savePrompt,
+  RECEIPT,
   LINES,
   cardWith,
   crashRenderer,
@@ -448,3 +450,79 @@ async function secondWord(page: Page): Promise<[number, number]> {
   const w = words[1] ?? words[0];
   return [w.index, w.index + w[0].length - 1];
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The re-check of de49e7e (secread3-report.md, "Re-check of de49e7e"): N1 and N2.
+
+test.describe('R67 re-check: an empty note box is not content (N1)', () => {
+  test('tab B only opens an empty note box: tab A\'s note typed and erased before Esc still takes its save back', async ({ openViewer, server }, testInfo) => {
+    const a = await openNotSure(openViewer, server, ATTENTION);
+    const b = await openNotSure(openViewer, server, ATTENTION);
+    const sha = await fingerprintOf(a);
+    await a.bringToFront();
+    await selectPassage(a, ATTENTION, LINES.l3);
+    await startNote(a);
+    await a.keyboard.type('x'); // real content: the save starts
+    await b.bringToFront();
+    await selectPassage(b, ATTENTION, LINES.l7);
+    await startNote(b); // an empty note box, nothing typed
+    await a.bringToFront();
+    await noteBox(a).focus();
+    await a.keyboard.press('Backspace');
+    await a.waitForTimeout(300);
+    await a.keyboard.press('Escape');
+    await b.bringToFront();
+    await noteBox(b).focus();
+    await b.keyboard.press('Escape');
+    await expect.poll(() => libraryId(a), { timeout: 20_000, message: 'nothing was made, so the save is taken back' }).toBeNull();
+    await expect.poll(() => storeOf(a).stats(), { timeout: 10_000 }).toEqual(ZERO_STATS);
+    expect(await storedCopies(a), 'no copy of the PDF').toEqual([]);
+    expect(await tracesOf(a, sha), 'and nothing about it in localStorage').toEqual([]);
+    await expect(notSureChip(b), 'tab B follows: "Not sure"').toBeVisible({ timeout: 10_000 });
+    await shot(a, testInfo, 'nothing-saved');
+  });
+});
+
+test.describe('R67 re-check: a resumed save on a PDF judged not learning keeps its notes while it asks (N2)', () => {
+  test('the notes a crashed tab kept stay on this computer while "Save this PDF?" is open, and come back after a close', async ({ openViewer, server }, testInfo) => {
+    // Needs the real filter's "not learning" verdict. There is no test hook for the verdict, and the stand-in filter
+    // calls every PDF "Not sure" until Phase 3's filter lands, so this runs by itself from then on.
+    const fileBytes = await readFile(join(TEST_ASSETS, RECEIPT.file));
+    const { createHash } = await import('node:crypto');
+    const fingerprint = createHash('sha256').update(fileBytes).digest('hex');
+    const NOTE = 'Kept from a tab that crashed';
+
+    const seedTab = await openPaper(openViewer, server, ATTENTION); // any extension page can write the extension's localStorage
+    await seedTab.evaluate(
+      ({ fp, note }) => {
+        const t = Date.now();
+        const thread = { id: 'aaaaaaaa-0000-4000-8000-00000000t001', documentId: fp, anchor: { kind: 'page', page: 0 }, pageIndex: 0, sortKey: 0, placement: 'placed', draftOfTab: 'tab-that-crashed', createdAt: t, updatedAt: t, rev: 0, hlc: '', deletedAt: null };
+        const draft = { id: 'aaaaaaaa-0000-4000-8000-00000000c001', threadId: thread.id, documentId: fp, author: 'me', body: note, draftOfTab: 'tab-that-crashed', meta: { sopDraft: { thread, highlight: null } }, createdAt: t, editedAt: null, rev: 0, hlc: '', deletedAt: null };
+        const rec = { v: 1, fingerprint: fp, tab: 'tab-that-crashed', life: 'life-that-crashed', at: t, undoable: false, ops: [], drafts: [draft], edits: [] };
+        localStorage.setItem(`sop-pending:${fp}:tab-that-crashed:life-that-crashed`, JSON.stringify(rec));
+      },
+      { fp: fingerprint, note: NOTE },
+    );
+    const kept = (p: Page) => p.evaluate((fp) => Object.keys(localStorage).filter((k) => k.startsWith(`sop-pending:${fp}:`)).map((k) => localStorage.getItem(k) ?? ''), fingerprint);
+
+    const page = await openPaper(openViewer, server, RECEIPT);
+    await waitForStore(page);
+    // A PDF judged not learning asks before the save finishes; under the stand-in filter ("Not sure") it just saves.
+    let kind = '';
+    await expect.poll(async () => (kind = await saveKind(page)), { timeout: 30_000, message: 'the resumed save asks, or saves' }).toMatch(/^(asking|saved)$/);
+    test.skip(kind === 'saved', 'the stand-in filter calls every PDF "Not sure" until Phase 3, and there is no test hook for the verdict');
+
+    await expect(savePrompt(page).first(), 'the save the crashed tab started asks first on a PDF judged not learning').toBeVisible({ timeout: 15_000 });
+    await page.waitForTimeout(500);
+    expect((await kept(page)).some((v) => v.includes(NOTE)), 'while the question is open, the notes are still kept on this computer').toBe(true);
+    await shot(page, testInfo, 'question-open-notes-kept');
+    await page.close(); // closed without answering
+
+    const again = await openPaper(openViewer, server, RECEIPT);
+    await expect(savePrompt(again).first(), 'it asks again').toBeVisible({ timeout: 25_000 });
+    expect((await kept(again)).some((v) => v.includes(NOTE)), 'and the notes are still there').toBe(true);
+    await again.getByRole('dialog').getByRole('button', { name: /^save$/i }).click(); // the question's "Save" (plain wording, R73)
+    await waitSaved(again, 15_000);
+    await expect.poll(() => noteText(again).catch(() => ''), { timeout: 20_000, message: 'Yes saves the PDF and the note is back' }).toBe(NOTE);
+  });
+});
