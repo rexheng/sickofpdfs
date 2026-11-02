@@ -32,6 +32,7 @@ const READ_METHODS: ReadonlySet<string> = new Set<StoreMethod>([
   'getDocument',
   'countDocumentsWithPageCount',
   'findStampAlias',
+  'listAliases',
   'listLocations',
   'searchPages',
   'listAnnotations',

@@ -1,7 +1,7 @@
 // "Forget this PDF" (File menu, Ctrl+Shift+Delete) and the saved chip's "Remove from library…" (R73): one flow (R75).
-// - With notes or marks (notes still being typed count), it asks first: "It will be removed from your library and your
-//   backups", what goes with it, and a "Never save this file" box.
-// - With none, it forgets at once: there is nothing of the owner's to lose (plan S11: "asks first if there are notes").
+// - It always asks first (R91), with a "Never save this file" box: a PDF saved by mistake has no notes, and the owner must
+//   be able to keep it out for good. "It will be removed from your library and your backups", and what goes with it, when
+//   it has notes or marks (notes still being typed count).
 // - Then a note says what happened: "Removed from your library and your backups. Google Drive or OneDrive may keep their
 //   own copy in their trash for a while." (binding wording), or, in the backup writer's words (S13), that the backup folder
 //   could not be reached and the next backup cleans it, or "Removed from your library" when there is no backup folder.
@@ -69,19 +69,14 @@ export function ForgetDialog({ save, open, onClose, ui }: ForgetDialogProps) {
     setStep({ kind: 'counting' });
     setNever(false);
     save.contents().then(
-      (c) => {
-        if (!live) return;
-        if (c.marks + c.notes > 0) setStep({ kind: 'confirm', ...c });
-        else forget(false);
-      },
-      // It could not count them: ask, as if there were notes.
+      (c) => live && setStep({ kind: 'confirm', ...c }),
+      // It could not count them: it asks all the same, without a count.
       () => live && setStep({ kind: 'confirm', marks: 0, notes: 0 }),
     );
     return () => {
       live = false;
     };
-    // `forget` only reads `save`, `onClose` and `ui`, which do not change while the dialog is open
-  }, [open, save]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, save]);
 
   if (step.kind !== 'confirm') return null;
   return (

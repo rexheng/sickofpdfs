@@ -1,5 +1,7 @@
 // "Report a wrong decision" (File menu): the owner says what the PDF really is. Only that label and a salted fingerprint of
 // the file are kept, on this computer (spec, "Local traces"); never the file, its name or its text.
+// R91: a report that a saved PDF is not for learning does not remove it. The note says it is still in the library, and
+// offers Forget in the same note.
 import { Dialog } from '@sop/ui';
 import { useEffect, useId, useState } from 'react';
 import type { FilterReportLabel } from '../../local-only/secrets-store';
@@ -7,9 +9,13 @@ import cards from '../ui/cards.module.css';
 import type { ViewerUi } from '../commands';
 import type { SaveControllerImpl } from './save-controller';
 import { Choice } from './Choice';
+import { openSaveDialog } from './save-dialogs';
 import styles from './SaveDialogs.module.css';
 
 export const REPORT_TITLE = 'Report a wrong decision';
+export const REPORT_THANKS = 'Thanks. Your report is kept on this computer only.';
+/** R91: after "it's not for learning" on a saved PDF. */
+export const STILL_IN_LIBRARY = 'It’s still in your library.';
 
 const CHOICES: { label: FilterReportLabel; text: string }[] = [
   { label: 'learning', text: 'It’s for learning. It should be saved.' },
@@ -36,9 +42,14 @@ export function ReportDialog({ save, open, onClose, ui }: ReportDialogProps) {
   }, [open, save]);
 
   const send = (): void => {
+    const label = answer;
     onClose();
-    save.report(answer).then(
-      () => ui.showNote('Thanks. Your report is kept on this computer only.'),
+    save.report(label).then(
+      () => {
+        if (label === 'not-learning' && save.state.kind === 'saved') {
+          ui.showNote(`${REPORT_THANKS} ${STILL_IN_LIBRARY}`, { label: 'Forget', run: () => openSaveDialog('forget') });
+        } else ui.showNote(REPORT_THANKS);
+      },
       () => ui.showNote('Couldn’t keep your report. Try again.'),
     );
   };

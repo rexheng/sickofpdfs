@@ -97,6 +97,8 @@ export interface StoreApi extends AnnotationsApi, PageFiguresApi, LibraryApi, Ba
   /** A library document whose page text matches at 99.5% or more once download stamps are removed. Reads only. */
   findStampAlias(pageCount: number, pageTexts: readonly string[]): Promise<{ documentId: DocumentId; similarity: number } | null>;
   addAlias(sha256: Sha256, documentId: DocumentId, similarity: number): Promise<void>;
+  /** The fingerprints recorded as other downloads (stamped copies) of a document. Reads only. */
+  listAliases(documentId: DocumentId): Promise<Sha256[]>;
   /** The document, its history row and its location, in one transaction. Saving again changes nothing it already holds. */
   saveDocument(input: SaveDocumentInput): Promise<{ row: DocumentRow; created: boolean }>;
   putPageText(documentId: DocumentId, pages: readonly { pageIndex: number; text: string }[]): Promise<void>;
@@ -131,6 +133,7 @@ export const LIBRARY_METHODS = [
   'countDocumentsWithPageCount',
   'findStampAlias',
   'addAlias',
+  'listAliases',
   'saveDocument',
   'putPageText',
   'touchLocation',
@@ -378,6 +381,13 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
       }),
 
     getDocument: (id) => attempt(() => (typeof id === 'string' && HEX64.test(id) ? readDocument(id) : null)),
+
+    listAliases: (documentId) =>
+      attempt(() =>
+        typeof documentId === 'string' && HEX64.test(documentId)
+          ? db.selectObjects('SELECT sha256 AS id FROM aliases WHERE document_id = ? ORDER BY sha256', [documentId]).map((r) => text(r, 'id') as Sha256)
+          : [],
+      ),
 
     countDocumentsWithPageCount: (pageCount) =>
       attempt(() => (isInt(pageCount) ? count('SELECT count(*) FROM documents WHERE page_count = ?', [pageCount]) : 0)),

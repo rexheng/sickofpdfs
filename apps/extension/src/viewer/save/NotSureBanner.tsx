@@ -1,10 +1,13 @@
 // The quiet "not sure" banner (spec, "When the filter is wrong"): on a PDF the filter is not sure about, after 20 seconds
-// of reading, a notice under the toolbar pill offers Save, Not now, Never for this file and Always for this site (a folder,
-// for a file on this computer). It never takes the focus and never covers the page's text for long: Not now closes it for
-// this tab, and any of the others settles the question for good.
+// of reading, a notice under the toolbar pill offers Save, Not now, Never for this file and "Always for <the place>". It never
+// takes the focus and never covers the page's text for long: Not now closes it for this tab, and any of the others settles
+// the question for good.
+// R91: "Always for …" names the place, on its button and in its note ("Always for moodle.lse.ac.uk", "Always for the folder
+// Week 3 readings"), and is not there at all for a catch-all place (Downloads, a mail attachment, a shared store).
 import { Icon, TextButton } from '@sop/ui';
 import { useEffect, useState } from 'react';
 import type { ViewerUi } from '../commands';
+import type { SiteRule } from '../filter/rules-source';
 import type { SaveControllerImpl } from './save-controller';
 import { useSaveView } from './StatusChip';
 import styles from './NotSureBanner.module.css';
@@ -13,6 +16,22 @@ import styles from './NotSureBanner.module.css';
 export const NOT_SURE_BANNER_MS = 20_000;
 
 export const NOT_SURE_MESSAGE = 'Not sure if this PDF is for learning. Save it to your library?';
+
+/** A place's name on the button is cut to this many characters (the note says it in full). */
+const PLACE_CHARS = 40;
+
+/** "moodle.lse.ac.uk", or "the folder Week 3 readings". */
+function placeWords(rule: SiteRule, max = Infinity): string {
+  const name = rule.place.length > max ? `${rule.place.slice(0, max - 1).trimEnd()}…` : rule.place;
+  return rule.kind === 'site' ? name : `the folder ${name}`;
+}
+
+/** The button: "Always for moodle.lse.ac.uk". */
+export const alwaysLabel = (rule: SiteRule): string => `Always for ${placeWords(rule, PLACE_CHARS)}`;
+
+/** The note after it: the place, and that private papers are still never saved by it (R91). */
+export const alwaysNote = (rule: SiteRule): string =>
+  `Saved. PDFs from ${placeWords(rule)} will be saved from now on, but never receipts or other private papers.`;
 
 export interface NotSureBannerProps {
   save: SaveControllerImpl | null;
@@ -67,17 +86,14 @@ export function NotSureBanner({ save, ui }: NotSureBannerProps) {
     );
   };
   const rule = save.siteRule;
-  const actions: { label: string; run: () => void }[] = [
+  const actions: { label: string; title?: string; run: () => void }[] = [
     { label: 'Save', run: () => act(save.requestSave(), 'Saved to your library.') },
     { label: 'Not now', run: close },
     { label: 'Never for this file', run: () => act(save.neverSave(), 'This file won’t be saved.') },
   ];
   if (rule !== null) {
-    const where = rule.kind === 'site' ? 'site' : 'folder';
-    actions.push({
-      label: `Always for this ${where}`,
-      run: () => act(save.alwaysForSite(), rule.kind === 'site' ? `Saved. PDFs from ${rule.entry} will be saved from now on.` : 'Saved. PDFs from this folder will be saved from now on.'),
-    });
+    const label = alwaysLabel(rule);
+    actions.push({ label, ...(label.endsWith('…') ? { title: placeWords(rule) } : {}), run: () => act(save.alwaysForSite(), alwaysNote(rule)) });
   }
 
   return (
@@ -89,7 +105,7 @@ export function NotSureBanner({ save, ui }: NotSureBannerProps) {
         </div>
         <div className={styles.actions}>
           {actions.map((a) => (
-            <TextButton key={a.label} label={a.label} onClick={a.run} />
+            <TextButton key={a.label} label={a.label} title={a.title} onClick={a.run} />
           ))}
         </div>
       </div>

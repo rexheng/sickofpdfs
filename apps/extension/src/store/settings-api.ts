@@ -7,9 +7,12 @@
 //
 // Rules this file keeps:
 // - A key that reads like a secret (`apiKey`, `token`, `salt` …) is refused: secrets live in `sop-local`, never here.
+// - R91: `filter.allow` and `filter.deny` only take entries the filter may use. An entry that would apply to everything (a bare
+//   top-level domain, `/`, a drive root, `file:///`) is refused on both, and a catch-all place (Downloads, a mail attachment,
+//   a shared store) on the allow list. The filter drops such entries again when it reads the lists (an entry may come by sync).
 // - Every write is one transaction, stamps `hlc`, leaves `rev` to sync, and publishes its change after it commits.
 // - Errors are rejections whose message starts with a code (`bad-input: …`), so the code survives a message port.
-import type { HlcStamp } from '@sop/core';
+import { type HlcStamp, type ListKind, listEntryProblem, MAX_LIST_ENTRY } from '@sop/core';
 import { isSecretSettingKey } from '@sop/core/sync';
 import type { StoreChange } from './change-bus';
 import { isReadOnly, type SqlDb, type SqlValue } from './schema-v2';
@@ -37,7 +40,18 @@ const MAX_KEY = 128;
 /** The longest stored value (JSON text). The lists are short; this only stops a runaway write. */
 const MAX_VALUE = 64 * 1024;
 /** The longest list entry: a site, a web address or a folder. */
-const MAX_ENTRY = 2048;
+const MAX_ENTRY = MAX_LIST_ENTRY;
+
+/** The filter's lists (contracts §5), whose entries R91 checks. */
+const FILTER_LISTS: Readonly<Record<string, ListKind>> = { 'filter.allow': 'allow', 'filter.deny': 'deny' };
+
+/** R91: refuses an entry the filter may not use on this list, saying why in plain words. */
+function checkFilterEntry(key: string, entry: unknown): void {
+  const list = FILTER_LISTS[key];
+  if (list === undefined) return;
+  const problem = listEntryProblem(entry, list);
+  if (problem !== null) throw new SettingsError('bad-input', `this can’t be on the ${list} list: ${problem}`);
+}
 
 export interface SettingsDeps {
   hlc: { tick(): HlcStamp };
@@ -121,6 +135,10 @@ export function createSettingsApi(db: SqlDb, deps: SettingsDeps): SettingsApi {
     setSetting: (key, value) =>
       attempt(() => {
         checkKey(key);
+        if (FILTER_LISTS[key] !== undefined) {
+          if (!Array.isArray(value)) throw new SettingsError('bad-input', 'a filter list is a list of sites and folders');
+          for (const entry of value) checkFilterEntry(key, entry);
+        }
         const text = toJson(value);
         assertWritable();
         if (db.savepoint(() => write(key, text))) publish(key);
@@ -130,6 +148,7 @@ export function createSettingsApi(db: SqlDb, deps: SettingsDeps): SettingsApi {
       attempt(() => {
         checkKey(key);
         if (typeof entry !== 'string' || entry.trim() === '' || entry.length > MAX_ENTRY) throw new SettingsError('bad-input', 'a list entry is a short piece of text');
+        checkFilterEntry(key, entry);
         const clean = entry.trim();
         assertWritable();
         let list: string[] = [];

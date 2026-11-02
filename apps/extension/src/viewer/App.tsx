@@ -41,7 +41,7 @@ import { Header } from './chrome/Header';
 import { buildMenus } from './chrome/menus';
 import { NavRail } from './chrome/NavRail';
 import { ShortcutsDialog } from './chrome/ShortcutsDialog';
-import { Snackbar } from './chrome/Snackbar';
+import { Snackbar, type SnackbarNote } from './chrome/Snackbar';
 import { Toolbar } from './chrome/Toolbar';
 import { commandShortcuts, createCommands, createIdleCommands, type ViewerCommands, type ViewerContext, type ViewerUi } from './commands';
 import { useReaderFind } from './find';
@@ -264,7 +264,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
   useKeyboardFocusMark();
   const pageField = useRef<HTMLInputElement>(null);
   const [dialog, setDialog] = useState<'shortcuts' | 'about' | null>(null);
-  const [note, setNote] = useState<{ text: string } | null>(null);
+  const [note, setNote] = useState<SnackbarNote | null>(null);
   const [printing, setPrinting] = useState<{ done: number; total: number; cancel: () => void } | null>(null);
   const [printAsk, setPrintAsk] = useState<{ answer(this: void, choice: 'with' | 'without' | null): void } | null>(null);
   const ui = useMemo<ViewerUi>(
@@ -287,7 +287,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
             },
           }),
         ),
-      showNote: (text) => setNote({ text }),
+      showNote: (text, action) => setNote(action === undefined ? { text } : { text, action }),
     }),
     [escape],
   );

@@ -21,6 +21,44 @@
   animation: rise 150ms ease-out;
 }
 
+.withAction {
+  gap: var(--space-2);
+  padding-block: var(--space-1);
+  padding-inline-end: var(--space-1);
+}
+
+.text {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.withAction .text {
+  padding-block: var(--space-2);
+}
+
+/* The action: a GM3 text button in the inverse primary, as the library's snackbar has it. */
+.action {
+  flex: none;
+  block-size: var(--btn-h);
+  margin: 0;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--shape-full);
+  background: transparent;
+  color: var(--gm3-sys-color-inverse-primary);
+  font: var(--type-text-button);
+  cursor: pointer;
+}
+
+.action:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-inverse-primary) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.action:focus-visible {
+  outline: var(--focus-ring-width) solid var(--gm3-sys-color-inverse-primary);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
 @keyframes rise {
   from {
     opacity: 0;

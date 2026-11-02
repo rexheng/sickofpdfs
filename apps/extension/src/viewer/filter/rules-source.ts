@@ -6,7 +6,7 @@
 //
 // Privacy: every record here is the owner's own action. Nothing is written because a PDF was opened, and nothing about a
 // PDF is logged. In Incognito there is no rules source at all (nothing is saved there).
-import type { FilterRules, Sha256 } from '@sop/core';
+import { cleanList, type FilterRules, isListEntryOk, type Sha256 } from '@sop/core';
 import type { FilterReportLabel, LocalOnlyStore } from '../../local-only/secrets-store';
 import type { StoreClient } from '../../store/client';
 
@@ -17,15 +17,18 @@ export const DENY_LIST_KEY = 'filter.deny';
 export type FilterLists = Pick<FilterRules, 'deny' | 'allow'>;
 
 export interface FilterRulesSource {
-  /** The owner's choice for these exact bytes. Rejects when it cannot be read: the caller must not save on its own then. */
-  fileChoice(sha: Sha256): Promise<'never' | null>;
-  /** The deny and allow lists. Rejects when they cannot be read. */
+  /**
+   * The owner's choice for these bytes: 'never' when any of `shas` is kept as "never save" (R91: the reading's id, its
+   * downloads and the opened copy are all kept). Rejects when it cannot be read: the caller must not save on its own then.
+   */
+  fileChoice(shas: Sha256 | readonly Sha256[]): Promise<'never' | null>;
+  /** The deny and allow lists, without the entries that may not be on them (R91). Rejects when they cannot be read. */
   lists(): Promise<FilterLists>;
-  /** "Always for this site": adds a host or folder to the allow list. */
+  /** "Always for …": adds a host or folder to the allow list. Rejects an entry R91 refuses. */
   allow(entry: string): Promise<void>;
   /** "Never for this file" (or Forget's "Never save this file"). */
   neverSave(shas: readonly Sha256[]): Promise<void>;
-  /** The PDF was saved: the owner's latest choice wins, so it is not "never save" any more. */
+  /** R91: the owner's own explicit Save, and nothing else, takes "never save" back for these fingerprints. */
   saved(shas: readonly Sha256[]): Promise<void>;
   /** "Report a wrong decision". */
   report(sha: Sha256, label: FilterReportLabel): Promise<void>;
@@ -42,8 +45,6 @@ export interface RulesSourceDeps {
   /** The library store; null when it cannot be reached. */
   store(): Promise<StoreClient | null>;
 }
-
-const stringList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim() !== '') : []);
 
 export function createRulesSource(d: RulesSourceDeps): FilterRulesSource {
   async function local(): Promise<LocalOnlyStore> {
@@ -66,16 +67,19 @@ export function createRulesSource(d: RulesSourceDeps): FilterRulesSource {
   };
 
   return {
-    async fileChoice(sha) {
+    async fileChoice(shas) {
       const l = await readable();
-      return l !== null && (await l.isNeverSave(sha)) ? 'never' : null;
+      if (l === null) return null;
+      for (const sha of new Set(typeof shas === 'string' ? [shas] : shas)) if (sha.length > 0 && (await l.isNeverSave(sha))) return 'never';
+      return null;
     },
     async lists() {
       const s = await store();
       const [deny, allow] = await Promise.all([s.getSetting(DENY_LIST_KEY), s.getSetting(ALLOW_LIST_KEY)]);
-      return { deny: stringList(deny), allow: stringList(allow) };
+      return { deny: cleanList(deny, 'deny'), allow: cleanList(allow, 'allow') };
     },
     async allow(entry) {
+      if (!isListEntryOk(entry, 'allow')) throw new Error('bad-input: this place cannot be on the allow list');
       await (await store()).addToSettingList(ALLOW_LIST_KEY, entry);
     },
     async neverSave(shas) {
@@ -93,17 +97,21 @@ export function createRulesSource(d: RulesSourceDeps): FilterRulesSource {
   };
 }
 
-/** What "Always for this site" adds to the allow list for a PDF's link. */
+/** What "Always for …" adds to the allow list for a PDF's link. */
 export interface SiteRule {
-  /** The list entry: a host ("moodle.lse.ac.uk"), or a folder on this computer ("/home/me/Readings/"). */
+  /** The list entry: a host ("moodle.lse.ac.uk"), or a folder on this computer ("/home/me/Courses/Week 3 readings/"). */
   entry: string;
-  /** "site" for a web link, "folder" for a file on this computer: the button says "Always for this site" or "… folder". */
+  /** "site" for a web link, "folder" for a file on this computer. */
   kind: 'site' | 'folder';
+  /** R91: the place's name for the button and the note: the host, or the folder's own name ("Week 3 readings"). */
+  place: string;
 }
 
 /**
  * The allow-list entry for a PDF's own link: its host for a web link (without a leading "www.", so the whole site counts),
- * its folder for a file on this computer. Null for anything else (a file picked from disk, a blob link): there is no site.
+ * its folder for a file on this computer. Null when there is no place to name (a file picked from disk, a blob link), and
+ * for a catch-all place R91 refuses (Downloads, a mail attachment, a shared store, a chat file host): then the banner
+ * offers no "Always".
  */
 export function siteRuleFor(link: string | null): SiteRule | null {
   if (link === null) return null;
@@ -113,11 +121,11 @@ export function siteRuleFor(link: string | null): SiteRule | null {
   } catch {
     return null;
   }
+  let rule: SiteRule | null = null;
   if (url.protocol === 'http:' || url.protocol === 'https:') {
     const host = url.hostname.toLowerCase().replace(/^www\./, '').replace(/\.$/, '');
-    return host === '' ? null : { entry: host, kind: 'site' };
-  }
-  if (url.protocol === 'file:') {
+    rule = host === '' ? null : { entry: host, kind: 'site', place: host };
+  } else if (url.protocol === 'file:') {
     let path: string;
     try {
       path = decodeURIComponent(url.pathname);
@@ -125,12 +133,11 @@ export function siteRuleFor(link: string | null): SiteRule | null {
       return null;
     }
     const folder = path.slice(0, path.lastIndexOf('/') + 1);
-    if (folder === '' || folder === '/') return null; // never the whole disk
     // file:///C:/Users/me/x.pdf has the path /C:/Users/me/; a Windows drive loses its leading slash
     const local = folder.replace(/^\/([A-Za-z]:\/)/, '$1');
-    if (/^[A-Za-z]:\/$/.test(local)) return null;
     const share = url.host !== '' && url.host !== 'localhost' ? `//${url.host}${local}` : local;
-    return { entry: share, kind: 'folder' };
+    const name = local.split('/').filter((s) => s !== '').pop() ?? '';
+    rule = name === '' ? null : { entry: share, kind: 'folder', place: name };
   }
-  return null;
+  return rule !== null && isListEntryOk(rule.entry, 'allow') ? rule : null;
 }

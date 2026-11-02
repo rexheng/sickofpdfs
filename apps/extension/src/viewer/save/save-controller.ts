@@ -17,17 +17,25 @@
 //   "Forget this PDF" removes everything (as Undo does); the store's delete keeps only a salted hash in its forgotten list,
 //   so a restore never brings it back (R88, R89), and then the backup writer cleans it out of the backups (R75). A PDF with card or bank numbers that the owner saves
 //   anyway keeps its page text out of search (D9).
+// - R91: the owner's choices only make the filter more careful. "Never for this file" is read again before any save the owner
+//   did not ask for (another tab may have chosen it), covers the reading's id, its downloads and the copy open here, and only
+//   the owner's own explicit Save takes it back. Every save by choice is checked for card and bank numbers (D9), however it
+//   started. When the choices cannot be read, nothing saves on its own.
 import {
+  classify,
   type DocumentId,
   extractMetadata,
   type FilterDecision,
   type FilterInput,
+  type FilterRule,
   guessKind,
   type LocationKind,
+  type OwnerSavePolicy,
   reduceSave,
   type SaveEffect,
   type SaveEvent,
   type SaveState,
+  type Sha256,
 } from '@sop/core';
 import type { PdfBackend, SaveController } from '@sop/viewer';
 import type { BlobStore } from '../../store/blob-store';
@@ -39,7 +47,7 @@ import { rememberNotes } from '../notes/margin-at-open';
 import { forgetLocalTraces } from './local-traces';
 import type { StoreClient } from '../../store/client';
 import type { FilterReportLabel } from '../../local-only/secrets-store';
-import { FORGOTTEN_REASON, NEVER_SAVE_REASON, neverSaveDecision } from '../filter/async-filter';
+import { cannotCheck, FILTER_FAILED, FORGOTTEN_REASON, NEVER_SAVE_REASON, neverSaveDecision } from '../filter/async-filter';
 import { type FilterRulesSource, type SiteRule, siteRuleFor } from '../filter/rules-source';
 import { buildFilterInput } from '../filter/sample-input';
 import { FORGOTTEN_BACKUP_PENDING, FORGOTTEN_LIBRARY_ONLY, type ForgetBackupResult } from '../../backup/forget';
@@ -77,6 +85,20 @@ interface MoreContent {
    */
   content?: boolean;
 }
+/** R91: a tab kept "Never save this file" for these fingerprints; the other tabs read the choice again at once. */
+interface NeverSaveNews {
+  type: 'never-save';
+  ids: string[];
+}
+
+/**
+ * D9 (R91): the warning of a save whose text could not be checked for card or bank numbers. Its text is kept out of search,
+ * as for a PDF that has them.
+ */
+export const UNCHECKED_WARNING = 'This PDF couldn’t be checked for card or bank numbers, so its text is not searchable.';
+
+/** The rules of a decision that went through `classify`'s hard-block check with the PDF's own text. */
+const CHECKED_RULES: ReadonlySet<FilterRule> = new Set<FilterRule>(['hard-block', 'deny-list', 'allow-list', 'force-save', 'score', 'model', 'no-text']);
 
 export interface SaveLocation {
   kind: LocationKind;
@@ -175,7 +197,8 @@ export interface ForgetOutcome {
 /** How long Forget waits for the backups to be cleaned before it says the next backup will finish the job. */
 export const SCRUB_WAIT_MS = 60_000;
 
-type SaveCause = 'filter' | 'owner' | 'first-mark' | 'first-note';
+/** Why a save runs. Only 'owner' is the owner's own explicit Save (the chip, Ctrl+Alt+S, the banner, Save in the question). */
+type SaveCause = 'filter' | 'owner' | 'first-mark' | 'first-note' | 'resume';
 
 /** The saved chip's hover lists this many reasons at most, strongest first. */
 export const SAVED_REASONS = 4;
@@ -371,9 +394,13 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     const pages = await allPageTexts();
     const put = blobs === null ? null : await blobs.put(loaded.blob, id);
     const reasons =
-      cause === 'filter' ? filterReasons(decision) : [cause === 'owner' ? SAVED_BY_OWNER : cause === 'first-note' ? SAVED_BY_FIRST_NOTE : SAVED_BY_FIRST_MARK];
-    // D9: card, bank or ID numbers. The owner's own save wins, with a warning, and the text is kept out of search.
-    const owner = decision?.ownerSave ?? null;
+      cause === 'filter'
+        ? filterReasons(decision)
+        : [cause === 'owner' || cause === 'resume' ? SAVED_BY_OWNER : cause === 'first-note' ? SAVED_BY_FIRST_NOTE : SAVED_BY_FIRST_MARK];
+    // D9: card, bank or ID numbers. The owner's own save wins, with a warning, and the text is kept out of search. R91: however
+    // the save started, so a decision that skipped the filter's check (a "never" file, a PDF that was in the library when it
+    // opened, a filter that failed) is checked now, as a save by the owner's choice.
+    const owner = decision?.ownerSave ?? (checkedForNumbers(decision) ? null : await ownerSaveNow());
     // Page 1 names a reading; paperwork saved by choice (a receipt, a never-save file) keeps its own name instead, which is
     // both the better name for it and keeps the words of a private page out of the library's title.
     const meta = metadataToSave(pages, owner !== null || decision?.verdict === 'not-learning');
@@ -416,13 +443,31 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     texts.clear(); // the library has the text now; this tab no longer needs its copy
     savedReasons = reasons;
     saveWarning = owner?.warning ?? null;
-    // The owner's latest choice wins: a saved PDF is not "never save" any more. (In the store's list a saved PDF does not count
-    // as forgotten, R89.)
-    void d.rules?.saved([id, loaded.sha256]).catch(() => {});
+    // R91: only the owner's own explicit Save takes "never save" back. (In the store's list a saved PDF does not count as
+    // forgotten, R89.)
+    if (cause === 'owner') void d.rules?.saved([id, loaded.sha256]).catch(() => {});
     createdHere = created && (cause === 'first-mark' || cause === 'first-note');
     // R67 (c): Undo only ever removes the save and the one mark that caused it. Not when this tab did not create the
     // document, nor when more was made meanwhile, here or in another tab.
     await dispatch({ type: 'saved', documentId: id, undoable: undoable && created && !moreHere && !othersAdded && !boxDuringSave });
+  }
+
+  /** A decision `classify` made with the PDF's own text, so its D9 policy is known. */
+  function checkedForNumbers(dec: FilterDecision | null): boolean {
+    return dec !== null && dec.rule !== undefined && CHECKED_RULES.has(dec.rule);
+  }
+
+  /**
+   * D9 for a save by the owner's choice that skipped the filter's check: `classify` with "save" as the choice keeps the hard
+   * block's warning and its text indexing off (and the 8-point override). The pages are in this tab's cache already. If it
+   * cannot be checked, its text is kept out of search too.
+   */
+  async function ownerSaveNow(): Promise<OwnerSavePolicy | null> {
+    try {
+      return classify(await filterInput(), { fileChoice: 'save', deny: [], allow: [] }).ownerSave ?? null;
+    } catch {
+      return { warning: UNCHECKED_WARNING, indexText: false };
+    }
   }
 
   /** The copy this tab stored, when the document did not get saved after all (another tab may have saved it). */
@@ -444,10 +489,16 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     if (store === null || state.kind !== 'saved') return;
     const id = state.documentId;
     let neverKept: ForgetOutcome['neverSave'] = 'not-asked';
-    // "Never save this file" is kept before the delete, so another tab that hears of the delete already reads it.
+    let neverKeys: Sha256[] = [];
+    // "Never save this file" is kept before the delete, so another tab that hears of the delete already reads it. R91: it covers
+    // the reading's id, every download of it (its aliases) and the copy open here. If the downloads cannot be listed, nothing
+    // is changed and the Forget fails, so the owner can try again.
     if (owner !== null && owner.neverSave) {
       neverKept = 'failed';
-      if (d.rules) neverKept = await d.rules.neverSave([loaded.sha256]).then(() => 'kept' as const, () => 'failed' as const);
+      if (d.rules) {
+        neverKeys = [...new Set([id, ...(await store.listAliases(id)), loaded.sha256])];
+        neverKept = await d.rules.neverSave(neverKeys).then(() => 'kept' as const, () => 'failed' as const);
+      }
     }
     try {
       // R88, R89: the owner's Forget is a delete for good, which the store writes to its forgotten list in the same transaction;
@@ -455,9 +506,10 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       await store.forgetDocument(id, owner === null ? { undo: true } : undefined);
     } catch (error) {
       // Still saved: the choice just kept for it goes again.
-      if (neverKept === 'kept') await d.rules?.saved([loaded.sha256]).catch(() => {});
+      if (neverKept === 'kept') await d.rules?.saved(neverKeys).catch(() => {});
       throw error;
     }
+    if (neverKept === 'kept') tellNever(neverKeys);
     // R67 (e): the drafts' crash-safe copies, the save-pending records and the margin hint go with the document.
     forgetLocalTraces(id, loaded.sha256);
     await blobs?.delete(id);
@@ -516,7 +568,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     const rules = d.rules;
     const lib = store;
     if (!rules || lib === null || state.kind !== 'unsure') return;
-    const never = await rules.fileChoice(loaded.sha256).catch(() => null);
+    const never = await rules.fileChoice([loaded.sha256, documentId]).catch(() => null);
     // R89: one forgotten list, the store's, written with the delete (an Undo writes nothing to it).
     const gone = never === 'never' || (await lib.forgottenAmong([documentId, loaded.sha256]).then((ids) => ids.length > 0, () => false));
     if (!gone || disposed || state.kind !== 'unsure' || busy !== null) return;
@@ -551,7 +603,22 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     }
   }
 
+  /** R91: tells the other tabs that "Never save this file" was kept, so they read it again now, not only at their next mark. */
+  function tellNever(ids: string[]): void {
+    try {
+      const msg: NeverSaveNews = { type: 'never-save', ids };
+      channel?.postMessage(msg);
+    } catch {
+      // each tab still reads the choice again before a first mark saves
+    }
+  }
+
   function onMoreContent(e: MessageEvent): void {
+    const news = e.data as Partial<NeverSaveNews> | null;
+    if (!disposed && news?.type === 'never-save' && Array.isArray(news.ids)) {
+      if (news.ids.includes(loaded.sha256)) void holdForChoice();
+      return;
+    }
     const m = e.data as Partial<MoreContent> | null;
     if (disposed || !m || m.type !== 'more-content' || !Array.isArray(m.ids)) return;
     const mine =
@@ -582,6 +649,28 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       return false; // when in doubt, keep everything
     }
     return !othersAdded;
+  }
+
+  /** R91: the owner's choice for this file, read now: 'unknown' when it cannot be read. */
+  function choiceNow(): Promise<'never' | 'unknown' | null> {
+    if (!d.rules) return Promise.resolve(null);
+    return d.rules.fileChoice(loaded.sha256).then(
+      (c) => c,
+      () => 'unknown' as const,
+    );
+  }
+
+  /**
+   * R91: before a save the owner did not ask for (a first mark on a "not sure" PDF, a resumed save), "Never for this file" is
+   * read again, since another tab may have chosen it. Then, or when it cannot be read, the PDF is "not learning", so the mark
+   * asks first.
+   */
+  async function holdForChoice(): Promise<void> {
+    if (state.kind !== 'unsure' || busy !== null || !d.rules) return;
+    const now = await choiceNow();
+    if (now === null || disposed || state.kind !== 'unsure' || busy !== null) return;
+    decision = now === 'never' ? neverSaveDecision() : cannotCheck(decision);
+    await dispatch({ type: 'never-save', reasons: [...decision.reasons] });
   }
 
   function run(effect: SaveEffect, cause: SaveCause, owner: OwnerForget | null = null): Promise<void> {
@@ -630,7 +719,9 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
           ? e.undoable === false
             ? 'first-note'
             : 'first-mark'
-          : 'owner';
+          : e.type === 'resume-save'
+            ? 'resume'
+            : 'owner';
     await run(step.effect, cause);
   }
 
@@ -733,7 +824,13 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       try {
         decision = await d.filter(await filterInput());
       } catch {
-        decision = { verdict: 'unsure', reasons: [] }; // a filter that fails leaves the choice to the owner
+        decision = cannotCheck(null, FILTER_FAILED); // R91: a filter that fails saves nothing on its own, and a mark asks
+      }
+      // R91: "Never for this file" may have been chosen in another tab while this one was checking
+      if (decision.verdict !== 'not-learning' && d.rules) {
+        const now = await choiceNow();
+        if (now === 'never') decision = neverSaveDecision();
+        else if (now === 'unknown') decision = cannotCheck(decision);
       }
     }
     if (disposed) return;
@@ -787,6 +884,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       await d.rules.neverSave([loaded.sha256]);
       decision = neverSaveDecision();
       await dispatch({ type: 'never-save', reasons: [NEVER_SAVE_REASON] });
+      tellNever([loaded.sha256]);
     },
     async alwaysForSite() {
       await afterStart();
@@ -848,6 +946,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       triggerRows = typeof o?.rows === 'number' && o.rows > 0 ? o.rows : null;
       tellOthers(o?.content !== false); // for the other tabs this mark or note is more than their first mark
       await afterStart();
+      await holdForChoice(); // R91: a "never" chosen in another tab makes this mark ask
       await dispatch({ type: 'first-mark', ...(undoable ? {} : { undoable: false }) });
     },
     endUndo(o) {
@@ -880,6 +979,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
         return;
       }
       try {
+        await holdForChoice(); // R91: as for a first mark
         await dispatch({ type: 'resume-save' });
       } finally {
         if (state.kind !== 'asking' && busy?.kind !== 'save') {

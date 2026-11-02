@@ -81,8 +81,14 @@ export interface ViewerUi {
    * one question is open at a time.
    */
   askPrintMarks(): Promise<'with' | 'without' | null>;
-  /** A short note at the bottom of the window (a snackbar). */
-  showNote(text: string): void;
+  /** A short note at the bottom of the window (a snackbar), with an optional button ("Forget"). */
+  showNote(text: string, action?: NoteAction): void;
+}
+
+/** The one button a note can carry. Pressing it runs `run` and closes the note. */
+export interface NoteAction {
+  label: string;
+  run: () => void;
 }
 
 /** Built once per tab in App.tsx; later tasks fill the nullable fields. */

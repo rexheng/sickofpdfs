@@ -4,9 +4,9 @@
 //   2. your choice for this exact file ("Never save this file"), read before any page text (`fileChoice`);
 //   3. the sample, `classify` with your deny and allow lists, and the tie-breaker plus `nudge` only for "not sure".
 //
-// Fail safe: if the owner's choices or lists cannot be read, the filter never saves on its own. A `learning` verdict
-// becomes "not sure", and the owner decides. The tie-breaker can only move a "not sure" PDF (core's `nudge`); if it is
-// missing, slow or fails, the PDF stays "not sure".
+// Fail safe (R91): if the owner's choices or lists cannot be read, the PDF is "not learning": nothing saves on its own, and
+// a first mark asks. The tie-breaker can only move a "not sure" PDF (core's `nudge`); if it is missing, slow or fails, the
+// PDF stays "not sure".
 //
 // Privacy: everything here runs in memory. A decision holds fixed labels only, never PDF text. Nothing is logged.
 import { classify, type FilterDecision, type FilterInput, nudge, type Sha256 } from '@sop/core';
@@ -39,8 +39,19 @@ export function neverSaveDecision(): FilterDecision {
 export const NEVER_SAVE_REASON = neverSaveDecision().reasons[0] ?? 'you chose never to save this file';
 /** The chip's words after "Forget this PDF". */
 export const FORGOTTEN_REASON = 'removed from your library';
-/** Why a PDF the filter would have saved is only "not sure": the owner's choices could not be read. */
-const CHOICES_UNREAD = 'couldn’t check your choices for this file';
+/** R91: why a PDF is "not learning" when the owner's choices could not be read. */
+export const CHOICES_UNREAD = 'couldn’t check your choices for this file';
+/** R91: why a PDF is "not learning" when the filter itself failed. */
+export const FILTER_FAILED = 'couldn’t check this PDF';
+
+/**
+ * R91: the decision when the owner's choices could not be read (or the filter failed): "not learning", so nothing saves on
+ * its own and a first mark asks. What the filter found is kept (its rule, and the D9 policy of a PDF with card numbers).
+ */
+export function cannotCheck(d: FilterDecision | null, reason: string = CHOICES_UNREAD): FilterDecision {
+  if (d === null) return { verdict: 'not-learning', reasons: [reason] };
+  return { ...d, verdict: 'not-learning', reasons: [reason, ...d.reasons.filter((r) => r !== reason)].slice(0, 4), needsModel: false };
+}
 
 export interface ViewerFilterDeps {
   /** The opened file's fingerprint. */
@@ -85,12 +96,11 @@ export function createViewerFilter(d: ViewerFilterDeps): ViewerFilter {
           choicesKnown = false;
         }
       }
-      let decision = classify(input, { fileChoice: null, ...lists });
+      const decision = classify(input, { fileChoice: null, ...lists });
+      // R91: unknown choices mean "not learning" (a PDF that is not learning anyway keeps its own words)
+      if (!choicesKnown) return decision.verdict === 'not-learning' ? decision : cannotCheck(decision);
       if (decision.verdict === 'unsure' && decision.needsModel === true && d.tieBreaker !== null) {
-        decision = await tieBreak(decision, input, d.tieBreaker, d.timeoutMs ?? MODEL_TIMEOUT_MS);
-      }
-      if (!choicesKnown && decision.verdict === 'learning') {
-        return { ...decision, verdict: 'unsure', reasons: [CHOICES_UNREAD, ...decision.reasons].slice(0, 4), needsModel: false };
+        return tieBreak(decision, input, d.tieBreaker, d.timeoutMs ?? MODEL_TIMEOUT_MS);
       }
       return decision;
     },
