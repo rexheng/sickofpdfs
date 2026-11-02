@@ -96,7 +96,9 @@ test('a receipt leaves no trace; one click saves it; Forget removes it again; on
   // 5. Forget this PDF removes everything again.
   await page.bringToFront();
   const forgot = await forgetThisPdf(page);
-  expect(forgot.asked, 'a PDF with no notes is forgotten without a question').toBe(false);
+  // Triage (filterfix, rule 7): written to the old plan ("asks first if there are notes"). Spec R91: "Forget always asks, even with
+  // no marks or notes, so 'Never save this file' is always offered."
+  expect(forgot.asked, 'Forget asks first, even with no notes (R91)').toBe(true);
   await expect(chipOf(page), 'the chip no longer says it is saved').not.toContainText(/saved to library/i, { timeout: 20_000 });
   await shot(page, testInfo, 'after-forget');
   await expect.poll(async () => (await opfsList(page, 'pdf')).length, { message: 'the saved copy is deleted', timeout: 20_000 }).toBe(0);

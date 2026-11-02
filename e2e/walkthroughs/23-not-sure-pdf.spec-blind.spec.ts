@@ -54,7 +54,9 @@ const CARD = asPdf(P3_FILES.card);
 const SAVE = /^save$/i;
 const NOT_NOW = /^not now$/i;
 const NEVER = /never for this file/i;
-const ALWAYS = /always for this site/i;
+// Triage (filterfix, rule 7): spec R91 has the button name the place ("Always for moodle.lse.ac.uk"), so it no longer says "this
+// site". Here the site is the fixture server's, 127.0.0.1.
+const ALWAYS = /^always for 127\.0\.0\.1$/i;
 const banner = (page: Page, name: RegExp) => page.getByRole('button', { name });
 
 test.beforeAll(async () => {
@@ -90,7 +92,7 @@ test('after 20 seconds a quiet banner offers Save, Not now, Never for this file 
   const after = Date.now() - decidedAt;
   note(testInfo, 'the banner appeared after (ms)', String(after));
   expect(after, 'not before about 20 seconds').toBeGreaterThanOrEqual(15_000);
-  for (const [name, label] of [[SAVE, 'Save'], [NOT_NOW, 'Not now'], [NEVER, 'Never for this file'], [ALWAYS, 'Always for this site']] as const) {
+  for (const [name, label] of [[SAVE, 'Save'], [NOT_NOW, 'Not now'], [NEVER, 'Never for this file'], [ALWAYS, 'Always for 127.0.0.1']] as const) {
     await expect(banner(page, name), `the banner has "${label}"`).toBeVisible();
   }
   await expect(page.getByRole('alertdialog'), 'it is quiet: not a modal question').toHaveCount(0);
