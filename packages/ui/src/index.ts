@@ -5,6 +5,7 @@ export { MARK_COLOR_NAMES, MARK_COLORS, markColorForKey } from './components/Col
 export { ContextMenu, type ContextMenuProps } from './components/ContextMenu';
 export { Dialog, type DialogAction, type DialogProps } from './components/Dialog';
 export { IconButton, type IconButtonProps } from './components/IconButton';
+export { lastInputWasPointer } from './components/input-modality';
 export { DropdownMenu, type DropdownMenuProps, type MenuDef, type MenuItemDef } from './components/Menu';
 export { MenuBar, type MenuBarProps } from './components/MenuBar';
 export { PillToolbar, type PillToolbarProps, ToolbarSeparator } from './components/PillToolbar';

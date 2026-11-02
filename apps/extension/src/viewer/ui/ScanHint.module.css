@@ -1,16 +1,38 @@
 /*
- * The scan hint's place at the right end of the toolbar pill. A narrow window cuts its words short (ellipsis). The
- * 8 px at its end keep it off the pill's round end.
+ * The scan hint's place at the right end of the toolbar pill. It takes only the room the pill's controls leave (a size
+ * container, so its own words never widen it), and never overlaps them: "Scanned page" with its icon where it fits, the
+ * icon alone (a 32 px chip) where it does not, and nothing where even that has no room. The chip's 8 px end margin keeps
+ * it off the controls after it; the container sizes below count it.
  */
 .hint {
   display: flex;
+  flex: 1 1 auto;
+  justify-content: flex-end;
   min-inline-size: 0;
-  margin-inline-end: var(--space-2);
+  container-type: inline-size;
 }
 
 .chip {
-  max-inline-size: 100%;
+  margin-inline-end: var(--space-2);
   animation: appear 150ms ease-out;
+}
+
+/* No room for the words: the icon alone, in a 32 px square chip (the words stay its name and its tooltip). */
+@container (width < 160px) {
+  .hint .chip {
+    padding-inline: calc((var(--chip-h) - var(--icon-size-20)) / 2 - 1px);
+  }
+
+  .hint .chip > span:last-child {
+    display: none;
+  }
+}
+
+/* No room for the icon either: nothing, rather than a chip over a control. */
+@container (width < 40px) {
+  .hint .chip {
+    display: none;
+  }
 }
 
 @keyframes appear {

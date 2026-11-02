@@ -3,8 +3,10 @@ import type { ReactNode } from 'react';
 import styles from './Header.module.css';
 
 export interface HeaderProps {
-  /** The PDF's name. */
+  /** The PDF's name: the reading's title once known, else its file name (reading-title.ts). */
   name: string;
+  /** The name's tooltip: the whole title and the file name. Defaults to `name`. */
+  hint?: string;
   /** "Back to page", for a PDF that was embedded in a page; null hides it. */
   onBack: (() => void) | null;
   menus: MenuDef[];
@@ -20,12 +22,12 @@ export interface HeaderProps {
 
 /**
  * Drive's PDF preview header (02 section 4.10), 64 px on the viewer canvas: "Back to page" where Drive has its close
- * button (in words, with its arrow: an arrow alone read as the browser's own Back), the 24 px PDF tile, the file name
- * in Google Sans 18 with the File, View, Tools and Help menus under it, and at the right the status chip and
+ * button (in words, with its arrow: an arrow alone read as the browser's own Back), the 24 px PDF tile, the PDF's name
+ * (its title once known, else the file name; TB4) in Google Sans 18 with the File, View, Tools and Help menus under it, and at the right the status chip and
  * "Open in Chrome's viewer" where Drive has "Open in new tab". The spec's escape hatch "is always there":
  * File → Open in Chrome's viewer and this button.
  */
-export function Header({ name, onBack, menus, onOpenInChrome, chromeRefused, status, returnFocus }: HeaderProps) {
+export function Header({ name, hint = name, onBack, menus, onOpenInChrome, chromeRefused, status, returnFocus }: HeaderProps) {
   return (
     <header className={styles.header} data-theme="dark" data-viewer-chrome="">
       {onBack !== null && (
@@ -37,7 +39,7 @@ export function Header({ name, onBack, menus, onOpenInChrome, chromeRefused, sta
         <FileTypeIcon kind="pdf" size={32} />
       </span>
       <div className={styles.titles}>
-        <h1 className={styles.name} title={name}>
+        <h1 className={styles.name} title={hint}>
           {name}
         </h1>
         <div className={styles.menus}>

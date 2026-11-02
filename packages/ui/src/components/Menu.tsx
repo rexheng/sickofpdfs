@@ -27,7 +27,10 @@ export type MenuItemDef =
        * nothing) when false.
        */
       checked?: boolean;
-      /** The current choice in a short list of labels (the zoom level now): its label is drawn in the primary colour. */
+      /**
+       * The current choice in a short list of labels (the zoom level now): its label is drawn in the primary colour, with a
+       * tick before it. Set it (true or false) on every row of such a list, so the labels line up after the tick column.
+       */
       selected?: boolean;
       onSelect: () => void;
     }
@@ -81,6 +84,8 @@ export function MenuItems({ items, kind }: { items: readonly MenuItemDef[]; kind
   const rows = tidySeparators(items);
   // One icon column for the whole menu, so every label starts at the same x (48 px in, as in Drive).
   const iconColumn = rows.some((i) => i.kind === 'item' && (i.icon !== undefined || i.checked !== undefined));
+  // A short list of choices (the zoom levels) ticks the current one, in a narrow column of its own.
+  const tickColumn = !iconColumn && rows.some((i) => i.kind === 'item' && i.selected !== undefined);
   return rows.map((item, index) => {
     if (item.kind === 'separator') return <Separator key={`separator-${index}`} className={styles.separator} />;
     // A checkbox item shows its check in the icon slot while on, and its own icon (if any) while off.
@@ -90,6 +95,7 @@ export function MenuItems({ items, kind }: { items: readonly MenuItemDef[]; kind
         {iconColumn && (
           <span className={styles.icon}>{leading !== undefined && <Icon name={leading} size={20} />}</span>
         )}
+        {tickColumn && <span className={styles.tick}>{item.selected === true && <Icon name="check" size={20} />}</span>}
         <span className={styles.label}>{item.label}</span>
         {item.shortcut !== undefined && (
           <span className={styles.shortcut} aria-hidden="true">
@@ -100,7 +106,7 @@ export function MenuItems({ items, kind }: { items: readonly MenuItemDef[]; kind
     );
     const why = item.disabled === true ? item.disabledReason : undefined;
     const shared = {
-      className: cx(styles.item, item.selected === true && styles.selected),
+      className: cx(styles.item, tickColumn && styles.withTick, item.selected === true && styles.selected),
       disabled: item.disabled === true,
       textValue: item.label,
       'aria-keyshortcuts': item.shortcut === undefined ? undefined : ariaShortcut(item.shortcut),

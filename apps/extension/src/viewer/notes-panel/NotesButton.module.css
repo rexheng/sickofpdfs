@@ -17,3 +17,8 @@
   background-color: var(--gm3-sys-color-surface-container-highest);
   color: var(--gm3-sys-color-on-surface);
 }
+
+/* The compact pill's icon-only form (no notes yet): the same gap after "Comment". */
+.icon {
+  margin-inline-start: var(--space-1);
+}

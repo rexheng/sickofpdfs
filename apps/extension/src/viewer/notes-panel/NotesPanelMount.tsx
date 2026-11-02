@@ -9,6 +9,7 @@
 //   controller's ruling): a note or reply with text is sent, an empty one is dropped. While it is being typed, the
 //   draft keeper keeps the text safe.
 import type { CommentId, ThreadId } from '@sop/core';
+import { lastInputWasPointer } from '@sop/ui';
 import type { JumpHistory, PageSize, ViewerStore } from '@sop/viewer';
 import type { PageListApi } from '@sop/viewer/react';
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -174,12 +175,16 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
     return installShortcuts(commands.map((c) => ({ id: c.id, keys: c.keys, run: () => c.run(), enabled: () => c.enabled() })));
   }, [commands, onCommands]);
 
-  // The panel just opened from a key or a button: the focus goes to the active card, or to the selected tab.
+  // The panel just opened from a key or a button: the focus goes to the active card, or to the selected tab. Opened with
+  // the pointer (the toolbar's Notes button), it goes to the panel itself, so no ring shows on a tab the owner did not
+  // choose (TB4); Esc still closes it, and the first Tab reaches its controls, ring and all.
   useEffect(() => {
     if (!open || !focusOnOpen.current) return;
     focusOnOpen.current = false;
     const active = session.state().active;
-    const target = (active !== null ? cards.current.get(active) : undefined) ?? panel.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+    const target = lastInputWasPointer()
+      ? panel.current
+      : ((active !== null ? cards.current.get(active) : undefined) ?? panel.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]'));
     target?.focus({ preventScroll: true });
   }, [open, session]);
 

@@ -34,6 +34,9 @@ type ChipLook = Pick<ChipProps, 'label' | 'icon' | 'tone' | 'tooltip' | 'disable
 export const SAVE_FAILED = 'Couldn’t save. Try again';
 const SAVE_FAILED_HINT = 'Your notes are kept on this computer. Click to try again.';
 
+/** The Incognito chip's tooltip. */
+export const INCOGNITO_HINT = 'Incognito window: nothing is saved, so marks and notes are off.';
+
 /** The tooltip of the "In Trash" chip (ruling R76). */
 export const IN_TRASH_HINT = 'This PDF is in your library’s Trash. Restore it to keep it and its notes.';
 
@@ -122,7 +125,8 @@ export function chipFor(state: SaveState, busy: SaveControllerImpl['busy'], save
     case 'memory-only':
       return { label: 'Not saved: notes stay until you close this tab', tone: 'neutral', tooltip: SAVE_HINT, saves: true };
     case 'incognito':
-      return { label: 'Incognito: view only', tone: 'neutral', disabled: true, saves: false };
+      // A status, not a broken control (TB2 visual 4): full contrast, an icon, and a tooltip that says why.
+      return { label: 'Incognito: view only', icon: 'visibility', tone: 'neutral', tooltip: INCOGNITO_HINT, saves: false };
   }
 }
 

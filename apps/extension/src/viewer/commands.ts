@@ -133,7 +133,8 @@ export const SPECS: [ViewerCommandId, CommandSpec][] = [
   ['file.openInChrome', { label: 'Open in Chrome’s viewer', icon: 'open_in_new', keys: [] }],
   // Phase 3 (S15): only for a reading opened from its saved copy (`?doc=`).
   ['file.openOriginal', { label: 'Open original link', icon: 'link', keys: [] }],
-  ['file.download', { label: 'Download', icon: 'download', keys: ['Ctrl+S'] }],
+  // The original file, as it came: until "Download with marks" (Release 3) the label says the marks are not in it (TB4).
+  ['file.download', { label: 'Download original file, without your marks', icon: 'download', keys: ['Ctrl+S'] }],
   ['file.copyLink', { label: 'Copy link', icon: 'link', keys: [] }],
   ['file.print', { label: 'Print', icon: 'print', keys: ['Ctrl+P'] }],
   ['file.saveToLibrary', { label: 'Save to library', icon: 'library_add', keys: ['Ctrl+Alt+S'] }],
@@ -241,10 +242,13 @@ function saveToLibrary(save: SaveController | null): Behaviour {
   };
 }
 
-/** True fit width (Ctrl+0), not the capped one the document opens at (ruling R61). */
+/**
+ * Fit width: true fit width (Ctrl+0), or the capped one a document opens at (ruling R61) while the cap is not what
+ * sets the size (a narrow window, where it does fit the width). At the cap it reads as its percentage instead (100%).
+ */
 function isFitWidth(store: ViewerStore): boolean {
-  const zoom = store.get().zoom;
-  return zoom.kind === 'fit-width' && zoom.max === undefined;
+  const { zoom, scale } = store.get();
+  return zoom.kind === 'fit-width' && (zoom.max === undefined || scale < zoom.max - LIMIT_EPSILON);
 }
 
 /**

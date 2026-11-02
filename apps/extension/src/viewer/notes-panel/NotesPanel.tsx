@@ -57,9 +57,12 @@ export function NotesPanel(p: NotesPanelProps) {
   const { placed, unplaced } = p.notes;
   const empty = placed.length === 0 && unplaced.length === 0;
 
-  // Esc anywhere in the panel that nothing else used (an active card uses the first Esc) closes it.
+  // Esc anywhere in the panel closes it, on a card too (the card lets go first, so a typed reply is sent, as when the
+  // reader leaves it). In a note or reply box, Esc first finishes the box (the box keeps that key); the next Esc closes.
+  // A card's own menu is in a portal, outside the panel, and keeps its Esc.
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
-    if (e.key !== 'Escape' || e.defaultPrevented || !e.currentTarget.contains(e.target as Node)) return;
+    if (e.key !== 'Escape' || !e.currentTarget.contains(e.target as Node)) return;
+    if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
     e.preventDefault();
     p.onClose();
   };
@@ -112,6 +115,8 @@ export function NotesPanel(p: NotesPanelProps) {
       ref={p.panelRef}
       className={styles.panel}
       aria-labelledby={titleId}
+      // The panel itself takes the focus when it is opened with the pointer (NotesPanelMount); Tab never stops on it.
+      tabIndex={-1}
       onKeyDown={onKeyDown}
       data-notes-panel=""
       data-raised={p.raised ? 'true' : 'false'}

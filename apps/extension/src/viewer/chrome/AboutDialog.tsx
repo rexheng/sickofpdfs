@@ -6,8 +6,11 @@ export interface AboutDialogProps {
   onOpenChange(this: void, open: boolean): void;
 }
 
-/** The notices file the build writes (scripts/third-party-notices.mjs): the licences of everything open-source inside. */
-const NOTICES_PATH = 'THIRD_PARTY_NOTICES.txt';
+/**
+ * The licences page (licences.html, TB4): the notices file the build writes (scripts/third-party-notices.mjs) laid out in
+ * the library's light Drive look, rather than the raw text file in Chrome's bare text view.
+ */
+const LICENCES_PAGE = 'licences.html';
 
 /**
  * Help → About sickofpdfs: what it is and its version, in plain words, and a link to the open-source licences. (The
@@ -20,7 +23,7 @@ export function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
       {manifest.description !== undefined && <p className={styles.line}>{manifest.description}</p>}
       <p className={styles.line}>Version {manifest.version}</p>
       <p className={styles.line}>
-        <a className={styles.link} href={chrome.runtime.getURL(NOTICES_PATH)} target="_blank" rel="noopener noreferrer">
+        <a className={styles.link} href={chrome.runtime.getURL(LICENCES_PAGE)} target="_blank" rel="noopener noreferrer">
           Open-source licences
         </a>
       </p>

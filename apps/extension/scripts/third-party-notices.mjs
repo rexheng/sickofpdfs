@@ -1,7 +1,7 @@
 // `node scripts/third-party-notices.mjs` (part of `pnpm assets`, so the start of `build` and `build:e2e`): writes
 // apps/extension/public/THIRD_PARTY_NOTICES.txt (gitignored), which WXT copies into the build as THIRD_PARTY_NOTICES.txt.
-// Help → About sickofpdfs links to it ("Open-source licences"). The file lists every piece of third-party code, model and
-// font in the extension: its name, version, licence and the full licence text.
+// Help → About sickofpdfs → "Open-source licences" shows it as a page (src/licences, licences.html). The file lists every
+// piece of third-party code, model and font in the extension: its name, version, licence and the full licence text.
 //
 //   node scripts/third-party-notices.mjs                      writes the file
 //   node scripts/third-party-notices.mjs --check <folder>     (the end of `build`) fails when <folder>/THIRD_PARTY_NOTICES.txt

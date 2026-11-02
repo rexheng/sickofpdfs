@@ -1,0 +1,179 @@
+/*
+ * The open-source licences page, in the library's light Drive look (02 sections 4.1 and 4.5): the 64 px top bar with our
+ * mark on #f8fafd, then the white content card (16 px corners, 16 px from the window's edges) holding one column at most
+ * 760 px wide. Body text is Google Sans Text 14/20; each licence text is a 12/18 monospace block on a tinted surface.
+ */
+.page {
+  min-block-size: 100vh;
+  box-sizing: border-box;
+  padding: 0 var(--space-4) var(--space-4);
+  background-color: var(--drive-app-bg);
+  color: var(--gm3-sys-color-on-surface);
+}
+
+/* The mark at x 20, as in the library's top bar. */
+.top {
+  display: flex;
+  align-items: center;
+  block-size: var(--topbar-h);
+  padding-inline-start: var(--space-1);
+}
+
+.card {
+  box-sizing: border-box;
+  min-block-size: calc(100vh - var(--topbar-h) - var(--space-4));
+  padding: 0 var(--space-6) var(--space-12);
+  border-radius: var(--shape-content-card);
+  background-color: var(--drive-content-bg);
+}
+
+.column {
+  max-inline-size: var(--sop-licences-w);
+}
+
+/* The page title row: Drive's "My Drive" title, 24/32 in a 64 px row. */
+.title {
+  display: flex;
+  align-items: center;
+  block-size: var(--space-16);
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-page-title);
+  font-variation-settings: "opsz" 18;
+}
+
+.text {
+  margin: 0 0 var(--space-3);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+/* The label of a list ("What is listed"). */
+.lead {
+  margin: var(--space-4) 0 var(--space-1);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-lib-section);
+  font-variation-settings: "opsz" 18;
+}
+
+.quiet {
+  margin: 0 0 var(--space-3);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+.list {
+  margin: 0 0 var(--space-3);
+  padding-inline-start: var(--space-6);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+/* The list of components: two columns where there is room, each name a link to its part of the page. */
+.contents {
+  margin-block: var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--shape-grid-card);
+  background-color: var(--gm3-sys-color-surface-container);
+}
+
+.contentsTitle,
+.name {
+  margin: 0 0 var(--space-2);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-licences-heading);
+  font-variation-settings: "opsz" 18;
+}
+
+.contentsList {
+  margin: 0;
+  padding-inline-start: var(--space-8);
+  columns: 2 var(--sop-licences-col-min);
+  column-gap: var(--space-8);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+.contentsList > li {
+  break-inside: avoid;
+}
+
+.link {
+  color: var(--gm3-sys-color-primary);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.link:focus-visible {
+  border-radius: var(--shape-menu);
+}
+
+/* One component: its name, its facts, then its licence texts. A rule between components, as the file has. */
+.entry {
+  padding-block: var(--space-6) var(--space-2);
+  border-block-start: 1px solid var(--gm3-sys-color-outline-variant);
+  scroll-margin-block-start: var(--space-4);
+}
+
+.facts {
+  margin: 0 0 var(--space-3);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+.fact {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.fact > dt {
+  flex: none;
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.fact > dt::after {
+  content: ":";
+}
+
+.fact > dd {
+  min-inline-size: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.textLabel {
+  margin: var(--space-4) 0 var(--space-2);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-tooltip);
+  font-variation-settings: "opsz" 17;
+  letter-spacing: var(--tracking-tight);
+}
+
+.licence {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  overflow-x: auto;
+  border-radius: var(--shape-grid-card);
+  background-color: var(--gm3-sys-color-surface-container-low);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--sop-licences-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (width < 600px) {
+  .page {
+    padding-inline: 0;
+  }
+
+  .card {
+    padding-inline: var(--space-4);
+    border-radius: 0;
+  }
+}

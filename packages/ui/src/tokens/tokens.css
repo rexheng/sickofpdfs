@@ -389,6 +389,12 @@
   --sop-lib-empty-art: 120px;       /* the round tile behind the empty state's icon */
   --sop-lib-empty-glyph: 56px;
   --sop-lib-empty-max-w: 440px;
+  /* The open-source licences page (TB4): one column at most 760 px wide, components' names in GM3 title medium, and each
+     licence text in a 12/18 monospace block (system monospace fonts: nothing is fetched). */
+  --sop-licences-w: 760px;
+  --sop-licences-col-min: 220px;
+  --type-licences-heading: 500 16px/24px var(--font-display);
+  --sop-licences-mono: 400 12px/18px ui-monospace, "Cascadia Mono", Consolas, "Roboto Mono", "DejaVu Sans Mono", monospace;
   /* Table columns (02 section 4.6): the name takes the rest; Owner and Date modified are 215 px, File size 88 px */
   --sop-col-authors: 215px;
   --sop-col-date: 180px;

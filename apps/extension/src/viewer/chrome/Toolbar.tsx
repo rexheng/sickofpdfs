@@ -2,6 +2,7 @@ import { DropdownMenu, Icon, IconButton, type MenuItemDef, PillToolbar, TextFiel
 import { createViewerStore, useViewerState, type ViewerStore, type ZoomMode } from '@sop/viewer';
 import { type ComponentPropsWithRef, type FocusEvent, type KeyboardEvent, type ReactNode, type RefObject, useEffect, useRef, useState } from 'react';
 import type { ViewerCommand, ViewerCommandId, ViewerCommands } from '../commands';
+import { useCompactToolbar } from './compact';
 import { formatCombo } from './menus';
 import styles from './Toolbar.module.css';
 
@@ -34,12 +35,14 @@ const IDLE_STORE = createViewerStore();
 /**
  * Drive's toolbar pill (02 section 4.10), 16 px in, in a 48 px row under the header: "Page [n] / N", Download and
  * Print, then zoom out, the zoom level (a menu of fit modes and presets) and zoom in, then Find (Ctrl+F).
+ * In a narrow window (compact.ts) Download and Print move into the "More" menu at the end, with Area note.
  */
 export function Toolbar({ commands, view, returnFocus, end }: ToolbarProps) {
   // The zoom buttons grey out at 25% and 400%; the store's scale and zoom mode are what change that.
   const store = view?.store ?? IDLE_STORE;
   const scale = useViewerState(store, (s) => s.scale);
   const zoom = useViewerState(store, (s) => s.zoom);
+  const compact = useCompactToolbar();
   const button = (id: ViewerCommandId) => <CommandButton cmd={commands.get(id)} />;
   return (
     <div className={styles.row} data-viewer-chrome="">
@@ -54,11 +57,15 @@ export function Toolbar({ commands, view, returnFocus, end }: ToolbarProps) {
         )}
         <span className={styles.total}>/ {view === null ? '–' : view.pageCount}</span>
         <ToolbarSeparator />
-        <span className={styles.fileGroup}>
-          {button('file.download')}
-          {button('file.print')}
-        </span>
-        <ToolbarSeparator />
+        {!compact && (
+          <>
+            <span className={styles.fileGroup}>
+              {button('file.download')}
+              {button('file.print')}
+            </span>
+            <ToolbarSeparator />
+          </>
+        )}
         <span className={styles.zoomGroup}>
           {button('view.zoomOut')}
           {view === null ? (
@@ -71,6 +78,7 @@ export function Toolbar({ commands, view, returnFocus, end }: ToolbarProps) {
         <ToolbarSeparator />
         {button('tools.find')}
         {end !== undefined && <span className={styles.end}>{end}</span>}
+        {compact && <MoreMenu commands={commands} returnFocus={returnFocus} />}
       </PillToolbar>
     </div>
   );
@@ -107,6 +115,44 @@ function CommandButton({ cmd }: { cmd: ViewerCommand | undefined }) {
   );
 }
 
+/** What the compact pill's "More" menu holds, in this order. */
+const MORE: (ViewerCommandId | '-')[] = ['file.download', 'file.print', '-', 'tools.area'];
+
+/**
+ * "More" (⋮) at the end of the compact pill: the controls that had no room, as rows of the dark viewer menu, each with
+ * its icon and its key, greyed out with its reason when it is off.
+ */
+function MoreMenu({ commands, returnFocus }: { commands: ViewerCommands; returnFocus: (() => void) | undefined }) {
+  const items: MenuItemDef[] = MORE.flatMap((id): MenuItemDef[] => {
+    if (id === '-') return [{ kind: 'separator' }];
+    const cmd = commands.get(id);
+    if (cmd === undefined || !cmd.built) return [];
+    const enabled = cmd.enabled();
+    const why = enabled ? undefined : cmd.disabledReason?.();
+    const key = cmd.keys[0];
+    return [
+      {
+        kind: 'item',
+        id,
+        label: cmd.label,
+        ...(cmd.icon !== undefined ? { icon: cmd.icon } : {}),
+        ...(key !== undefined ? { shortcut: formatCombo(key) } : {}),
+        disabled: !enabled,
+        ...(why !== undefined ? { disabledReason: why } : {}),
+        onSelect: () => cmd.enabled() && cmd.run(),
+      },
+    ];
+  });
+  return (
+    <DropdownMenu
+      trigger={<IconButton icon="more_vert" label="More" />}
+      items={items}
+      align="end"
+      {...(returnFocus !== undefined ? { returnFocus } : {})}
+    />
+  );
+}
+
 /** The zoom list: Drive's (Fit, then 50–200%), with fit page and the larger steps up to Chrome's 400%. */
 const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
 
@@ -122,17 +168,19 @@ interface ZoomMenuProps {
 }
 
 /**
- * The zoom list. The current choice is drawn in the primary colour: Fit width or Fit page while in that mode, else the
- * preset the pages are at (the capped fit width a document opens at, R61, reads as its percentage).
+ * The zoom list. The current choice is ticked and drawn in the primary colour: Fit width or Fit page while in that mode
+ * (the View menu's own checks), else the preset the pages are at (the capped fit width a document opens at, R61, reads
+ * as its percentage once the cap is what sets the size). `zoom` is read so the list is built again when the mode changes.
  */
 function ZoomMenu({ scale, zoom, commands, onZoom, returnFocus }: ZoomMenuProps) {
   const percent = `${Math.round(scale * 100)}%`;
-  const fitMode = (zoom.kind === 'fit-width' && zoom.max === undefined) || zoom.kind === 'fit-page';
+  const fitChosen = (id: ViewerCommandId) => commands.get(id)?.checked?.() === true;
+  const fitMode = zoom.kind !== 'scale' && (fitChosen('view.fitWidth') || fitChosen('view.fitPage'));
   // Fit width and Fit page are the View menu's commands, so both places behave the same.
   const fit = (id: ViewerCommandId): MenuItemDef[] => {
     const cmd = commands.get(id);
     if (cmd === undefined || !cmd.built) return [];
-    return [{ kind: 'item', id, label: cmd.label, disabled: !cmd.enabled(), selected: cmd.checked?.() === true, onSelect: () => cmd.run() }];
+    return [{ kind: 'item', id, label: cmd.label, disabled: !cmd.enabled(), selected: fitChosen(id), onSelect: () => cmd.run() }];
   };
   const items: MenuItemDef[] = [
     ...fit('view.fitWidth'),

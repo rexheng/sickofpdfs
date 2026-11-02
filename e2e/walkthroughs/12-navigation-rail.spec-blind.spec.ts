@@ -232,9 +232,10 @@ test('the outline lists a paper\'s sections at every depth, and pressing one ope
   await openSection('Multi-Head Attention');
   await snap(page, testInfo, '12-outline-three-deep');
 
+  // TB4 ruling (tb4-fix-brief, slice B1): an outline press is a jump now, so Back returns; a run of them is one Back step.
   const after = await historyInfo(page);
-  expect(after.length, 'outline presses add no history entry').toBe(before.length);
-  expect(isJumpState(after.state), 'outline presses leave no jump marker').toBe(false);
+  expect(after.length, 'a run of outline presses adds one history entry').toBe(before.length + 1);
+  expect(isJumpState(after.state), 'outline presses leave a jump marker').toBe(true);
 
   // Back to the thumbnails: the current page has the ring.
   await railToggle(page, 'Thumbnails').click();

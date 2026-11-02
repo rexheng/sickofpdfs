@@ -64,6 +64,8 @@ export const ICON_NAMES = [
   'move_down',
   // R93: View → Caret browsing (an I-beam text cursor)
   'text_select_start',
+  // TB4 chrome fixes: the Incognito chip
+  'visibility',
   // Phase 3: the library shell, list and grid (S7): the nav, "+ New", the view toggle, sorting and the row actions
   'home',
   'library_books',

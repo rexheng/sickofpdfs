@@ -39,7 +39,9 @@ import { backTarget, goBackToPage } from './back-to-page';
 import { CARET_OFF_NOTE, CARET_ON_NOTE, caretBrowsingSwitch, useCaretBrowsing } from './caret-browsing';
 import { AboutDialog } from './chrome/AboutDialog';
 import { Header } from './chrome/Header';
+import { useCompactToolbar } from './chrome/compact';
 import { buildMenus } from './chrome/menus';
+import { useReadingTitle } from './chrome/reading-title';
 import { NavRail } from './chrome/NavRail';
 import { ShortcutsDialog } from './chrome/ShortcutsDialog';
 import { Snackbar, type SnackbarNote } from './chrome/Snackbar';
@@ -218,10 +220,6 @@ function TabViewer({ params }: { params: ViewerParams }) {
     void (params.doc ? openSavedCopy(params, deps) : openDocument(params, deps)).then(show);
   }, [params, deps, show]);
 
-  useEffect(() => {
-    document.title = view.kind === 'ready' ? tabTitle(view.doc) : (pickedFileName(params) ?? savedCopyName(params) ?? displayNameFor(params.source, null));
-  }, [view, params]);
-
   /**
    * The engine stopped under the open document (a crash, a hang past the watchdog, or no memory): its pages could no
    * longer be drawn. It is opened again once, from the bytes the viewer holds, at the same place; if that fails, or
@@ -266,7 +264,6 @@ function TabViewer({ params }: { params: ViewerParams }) {
   const fileAccess = view.kind === 'error' && view.error instanceof PdfLoadError && view.error.code === 'file-access';
   const back = backTarget(backPage);
   const source = params.source;
-  const name = view.kind === 'ready' ? view.doc.loaded.displayName : (pickedFileName(params) ?? savedCopyName(params) ?? displayNameFor(source, null));
 
   // The chrome: dialogs, the page box (Ctrl+G), the copy-link note, and the commands everything runs.
   const root = useRef<HTMLDivElement>(null);
@@ -308,6 +305,12 @@ function TabViewer({ params }: { params: ViewerParams }) {
     [],
   );
   const save = useSave({ opened, params, backend, onFailure: onSaveFailure });
+  // The tab and the header name the reading: its real title once known, the file name until then (chrome/reading-title.ts).
+  const title = useReadingTitle(opened, save);
+  const name = title?.shown ?? (pickedFileName(params) ?? savedCopyName(params) ?? displayNameFor(source, null));
+  useEffect(() => {
+    document.title = name;
+  }, [name]);
   const form = useFormBounce({ opened, save, source, backend });
   const [reader, setReader] = useState<ReaderChrome | null>(null);
   // Not for a local file the tab was not seen opening: one click must not show it in Chrome's viewer either.
@@ -330,6 +333,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
     <div ref={root} className={styles.app}>
       <Header
         name={name}
+        hint={title === null ? name : title.full === title.fileName ? title.fileName : `${title.full}\n${title.fileName}`}
         onBack={back === null ? null : () => void goBackToPage(back)}
         menus={menus}
         // The error and stopped cards carry their own "Open in Chrome's viewer"; one is enough on screen.
@@ -397,15 +401,6 @@ function TabViewer({ params }: { params: ViewerParams }) {
       <Snackbar note={note} />
     </div>
   );
-}
-
-/**
- * The tab's title, as Chrome's viewer names it: the PDF's own Title (its document properties) when it has one with a
- * letter or a digit in it, else the file name. The header keeps the file name, as Drive's does.
- */
-function tabTitle(doc: OpenedDocument): string {
-  const title = doc.open.metadata.title?.trim() ?? '';
-  return /[\p{L}\p{N}]/u.test(title) ? title : doc.loaded.displayName;
 }
 
 /**
@@ -660,13 +655,15 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
     () => ({ store, pageCount: doc.open.pageCount, onGoToPage: goToPage, onZoom: zoom, pageFieldRef }),
     [store, doc, goToPage, zoom, pageFieldRef],
   );
+  const compact = useCompactToolbar();
   return (
     <>
       <Toolbar
         commands={commands}
         view={toolbarView}
         returnFocus={returnFocus}
-        end={<><CurrentPageExtras store={store} scans={scans} source={doc.loaded.sourceUrl} onOpenInChrome={(url, page) => ui.openInChrome(url, page)} /><AreaToolButton commands={commands} /><CommentButton /></>}
+        // In the compact pill (a narrow window) Area note is a row of its "More" menu instead (chrome/compact.ts).
+        end={<><CurrentPageExtras store={store} scans={scans} source={doc.loaded.sourceUrl} onOpenInChrome={(url, page) => ui.openInChrome(url, page)} />{!compact && <AreaToolButton commands={commands} />}<CommentButton /></>}
       />
       <NavRail
         store={store}

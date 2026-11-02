@@ -75,7 +75,10 @@ export interface ReaderNavigation {
   renderPage(this: void, box: PageBox): ReactNode;
   /** A thumbnail: that page, from its top. Not in history. */
   onPage(this: void, index: number): void;
-  /** An outline item: its destination, as a link would go there. Not in history. */
+  /**
+   * An outline item: its destination, as a link would go there, and through the same jump history, so Back returns to
+   * where the reader was (TB4 ruling; a thumbnail press still adds nothing).
+   */
   onOutline(this: void, t: LinkTarget): void;
 }
 
@@ -136,14 +139,14 @@ export function useReaderNavigation({ backend, doc, store, api }: NavigationDeps
   const onOutline = useCallback(
     (t: LinkTarget) => {
       if (t.kind === 'page') {
-        if (api.current) void goToTarget(api.current, pages, t);
+        followLink(t);
         return;
       }
       // A web address in the outline opens in this tab, as Chrome's viewer does; any other scheme does nothing.
       const href = resolveLinkUri(t.url, source);
       if (href !== null) location.assign(href);
     },
-    [api, pages, source],
+    [followLink, source],
   );
   return useMemo(() => ({ jumps, renderPage, onPage, onOutline }), [jumps, renderPage, onPage, onOutline]);
 }
