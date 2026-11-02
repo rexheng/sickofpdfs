@@ -1,81 +1,91 @@
-// Bold word starts (ruling R90): the switch. View → "Bold word starts", or Alt+Shift+S.
+// Bold word starts (ruling R90): the switch (View → "Bold word starts", Alt+Shift+S, or Settings → Reading) and how
+// bold it draws (Settings → Reading → How bold).
 //
-// - It is remembered on this computer for every PDF, in chrome.storage.local, and is off until the owner turns it on.
-// - Every viewer tab follows it live: turning it on in one tab turns it on in the others (chrome.storage.onChanged).
-// - The value is one boolean: nothing about any PDF is stored. (It is a view setting, so an Incognito tab may change it
-//   too, as Chrome's own settings can be changed there.)
-// - The drawing is @sop/viewer's WordStartsController and WordStartsLayer; App.tsx joins them to this switch.
+// - Both are remembered on this computer for every PDF, in chrome.storage.local; the switch is off until the owner turns
+//   it on (remembered-switch.ts). Every viewer tab follows both live (chrome.storage.onChanged).
+// - Nothing about any PDF is stored. (They are view settings, so an Incognito tab may change the switch too, as Chrome's
+//   own settings can be changed there.)
+// - The drawing is @sop/viewer's WordStartsController and WordStartsLayer; App.tsx joins them to these.
 import { useSyncExternalStore } from 'react';
+import { rememberedSwitch, useSwitch } from './remembered-switch';
 
-/** The chrome.storage.local key: true when the owner has turned bold word starts on. */
+/** The chrome.storage.local key: true when the owner has turned bold word starts on (Settings → Reading writes it too). */
 export const WORD_STARTS_KEY = 'view.boldWordStarts';
 
 /** R90's quiet note, shown once per tab, the first time a scanned page is in view with the switch on. */
 export const WORD_STARTS_SCAN_NOTE = 'Bold word starts works on text pages. This page is a scanned image.';
 
-let on = false;
-let touched = false;
-let started = false;
-let scanNoteShown = false;
-const listeners = new Set<() => void>();
+export const wordStartsSwitch = rememberedSwitch(WORD_STARTS_KEY, 'bold word starts');
 
-function apply(next: boolean): void {
-  if (next === on) return;
-  on = next;
-  for (const l of [...listeners]) l();
+/** The switch, for a component (the View menu's check): re-renders when it changes. */
+export function useWordStarts(): boolean {
+  return useSwitch(wordStartsSwitch);
 }
 
-/** Reads the stored value once, and follows changes made in any tab. Outside an extension page it stays off. */
-function start(): void {
-  if (started) return;
-  started = true;
-  try {
-    chrome.storage.onChanged.addListener((changes, area) => {
-      const change = changes[WORD_STARTS_KEY];
-      if (area !== 'local' || change === undefined) return;
-      apply(change.newValue === true);
-    });
-    chrome.storage.local.get(WORD_STARTS_KEY).then(
-      (stored) => {
-        if (!touched) apply(stored[WORD_STARTS_KEY] === true); // a toggle before the answer came wins
-      },
-      () => {},
-    );
-  } catch {
-    // not an extension page (unit tests): the switch stays off
-  }
-}
+/**
+ * The chrome.storage.local key of "How bold" (Settings → Reading): 'light', 'medium' or 'strong'. Missing or anything
+ * else means medium. Written only by the Settings page; every viewer tab follows it live.
+ */
+export const WORD_STARTS_STRENGTH_KEY = 'view.boldWordStartsStrength';
 
-/** The switch, as the viewer's commands and pages read it. */
-export const wordStartsSwitch = {
-  get(this: void): boolean {
-    start();
-    return on;
+export type WordStartsStrength = 'light' | 'medium' | 'strong';
+
+/**
+ * How much of a face's own regular-to-bold gain each strength draws (R90b's synthetic bold): medium is the face's own
+ * bold. Light and strong were chosen by eye on crops at 100% and 200%: 0.7 and 1.35 looked almost like medium at 100%
+ * (the ink a bold adds was 0.87 and 1.14 of medium's), 0.5 and 1.6 are three clear steps (0.66–0.76 and 1.21–1.34).
+ * The counters stay open at every strength (bold-painter.ts caps the gain per glyph).
+ */
+export const WORD_STARTS_GAIN: Readonly<Record<WordStartsStrength, number>> = { light: 0.5, medium: 1, strong: 1.6 };
+
+const asStrength = (v: unknown): WordStartsStrength => (v === 'light' || v === 'strong' ? v : 'medium');
+
+let strength: WordStartsStrength = 'medium';
+let strengthStarted = false;
+const strengthListeners = new Set<() => void>();
+
+/** "How bold", read once and followed in every tab. Outside an extension page it stays medium. */
+export const wordStartsStrength = {
+  get(this: void): WordStartsStrength {
+    startStrength();
+    return strength;
   },
-  /** Calls `onChange` whenever the switch changes, in this tab or another. */
   subscribe(this: void, onChange: () => void): () => void {
-    start();
-    listeners.add(onChange);
-    return () => listeners.delete(onChange);
-  },
-  /** Turns it the other way here at once, and remembers it for every tab. */
-  toggle(this: void): void {
-    start();
-    touched = true;
-    const next = !on;
-    apply(next);
-    try {
-      chrome.storage.local.set({ [WORD_STARTS_KEY]: next }).catch((err: unknown) => console.error('sickofpdfs: could not remember the bold word starts switch', err));
-    } catch {
-      // not an extension page
-    }
+    startStrength();
+    strengthListeners.add(onChange);
+    return () => strengthListeners.delete(onChange);
   },
 };
 
-/** The switch, for a component: re-renders when it changes. */
-export function useWordStarts(): boolean {
-  return useSyncExternalStore(wordStartsSwitch.subscribe, wordStartsSwitch.get);
+/** "How bold", for a component: re-renders when it changes. */
+export function useWordStartsStrength(): WordStartsStrength {
+  return useSyncExternalStore(wordStartsStrength.subscribe, wordStartsStrength.get);
 }
+
+function startStrength(): void {
+  if (strengthStarted) return;
+  strengthStarted = true;
+  const apply = (v: unknown) => {
+    const next = asStrength(v);
+    if (next === strength) return;
+    strength = next;
+    for (const l of [...strengthListeners]) l();
+  };
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      const change = changes[WORD_STARTS_STRENGTH_KEY];
+      if (area === 'local' && change !== undefined) apply(change.newValue);
+    });
+    chrome.storage.local.get(WORD_STARTS_STRENGTH_KEY).then(
+      (stored) => apply(stored[WORD_STARTS_STRENGTH_KEY]),
+      () => {},
+    );
+  } catch {
+    // not an extension page
+  }
+}
+
+let scanNoteShown = false;
 
 /**
  * Shows R90's scan note through `show` the first time this tab asks, and never again in this tab. Returns whether it

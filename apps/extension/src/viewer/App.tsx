@@ -103,7 +103,7 @@ import { LocalFileCard } from './ui/LocalFileCard';
 import { PasswordDialog } from './ui/PasswordDialog';
 import { ScanHint } from './ui/ScanHint';
 import { useStore } from './use-store';
-import { noteScannedPageOnce, useWordStarts, wordStartsSwitch } from './word-starts';
+import { noteScannedPageOnce, useWordStarts, useWordStartsStrength, WORD_STARTS_GAIN, wordStartsStrength, wordStartsSwitch } from './word-starts';
 
 /**
  * The tab's one engine. Its worker starts at once, so PDFium is ready by the time the PDF has downloaded; not in a
@@ -545,6 +545,11 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   // The page text everything reads (the text layer now; marks and find later): one glyph cache for the document.
   const [pageText] = useState(() => createPageTextProvider(backend, doc.open.doc));
   const wordStarts = useWordStartsController(doc, pageText, scans, scheduler, ui);
+  // With word starts on, a bold mark takes their weight when it is heavier (Strong), so a word the owner made bold reads
+  // as bold all through instead of heavier at its start (R90).
+  const wordStartsOn = useWordStarts();
+  const wordStartsGain = WORD_STARTS_GAIN[useWordStartsStrength()];
+  const markBoldGain = wordStartsOn && wordStartsGain > 1 ? wordStartsGain : undefined;
   const api = useRef<PageListApi | null>(null);
   const [textLayers] = useState(
     () =>
@@ -637,14 +642,23 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
     (box: PageBox, ctx: PageLayerContext) => (
       <>
         <WordStartsLayer controller={wordStarts} box={box} ctx={ctx} page={doc.open.pages[box.index]} />
-        {notes !== null && <MarkLayer source={notes.layer} box={box} ctx={ctx} page={doc.open.pages[box.index]} bold={bold} />}
+        {notes !== null && (
+          <MarkLayer
+            source={notes.layer}
+            box={box}
+            ctx={ctx}
+            page={doc.open.pages[box.index]}
+            bold={bold}
+            {...(markBoldGain !== undefined ? { boldGain: markBoldGain } : {})}
+          />
+        )}
         {notes !== null && viewerFeatures().map((f) => f.PageLayer && <f.PageLayer key={f.id} host={notes.host} box={box} ctx={ctx} />)}
         {findLayer(box, ctx)}
         <TextLayer controller={textLayers} box={box} ctx={ctx} />
         {linksFor(box)}
       </>
     ),
-    [textLayers, findLayer, linksFor, notes, doc, bold, wordStarts],
+    [textLayers, findLayer, linksFor, notes, doc, bold, wordStarts, markBoldGain],
   );
   // Every render still waiting fails at once when the engine stops: the first one tells the viewer, the rest are quiet.
   const stopped = useRef(false);
@@ -760,8 +774,12 @@ function useWordStartsController(
     controller.start();
     controller.setEnabled(wordStartsSwitch.get());
     const off = wordStartsSwitch.subscribe(() => controller.setEnabled(wordStartsSwitch.get()));
+    const gain = () => controller.setGain(WORD_STARTS_GAIN[wordStartsStrength.get()]);
+    gain();
+    const offGain = wordStartsStrength.subscribe(gain);
     return () => {
       off();
+      offGain();
       controller.dispose();
     };
   }, [controller]);

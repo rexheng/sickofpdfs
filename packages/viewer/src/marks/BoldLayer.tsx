@@ -42,6 +42,11 @@ export interface BoldLayerProps {
   text: BoldTextSource;
   /** The page's layer context: the bold is drawn on its pictures' pixel grid, in its underlay. */
   ctx: PageLayerContext;
+  /**
+   * The gain on each face's own bold (default 1: the face's own bold). While bold word starts are on, the viewer sets
+   * their gain when it is heavier, so a word the owner made bold reads as bold all through (R90).
+   */
+  gain?: number;
   /** Runs once the bold for the current `ranges` is drawn (S13 records its perf mark here). */
   onDrawn?: () => void;
 }
@@ -113,7 +118,7 @@ export async function drawBoldRange(p: { backend: Pick<PdfBackend, 'getGlyphShap
 
 /** The bold marks of one page. See the file comment. */
 export function BoldLayer(props: BoldLayerProps): JSX.Element {
-  const { backend, doc, pageIndex, page, viewRotation, ranges, text, ctx, onDrawn } = props;
+  const { backend, doc, pageIndex, page, viewRotation, ranges, text, ctx, onDrawn, gain = 1 } = props;
   // What is shown, for this document and page only.
   const [state, setState] = useState<{ doc: DocHandle; pageIndex: number; drawn: ReadonlyMap<string, DrawnRange> }>(() => ({ doc, pageIndex, drawn: new Map() }));
   const drawn = state.doc === doc && state.pageIndex === pageIndex ? state.drawn : NOTHING_DRAWN;
@@ -162,7 +167,7 @@ export function BoldLayer(props: BoldLayerProps): JSX.Element {
   // All ranges' glyphs, one canvas: where two marks cover a glyph it is drawn once.
   const glyphs = useMemo(() => keys.flatMap((k) => drawn.get(k)?.glyphs ?? []), [keys, drawn]);
   // The svg says when the canvas was drawn (data-sop-bold-drawn), so the bold shows as a change of the mark layer too.
-  useBoldCanvas(ctx, page, glyphs.length > 0 ? glyphs : null, 'sop-bold-canvas', (n) => svg.current?.setAttribute('data-sop-bold-drawn', String(n)));
+  useBoldCanvas(ctx, page, glyphs.length > 0 ? glyphs : null, 'sop-bold-canvas', (n) => svg.current?.setAttribute('data-sop-bold-drawn', String(n)), gain);
 
   const complete = keys.every((k) => drawn.has(k));
   useLayoutEffect(() => {

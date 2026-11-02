@@ -16,6 +16,7 @@ export class BoldCanvas {
   private readonly container: HTMLDivElement;
   private readonly canvases = new Map<string, { canvas: HTMLCanvasElement; drawn: string }>();
   private glyphs: readonly BoldGlyph[] = [];
+  private gain = 1;
   private version = 0;
   private readonly stop: () => void;
 
@@ -34,10 +35,11 @@ export class BoldCanvas {
     this.stop = ctx.onPaint(() => this.sync());
   }
 
-  /** The glyphs to draw (none: the canvases go). Redraws every picture now. */
-  setGlyphs(glyphs: readonly BoldGlyph[]): void {
-    if (glyphs === this.glyphs) return;
+  /** The glyphs to draw (none: the canvases go), and the gain on their faces' bold (paintBold). Redraws every picture now. */
+  setGlyphs(glyphs: readonly BoldGlyph[], gain = 1): void {
+    if (glyphs === this.glyphs && gain === this.gain) return;
     this.glyphs = glyphs;
+    this.gain = gain;
     this.version++;
     this.sync();
   }
@@ -75,7 +77,7 @@ export class BoldCanvas {
       if (!context) continue;
       context.clearRect(0, 0, canvas.width, canvas.height);
       const device = pageToDevice(this.page, paint.viewRotation, paint.width, paint.height, paint.rect);
-      drew += paintBold(context, this.glyphs, device, { x0: 0, y0: 0, x1: paint.width, y1: paint.height });
+      drew += paintBold(context, this.glyphs, device, { x0: 0, y0: 0, x1: paint.width, y1: paint.height }, this.gain);
       entry.drawn = want;
       any = true;
     }
@@ -90,10 +92,10 @@ export class BoldCanvas {
 }
 
 /**
- * Keeps a BoldCanvas for page `page` while the component is mounted, showing `glyphs` (null or none: nothing).
- * `onDrawn` runs after each redraw, with how many glyphs were drawn.
+ * Keeps a BoldCanvas for page `page` while the component is mounted, showing `glyphs` (null or none: nothing) with
+ * `gain` on their faces' bold. `onDrawn` runs after each redraw, with how many glyphs were drawn.
  */
-export function useBoldCanvas(ctx: PageLayerContext, page: PageSize, glyphs: readonly BoldGlyph[] | null, name: string, onDrawn?: (glyphs: number) => void): void {
+export function useBoldCanvas(ctx: PageLayerContext, page: PageSize, glyphs: readonly BoldGlyph[] | null, name: string, onDrawn?: (glyphs: number) => void, gain = 1): void {
   const painter = useRef<BoldCanvas | null>(null);
   const drawnRef = useRef(onDrawn);
   useLayoutEffect(() => {
@@ -115,6 +117,6 @@ export function useBoldCanvas(ctx: PageLayerContext, page: PageSize, glyphs: rea
     };
   }, [ctx, page, name, retry]);
   useLayoutEffect(() => {
-    painter.current?.setGlyphs(glyphs ?? []);
-  }, [glyphs, ctx, page, name, retry]);
+    painter.current?.setGlyphs(glyphs ?? [], gain);
+  }, [glyphs, gain, ctx, page, name, retry]);
 }

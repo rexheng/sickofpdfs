@@ -104,6 +104,7 @@ function inRanges(ranges: readonly BoldRange[]): (charIndex: number) => boolean 
  */
 export class WordStartsController {
   private on = false;
+  private bold = 1;
   private disposed = false;
   private running = false;
   private readonly slots = new Map<number, Slot>();
@@ -120,6 +121,18 @@ export class WordStartsController {
 
   get enabled(): boolean {
     return this.on;
+  }
+
+  /** The gain on each face's own bold ("How bold": 1 is the face's own bold). */
+  get gain(): number {
+    return this.bold;
+  }
+
+  /** Sets "How bold": every page redraws with it at once. */
+  setGain(gain: number): void {
+    if (gain === this.bold || !(gain > 0)) return;
+    this.bold = gain;
+    this.emit();
   }
 
   /** Turns the word starts on or off for every page of this document. Glyphs already read are kept, so on is instant. */
@@ -289,7 +302,7 @@ export class WordStartsController {
       if (this.disposed || this.work.get(index) !== w) return;
       const glyphs = boldGlyphs(set, inRanges(chunk.ranges));
       // Their emboldened outlines are worked out now, a chunk at a time, so drawing the page is only placing them.
-      await prepareGlyphs(glyphs);
+      await prepareGlyphs(glyphs, this.bold);
       if (this.disposed || this.work.get(index) !== w) return;
       for (const g of glyphs) w.kept.push(g);
       w.next = last + 1;
@@ -339,13 +352,14 @@ export const WordStartsLayer = memo(function WordStartsLayer({ controller, box, 
   const index = box.index;
   const marker = useRef<HTMLDivElement>(null);
   const shown = useSyncExternalStore(controller.subscribe, () => controller.page(index));
+  const gain = useSyncExternalStore(controller.subscribe, () => controller.gain);
   const on = shown !== null;
   useLayoutEffect(() => controller.attach(index, ctx), [controller, index, ctx]);
   useLayoutEffect(() => (on && marker.current ? controller.observe(index, marker.current) : undefined), [controller, index, ctx, on]);
   useBoldCanvas(ctx, page, shown?.glyphs ?? null, 'sop-word-starts-canvas', (n) => {
     marker.current?.toggleAttribute('data-drawn', n > 0);
     if (n > 0) performance.mark(WORD_STARTS_PERF_MARK, { detail: { pageIndex: index } });
-  });
+  }, gain);
   if (!on) return null;
   return <div ref={marker} className="sop-word-starts" data-sop-word-starts-page={index} aria-hidden="true" style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} />;
 });

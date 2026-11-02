@@ -84,9 +84,9 @@ function pathOf(em: ArrayLike<number>): Path2D {
   return path;
 }
 
-/** The glyph's emboldened outline as a Path2D in ems (made once per outline and face gain). */
-export function pathFor(g: Pick<BoldGlyph, 'bold' | 'shape'>): Path2D {
-  const s = strengthsFor(g);
+/** The glyph's emboldened outline as a Path2D in ems (made once per outline and strengths). `gain`: see strengthsFor. */
+export function pathFor(g: Pick<BoldGlyph, 'bold' | 'shape'>, gain = 1): Path2D {
+  const s = strengthsFor(g, gain);
   const key = `${s.x}|${s.y}|${s.shift}`;
   let path = g.shape.paths.get(key);
   if (!path) g.shape.paths.set(key, (path = pathOf(emboldenOutline(g.shape.em, s.x, s.y, s.shift))));
@@ -101,10 +101,10 @@ const PREPARE_SLICE_MS = 16;
  * outline costs about 25 µs once the code is warm (up to 0.4 ms the first time a tab draws bold); the work yields
  * every PREPARE_SLICE_MS, so it never holds the main thread.
  */
-export async function prepareGlyphs(glyphs: readonly BoldGlyph[]): Promise<void> {
+export async function prepareGlyphs(glyphs: readonly BoldGlyph[], gain = 1): Promise<void> {
   let sliceStart = performance.now();
   for (const g of glyphs) {
-    pathFor(g);
+    pathFor(g, gain);
     if (performance.now() - sliceStart > PREPARE_SLICE_MS) {
       await new Promise((resolve) => setTimeout(resolve, 0));
       sliceStart = performance.now();
@@ -125,12 +125,15 @@ const q = (v: number) => Math.round(v / QUANTUM) * QUANTUM;
  * a side at 100% on a DPR-1 screen and 0.5 or more from 150% up; rounding it up makes small stems heavier than the
  * face's real bold (measured: up to 29% at 100%), so the stems keep the face's own gain. Up and down, 0.5 px would move
  * the x-height and the baseline past the 0.3 px the gate allows.
+ *
+ * `gain` scales the face's gain (bold word starts' "How bold": light, medium 1, strong); the caps hold at every gain.
  */
-export function strengthsFor(g: Pick<BoldGlyph, 'bold' | 'shape'>): { x: number; y: number; shift: number } {
+export function strengthsFor(g: Pick<BoldGlyph, 'bold' | 'shape'>, gain = 1): { x: number; y: number; shift: number } {
   const caps = (g.shape.caps ??= counterLimits(g.shape.em));
-  const { x, top } = g.bold;
+  const x = g.bold.x * gain;
+  const top = g.bold.top * gain;
   const side = Math.min(x / 2, caps.x);
-  const bottom = Math.max(g.bold.bottom, BOTTOM_EM);
+  const bottom = Math.max(g.bold.bottom * gain, BOTTOM_EM);
   // Up and down: each side moves (top + bottom) / 2, then the glyph moves up by (top - bottom) / 2.
   const ySide = Math.min((top + bottom) / 2, caps.y);
   // And every hole keeps HOLE_AREA_KEEP of its area.
@@ -149,9 +152,9 @@ export interface PaintClip {
 /**
  * Paints `glyphs` emboldened on `context`, whose pixels are a picture of the page made with `device` (unrotated page
  * points → its device px: pageToDevice). Filled, never stroked; text that is only stroked (outlined) is left alone.
- * Returns how many glyphs were drawn.
+ * `gain` scales each face's gain (strengthsFor). Returns how many glyphs were drawn.
  */
-export function paintBold(context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, glyphs: readonly BoldGlyph[], device: TurnMatrix, clip?: PaintClip): number {
+export function paintBold(context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, glyphs: readonly BoldGlyph[], device: TurnMatrix, clip?: PaintClip, gain = 1): number {
   const [A, B, C, D, E, F] = device;
   const byColour = new Map<string, Path2D>();
   // One matrix, set for each glyph (addPath copies it): no allocation a glyph.
@@ -172,7 +175,7 @@ export function paintBold(context: CanvasRenderingContext2D | OffscreenCanvasRen
       const reach = 1.5 * Math.max(pxX, pxY);
       if (at.x + reach < clip.x0 || at.x - reach > clip.x1 || at.y + reach < clip.y0 || at.y - reach > clip.y1) continue;
     }
-    const path = pathFor(g);
+    const path = pathFor(g, gain);
     const colour = css(g.fill);
     let combined = byColour.get(colour);
     if (!combined) byColour.set(colour, (combined = new Path2D()));
