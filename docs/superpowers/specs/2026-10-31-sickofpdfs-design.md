@@ -404,6 +404,7 @@ One reference implementation in TypeScript, with its test cases, defines these r
     - The choice covers the reading's id, every download of it (its aliases) and the opened copy.
     - Only the owner's own explicit Save clears it.
   - **A PDF saved by the owner's click still gets the filter's protections.** A card, bank or ID statement is saved without searchable text, with the warning (D9), however the save starts.
+  - **The hard-block check reads every page at save time,** not only the pages the filter sampled. If an automatic save finds card, bank or ID numbers on any page, it stops before anything is written, and the chip says "Not saved: has card or bank numbers". An owner's click saves the PDF without searchable text, with the warning.
   - **Forget always asks,** even with no marks or notes, so "Never save this file" is always offered.
   - **If the owner's choices can't be read,** the PDF is treated as "not learning": nothing saves on its own, and a first mark asks.
   - **Reporting "not for learning" on a saved PDF** says it is still in the library, and offers Forget in the same note.
