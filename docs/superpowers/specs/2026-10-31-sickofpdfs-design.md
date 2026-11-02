@@ -418,7 +418,8 @@ One reference implementation in TypeScript, with its test cases, defines these r
   - Closing a tab whose notes are only in memory brings up the browser's "Leave site?" prompt.
   - A click on a "Not saved" chip asks "This looks like <kind>. Save it to your library anyway?", with Cancel as the default.
   - Report "It's for learning" offers "Save now".
-- **R97: "Never" and Forget also keep a salted text fingerprint** (a hash of the normalised text of the first pages), so a re-download with different bytes is still recognised. It is salted like R88/R89 and never kept as the text itself.
+- **R97: "Never save this file" (from the banner, or ticked in Forget) also keeps a salted text fingerprint** (kept in the never-save list, which is read at open); a plain Forget keeps none, because a later open is judged afresh by the filter.
+  Originally: (a hash of the normalised text of the first pages), so a re-download with different bytes is still recognised. It is salted like R88/R89 and never kept as the text itself.
 - **R91 (Nov 2, from the filter's privacy read): the owner's choices can only make the filter more careful, never less.**
   - **The allow list only turns "not sure" into "save".** It never saves a PDF the filter calls "not learning": no text, a CV, a receipt, a bank statement or a payslip. Hard blocks still beat everything.
   - **"Always for this site" names the place** on its button and in its note, for example "Always for moodle.lse.ac.uk" or "Always for the folder Week 3 readings". It is never offered for catch-all places:
