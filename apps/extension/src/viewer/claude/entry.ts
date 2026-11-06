@@ -122,6 +122,11 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
   const running = new Map<CommentId, { abort: AbortController; threadId: ThreadId }>();
   const queues = new Map<ThreadId, Promise<unknown>>();
   const presets = new Map<CommentId, 'explain-figure' | 'whole-document'>();
+  /**
+   * The questions already asked in this tab. A note is asked about once: the Claude UI's mention watch also calls `ask` when an
+   * @Claude note is sent, and a note this entry sent itself (`ask({ anchor })`) must not be asked twice.
+   */
+  const asked = new Set<CommentId>();
   /** The last pack each thread was answered with in this tab, for the Think harder estimate. */
   const packs = new Map<ThreadId, ContextPack>();
   const history = createThreadHistory();
@@ -329,13 +334,16 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
           return threadId;
         }
         session.typeDraft(made.commentId, `@Claude ${words}`);
+        asked.add(made.commentId); // before the send: the mention watch sees the sent note at once
         await session.send(made.commentId);
         question = session.state().comments.find((c) => c.id === made.commentId) ?? null;
       } else {
         threadId = target.threadId;
         question = lastQuestion(threadId);
+        if (question !== null && asked.has(question.id)) return threadId;
       }
       if (question === null) return threadId;
+      asked.add(question.id);
       start({ threadId, questionId: question.id, replyId: newId<CommentId>(), role: 'default', ...(o?.preset ? { preset: o.preset } : {}) });
       return threadId;
     },
