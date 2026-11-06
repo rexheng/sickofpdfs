@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import type { BrowserContext, Page, TestInfo } from '@playwright/test';
 import type { SopTestHooks } from '../../apps/extension/src/testing/test-hooks';
 import type { Glyph, PdfRect } from '../../packages/viewer/src/backend/types';
-import { hooks, type FixtureServer } from './test';
+import { freshOutputPath, hooks, type FixtureServer } from './test';
 import { breakVerdict, INVISIBLE, lineRelation } from './tl-copy.spec-blind';
 import { analyzeSelectionPaint, decodePng, parseCssColor, type Box, type PaintReport, type Rgba } from './tl-paint.spec-blind';
 
@@ -421,7 +421,7 @@ export async function judgePainting(page: Page, testInfo: TestInfo, pageIndex: n
   }
   await page.mouse.move(2, 2);
   await settle(page, 250);
-  const shot = await page.screenshot({ path: testInfo.outputPath(name) });
+  const shot = await page.screenshot({ path: freshOutputPath(testInfo, name) });
   const dpr = await page.evaluate(() => window.devicePixelRatio);
   const report = analyzeSelectionPaint(decodePng(shot), { orientation: map.orientation, dpr, pxPerPt: map.pxPerPt, lines, glyphs: selected, colour: await selectionColour(page) });
   return { ...report, lineCount: lines.length };

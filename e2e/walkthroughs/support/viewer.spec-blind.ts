@@ -3,7 +3,7 @@
 // Hooks are used for what a person cannot read off the screen (zoom value, scroll offsets, page count, the loaded
 // file's hash). Everything about what is SHOWN is measured from the screen or the canvases.
 import type { Locator, Page, TestInfo } from '@playwright/test';
-import { expect, hooks, test as harnessTest } from '../../support/test';
+import { expect, freshOutputPath, hooks, test as harnessTest } from '../../support/test';
 import { BAR } from './fixtures.spec-blind';
 import { decodePng, readAllStrips, type CssRect, type Rgba } from './pixels.spec-blind';
 import { installProbe, type BlankReport, type CanvasRead, type Probe } from './probe.spec-blind';
@@ -86,14 +86,24 @@ export const rt = (page: Page) => ({
 
 // ---- The test, with the probe installed before any page loads --------------------------------------------------
 
-export const test = harnessTest.extend<{ probeInstalled: true }>({
-  probeInstalled: [
-    async ({ context }, provide) => {
-      await context.addInitScript(installProbe, BAR);
-      await provide(true);
-    },
-    { auto: true },
-  ],
+export const test = harnessTest.extend({
+  context: async ({ context }, provide) => {
+    await context.addInitScript(installProbe, BAR);
+    await provide(context);
+  },
+  // a walkthrough made of steps: each step's own browser gets the probe too
+  step: async ({ step }, provide) => {
+    await provide((title, body, timeout) =>
+      step(
+        title,
+        async (b) => {
+          await b.context.addInitScript(installProbe, BAR);
+          await body(b);
+        },
+        timeout,
+      ),
+    );
+  },
 });
 
 export const probe = (page: Page) => ({
@@ -177,7 +187,7 @@ export async function waitForPageOnScreen(page: Page, n: number, timeout = 5_000
 
 /** Saves a screenshot under test-results/ and attaches it to the report. */
 export async function snap(page: Page, testInfo: TestInfo, name: string): Promise<void> {
-  const path = testInfo.outputPath(`${name}.png`);
+  const path = freshOutputPath(testInfo, `${name}.png`);
   await page.screenshot({ path });
   await testInfo.attach(name, { path, contentType: 'image/png' });
 }

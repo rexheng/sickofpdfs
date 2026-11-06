@@ -24,7 +24,7 @@ import { join } from 'node:path';
 import type { BrowserContext, Locator, Page, TestInfo } from '@playwright/test';
 import jpeg from 'jpeg-js';
 import { PDFDocument, StandardFonts, TextRenderingMode, rgb, setTextRenderingMode } from 'pdf-lib';
-import { expect } from '../../support/test';
+import { expect, freshOutputPath } from '../../support/test';
 import { findOnPage, glyphsOf, pageMap, settle, type PageMap } from '../../support/tl-blind.spec-blind';
 import { REPO_ROOT } from '../../support/launch';
 import { decodePng, type Box } from '../../support/tl-paint.spec-blind';
@@ -133,7 +133,7 @@ export async function stableShot(page: Page, name?: string, testInfo?: TestInfo)
     const next = await page.screenshot();
     if (Buffer.compare(last, next) === 0 || Date.now() > deadline) {
       if (name !== undefined && testInfo !== undefined) {
-        const path = testInfo.outputPath(`${name}.png`);
+        const path = freshOutputPath(testInfo, `${name}.png`);
         await writeFile(path, next);
         await testInfo.attach(name, { path, contentType: 'image/png' });
       }

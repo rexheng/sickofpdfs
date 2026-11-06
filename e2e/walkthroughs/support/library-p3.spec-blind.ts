@@ -17,7 +17,7 @@ import { readNetlogRequests } from '../../support/netlog';
 import { TEST_ASSETS } from '../../support/server';
 import { listOpfs, save as saveOf } from '../../support/save-probe.spec-blind';
 import { scanOpfs, store as storeOf, waitForStore, ZERO_STATS } from '../../support/store-probe.spec-blind';
-import { EXTENSION_ID, expect, hooks, probeIdb, sha256File, type NetGate } from '../../support/test';
+import { EXTENSION_ID, expect, freshOutputPath, hooks, probeIdb, sha256File, type NetGate } from '../../support/test';
 
 export { waitForStore };
 
@@ -689,7 +689,7 @@ export async function hasBackupSection(page: Page): Promise<boolean> {
 
 /** A screenshot into test-results/ (evidence, not a check). */
 export async function shotOf(page: Page, testInfo: TestInfo, name: string): Promise<void> {
-  const path = testInfo.outputPath(`${name}.png`);
+  const path = freshOutputPath(testInfo, `${name}.png`);
   try {
     await page.screenshot({ path });
     await testInfo.attach(name, { path, contentType: 'image/png' });

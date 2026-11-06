@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import type { BrowserContext, Locator, Page, TestInfo } from '@playwright/test';
 import { parseViewerUrl, type ViewerParams } from '../../../apps/extension/src/shared/viewer-url';
 import { REPO_ROOT } from '../../support/launch';
-import { EXTENSION_ID, VIEWER_ROOT, expect, test as harness } from '../../support/test';
+import { EXTENSION_ID, VIEWER_ROOT, expect, test as harness, type NetGate } from '../../support/test';
 import { startSite, type Site } from './site';
 
 // Shared by the takeover walkthroughs (PDF links, local files, embedded PDFs, the escape hatch, privacy).
@@ -192,13 +192,30 @@ export const siteTest = harness.extend<Sites>({
   ownOriginsOnly: [
     async ({ netgate, site, files }, provide) => {
       await provide();
-      const report = await netgate.report();
-      expect(report.recording, "the net log does not show the extension's own ping: the gate is not recording").toBe(true);
-      expect(
-        report.external.filter((u) => !site.owns(u) && !files.owns(u)),
-        'requests to anything but the fixture server and the two test sites',
-      ).toEqual([]);
+      await expectOwnOriginsOnly(netgate, site, files);
     },
     { auto: true },
   ],
+  // a walkthrough made of steps: each step's own browser is held to the same rule
+  step: async ({ step, site, files }, provide) => {
+    await provide((title, body, timeout) =>
+      step(
+        title,
+        async (b) => {
+          await body(b);
+          await expectOwnOriginsOnly(b.netgate, site, files);
+        },
+        timeout,
+      ),
+    );
+  },
 });
+
+async function expectOwnOriginsOnly(netgate: NetGate, site: Site, files: Site): Promise<void> {
+  const report = await netgate.report();
+  expect(report.recording, "the net log does not show the extension's own ping: the gate is not recording").toBe(true);
+  expect(
+    report.external.filter((u) => !site.owns(u) && !files.owns(u)),
+    'requests to anything but the fixture server and the two test sites',
+  ).toEqual([]);
+}

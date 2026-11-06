@@ -14,7 +14,7 @@ import { ownerReloadsAfterCrash } from '../../support/crash';
 import { dragSelect } from '../../support/drag-select';
 import { REPO_ROOT } from '../../support/launch';
 import { store as storeOf } from '../../support/store-probe.spec-blind';
-import { expect, hooks, type FixtureServer } from '../../support/test';
+import { expect, freshOutputPath, hooks, type FixtureServer } from '../../support/test';
 import {
   clearSelection,
   findOnPage,
@@ -207,7 +207,7 @@ export async function grab(page: Page, name?: string, testInfo?: { outputPath(n:
   const size = page.viewportSize();
   await page.mouse.move(4, (size?.height ?? 800) / 2);
   await settle(page, 220);
-  const path = name !== undefined && testInfo !== undefined ? testInfo.outputPath(`${name}.png`) : undefined;
+  const path = name !== undefined && testInfo !== undefined ? freshOutputPath(testInfo, `${name}.png`) : undefined;
   const png = await page.screenshot(path !== undefined ? { path } : {});
   if (path !== undefined && testInfo !== undefined) await testInfo.attach(name!, { path, contentType: 'image/png' });
   const dpr = await page.evaluate(() => window.devicePixelRatio);

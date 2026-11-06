@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { expect, test as base, type BrowserContext, type Page, type Worker } from '@playwright/test';
+import { expect, test as base, type BrowserContext, type Page, type TestInfo, type Worker } from '@playwright/test';
 import { EXTENSION_ID } from '../../apps/extension/scripts/extension-id.mjs';
 import { buildViewerUrl, VIEWER_PATH } from '../../apps/extension/src/shared/viewer-url';
 import { LOCAL_ONLY_DB, LOCAL_ONLY_STORES } from '../../apps/extension/src/local-only/secrets-store';
@@ -25,6 +26,18 @@ export async function copyFixture(name: string, dest: string): Promise<string> {
   await mkdir(dirname(dest), { recursive: true });
   await copyFile(join(TEST_ASSETS, name), dest);
   return dest;
+}
+
+/**
+ * `testInfo.outputPath(file)`, or, when a file of that name is already there (a walkthrough of several steps that each take
+ * the same screenshot), the same name with -2, -3, ... before the extension, so no step's picture overwrites another's.
+ */
+export function freshOutputPath(testInfo: { outputPath(n: string): string }, file: string): string {
+  const dot = file.lastIndexOf('.');
+  const [stem, ext] = dot > 0 ? [file.slice(0, dot), file.slice(dot)] : [file, ''];
+  let path = testInfo.outputPath(file);
+  for (let n = 2; existsSync(path); n++) path = testInfo.outputPath(`${stem}-${n}${ext}`);
+  return path;
 }
 
 /** Every test's browser starts with the service worker fetching this path from the fixture server (see GateReport.recording). */
@@ -83,6 +96,23 @@ interface Fixtures {
   tmp: string;
   netgate: NetGate;
   openViewer: (source: string, opts?: { back?: string; page?: number }) => Promise<Page>;
+  /**
+   * For a walkthrough made of several steps (one test, where there used to be one test per step): runs `body` as a test
+   * step with its own time limit, in a browser of its own that starts and ends as a test's does (a new copy of the
+   * profile, the same network gate), with its own fixture server and folder. So no step sees another step's notes,
+   * settings, reading position, requests or files.
+   */
+  step: (title: string, body: (b: StepBrowser) => void | Promise<void>, timeout?: number) => Promise<void>;
+}
+
+/** What one step gives its body: the fixtures of the same names, made for that step alone (a browser, a server, a folder). */
+export interface StepBrowser {
+  context: BrowserContext;
+  sw: Worker;
+  netgate: NetGate;
+  openViewer: Fixtures['openViewer'];
+  server: FixtureServer;
+  tmp: string;
 }
 
 interface WorkerFixtures {
@@ -120,57 +150,127 @@ export const test = base.extend<Options & Fixtures, WorkerFixtures>({
   // Playwright's own `context` fixture is replaced: a persistent Chromium with the test build, a copy of the seeded
   // profile and a net log. The gate runs after the test body.
   context: async ({ profiles, profile, networkGate, server, viewport, deviceScaleFactor }, provide, testInfo) => {
-    const userDataDir = await profiles.copy(profile);
-    const netlogPath = testInfo.outputPath('netlog.json');
-    const context = await launchExtension({
-      userDataDir,
-      netlogPath,
-      viewport,
-      ...(deviceScaleFactor !== undefined ? { deviceScaleFactor } : {}),
+    const run = await startGated({ profiles, profile, server, viewport, deviceScaleFactor, netlogPath: testInfo.outputPath('netlog.json') });
+    await provide(run.context);
+    await run.finish(networkGate, testInfo);
+  },
+
+  netgate: async ({ context }, provide) => {
+    await provide(gates.get(context)!);
+  },
+
+  sw: async ({ context }, provide) => {
+    await provide(await waitForExtensionWorker(context));
+  },
+
+  openViewer: async ({ context }, provide) => {
+    await provide(viewerOpener(context));
+  },
+
+  step: async ({ profiles, profile, networkGate, viewport, deviceScaleFactor }, provide, testInfo) => {
+    let n = 0;
+    await provide(async (title, body, timeout) => {
+      await base.step(
+        title,
+        async () => {
+          n += 1;
+          // A step's own fixture server and folder, as a test had: no step sees another's requests, mock routes or files.
+          const server = await startFixtureServer();
+          const tmp = await mkdtemp(join(tmpdir(), 'sop-tmp-'));
+          try {
+            const run = await startGated({ profiles, profile, server, viewport, deviceScaleFactor, netlogPath: testInfo.outputPath(`netlog-step-${n}.json`) });
+            try {
+              await body({ context: run.context, sw: await waitForExtensionWorker(run.context), netgate: gates.get(run.context)!, openViewer: viewerOpener(run.context), server, tmp });
+            } catch (error) {
+              await run.context.close().catch(() => {});
+              await rm(run.userDataDir, { recursive: true, force: true }).catch(() => {});
+              throw error;
+            }
+            await run.finish(networkGate, testInfo);
+          } finally {
+            await server.close();
+            await rm(tmp, { recursive: true, force: true });
+          }
+        },
+        timeout === undefined ? {} : { timeout },
+      );
     });
-    let closing: Promise<GateReport> | undefined;
-    const finish = () =>
-      (closing ??= (async () => {
-        await context.close();
-        await waitForNetlog(netlogPath); // under load the browser can still be writing the log after it has closed
-        const requests = await readNetlogRequests(netlogPath);
-        const claudePrefix = server.url('/claude/');
-        return {
-          external: await netlogExternalUrls(netlogPath, server.origin),
-          claude: requests.filter((r) => r.url.startsWith(claudePrefix)).map((r) => r.url),
-          browserServiceHosts: await netlogBrowserServiceHosts(netlogPath),
-          recording: requests.some((r) => r.url === server.url(GATE_PING) && r.initiator === `chrome-extension://${EXTENSION_ID}` && !r.browserService),
-        };
-      })());
-    let testReadIt = false;
-    gates.set(context, {
-      netlogPath,
-      report: () => {
-        testReadIt = true;
-        return finish();
-      },
+  },
+});
+
+/** Opens a viewer tab of `context` on `source`, as the `openViewer` fixture does. */
+function viewerOpener(context: BrowserContext): Fixtures['openViewer'] {
+  return async (source, opts = {}) => {
+    const url = buildViewerUrl({ source, back: opts.back ?? null, page: opts.page ?? null }, `chrome-extension://${EXTENSION_ID}/${VIEWER_PATH}`);
+    const page = await context.newPage();
+    await page.goto(url);
+    await page.waitForSelector(VIEWER_ROOT, { state: 'attached' });
+    return page;
+  };
+}
+
+/**
+ * Launches a persistent Chromium with the test build in a copy of `profile`, writing a net log, and waits until the
+ * extension is ready. `finish` closes it, removes the profile copy and applies the network gate (`networkGate`).
+ */
+async function startGated(o: {
+  profiles: WorkerFixtures['profiles'];
+  profile: ProfileKind;
+  server: FixtureServer;
+  viewport: { width: number; height: number } | null;
+  deviceScaleFactor: number | undefined;
+  netlogPath: string;
+}): Promise<{ context: BrowserContext; userDataDir: string; finish: (networkGate: Options['networkGate'], testInfo: TestInfo) => Promise<void> }> {
+  const { server, netlogPath } = o;
+  const userDataDir = await o.profiles.copy(o.profile);
+  const context = await launchExtension({
+    userDataDir,
+    netlogPath,
+    viewport: o.viewport,
+    ...(o.deviceScaleFactor !== undefined ? { deviceScaleFactor: o.deviceScaleFactor } : {}),
+  });
+  let closing: Promise<GateReport> | undefined;
+  const close = () =>
+    (closing ??= (async () => {
+      await context.close();
+      await waitForNetlog(netlogPath); // under load the browser can still be writing the log after it has closed
+      const requests = await readNetlogRequests(netlogPath);
+      const claudePrefix = server.url('/claude/');
+      return {
+        external: await netlogExternalUrls(netlogPath, server.origin),
+        claude: requests.filter((r) => r.url.startsWith(claudePrefix)).map((r) => r.url),
+        browserServiceHosts: await netlogBrowserServiceHosts(netlogPath),
+        recording: requests.some((r) => r.url === server.url(GATE_PING) && r.initiator === `chrome-extension://${EXTENSION_ID}` && !r.browserService),
+      };
+    })());
+  let testReadIt = false;
+  gates.set(context, {
+    netlogPath,
+    report: () => {
+      testReadIt = true;
+      return close();
+    },
+  });
+
+  try {
+    const worker = await waitForExtensionWorker(context); // fails with "extension did not load"
+    await worker.evaluate((u) => fetch(u).then((r) => r.status), server.url(GATE_PING));
+    // Ready means the takeover is registered: a PDF opened in the first moments must not race the worker's start-up.
+    await worker.evaluate(async () => {
+      const deadline = Date.now() + 10_000;
+      while (!(await chrome.storage.session.get('takeoverMode')).takeoverMode) {
+        if (Date.now() > deadline) throw new Error('the takeover was not registered');
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
     });
+  } catch (error) {
+    await context.close().catch(() => {});
+    await rm(userDataDir, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
 
-    try {
-      const worker = await waitForExtensionWorker(context); // fails with "extension did not load"
-      await worker.evaluate((u) => fetch(u).then((r) => r.status), server.url(GATE_PING));
-      // Ready means the takeover is registered: a PDF opened in the first moments must not race the worker's start-up.
-      await worker.evaluate(async () => {
-        const deadline = Date.now() + 10_000;
-        while (!(await chrome.storage.session.get('takeoverMode')).takeoverMode) {
-          if (Date.now() > deadline) throw new Error('the takeover was not registered');
-          await new Promise((resolve) => setTimeout(resolve, 20));
-        }
-      });
-    } catch (error) {
-      await context.close().catch(() => {});
-      await rm(userDataDir, { recursive: true, force: true }).catch(() => {});
-      throw error;
-    }
-
-    await provide(context);
-
-    const report = await finish();
+  const finish = async (networkGate: Options['networkGate'], testInfo: TestInfo) => {
+    const report = await close();
     await rm(userDataDir, { recursive: true, force: true }).catch(() => {});
     if (report.browserServiceHosts.length > 0) {
       testInfo.annotations.push({ type: 'not ours: Chromium services contacted', description: report.browserServiceHosts.join(', ') });
@@ -187,26 +287,9 @@ export const test = base.extend<Options & Fixtures, WorkerFixtures>({
       return;
     }
     expect(report.external, 'requests to anything but the fixture server').toEqual([]);
-  },
-
-  netgate: async ({ context }, provide) => {
-    await provide(gates.get(context)!);
-  },
-
-  sw: async ({ context }, provide) => {
-    await provide(await waitForExtensionWorker(context));
-  },
-
-  openViewer: async ({ context }, provide) => {
-    await provide(async (source, opts = {}) => {
-      const url = buildViewerUrl({ source, back: opts.back ?? null, page: opts.page ?? null }, `chrome-extension://${EXTENSION_ID}/${VIEWER_PATH}`);
-      const page = await context.newPage();
-      await page.goto(url);
-      await page.waitForSelector(VIEWER_ROOT, { state: 'attached' });
-      return page;
-    });
-  },
-});
+  };
+  return { context, userDataDir, finish };
+}
 
 const gates = new WeakMap<BrowserContext, NetGate>();
 
