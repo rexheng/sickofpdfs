@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { copyFileSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { defineConfig } from 'wxt';
 
 // The fixed key gives the extension the same id on every machine and build (see scripts/gen-key.mjs).
@@ -24,14 +25,30 @@ function sopTestHooks() {
   };
 }
 
+/**
+ * The test build number, set by the release script (`pnpm test-build <N>`, scripts/dev/make-test-build.mjs) through SOP_BUILD_NUMBER.
+ * It becomes `version_name` ("Test build 6", shown in chrome://extensions and Help → About) and the last part of `version` (0.1.6).
+ * The library compares `version_name` with the one it last saw to say "Updated to test build N" (R104). Without it (a dev build)
+ * the manifest keeps 0.1.0 and has no `version_name`, so no "Updated" note is ever shown.
+ */
+const buildNumber = process.env.SOP_BUILD_NUMBER;
+if (buildNumber !== undefined && !/^[1-9]\d{0,4}$/.test(buildNumber)) throw new Error(`SOP_BUILD_NUMBER must be a whole number such as 6, not "${buildNumber}"`);
+
 export default defineConfig({
   srcDir: 'src',
+  // R104: every build, test builds included, carries the update instructions in its root, so they land in every zip.
+  hooks: {
+    'build:done': (wxt) => {
+      copyFileSync(new URL('./HOW-TO-UPDATE.txt', import.meta.url), join(wxt.config.outDir, 'HOW-TO-UPDATE.txt'));
+    },
+  },
   modules: ['@wxt-dev/module-react'],
   // `wxt build` writes .output/chrome-mv3 and `wxt build --mode test` writes .output/chrome-mv3-test: the two never share a folder.
   outDirTemplate: '{{browser}}-mv{{manifestVersion}}{{modeSuffix}}',
   manifest: {
     name: 'sickofpdfs',
     // What this build does, in plain words (Help → About shows it too); say more as more ships.
+    ...(buildNumber !== undefined ? { version: `0.1.${buildNumber}`, version_name: `Test build ${buildNumber}` } : {}),
     description: 'A PDF reader that replaces Chrome’s, with highlights and comments.',
     key,
     minimum_chrome_version: '128',

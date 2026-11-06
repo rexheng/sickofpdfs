@@ -20,7 +20,9 @@
     "golden:record": "node scripts/gates/engine-golden.mjs record",
     "merge:wave": "node scripts/dev/merge-wave.mjs",
     "build": "pnpm -C apps/extension build",
-    "e2e": "pnpm fixtures && pnpm -C apps/extension build:e2e && playwright test -c e2e/playwright.config.ts"
+    "e2e": "pnpm fixtures && pnpm -C apps/extension build:e2e && playwright test -c e2e/playwright.config.ts",
+    "upgrade:check": "node scripts/dev/upgrade-check.mjs",
+    "test-build": "node scripts/dev/make-test-build.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",

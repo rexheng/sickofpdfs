@@ -15,6 +15,7 @@ import { useRecoveredNotes } from '../Notes/RecoveredNotes';
 import { useNotes } from '../Notes/use-notes';
 import styles from './Home.module.css';
 import { ResumeCard } from './ResumeCard';
+import { useUpdatedNote } from './updated-note';
 import { useContinueReading } from './use-continue';
 
 /** How many readings Continue reading asks for; it shows one row of what fits, so Recent notes stays in view. */
@@ -84,6 +85,7 @@ export function HomePage() {
   const now = Date.now();
 
   const state = continuing.state;
+  const [updated, dismissUpdated] = useUpdatedNote(state.kind === 'ready' ? state.total > 0 : null);
   const empty = state.kind === 'ready' && state.total === 0 && notes.state.kind === 'ready' && notes.state.items.length === 0;
 
   const open = (entry: { item: Parameters<typeof openReading>[0] }) =>
@@ -134,6 +136,11 @@ export function HomePage() {
 
   return (
     <ContentCard header={<PageTitle title="Welcome to your library" />}>
+      {updated !== null && (
+        <ViewNote>
+          {updated} <TextButton label="Got it" onClick={dismissUpdated} />
+        </ViewNote>
+      )}
       {recovered.length > 0 && (
         <ViewNote>
           {recovered.length === 1 ? '1 note' : `${recovered.length} notes`} couldn’t go back on {recovered.length === 1 ? 'its' : 'their'} PDF. {recovered.length === 1 ? 'It is' : 'They are'}{' '}

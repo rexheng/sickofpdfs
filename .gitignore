@@ -27,3 +27,4 @@ apps/extension/public/THIRD_PARTY_NOTICES.txt
 # the web library is built into the Worker's static assets (CL13); only the placeholder is committed
 apps/cloud/public/*
 !apps/cloud/public/.gitkeep
+test-results-upgrade/

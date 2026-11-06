@@ -21,7 +21,7 @@ export function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
   return (
     <Dialog open={open} title="About sickofpdfs" onOpenChange={onOpenChange} actions={[{ label: 'Close', onClick: () => onOpenChange(false) }]}>
       {manifest.description !== undefined && <p className={styles.line}>{manifest.description}</p>}
-      <p className={styles.line}>Version {manifest.version}</p>
+      <p className={styles.line}>{manifest.version_name ?? `Version ${manifest.version}`}</p>
       <p className={styles.line}>
         <a className={styles.link} href={chrome.runtime.getURL(LICENCES_PAGE)} target="_blank" rel="noopener noreferrer">
           Open-source licences

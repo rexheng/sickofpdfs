@@ -1,0 +1,39 @@
+HOW TO UPDATE sickofpdfs WITHOUT LOSING YOUR NOTES
+===================================================
+
+Your readings, marks, comments, tags and settings live inside Chrome,
+under this extension's name. Updating by replacing the files and
+pressing Reload keeps all of them.
+
+Do this each time you get a new test build (Windows):
+
+1. Keep ONE folder for sickofpdfs, for example C:\sickofpdfs.
+   Always load the extension from that same folder. Never make a
+   second copy somewhere else.
+
+2. Close any sickofpdfs tabs that are still open (the library and any
+   PDF you are reading). If you were typing a note, it is kept safe
+   and comes back, but closing the tabs first is calmer.
+
+3. Unzip the new test build into that same folder, C:\sickofpdfs.
+   When Windows asks, choose "Replace the files in the destination".
+
+4. Open Chrome and go to:   chrome://extensions
+   Find sickofpdfs and press the round reload arrow on its card.
+
+5. Open your library (click the sickofpdfs icon). You should see:
+   "Updated to test build N. Your library is safe."
+
+NEVER press "Remove" on the sickofpdfs card.
+Remove deletes your whole library and all your notes. They cannot be
+brought back from Chrome. The same happens if you remove the extension
+and add it again.
+
+For extra safety, turn on a backup before you update:
+   Library -> Settings -> Backup.
+Pick a folder, and your library is copied there. If anything ever goes
+wrong, Settings -> Restore brings it back.
+
+Why one folder: Chrome remembers an unpacked extension by its folder.
+If you load it from a second folder, Chrome may ask you to remove the
+first one, and removing it deletes the library.
