@@ -635,8 +635,9 @@ test.describe('TB4 ruling: Forget wins over an unsent note in another tab (code 
       expect(await saveKind(b), 'tab B never saves it again on its own').not.toMatch(/^saved$/);
       await a.waitForTimeout(250);
     }
-    await expect.poll(() => chipText(a), { timeout: 5000 }).toMatch(/not saved: removed from your library/i);
-    await expect.poll(() => chipText(b), { timeout: 5000 }).toMatch(/not saved: removed from your library/i);
+    // TB6 header (wrong guess adjusted): the short chip says "Not saved · you removed it".
+    await expect.poll(() => chipText(a), { timeout: 5000 }).toMatch(/not saved · you removed it/i);
+    await expect.poll(() => chipText(b), { timeout: 5000 }).toMatch(/not saved · you removed it/i);
     expect((await storeOf(a).stats()).documents, 'no document row').toBe(0);
     await shot(a, testInfo, 'tab-a-forgotten');
 

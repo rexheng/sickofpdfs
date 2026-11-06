@@ -62,7 +62,8 @@ test('a receipt leaves no trace; one click saves it; Forget removes it again; on
 
   // 1. It displays normally, with the chip.
   expect(await decided(page), 'the filter calls a receipt "not learning", not merely "not sure"').toBe('not-learning');
-  await expect(chipOf(page)).toContainText(/not saved: looks like/i);
+  // TB6 header (wrong guess adjusted): the chip is short, "Not saved · invoice or receipt"; "looks like …" moved to its hover.
+  await expect(chipOf(page)).toContainText(/not saved · /i);
   const label = await chipText(page);
   expect(label, 'the chip says what it looks like').toMatch(/receipt|invoice/i);
   await shot(page, testInfo, 'chip-not-saved');
