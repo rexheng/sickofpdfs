@@ -7,6 +7,7 @@
 // - an "@Claude" note gets no save question for Claude's sake;
 // - the thread shows the plain refusal as a row of Claude's that stays (never a toast), and nothing reaches Anthropic;
 // - saved later anyway (R102), the row says "Claude did not read this".
+import type { Page } from '@playwright/test';
 import { claudeReplay } from '../support/claude-replay';
 import { forceVerdict } from '../support/filter-verdict';
 import { expect, hooks, test } from '../support/test';
@@ -20,6 +21,16 @@ test.use({ networkGate: 'claude' });
 test.setTimeout(150_000);
 
 const HINT = /claude doesn.t read private files/i;
+
+/** Closes an open menu as the owner does (Esc), and with a click beside the page if a hint's tooltip kept it open. */
+async function closeMenus(page: Page): Promise<void> {
+  await page.mouse.move(AWAY.x, AWAY.y);
+  await page.keyboard.press('Escape');
+  if (!(await page.getByRole('menu').count())) return;
+  await page.waitForTimeout(500);
+  if (await page.getByRole('menu').count()) await page.mouse.click(AWAY.x, AWAY.y);
+  await expect(page.getByRole('menu'), 'the menu closes').toHaveCount(0);
+}
 const REFUSAL = /claude doesn.t read this pdf\. it looked private when you opened it, so nothing was sent/i;
 
 test('R105: on a PDF judged not learning, every Claude item is greyed out, an @Claude note gets no save question, and the thread says why; nothing is sent', async ({ context, openViewer, server }, testInfo) => {
@@ -40,9 +51,7 @@ test('R105: on a PDF judged not learning, every Claude item is greyed out, an @C
   await ask.hover();
   await expect(page.getByRole('tooltip').filter({ hasText: HINT }), 'its hint says why').toBeVisible();
   await shot(page, testInfo, 'menu-ask-claude-greyed');
-  await page.mouse.move(AWAY.x, AWAY.y);
-  await page.keyboard.press('Escape');
-  await expect(markMenu(page), 'the menu closes').toHaveCount(0);
+  await closeMenus(page);
 
   // Tools → Ask Claude about the whole document: greyed out too.
   await page.getByRole('menubar').getByRole('menuitem', { name: 'Tools', exact: true }).click();
@@ -51,9 +60,7 @@ test('R105: on a PDF judged not learning, every Claude item is greyed out, an @C
   await whole.hover();
   await expect(page.getByRole('tooltip').filter({ hasText: HINT })).toBeVisible();
   await shot(page, testInfo, 'tools-whole-document-greyed');
-  await page.mouse.move(AWAY.x, AWAY.y);
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('menu'), 'the Tools menu closes').toHaveCount(0);
+  await closeMenus(page);
 
   // A note typed by hand: the @ suggestion is greyed out with the hint, and the save question never shows for it.
   await selectPassage(page, ATTENTION, SENTENCE_1);
