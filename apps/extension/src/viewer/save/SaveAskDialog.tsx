@@ -170,6 +170,17 @@ function catchTypedAhead(e: KeyboardEvent): void {
   typedAhead.text += e.key;
 }
 
+/**
+ * R96 (no lost notes): letters held for the note box are a note kept only in memory, so closing the tab asks "Leave site?" first,
+ * as it does for a note in its box (session.ts). Without this, a point or page note whose question opened before its first letter
+ * went into the box was lost silently with the tab.
+ */
+function guardHeldLetters(e: BeforeUnloadEvent): void {
+  if ((!typedAhead.asking && !typedAhead.active) || typedAhead.text.trim() === '') return;
+  e.preventDefault();
+  e.returnValue = ''; // older Chrome needs it set as well
+}
+
 function giveBackToNoteBox(): void {
   const tryFocus = (): void => {
     if (document.querySelector('[role="dialog"]') !== null) return; // still closing
@@ -245,7 +256,11 @@ export function SaveAskDialog({ save }: SaveAskDialogProps) {
   // Added when the viewer starts, before the page's own key handlers, so it sees a typed-ahead letter first.
   useEffect(() => {
     window.addEventListener('keydown', catchTypedAhead, true);
-    return () => window.removeEventListener('keydown', catchTypedAhead, true);
+    window.addEventListener('beforeunload', guardHeldLetters);
+    return () => {
+      window.removeEventListener('keydown', catchTypedAhead, true);
+      window.removeEventListener('beforeunload', guardHeldLetters);
+    };
   }, []);
   const answer = (yes: boolean): void => {
     if (save === null || answered.current) return;
