@@ -21,15 +21,16 @@ export interface HeaderProps {
 }
 
 /**
- * Drive's PDF preview header (02 section 4.10), 64 px on the viewer canvas: "Back to page" where Drive has its close
- * button (in words, with its arrow: an arrow alone read as the browser's own Back), the 24 px PDF tile, the PDF's name
- * (its title once known, else the file name; TB4) in Google Sans 18 with the File, View, Tools and Help menus under it, and at the right the status chip and
- * "Open in Chrome's viewer" where Drive has "Open in new tab". The spec's escape hatch "is always there":
- * File → Open in Chrome's viewer and this button.
+ * Drive's PDF preview header (02 section 4.10), made compact as Google Docs' title block (TB6): 44 px on the viewer
+ * canvas. "Back to page" where Drive has its close button (in words, with its arrow: an arrow alone read as the
+ * browser's own Back), the 24 px PDF tile, the PDF's name (its title once known, else the file name; TB4) in Google Sans
+ * 18 with the File, View, Tools and Help menus tight under it, and at the right the status chip and "Open in Chrome's
+ * viewer" where Drive has "Open in new tab". The spec's escape hatch "is always there": File → Open in Chrome's viewer
+ * and this button.
  */
 export function Header({ name, hint = name, onBack, menus, onOpenInChrome, chromeRefused, status, returnFocus }: HeaderProps) {
   return (
-    <header className={styles.header} data-theme="dark" data-viewer-chrome="">
+    <header className={styles.header} data-theme="dark" data-viewer-chrome="" data-viewer-back={onBack !== null ? '' : undefined}>
       {onBack !== null && (
         <Tooltip label="Go back to the web page this PDF was in">
           <TextButton icon="arrow_back" label="Back to page" onClick={onBack} className={styles.back} />
@@ -54,7 +55,7 @@ export function Header({ name, hint = name, onBack, menus, onOpenInChrome, chrom
         )}
         {status}
         {onOpenInChrome !== null && (
-          <IconButton icon="open_in_new" label="Open in Chrome’s viewer" size={40} iconSize={20} onClick={onOpenInChrome} />
+          <IconButton icon="open_in_new" label="Open in Chrome’s viewer" onClick={onOpenInChrome} />
         )}
       </div>
     </header>

@@ -33,7 +33,7 @@ export interface ToolbarProps {
 const IDLE_STORE = createViewerStore();
 
 /**
- * Drive's toolbar pill (02 section 4.10), 16 px in, in a 48 px row under the header: "Page [n] / N", Download and
+ * Drive's toolbar pill (02 section 4.10), 16 px in, in a 40 px row under the header (compact since TB6): "Page [n] / N", Download and
  * Print, then zoom out, the zoom level (a menu of fit modes and presets) and zoom in, then Find (Ctrl+F).
  * In a narrow window (compact.ts) Download and Print move into the "More" menu at the end, with Area note.
  */

@@ -1,10 +1,11 @@
 /*
- * Drive's PDF preview header (02 section 4.10) [live]: 64 px on the viewer canvas (#1b1b1b).
- *   close (here "Back to page"): 32 px button at x 16, y 16, with a 24 px icon;
- *   PDF tile: 24 px, at x 58 after the button, or x 16 without it; vertically centred;
- *   file name: Google Sans 18/20 #e3e3e3, top y 12, 16 px after the tile;
- *   menu bar: y 34, 24 px buttons whose labels line up with the file name (the buttons' 9 px padding hangs left);
- *   right: "Open in new tab", a 40 px button, 16 px from the edge.
+ * The viewer header, on the viewer canvas (#1b1b1b). Drive's PDF preview header (02 section 4.10) [live] made compact
+ * (TB6, the owner: "this header is also a little bit too big"), as Google Docs' tight title block: 44 px, not 64.
+ *   "Back to page": a 32 px button at x 16, vertically centred;
+ *   PDF tile: 24 px, 10 px after the button, or at x 16 without it; vertically centred;
+ *   file name: Google Sans 18/20 #e3e3e3, top y 3, 16 px after the tile;
+ *   menu bar: y 23–43, 20 px buttons (the labels' own 14/20 line) whose labels line up with the file name;
+ *   right: the status chip (32 px) and "Open in Chrome's viewer", a 32 px button, 16 px from the edge.
  */
 .header {
   position: absolute;
@@ -43,17 +44,19 @@
   margin-inline-end: calc(var(--space-4) - var(--space-1));
 }
 
+/* The file name shrinks, with an ellipsis; the menu bar under it never does, so it never runs into the chip. */
 .titles {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   gap: var(--viewer-menubar-gap);
   align-self: flex-start;
-  min-inline-size: 0;
-  padding-block-start: var(--space-3);
+  min-inline-size: min-content;
+  padding-block-start: var(--viewer-title-top);
 }
 
 .name {
+  contain: inline-size;
   margin: 0;
   overflow: hidden;
   color: var(--gm3-sys-color-on-surface);
@@ -68,18 +71,23 @@
   margin-inline-start: calc(-1 * var(--menubar-btn-pad-x));
 }
 
+/*
+ * The right end never shrinks: the status chip is short (TB6) and is never cut. The file name gives up the room instead,
+ * with an ellipsis (its tooltip has the whole name).
+ */
 .end {
   display: flex;
   flex: none;
   gap: var(--space-2);
   align-items: center;
-  max-inline-size: 50%;
   margin-inline-start: var(--space-4);
 }
 
+/* Chrome refused the escape: two short lines at most in the 44 px header. */
 .alert {
+  max-inline-size: min(var(--viewer-alert-max-w), 32vw);
   margin: 0;
   color: var(--gm3-sys-color-error);
-  font: var(--type-body);
+  font: var(--type-tooltip);
   font-variation-settings: "opsz" 17;
 }

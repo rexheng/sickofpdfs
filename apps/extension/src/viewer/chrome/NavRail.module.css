@@ -1,6 +1,6 @@
 /*
- * The navigation rail and the page area beside it (02 section 4.10) [live]. Under the 48 px toolbar row, the rail
- * starts 16 px down (y 128, level with the first page):
+ * The navigation rail and the page area beside it (02 section 4.10) [live]. Under the 40 px toolbar row, the rail
+ * starts 16 px down (y 100, level with the first page; Drive's is at y 128):
  *   the toggle column, 62 px: 40 px round toggles at x 16, 8 px apart, the first at y 136;
  *   the thumbnails from x 62, or the outline (wider, so its titles can be read; it lies over the canvas beside the rail,
  *   so the pages never move when the tab changes).
@@ -61,7 +61,7 @@
 }
 
 /*
- * The page list, under the toolbar row: with its 16 px gap the first page starts at y 128, as in Drive. It is its own
+ * The page list, under the toolbar row: with its 16 px gap the first page starts at y 100 (Drive's: 128). It is its own
  * stacking context, so the pages' layers (canvases, text and links) stay under the rail when the rail lies over them.
  * It ends --viewer-end-inset before the right edge: the room the notes panel takes while it is open (notes-panel/).
  * It starts --viewer-banner-h lower while the "not sure" banner is shown under the toolbar (R95, save/NotSureBanner.tsx).

@@ -10,9 +10,9 @@ export interface PillToolbarProps {
 const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
 /**
- * Drive's 48 px toolbar pill (02 section 4.10): #333537 in the dark chrome, fully rounded, 8 px padding, items 8 px
- * apart, text in Google Sans Text 14/20 500 on-surface-variant. Text that starts the pill (Drive's "Page") wants
- * a further 16 px start margin, and 8 px more before the next separator, as in Drive.
+ * Drive's toolbar pill (02 section 4.10), 40 px in the compact viewer (TB6; Drive's is 48): #333537 in the dark chrome,
+ * fully rounded, 4 px 8 px padding, items 8 px apart, text in Google Sans Text 14/20 500 on-surface-variant. Text that
+ * starts the pill (Drive's "Page") wants a further 16 px start margin, and 8 px more before the next separator, as in Drive.
  *
  * Every control stays a Tab stop. Left and Right also move between controls, except inside a text field, where they
  * move the caret.

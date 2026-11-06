@@ -183,14 +183,17 @@
   --space-14: 56px;
   --space-16: 64px;
 
-  /* Viewer dimensions, 02 section 4.10 */
-  --viewer-header-h: 64px;
-  --viewer-pill-h: 48px;
-  --viewer-pill-pad: 8px;
+  /*
+   * Viewer dimensions, 02 section 4.10. TB6 (owner: "this header is also a little bit too big"): more compact than Drive's
+   * 64 px header and 48 px pill, as Google Docs' tight title block: 44 + 40 = 84 px of chrome, not 112.
+   */
+  --viewer-header-h: 44px;
+  --viewer-pill-h: 40px;
+  --viewer-pill-pad: 4px 8px; /* a 32 px button in the 40 px pill, 8 px in from the round ends as in Drive */
   --icon-btn: 32px;
   --icon-btn-lg: 40px;
-  --menubar-btn-h: 24px;
-  --menubar-btn-target-h: 32px; /* the File / View / Tools / Help hit area: 4 px above and below the 24 px button */
+  --menubar-btn-h: 20px;        /* TB6: Drive's are 24 px; the label's own 20 px line in the compact header */
+  --menubar-btn-target-h: 32px; /* the File / View / Tools / Help hit area: 6 px above and below the 20 px button */
   --menu-dark-w: 288px;
   --menu-dark-item-h: 36px; /* Drive's measured dark viewer menu; the 32px row below is the light library menu */
   --menu-item-h: 32px;
@@ -264,7 +267,9 @@
 
   /* Viewer chrome (Task 23): Drive's PDF preview header and toolbar pill, 02 section 4.10 [live] */
   --viewer-back-gap: 10px;          /* close (back) button 16–48, PDF tile from 58 */
-  --viewer-menubar-gap: 2px;        /* file name 12–32, menu bar 34–58 */
+  --viewer-title-top: 3px;          /* TB6: file name 3–23, menu bar 23–43 in the 44 px header (Drive: 12–32, 34–58 in 64) */
+  --viewer-menubar-gap: 0px;
+  --viewer-alert-max-w: 384px;      /* "Chrome can't open this file…" in two 12/16 lines at the header's right end */
   --viewer-zoom-w: 73px;            /* the zoom box between − and + */
   --type-viewer-zoom: 400 14px/24px var(--font-display); /* "100%" in the zoom box, on-surface */
   --menu-compact-item-h: 40px;      /* zoom list rows */

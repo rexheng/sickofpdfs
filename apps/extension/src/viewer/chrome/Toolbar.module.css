@@ -1,5 +1,6 @@
 /*
- * The 48 px row under the header that holds Drive's toolbar pill, 16 px in from each side (02 section 4.10) [live]:
+ * The 40 px row under the header that holds Drive's toolbar pill (48 px in Drive; compact since TB6), 16 px in from
+ * each side (02 section 4.10) [live]:
  *   "Page" 16 px after the pill's 8 px padding (x 40), the 33 × 24 page box, "/" and the total 8 px apart, and 8 px
  *   more before the separator;
  *   Download and Print 12 px apart;

@@ -1,5 +1,6 @@
 /*
- * Toolbar pill [live]: 48 px tall, surface-container-highest (#333537 dark), radius --shape-full, padding 8 px.
+ * Toolbar pill [live]: --viewer-pill-h tall (Drive's 48 px; the viewer's compact 40 px since TB6), surface-container-highest
+ * (#333537 dark), radius --shape-full, padding --viewer-pill-pad (Drive's 8 px; 4 px 8 px in the 40 px pill).
  * Controls sit 8 px apart. Separators are 1x12 px outline-variant (#444746 dark) with 8 px on each side.
  * A text field inside the pill takes the compact 24 px form with centred text (Drive's page box).
  */
