@@ -8,7 +8,8 @@
 //   answered.
 // R100 (TB5 student critic, the blocker): Enter never answers it. The owner presses Enter to send a note, so Enter on a bank
 // statement saved the bank statement. Now:
-// - the letters typed while it is open show in it ("Your note: …"), so the owner sees where they went;
+// - the letters typed while it is open show in it ("Your note: …"), after those the note box held already, so the owner sees
+//   where they went;
 // - only a click on a button, or Tab to a button and then Enter or Space, answers it. Esc means No;
 // - this holds for every PDF, so a quick note on a receipt can never save it.
 // Closing the tab while the notes are only in memory brings up the browser's "Leave site?" question (session.ts).
@@ -74,6 +75,12 @@ function subscribeHeld(cb: () => void): () => void {
   heldListeners.add(cb);
   return () => heldListeners.delete(cb);
 }
+/**
+ * The note as it will be once the question is answered: the box's own letters, then the held ones. The question often opens
+ * on a note's first letter (R96; since R105, whenever the box has the caret first), and that letter is already in the box,
+ * which the question covers: without it the owner would read "Your note: point note" and think the "A" was lost.
+ */
+const noteSoFar = (): string => (typedAhead.asking ? `${openNoteBox()?.value ?? ''}${typedAhead.text}` : '');
 function setHeld(text: string): void {
   typedAhead.text = text;
   for (const cb of heldListeners) cb();
@@ -330,6 +337,7 @@ export function SaveAskDialog({ save }: SaveAskDialogProps) {
   }, [open]);
   // R100: what was typed while it is open shows in it, so the owner sees the letters were kept (and that Enter did not send).
   const held = useSyncExternalStore(subscribeHeld, heldText);
+  const shown = useSyncExternalStore(subscribeHeld, noteSoFar);
   // R105: the question showed before the note's words were known (the box took the caret late), and the note asks Claude: No.
   useEffect(() => {
     if (!open || answered.current) return;
@@ -354,11 +362,11 @@ export function SaveAskDialog({ save }: SaveAskDialogProps) {
       <div ref={focusText} tabIndex={-1} className={styles.questionBody}>
         <p className={cards.body}>{whyAsking(save.whyNotSaved ?? undefined, save.decision?.ownerSave !== undefined)}</p>
         <p className={cards.body}>If you choose No, your notes stay only until you close this tab.</p>
-        {held.trim() !== '' && (
+        {shown.trim() !== '' && (
           <p className={styles.heldNote} aria-live="polite">
             <span className={styles.heldLabel}>Your note: </span>
             {/* The end of a long note: that is where the owner is typing. */}
-            {held.length > HELD_SHOWN ? `…${held.slice(-HELD_SHOWN)}` : held}
+            {shown.length > HELD_SHOWN ? `…${shown.slice(-HELD_SHOWN)}` : shown}
           </p>
         )}
       </div>
