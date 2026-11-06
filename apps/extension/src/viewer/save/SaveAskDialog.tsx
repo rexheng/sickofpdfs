@@ -28,8 +28,10 @@ import styles from './SaveDialogs.module.css';
  * (`focusOnClose`), and again if the box is drawn anew as the save lands; never over a field that has it already.
  */
 // The box is in its margin card, or in the notes panel when the cards are folded (R98: the rail no longer folds for them).
+// Only a box for a note that is not sent yet: once the note is sent its card shows a reply box, and the question's late
+// timers (the type-ahead's) must never pull the keyboard into that one, or the next Ctrl+Alt+M would be dropped.
 const openNoteBox = (): HTMLTextAreaElement | null =>
-  document.querySelector<HTMLTextAreaElement>(`[id^="${CARD_ID_PREFIX}"] textarea, [id^="sop-panel-note-"] textarea`);
+  document.querySelector<HTMLTextAreaElement>(`[id^="${CARD_ID_PREFIX}"] textarea[aria-label="Note"], [id^="sop-panel-note-"] textarea[aria-label="Note"]`);
 
 /** How long letters typed right after the answer are kept for the note box, at most. */
 const TYPE_AHEAD_MS = 1500;
