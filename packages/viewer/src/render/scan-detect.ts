@@ -2,8 +2,8 @@
 // selection needs Chrome's own viewer (which runs OCR) until Phase 7.
 //
 // A page with a real text layer is never a scan (Test build 5 and 6 critics: a slide deck is not a scan). A slide's
-// few words over a picture are real text; and a deck's picture slide is a picture, not a scan, when most of the deck's
-// pages have text.
+// few words over a picture are real text; and a deck's picture slide (a landscape page, in a PDF whose pages mostly
+// have text) is a picture, not a scan. A portrait scanned page among text pages is still a scan.
 import type { DocHandle, PageSize, PdfBackend } from '../backend/types';
 
 /** Fewer visible characters than this counts as no text layer (stray page numbers, a running head of one word). */
@@ -17,16 +17,20 @@ const MAX_OBJECTS = 500;
 const BUDGET_MS = 10;
 /** Pages read, spread through the PDF, to tell whether it is a text PDF (once a document, when a page may be a scan). */
 const DOC_SAMPLE_PAGES = 12;
-/** A PDF whose sampled pages have text this often is a text PDF: a page of it with no text is a picture, not a scan. */
+/** A PDF whose sampled pages have text this often is a text PDF: a slide of it with no text is a picture, not a scan. */
 const TEXT_DOC_SHARE = 0.5;
+/** A page at least this much wider than tall, as displayed, is shaped like a slide (16:9 is 1.78, 4:3 is 1.33). */
+const SLIDE_ASPECT = 1.25;
+
+const slideShaped = (p: PageSize) => (p.rotation % 180 === 0 ? p.width / p.height : p.height / p.width) >= SLIDE_ASPECT;
 
 const letters = (text: string) => text.match(/\p{L}/gu)?.length ?? 0;
 
 /**
  * Answers, once per page, whether it is a scan: fewer than MIN_TEXT_CHARS non-space characters of text, no real text
  * (fewer than MIN_REAL_LETTERS letters with visible glyphs), image objects covering at least a quarter of the page, and
- * a PDF that is not a text PDF (most of its pages without text). The engine calls are quick, but they share the engine
- * with rendering, so ask for the page in view once the reader has settled on it, not for every page.
+ * not a picture slide (a slide-shaped page of a text PDF). The engine calls are quick, but they share the engine with
+ * rendering, so ask for the page in view once the reader has settled on it, not for every page.
  */
 export class ScanDetector {
   private readonly answers = new Map<number, Promise<boolean>>();
@@ -58,12 +62,13 @@ export class ScanDetector {
   }
 
   private async detect(pageIndex: number): Promise<boolean> {
-    if (!this.pages[pageIndex]) return false;
+    const page = this.pages[pageIndex];
+    if (!page) return false;
     const text = await this.backend.getPageText(this.doc, pageIndex);
     if (text.replace(/\s/g, '').length >= MIN_TEXT_CHARS) return false;
     if (letters(text) >= MIN_REAL_LETTERS && (await this.hasRealText(pageIndex))) return false;
     if (!(await this.isImagePage(pageIndex))) return false;
-    return !(await this.isTextDocument());
+    return !(slideShaped(page) && (await this.isTextDocument()));
   }
 
   /**
