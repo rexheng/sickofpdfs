@@ -4,22 +4,30 @@
 // What it shows, by the reply row's `meta.status` (contract §3) and, in the tab that runs it, the live stream:
 // - pending: "Reading 4 passages…" with three dots, and Stop.
 // - streaming: the words as they come, with a caret, then the status line ("Searching the web for …") and Stop.
-// - done: the answer with its chips: "Page 4" (jumps and flashes), the site of a web source (opens a new tab), and
-//   "Figure 3 · Page 5" for a figure (jumps and selects it). Under it Think harder, and on hover the model and the cost.
+// - done: the answer with its chips: "Page 4" (jumps and lights the cited sentence), the site of a web source (opens a
+//   new tab), and "Figure 3 · Page 5" for a figure (jumps and selects it). Under the newest everyday answer of the thread,
+//   Think harder, with the model and the cost at the right end of its row on hover (cost-words.ts).
 // - error: the text so far stays, then one plain sentence and the buttons that help: Try again, Open Settings.
+// A Think harder answer says so at its top: "Thought harder · Claude Opus 5.5", the model's name from the Models list.
 //
 // The body is Claude's Markdown, drawn as React elements only. Links are limited to `cite:`, `web:` and https (plan
-// §4 F): any other address keeps its words and loses its link. Repeated chips in a row are drawn once (contracts §6
-// leaves merging to the UI); the stored body keeps every one. Maths (`$…$`, `$$…$$`) is drawn with KaTeX (ClaudeMaths.tsx).
+// §4 F): any other address keeps its words and loses its link. Repeated chips for one page, or one source, with only
+// spaces or commas between them are drawn once (contracts §6 leaves merging to the UI); the stored body keeps every one.
+// A chip stays on the line of the word before it, so it reads as the citation of its sentence, never as the start of the
+// next one. Maths (`$…$`, `$$…$$`) is drawn with KaTeX (ClaudeMaths.tsx).
+//
+// The library's Notes page and Home draw replies with this same view (LibraryClaudeReply below), so a reply reads the
+// same everywhere, maths included. There the chips open the note's reading instead of jumping in it.
 import type { ClaudeReplyMeta, CommentRow, ModelRole, PageCitation, ReplyError, ThreadRow, WebSource } from '@sop/core';
-import { type Block, type CommentView, type Inline, parseMarkdown, TextButton } from '@sop/ui';
-import { Fragment, type ReactNode, useMemo } from 'react';
-import { CitationChip } from './CitationChip';
+import { type Block, type CommentView, Icon, type Inline, parseMarkdown, TextButton } from '@sop/ui';
+import { Fragment, type ReactNode, useContext, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { CitationChip, ReplyChipPlace, type ReplyChipPlaceValue } from './CitationChip';
 import { extractMaths, MathView, type MathSpan, splitMaths } from './ClaudeMaths';
 import styles from './ClaudeReplyView.module.css';
+import { costWords } from './cost-words';
 import { FigureChip } from './FigureChip';
-import { claudeUi, type ClaudeUiHost, formatUsd, openClaudeSettings, useClaudeUi } from './host';
-import { figurePageOf } from './jump';
+import { claudeUi, type ClaudeUiHost, openClaudeSettings, useClaudeUi } from './host';
+import { figurePageOf } from './jump-target';
 import { readingLabel, ReplyStatus, useReplyLive } from './ReplyStatus';
 import { SourceChip } from './SourceChip';
 import { ThinkHarderButton } from './ThinkHarderButton';
@@ -28,7 +36,7 @@ export interface ClaudeReplyViewProps {
   /** The thread the reply is in: its id (for Think harder) and its anchor (a figure note's figure). */
   thread: Pick<ThreadRow, 'id' | 'anchor'>;
   comment: CommentView;
-  /** The thread's comments, oldest first: Think harder shows only on the last answer to a question. */
+  /** The thread's comments, oldest first: Think harder shows only on the newest everyday answer. */
   comments?: readonly CommentView[];
 }
 
@@ -64,10 +72,12 @@ export function ClaudeReplyView({ thread, comment, comments }: ClaudeReplyViewPr
   const running = status === 'pending' || status === 'streaming';
   const stop = inThisTab && running && host?.stop !== undefined ? () => host.stop?.(comment.id) : undefined;
   const label = live?.label ?? (!inThisTab ? ELSEWHERE : status === 'pending' || body === '' ? readingLabel(undefined) : WRITING);
+  const harder = meta.role === 'think-harder' ? <ThoughtHarder meta={meta} host={host} /> : null;
 
   if (status === 'pending' || (status === 'streaming' && body === '')) {
     return (
       <div className={styles.reply} data-claude-status={status}>
+        {harder}
         <ReplyStatus label={label} onStop={stop} />
       </div>
     );
@@ -75,6 +85,7 @@ export function ClaudeReplyView({ thread, comment, comments }: ClaudeReplyViewPr
 
   return (
     <div className={styles.reply} data-claude-status={status}>
+      {harder}
       {body !== '' && <ClaudeMarkdown source={body} citations={citations} sources={sources} streaming={status === 'streaming'} />}
       {figures.length > 0 && (
         <div className={styles.figures}>
@@ -101,7 +112,22 @@ function byNumber<T extends { n: number }>(a: readonly T[] | undefined, b: reado
   return out;
 }
 
+/**
+ * "Thought harder · Claude Opus 5.5" at the top of a Think harder answer (TB6, visual 9 and experience 13), in the 12/16 of
+ * the time under a name. The name is the one the Models list gave the model that answered.
+ */
+function ThoughtHarder({ meta, host }: { meta: Meta; host: ClaudeUiHost | null }) {
+  const name = meta.modelName ?? host?.model?.('think-harder')?.displayName ?? null;
+  return (
+    <p className={styles.harder}>
+      <Icon name="psychology" size={20} className={styles.harderIcon} />
+      <span>{name === null ? 'Thought harder' : `Thought harder · ${name}`}</span>
+    </p>
+  );
+}
+
 function ErrorBlock({ error, host, replyId }: { error: ReplyError | null; host: ClaudeUiHost | null; replyId: CommentRow['id'] }) {
+  const place = useContext(ReplyChipPlace);
   const code = error?.code ?? null;
   const settings = code !== null && SETTINGS_ERRORS.has(code);
   const retry = host?.retry !== undefined && (code === null || !NO_RETRY.has(code));
@@ -110,7 +136,7 @@ function ErrorBlock({ error, host, replyId }: { error: ReplyError | null; host: 
       <p className={code !== null && CALM.has(code) ? `${styles.errorText} ${styles.calm}` : styles.errorText}>{error?.message ?? GENERIC_ERROR}</p>
       {(settings || retry) && (
         <div className={styles.errorActions}>
-          {settings && <TextButton label="Open Settings" variant="tonal" onClick={openClaudeSettings} />}
+          {settings && <TextButton label="Open Settings" variant="tonal" onClick={place.openSettings ?? openClaudeSettings} />}
           {retry && <TextButton label="Try again" icon="refresh" className={settings ? undefined : styles.flush} onClick={() => host?.retry?.(replyId)} />}
         </div>
       )}
@@ -118,34 +144,61 @@ function ErrorBlock({ error, host, replyId }: { error: ReplyError | null; host: 
   );
 }
 
+/**
+ * Under a finished reply. The newest everyday answer of the thread offers Think harder, and the model and cost sit at the
+ * right end of that row (on hover or keyboard focus), clear of the reply box below. Without the button the cost line
+ * takes no room between two comments; under the last comment of the thread it has a line of its own, so it never touches
+ * the reply box.
+ */
 function Footer({ meta, host, thread, comment, comments }: { meta: Meta; host: ClaudeUiHost | null; thread: ClaudeReplyViewProps['thread']; comment: CommentView; comments: readonly CommentView[] | undefined }) {
+  const place = useContext(ReplyChipPlace);
   const role = meta.role ?? null;
-  const offer = host?.thinkHarder !== undefined && role === 'default' && !answeredHarder(comment, comments);
-  const busy = (comments ?? []).some((c) => c.author === 'claude' && isRunning(c.meta as Meta));
+  const list = comments ?? [];
+  const offer = host?.thinkHarder !== undefined && role === 'default' && isNewestEveryday(comment, list) && !answeredHarder(comment, list);
+  const busy = list.some((c) => c.author === 'claude' && isRunning(c.meta as Meta));
   const cost = costLine(meta, host, role);
-  // The cost line takes no room: it shows on hover in the gap under the reply, so replies keep Docs' spacing.
-  return (
-    <>
-      {offer && (
-        <div className={styles.footer}>
-          <ThinkHarderButton
-            model={host?.model?.('think-harder')?.displayName ?? null}
-            usd={host?.thinkHarderUsd?.(thread.id) ?? null}
-            disabled={busy}
-            onClick={() => host?.thinkHarder?.(thread.id, comment.id)}
-          />
-        </div>
-      )}
-      {cost !== null && <span className={styles.cost}>{cost}</span>}
-    </>
-  );
+  const last = list.length === 0 || list.at(-1)?.id === comment.id;
+  if (offer) {
+    return (
+      <div className={styles.footer}>
+        <ThinkHarderButton
+          model={host?.model?.('think-harder')?.displayName ?? null}
+          usd={host?.thinkHarderUsd?.(thread.id) ?? null}
+          disabled={busy}
+          onClick={() => host?.thinkHarder?.(thread.id, comment.id)}
+        />
+        {cost !== null && <span className={`${styles.cost} ${styles.costEnd}`}>{costParts(cost)}</span>}
+      </div>
+    );
+  }
+  if (cost === null) return null;
+  // The library has no reply box under a note, so its cost line never needs a line of its own.
+  const own = last && place.openReading === undefined;
+  return <span className={`${styles.cost} ${own ? styles.costLine : styles.costGap}`}>{cost}</span>;
+}
+
+/** "Haiku 5.5 · less than 1¢" in parts that each stay whole: beside Think harder it may take two lines, broken at a dot. */
+function costParts(cost: string): ReactNode {
+  const parts = cost.split(' · ');
+  return parts.map((part, i) => (
+    <Fragment key={i}>
+      <span className={styles.nowrap}>{i < parts.length - 1 ? `${part} ·` : part}</span>
+      {i < parts.length - 1 && ' '}
+    </Fragment>
+  ));
 }
 
 const isRunning = (m: Meta) => m.status === 'pending' || m.status === 'streaming';
 
+/** No everyday answer from Claude comes after this one in the thread (one being written counts): Think harder goes here. */
+function isNewestEveryday(comment: CommentView, list: readonly CommentView[]): boolean {
+  const at = list.findIndex((c) => c.id === comment.id);
+  if (at < 0) return true;
+  return !list.slice(at + 1).some((c) => c.author === 'claude' && (c.meta as Meta).role === 'default');
+}
+
 /** A Think harder reply to the same question already follows this one: the button has done its job. */
-function answeredHarder(comment: CommentView, comments: readonly CommentView[] | undefined): boolean {
-  const list = comments ?? [];
+function answeredHarder(comment: CommentView, list: readonly CommentView[]): boolean {
   const at = list.findIndex((c) => c.id === comment.id);
   const question = (comment.meta as Meta).questionId ?? null;
   return list.slice(at + 1).some((c) => {
@@ -154,17 +207,80 @@ function answeredHarder(comment: CommentView, comments: readonly CommentView[] |
   });
 }
 
-/** "Haiku 5.5 · 0.07¢ · 1 web search", shown on hover. Null when there is nothing to say (a claude.ai reply). */
+/**
+ * "Haiku 5.5 · less than 1¢ · 1 web search", shown on hover. A Think harder answer names its model at its top, so its line
+ * says only the cost. Null when there is nothing to say (a claude.ai reply).
+ */
 export function costLine(meta: Meta, host: Pick<ClaudeUiHost, 'model'> | null, role: ModelRole | null): string | null {
   if (meta.via === 'connector' || role === null) return null;
   // "Claude" is already the name above the reply; the line names the model only.
-  const model = (meta.modelName ?? host?.model?.(role)?.displayName ?? null)?.replace(/^claude\s+/iu, '') ?? null;
+  const model = role === 'think-harder' ? null : ((meta.modelName ?? host?.model?.(role)?.displayName ?? null)?.replace(/^claude\s+/iu, '') ?? null);
   const usage = meta.usage ?? null;
   const parts: string[] = [];
   if (model !== null) parts.push(model);
-  if (usage !== null && usage.usd > 0) parts.push(formatUsd(usage.usd));
+  if (usage !== null && usage.usd > 0) parts.push(costWords(usage.usd));
   if (usage !== null && usage.webSearches > 0) parts.push(usage.webSearches === 1 ? '1 web search' : `${usage.webSearches} web searches`);
   return parts.length === 0 ? null : parts.join(' · ');
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The library's Notes page and Home
+// ---------------------------------------------------------------------------------------------------------------------
+
+export interface LibraryClaudeReplyProps {
+  /** The note the reply is on (a figure note's chip names its figure's page). */
+  thread: Pick<ThreadRow, 'id' | 'anchor'>;
+  comment: CommentView;
+  /** Opens the note's reading, at the note: what a page or figure chip does here. */
+  onOpenReading(this: void): void;
+  /** Settings → Claude, in this library tab. */
+  onOpenSettings(this: void): void;
+  /** Home's short card: at most 4 lines, then "Show more" (as CommentItem clamps the owner's notes). */
+  clamp?: boolean;
+  onShowMore?(this: void): void;
+}
+
+/**
+ * A reply from Claude on a note card in the library (TB6, student 3): the same view as in the viewer, so Markdown and maths
+ * read the same. Nothing here can run a reply, so there is no Stop, Try again or Think harder; a chip opens the note's
+ * reading (where it jumps), and a web source opens as it does in the viewer.
+ */
+export function LibraryClaudeReply({ thread, comment, onOpenReading, onOpenSettings, clamp = false, onShowMore }: LibraryClaudeReplyProps) {
+  const place = useMemo<ReplyChipPlaceValue>(() => ({ openReading: onOpenReading, openSettings: onOpenSettings }), [onOpenReading, onOpenSettings]);
+  const box = useRef<HTMLDivElement>(null);
+  const [overflows, setOverflows] = useState(false);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!clamp || el === null) {
+      setOverflows(false);
+      return;
+    }
+    const measure = () => setOverflows(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    const seen = new ResizeObserver(measure);
+    seen.observe(el);
+    return () => seen.disconnect();
+  }, [clamp, comment.body]);
+  return (
+    <ReplyChipPlace.Provider value={place}>
+      <div ref={box} className={clamp ? styles.clamped : undefined}>
+        <ClaudeReplyView thread={thread} comment={comment} />
+      </div>
+      {clamp && overflows && (
+        <button
+          type="button"
+          className={styles.showMore}
+          tabIndex={-1}
+          onClick={(event) => {
+            event.stopPropagation();
+            onShowMore?.();
+          }}
+        >
+          Show more
+        </button>
+      )}
+    </ReplyChipPlace.Provider>
+  );
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -178,34 +294,54 @@ interface BodyContext {
   maths: readonly MathSpan[];
 }
 
+/** A chip as Markdown read it, plus the citations merged into it (other passages of the same page). */
+type ChipNode = Extract<Inline, { t: 'chip' }> & { also?: readonly number[] };
+
 function ClaudeMarkdown({ source, citations, sources, streaming }: { source: string; citations: BodyContext['citations']; sources: BodyContext['sources']; streaming: boolean }) {
   // The maths comes out first, so Markdown never reads a formula's `_`, `*` or `\{` as its own.
   const { blocks, maths } = useMemo(() => {
     const m = extractMaths(source);
-    return { blocks: parseMarkdown(m.text).map(mergeChips), maths: m.maths };
+    return { blocks: parseMarkdown(m.text), maths: m.maths };
   }, [source]);
+  const merged = useMemo(() => blocks.map((b) => mergeChips(b, (n) => citations.get(n)?.pageIndex ?? null)), [blocks, citations]);
   const ctx: BodyContext = { citations, sources, maths };
   const tail = streaming ? <span className={styles.caret} aria-hidden="true" /> : undefined;
   return (
     <div className={styles.body} aria-busy={streaming ? 'true' : undefined}>
-      {blocks.map((block, i) => renderBlock(block, i, ctx, i === blocks.length - 1 ? tail : undefined))}
-      {blocks.length === 0 && tail}
+      {merged.map((block, i) => renderBlock(block, i, ctx, i === merged.length - 1 ? tail : undefined))}
+      {merged.length === 0 && tail}
     </div>
   );
 }
 
-/** Two chips for the same page or source with only spaces between them are drawn once. */
-function mergeChips(block: Block): Block {
+/** Between two chips only this: spaces, or a comma or semicolon ("[Page 4], [Page 4]"). */
+const CHIP_GAP = /^[\s,;]*$/u;
+
+/**
+ * Two chips for the same page, or the same source, with only a gap between them are drawn once (student 4). Page chips
+ * of different passages on one page merge too; the chip keeps them all, so its jump can light the best of them.
+ */
+export function mergeChips(block: Block, pageOf: (n: number) => number | null): Block {
+  const same = (a: ChipNode, b: ChipNode): boolean => {
+    if (a.kind !== b.kind) return false;
+    if (a.n === b.n) return true;
+    if (a.kind !== 'cite') return false;
+    const pa = pageOf(a.n);
+    return pa !== null && pa === pageOf(b.n);
+  };
   const inline = (nodes: Inline[]): Inline[] => {
     const out: Inline[] = [];
     for (const node of nodes) {
       const n: Inline = 'c' in node ? { ...node, c: inline(node.c) } : node;
       if (n.t === 'chip') {
-        // the last chip, skipping white space after it
+        // the last chip, skipping a gap after it
         let j = out.length - 1;
-        while (j >= 0 && out[j]?.t === 'text' && (out[j] as { v: string }).v.trim() === '') j--;
+        while (j >= 0 && out[j]?.t === 'text' && CHIP_GAP.test((out[j] as { v: string }).v)) j--;
         const prev = out[j];
-        if (prev?.t === 'chip' && prev.kind === n.kind && prev.n === n.n) {
+        if (prev?.t === 'chip' && same(prev, n)) {
+          const p: ChipNode = prev;
+          const known = n.n === p.n || p.also?.includes(n.n) === true;
+          out[j] = known ? p : { ...p, also: [...(p.also ?? []), n.n] };
           out.length = j + 1;
           continue;
         }
@@ -222,7 +358,7 @@ function mergeChips(block: Block): Block {
     case 'ol':
       return { ...block, items: block.items.map(inline) };
     case 'quote':
-      return { ...block, c: block.c.map(mergeChips) };
+      return { ...block, c: block.c.map((b) => mergeChips(b, pageOf)) };
     case 'pre':
       return block;
   }
@@ -292,7 +428,7 @@ function withMaths(text: string, ctx: BodyContext): ReactNode {
     if (m === undefined) continue;
     const after = parts[i + 1];
     // Only a short formula: a long one must still be able to break across lines.
-    const stick = !m.display && m.tex.length <= 40 && typeof after === 'string' ? (/^[,.;:!?)\]]+/u.exec(after)?.[0] ?? '') : '';
+    const stick = !m.display && m.tex.length <= SHORT_TEX && typeof after === 'string' ? (/^[,.;:!?)\]]+/u.exec(after)?.[0] ?? '') : '';
     out.push(
       stick === '' ? (
         <MathView key={i} tex={m.tex} display={m.display} />
@@ -308,50 +444,123 @@ function withMaths(text: string, ctx: BodyContext): ReactNode {
   return out;
 }
 
+/** An inline formula this long or shorter may sit on one line with what follows it. */
+const SHORT_TEX = 40;
+
 /** Only https links keep their target (plan §4 F); anything else is drawn as its words. */
 const HTTPS = /^https:\/\//iu;
 
+/** The words of some inline nodes, for finding the sentence a chip cites (formulas left out). */
+function plainOf(nodes: readonly Inline[]): string {
+  return nodes.map((n) => ('v' in n ? n.v : 'c' in n ? plainOf(n.c) : n.t === 'br' ? ' ' : '')).join('');
+}
+const withoutMaths = (s: string) => s.replace(/\d+/gu, ' ');
+
+/** The last sentence of `before` (the words a chip follows), or the first of `after` when nothing comes before it. */
+export function citedSentence(before: string, after: string): string {
+  const b = withoutMaths(before).replace(/\s+/gu, ' ').trim();
+  if (b !== '') {
+    const body = b.replace(/[.!?:;]+["”’)]*$/u, '');
+    const cut = Math.max(body.lastIndexOf('. '), body.lastIndexOf('? '), body.lastIndexOf('! '));
+    return (cut >= 0 ? body.slice(cut + 2) : body).trim();
+  }
+  const a = withoutMaths(after).replace(/\s+/gu, ' ').trim();
+  return (/^[^.!?]*/u.exec(a)?.[0] ?? a).trim();
+}
+
+/** The word before a chip, glued to it with no break; a long one (a web address) is left alone. */
+const GLUE_MAX = 32;
+
+/**
+ * Inline nodes as React elements. A chip, or a run of chips with only spaces between them, goes in one unbreakable span
+ * with the word before it, so the chips end their sentence's line instead of starting the next one (student 4).
+ */
 function renderInline(nodes: Inline[], ctx: BodyContext): ReactNode[] {
-  return nodes.map((node, i) => {
-    switch (node.t) {
-      case 'text':
-        return <Fragment key={i}>{withMaths(node.v, ctx)}</Fragment>;
-      case 'br':
-        return <br key={i} />;
-      case 'strong':
-        return <strong key={i}>{renderInline(node.c, ctx)}</strong>;
-      case 'em':
-        return <em key={i}>{renderInline(node.c, ctx)}</em>;
-      case 'del':
-        return <del key={i}>{renderInline(node.c, ctx)}</del>;
-      case 'code':
-        return (
-          <code key={i} className={styles.code}>
-            {node.v}
-          </code>
-        );
-      case 'link':
-        return HTTPS.test(node.href) ? (
-          <a
-            key={i}
-            className={styles.link}
-            href={node.href}
-            target="_blank"
-            rel="noopener noreferrer"
-            referrerPolicy="no-referrer"
-            onClick={(event) => event.stopPropagation()}
-          >
-            {renderInline(node.c, ctx)}
-          </a>
-        ) : (
-          <Fragment key={i}>{renderInline(node.c, ctx)}</Fragment>
-        );
-      case 'chip':
-        return node.kind === 'cite' ? (
-          <CitationChip key={i} label={node.label} citation={ctx.citations.get(node.n) ?? null} />
-        ) : (
-          <SourceChip key={i} label={node.label} source={ctx.sources.get(node.n) ?? null} />
-        );
+  const out: ReactNode[] = [];
+  // The words since the last chips: the sentence the next chip cites.
+  let since: Inline[] = [];
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    if (node.t !== 'chip') {
+      out.push(renderNode(node, i, ctx));
+      since.push(node);
+      continue;
     }
-  });
+    const run: ChipNode[] = [node];
+    while (i + 1 < nodes.length) {
+      const a = nodes[i + 1];
+      const b = nodes[i + 2];
+      if (a?.t === 'chip') {
+        run.push(a);
+        i += 1;
+      } else if (a?.t === 'text' && a.v.trim() === '' && b?.t === 'chip') {
+        run.push(b);
+        i += 2;
+      } else break;
+    }
+    // The word before: taken off the text drawn just now, and drawn again inside the span with the chips.
+    let lead = '';
+    const prev = since.at(-1);
+    if (prev?.t === 'text' && out.length > 0) {
+      const m = /(\S+)\s*$/u.exec(prev.v);
+      const word = m?.[1] ?? '';
+      const longMaths = splitMaths(word).some((p) => typeof p === 'number' && (ctx.maths[p]?.tex.length ?? 0) > SHORT_TEX);
+      if (m !== null && word.length <= GLUE_MAX && !longMaths) {
+        lead = word;
+        out[out.length - 1] = <Fragment key={`${i}-before`}>{withMaths(prev.v.slice(0, m.index), ctx)}</Fragment>;
+      }
+    }
+    const sentence = citedSentence(plainOf(since), plainOf(nodes.slice(i + 1)));
+    out.push(
+      <span key={i} className={styles.cited}>
+        {lead !== '' && withMaths(lead, ctx)}
+        {run.map((chip, k) => renderChip(chip, k, ctx, sentence))}
+      </span>,
+    );
+    since = [];
+  }
+  return out;
+}
+
+function renderChip(node: ChipNode, key: number, ctx: BodyContext, sentence: string): ReactNode {
+  if (node.kind !== 'cite') return <SourceChip key={key} label={node.label} source={ctx.sources.get(node.n) ?? null} />;
+  const also = (node.also ?? []).map((n) => ctx.citations.get(n)).filter((c): c is PageCitation => c !== undefined);
+  return <CitationChip key={key} label={node.label} citation={ctx.citations.get(node.n) ?? null} also={also} sentence={sentence} />;
+}
+
+function renderNode(node: Exclude<Inline, { t: 'chip' }>, i: number, ctx: BodyContext): ReactNode {
+  switch (node.t) {
+    case 'text':
+      return <Fragment key={i}>{withMaths(node.v, ctx)}</Fragment>;
+    case 'br':
+      return <br key={i} />;
+    case 'strong':
+      return <strong key={i}>{renderInline(node.c, ctx)}</strong>;
+    case 'em':
+      return <em key={i}>{renderInline(node.c, ctx)}</em>;
+    case 'del':
+      return <del key={i}>{renderInline(node.c, ctx)}</del>;
+    case 'code':
+      return (
+        <code key={i} className={styles.code}>
+          {node.v}
+        </code>
+      );
+    case 'link':
+      return HTTPS.test(node.href) ? (
+        <a
+          key={i}
+          className={styles.link}
+          href={node.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          referrerPolicy="no-referrer"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {renderInline(node.c, ctx)}
+        </a>
+      ) : (
+        <Fragment key={i}>{renderInline(node.c, ctx)}</Fragment>
+      );
+  }
 }

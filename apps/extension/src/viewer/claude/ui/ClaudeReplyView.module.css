@@ -1,7 +1,8 @@
 /*
  * A reply from Claude inside a Docs card (02 section 4.11): the body is Docs' comment body (14/20 in on-surface-variant,
- * paragraphs 8 px apart), the chips sit on its lines, and the actions come under it in one quiet row: Think harder at
- * the left, the model and cost at the right (shown on hover or keyboard focus, so the card stays calm).
+ * paragraphs 8 px apart), the chips end the lines of the sentences they cite, and the actions come under it in one quiet
+ * row: Think harder at the left, the model and cost at the right end (shown on hover or keyboard focus, so the card stays
+ * calm).
  */
 .reply {
   position: relative;
@@ -74,6 +75,35 @@
   white-space: nowrap;
 }
 
+/*
+ * The last word of a sentence and its chips, kept on one line: a chip ends its sentence's line and never starts the next
+ * line, where it would read as a heading for the next sentence (TB6, student 4). A small gap sets it off from the word.
+ */
+.cited {
+  white-space: nowrap;
+}
+
+.cited > :not(:first-child) {
+  margin-inline-start: var(--space-1);
+}
+
+/* "Thought harder · Claude Opus 5.5" at the top of a Think harder answer: the 12/16 of the time under a name. */
+.harder {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  margin: 0 0 var(--space-2);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-docs-comment-time);
+  letter-spacing: var(--tracking-tight);
+}
+
+.harderIcon {
+  --_size: var(--sop-chip-icon);
+
+  color: var(--sop-claude-accent);
+}
+
 .link {
   color: var(--gm3-sys-color-primary);
   text-decoration: underline;
@@ -139,35 +169,79 @@
 
 .footer {
   display: flex;
-  flex-wrap: wrap;
   gap: var(--space-2);
   align-items: center;
   margin-block-start: var(--space-3);
 }
 
 /*
- * "Haiku 5.5 · 0.07¢ · 1 web search": in the 16–20 px gap under the reply, at the right, taking no room, so replies keep
- * Docs' spacing. 12/16, the size of the time under a name.
+ * "Haiku 5.5 · less than 1¢ · 1 web search": 12/16, the size of the time under a name. It shows while the pointer is on
+ * the reply or the keyboard is in it; screen readers always read it.
  */
 .cost {
-  position: absolute;
-  inset-block-start: 100%;
-  inset-inline: 0;
   overflow: hidden;
   color: var(--gm3-sys-color-on-surface-variant);
   font: var(--type-docs-comment-time);
   letter-spacing: var(--tracking-tight);
-  text-align: end;
   white-space: nowrap;
   text-overflow: ellipsis;
   opacity: 0;
   transition: opacity 120ms ease-out;
 }
 
-/* The cost line shows while the pointer is on the reply, or the keyboard is in it. Screen readers always read it. */
+/*
+ * At the right end of the Think harder row (TB6, visual 9): clear of the reply box, and of the button's tooltip below it.
+ * In a narrow card it takes two lines, broken at a dot; two 16 px lines are the button's 32 px.
+ */
+.costEnd {
+  flex: 1 1 0;
+  min-inline-size: 0;
+  overflow: visible;
+  white-space: normal;
+  text-align: end;
+}
+
+/* The last reply of a thread with no Think harder: a line of its own, at the right, so it never touches the reply box. */
+.costLine {
+  display: block;
+  margin-block-start: var(--space-2);
+  text-align: end;
+}
+
+/* A reply with more comments after it: in the gap under it, at the right, taking no room (Docs' spacing between comments). */
+.costGap {
+  position: absolute;
+  inset-block-start: 100%;
+  inset-inline: 0;
+  text-align: end;
+}
+
 .reply:hover .cost,
 .reply:focus-within .cost {
   opacity: 1;
+}
+
+/* Home's short card: 4 lines of the reply, then "Show more" (the look CommentItem gives the owner's notes). */
+.clamped {
+  max-block-size: calc(var(--sop-card-clamp-lines) * var(--space-5));
+  overflow: hidden;
+}
+
+.showMore {
+  display: block;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gm3-sys-color-primary);
+  font: var(--type-docs-comment-time);
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+  cursor: pointer;
+}
+
+.showMore:hover {
+  text-decoration: underline;
 }
 
 @keyframes blink {

@@ -3,7 +3,7 @@
 // the page in a new tab, and only an https address opens (jump.ts). It never opens inside the viewer.
 import type { WebSource } from '@sop/core';
 import { ReplyChip } from './CitationChip';
-import { isHttps, openWebSource } from './jump';
+import { isHttps, openWebSource } from './jump-target';
 
 /** "example.org" from "https://www.example.org/a/b"; the label from the body when the address is not usable. */
 export function siteName(url: string, fallback: string): string {

@@ -1,13 +1,27 @@
-// "Page 4" in a reply from Claude (plan §4 F; R74: "Page N" everywhere): a small tonal pill on the text line that jumps
-// to the cited passage and flashes it. Hovering it shows the cited words, so the owner can check a claim without leaving
-// the thread. The stored body writes "[Page 4](cite:n)" (slice D, 6 Nov; older replies "[p. 4]"); the chip always says "Page".
+// "Page 4" in a reply from Claude (plan §4 F; R74: "Page N" everywhere): a small tonal pill at the end of the sentence it
+// cites. Pressing it goes to the cited passage and lights the sentence there for a moment (jump.ts), and the thread stays
+// open. Hovering it shows the cited words, so the owner can check a claim without leaving the thread. The stored body
+// writes "[Page 4](cite:n)" (slice D, 6 Nov; older replies "[p. 4]"); the chip always says "Page".
 //
 // The pill itself (ReplyChip) is shared by the page, web source and figure chips: Drive's chip shape at the size of a
 // line of comment text (20 px, 12/16 500), one colour per kind.
+//
+// In the library (the Notes page and Home) there is no PDF to jump in: a page or figure chip opens the note's reading
+// instead (ReplyChipPlace). Chips never go anywhere else.
 import type { PageCitation } from '@sop/core';
 import { Icon, type IconName, Tooltip } from '@sop/ui';
+import { createContext, useContext } from 'react';
 import styles from './CitationChip.module.css';
-import { claudeJump } from './jump';
+import { claudeJump } from './jump-target';
+
+/** Where the chips are drawn. Empty in the viewer, where they jump in the open PDF. */
+export interface ReplyChipPlaceValue {
+  /** The library: a page or figure chip opens the note's reading, at the note. */
+  openReading?(this: void): void;
+  /** The library: Open Settings goes to Settings → Claude in the same tab. */
+  openSettings?(this: void): void;
+}
+export const ReplyChipPlace = createContext<ReplyChipPlaceValue>({});
 
 export interface ReplyChipProps {
   kind: 'page' | 'web' | 'figure';
@@ -19,7 +33,8 @@ export interface ReplyChipProps {
   icon?: IconName;
   /** A cited passage that is not in this copy of the PDF: shown, greyed, and pressing it does nothing. */
   missing?: boolean;
-  onPress(this: void): void;
+  /** Pressed; `el` is the chip, so a jump knows which card it came from. */
+  onPress(this: void, el: HTMLButtonElement): void;
 }
 
 export function ReplyChip({ kind, label, name, tooltip, icon, missing = false, onPress }: ReplyChipProps) {
@@ -33,7 +48,7 @@ export function ReplyChip({ kind, label, name, tooltip, icon, missing = false, o
       onClick={(event) => {
         // The card would take the click as "activate"; a chip does its own thing.
         event.stopPropagation();
-        if (!missing) onPress();
+        if (!missing) onPress(event.currentTarget);
       }}
     >
       {icon !== undefined && <Icon name={icon} size={20} className={styles.icon} />}
@@ -68,9 +83,14 @@ export interface CitationChipProps {
   label: string;
   /** `meta.citations[n]`; null when the reply names a citation it does not have (it is drawn, and does nothing). */
   citation: PageCitation | null;
+  /** Other passages of the same page cited at the same place: one chip stands for them all. */
+  also?: readonly PageCitation[];
+  /** The sentence of the reply the chip ends: the jump lights the sentence of the passage that matches it best. */
+  sentence?: string;
 }
 
-export function CitationChip({ label, citation }: CitationChipProps) {
+export function CitationChip({ label, citation, also = [], sentence = '' }: CitationChipProps) {
+  const place = useContext(ReplyChipPlace);
   const page = citation === null ? null : citation.pageIndex + 1;
   return (
     <ReplyChip
@@ -79,8 +99,10 @@ export function CitationChip({ label, citation }: CitationChipProps) {
       name={page === null ? pageChipLabel(label, null) : `Go to page ${page}`}
       tooltip={citation === null ? null : quoteTip(citation.quote)}
       missing={citation === null}
-      onPress={() => {
-        if (citation !== null) void claudeJump.get()?.toCitation(citation);
+      onPress={(el) => {
+        if (citation === null) return;
+        if (place.openReading !== undefined) place.openReading();
+        else void claudeJump.get()?.toCitation(citation, { also, sentence, from: el });
       }}
     />
   );
