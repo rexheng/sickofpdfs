@@ -1,0 +1,182 @@
+/*
+ * A reply from Claude inside a Docs card (02 section 4.11): the body is Docs' comment body (14/20 in on-surface-variant,
+ * paragraphs 8 px apart), the chips sit on its lines, and the actions come under it in one quiet row: Think harder at
+ * the left, the model and cost at the right (shown on hover or keyboard focus, so the card stays calm).
+ */
+.reply {
+  position: relative;
+  min-inline-size: 0;
+}
+
+.body {
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-docs-comment-body);
+  overflow-wrap: anywhere;
+}
+
+.p {
+  margin: 0;
+}
+
+.p + .p,
+.p + .list,
+.list + .p,
+.list + .list,
+.quote + *,
+* + .quote,
+.pre + *,
+* + .pre {
+  margin-block-start: var(--space-2);
+}
+
+.h {
+  color: var(--gm3-sys-color-on-surface);
+  font-weight: 500;
+}
+
+.body strong {
+  color: var(--gm3-sys-color-on-surface);
+  font-weight: 500;
+}
+
+.list {
+  margin: 0;
+  padding-inline-start: var(--space-5);
+}
+
+.quote {
+  margin: 0;
+  padding-inline-start: var(--space-3);
+  border-inline-start: var(--space-1) solid var(--gm3-sys-color-outline-variant);
+}
+
+.code,
+.pre {
+  border-radius: var(--shape-menu);
+  background-color: var(--gm3-sys-color-surface-container-highest);
+  color: var(--gm3-sys-color-on-surface);
+  font-family: var(--font-text);
+}
+
+.code {
+  padding: 0 var(--space-1);
+}
+
+.pre {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+.link {
+  color: var(--gm3-sys-color-primary);
+  text-decoration: underline;
+}
+
+.link:focus-visible {
+  border-radius: var(--shape-menu);
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+/* The caret at the end of the words while they stream, in Claude's colour (as CommentItem's placeholder had it). */
+.caret {
+  display: inline-block;
+  inline-size: var(--space-1);
+  block-size: var(--space-4);
+  margin-inline-start: 1px;
+  border-radius: 1px;
+  background-color: var(--sop-claude-accent);
+  vertical-align: text-bottom;
+  animation: blink 1s steps(1, end) infinite;
+}
+
+/* The figure chips of a figure answer, on a line of their own under the words. */
+.figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-block-start: var(--space-2);
+}
+
+.error {
+  margin-block-start: var(--space-2);
+}
+
+.reply > .error:first-child {
+  margin-block-start: 0;
+}
+
+.errorText {
+  margin: 0;
+  color: var(--gm3-sys-color-error);
+  font: var(--type-docs-comment-body);
+}
+
+/* Not a fault: Claude declined, or the owner pressed Stop. Said in the quiet body colour, not in red. */
+.calm {
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+/* The buttons that help, under the sentence; the first one lines up with the text. */
+.errorActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-block-start: var(--space-2);
+}
+
+/* A text button alone lines up with the sentence above it (its words, not its pill, start at the text's edge). */
+.flush {
+  margin-inline-start: calc(-1 * var(--space-3));
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  align-items: center;
+  margin-block-start: var(--space-3);
+}
+
+/* Beside Think harder when it fits; on a line of its own, at the right, when it does not. */
+.cost {
+  flex: 1 0 auto;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-docs-comment-time);
+  letter-spacing: var(--tracking-tight);
+  text-align: end;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+/* The cost line of a reply with no button under it: in the 16–20 px gap below the reply, at the right, taking no room. */
+.costAlone {
+  position: absolute;
+  inset-block-start: 100%;
+  inset-inline: 0;
+}
+
+/* The cost line shows while the pointer is on the reply, or the keyboard is in it. Screen readers always read it. */
+.reply:hover .cost,
+.reply:focus-within .cost {
+  opacity: 1;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caret {
+    animation: none;
+  }
+
+  .cost {
+    transition: none;
+  }
+}

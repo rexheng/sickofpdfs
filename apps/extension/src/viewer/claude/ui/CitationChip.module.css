@@ -1,0 +1,75 @@
+/*
+ * The chips in a reply from Claude: Drive's chip shape at the height of a line of comment text (20 px pill, 12/16 500),
+ * sitting on the baseline like a word. Page chips are tonal blue (Drive's selected-chip colours), web sources are the
+ * quiet grey of a code span, figure chips are tonal blue with a small picture.
+ */
+.chip {
+  display: inline-flex;
+  gap: 1px;
+  align-items: center;
+  box-sizing: border-box;
+  max-inline-size: 100%;
+  block-size: var(--sop-chip-sm-h);
+  margin: 0 1px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--shape-full);
+  font: var(--type-sop-chip-sm);
+  letter-spacing: var(--tracking-tight);
+  vertical-align: baseline;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.withIcon {
+  padding-inline-start: var(--space-1);
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The small glyph before a source's site or a figure's label: 14 px in a 20 px chip. */
+.icon {
+  --_size: var(--sop-chip-icon);
+}
+
+.page,
+.figure {
+  background-color: var(--gm3-sys-color-secondary-container);
+  color: var(--gm3-sys-color-on-secondary-container);
+}
+
+.page:hover,
+.figure:hover {
+  background-color: color-mix(
+    in srgb,
+    var(--gm3-sys-color-on-secondary-container) calc(var(--gm3-state-hover) * 100%),
+    var(--gm3-sys-color-secondary-container)
+  );
+}
+
+.web {
+  background-color: var(--gm3-sys-color-surface-container-highest);
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.web:hover {
+  background-color: color-mix(
+    in srgb,
+    var(--gm3-sys-color-on-surface-variant) calc(var(--gm3-state-hover) * 100%),
+    var(--gm3-sys-color-surface-container-highest)
+  );
+}
+
+.missing {
+  cursor: default;
+  opacity: var(--sop-disabled-content);
+}
+
+.chip:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 1px;
+}

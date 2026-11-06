@@ -1,0 +1,13 @@
+/* The question's sentences: Drive's dialog body (14/20), one short line of thought each, 8 px apart. */
+.line {
+  margin: 0;
+}
+
+.line + .line {
+  margin-block-start: var(--space-2);
+}
+
+/* The cost sits last, in the body's strong colour, so the number is easy to find. */
+.line:last-child {
+  color: var(--gm3-sys-color-on-surface);
+}

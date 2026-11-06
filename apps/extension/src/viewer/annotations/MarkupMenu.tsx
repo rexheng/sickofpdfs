@@ -1,6 +1,6 @@
 // The mark-up menu (Phase 2, S13): S6's dark ContextMenu at the pointer, with the colour row, Highlight, Underline,
 // Bold, Strikethrough, Comment, Search and Copy. It opens only for a selection (mark-input.ts decides when), and every
-// row acts on the chars that were selected when it opened. Ask Claude joins it in Phase 4.
+// row acts on the chars that were selected when it opened. Phase 4 adds Ask Claude after Comment (claude/ui/feature.tsx).
 //
 // The same dark menu, for one mark (ruling R72), opens on a right-click on a mark, or the menu key on a focused mark:
 // the colour row (keys 1 to 5), Comment and Remove (Delete), with the keys shown in the rows. An area mark has it too,
@@ -53,6 +53,7 @@ function selectionItems(req: Extract<MenuRequest, { kind: 'selection' }>, input:
   const row = (id: ViewerCommandId, run: () => void, enabled = true) => commandRow(commands, id, run, enabled);
   const { ranges } = req;
   const comment = commands.get('marks.comment');
+  const ask = commands.get('claude.ask');
   const search = searchTarget(req.text);
   return [
     ...row('marks.highlight', () => input.apply('highlight', { ranges })),
@@ -62,6 +63,8 @@ function selectionItems(req: Extract<MenuRequest, { kind: 'selection' }>, input:
     { kind: 'separator' },
     // Comment is S14's command: it reads the selection itself, which the menu leaves in place.
     ...row('marks.comment', () => comment?.run(), comment?.enabled() === true),
+    // Phase 4: the same note, with "@Claude " ready for the question (shown once the Claude host is there).
+    ...(ask?.built === true ? row('claude.ask', () => ask.run(), ask.enabled()) : []),
     { kind: 'separator' },
     ...(search === null ? [] : [{ kind: 'item' as const, id: 'search', label: search.label, icon: 'search' as const, onSelect: () => void openSearch(search) }]),
     { kind: 'item', id: 'copy', label: 'Copy', icon: 'content_copy', shortcut: 'Ctrl+C', onSelect: copySelection },

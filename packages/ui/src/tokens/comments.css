@@ -40,4 +40,9 @@
   /* Claude's mark: a warm accent, so a reply from Claude is told apart at a glance from the owner's blue avatar */
   --sop-claude-accent: #d97757;
   --sop-claude-on-accent: #ffffff;
+
+  /* Claude in the thread (Phase 4, slice F) */
+  --sop-chip-icon: 14px;          /* the glyph before a web source's site or a figure's label, in a 20 px chip */
+  --sop-mention-w: 240px;         /* the @Claude suggestion under the note box: at least this wide (it takes the box's width) */
+  --sop-mention-row-h: 48px;      /* one suggestion: a 32 px avatar, the name and one quiet line */
 }

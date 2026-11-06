@@ -1,0 +1,95 @@
+/*
+ * The status line under a reply that is being written: Docs' quiet 12/16 meta text in on-surface-variant, three dots in
+ * Claude's colour, and Stop as a compact text button at the right (32 px, like Drive's chips).
+ */
+.status {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  min-block-size: var(--chip-h);
+  margin-block-start: var(--space-2);
+}
+
+/* The words wrap rather than being cut: what Claude searches the web for is always shown in full (plan §9). */
+.label {
+  flex: 1;
+  min-inline-size: 0;
+  padding-block: var(--space-2);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-docs-comment-time);
+  letter-spacing: var(--tracking-tight);
+  overflow-wrap: anywhere;
+}
+
+.dots {
+  display: inline-flex;
+  flex: none;
+  gap: 1px;
+  align-items: center;
+  block-size: var(--chip-h);
+}
+
+.dots > span {
+  inline-size: var(--space-1);
+  block-size: var(--space-1);
+  border-radius: var(--shape-full);
+  background-color: var(--sop-claude-accent);
+  animation: breathe 1.2s ease-in-out infinite;
+}
+
+.dots > span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.dots > span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+.stop {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-1);
+  align-items: center;
+  box-sizing: border-box;
+  block-size: var(--chip-h);
+  margin: 0 calc(-1 * var(--space-2)) 0 0;
+  padding: 0 var(--space-3) 0 var(--space-2);
+  border: 0;
+  border-radius: var(--shape-full);
+  background-color: transparent;
+  color: var(--gm3-sys-color-primary);
+  font: var(--type-text-button);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.stop:hover {
+  background-color: color-mix(in srgb, currentColor calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.stop:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* A small filled square, the size of the words beside it. */
+.stopIcon {
+  --_size: var(--space-4);
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dots > span {
+    animation: none;
+  }
+}

@@ -53,6 +53,8 @@ export interface ThreadCardProps {
   /** A citation chip in a reply was pressed. */
   onChip?: (link: ChipLink, comment: CommentId) => void;
   renderChip?: (link: ChipLink) => ReactNode;
+  /** Phase 4 (A4): the content of each reply from Claude (ClaudeReplyView). Passed to every CommentItem of the thread. */
+  renderClaudeReply?: (comment: CommentView) => ReactNode;
 
   /** How the note sits on this copy of the PDF: 'moved' shows the quiet "Moved" label (D7). */
   placement?: CardPlacement;
@@ -175,7 +177,7 @@ function NewNote({ draft, active, autoFocus, onDraftChange, onDraftSend, onDraft
 }
 
 function Thread(props: ThreadCardProps & { root: CommentView; replies: CommentView[] }) {
-  const { root, replies, active, draft = null, editing, now, autoFocus, onActivate, onRetry, onChip, renderChip, kept = null, onRetrySave } = props;
+  const { root, replies, active, draft = null, editing, now, autoFocus, onActivate, onRetry, onChip, renderChip, renderClaudeReply, kept = null, onRetrySave } = props;
   const item = (comment: CommentView, isRoot: boolean) => (
     <CommentItem
       key={comment.id}
@@ -190,6 +192,7 @@ function Thread(props: ThreadCardProps & { root: CommentView; replies: CommentVi
       onRetry={onRetry === undefined ? undefined : () => onRetry(comment.id)}
       onChip={onChip === undefined ? undefined : (link) => onChip(link, comment.id)}
       renderChip={renderChip}
+      renderClaudeReply={renderClaudeReply}
       kept={isRoot ? kept : null}
       onRetrySave={onRetrySave}
     />

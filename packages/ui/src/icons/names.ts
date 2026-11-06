@@ -117,6 +117,12 @@ export const ICON_NAMES = [
   // Phase 4 (slice G): Settings → Claude and its saved key
   'auto_awesome',
   'key',
+  // Phase 4, Claude in the thread (slice F): Stop, Think harder, Try again, Ask Claude, Explain this figure
+  'stop',
+  'psychology',
+  'refresh',
+  'asterisk',
+  'insert_chart',
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

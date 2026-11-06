@@ -1,0 +1,44 @@
+/*
+ * A compact outlined button under a reply, like a GM3 assist chip (32 px, 8 px corners, 1 px outline, an 18–20 px glyph
+ * and 14/20 500 words in the primary colour), so it reads as an action of the reply, not as text.
+ */
+.button {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-2);
+  align-items: center;
+  box-sizing: border-box;
+  block-size: var(--chip-h);
+  margin: 0;
+  padding: 0 var(--space-4) 0 var(--space-2);
+  border: 1px solid var(--gm3-sys-color-outline-variant);
+  border-radius: var(--shape-chip);
+  background-color: transparent;
+  color: var(--gm3-sys-color-primary);
+  font: var(--type-text-button);
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.button:hover:not(:disabled) {
+  background-color: color-mix(in srgb, currentColor calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.button:active:not(:disabled) {
+  background-color: color-mix(in srgb, currentColor calc((var(--gm3-state-hover) + var(--gm3-state-pressed)) * 100%), transparent);
+}
+
+.button:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.button:disabled {
+  cursor: default;
+  opacity: var(--sop-disabled-content);
+}
+
+.icon {
+  color: var(--sop-claude-accent);
+}

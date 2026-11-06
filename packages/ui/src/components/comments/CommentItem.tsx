@@ -31,6 +31,12 @@ export interface CommentItemProps {
   onRetry?: () => void;
   onChip?: (link: ChipLink) => void;
   renderChip?: (link: ChipLink) => ReactNode;
+  /**
+   * Phase 4 (plan §8 A4): draws the content of a reply from Claude (its status, body, chips and actions) in place of the
+   * placeholders below, on an active card (a clamped comment keeps the short form). The viewer passes ClaudeReplyView;
+   * without it the placeholders show.
+   */
+  renderClaudeReply?: (comment: CommentView) => ReactNode;
   /** The quiet sign beside the time: whether the note is kept (the card shows it on its first comment). */
   kept?: NoteKept | null;
   /** "Try again" beside "Couldn't save". */
@@ -55,6 +61,7 @@ export function CommentItem({
   onRetry,
   onChip,
   renderChip,
+  renderClaudeReply,
   kept = null,
   onRetrySave,
   className,
@@ -85,6 +92,8 @@ export function CommentItem({
       <div className={styles.content}>
         {edit ? (
           <NoteBox {...edit} variant="edit" />
+        ) : comment.author === 'claude' && renderClaudeReply !== undefined && !clamp ? (
+          renderClaudeReply(comment)
         ) : status === 'pending' || (status === 'streaming' && comment.body === '') ? (
           <p className={styles.status} role="status">
             Claude is reading

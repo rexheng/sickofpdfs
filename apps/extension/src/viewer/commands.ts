@@ -41,7 +41,9 @@ export type ViewerCommandId =
   // Phase 2 (plan section 7). S13 runs the marks, the menu and undo; S14 the comment commands; S15 the notes ones;
   // S16 the figure and area ones. P4 adds 'claude.ask' and 'claude.explainFigure'.
   | 'marks.highlight' | 'marks.underline' | 'marks.bold' | 'marks.strike' | 'marks.comment' | 'marks.documentNote' | 'marks.menu'
-  | 'edit.undo' | 'edit.redo' | 'notes.next' | 'notes.previous' | 'notes.panel' | 'figures.copyImage' | 'tools.area';
+  | 'edit.undo' | 'edit.redo' | 'notes.next' | 'notes.previous' | 'notes.panel' | 'figures.copyImage' | 'tools.area'
+  // Phase 4 (slice F, claude/ui/feature.tsx): built only once the turn runner has set the Claude host.
+  | 'claude.ask' | 'claude.explainFigure' | 'claude.wholeDocument';
 
 /** View → Bold word starts: Off, Light, Medium or Strong (R90c), one radio group. */
 export type WordStartsChoiceId = 'view.wordStarts.off' | 'view.wordStarts.light' | 'view.wordStarts.medium' | 'view.wordStarts.strong';
@@ -214,6 +216,11 @@ export const SPECS: [ViewerCommandId, CommandSpec][] = [
   ['notes.panel', { label: 'Notes panel', icon: 'comment', keys: ['Shift+F4'] }],
   ['figures.copyImage', { label: 'Copy image', icon: 'image', keys: ['Ctrl+C'] }],
   ['tools.area', { label: 'Area note', icon: 'select', keys: [] }],
+  // Phase 4: a note with "@Claude " ready (the selection or the selected figure); a figure note sent with the fixed question;
+  // a note on the whole document with "@Claude ", whose cost is shown first.
+  ['claude.ask', { label: 'Ask Claude', icon: 'asterisk', keys: [] }],
+  ['claude.explainFigure', { label: 'Explain this figure', icon: 'insert_chart', keys: [] }],
+  ['claude.wholeDocument', { label: 'Ask Claude about the whole document', icon: 'asterisk', keys: [] }],
 ];
 
 /** What a command does in this tab. Features (wire.ts) hand these in for the commands they own. */

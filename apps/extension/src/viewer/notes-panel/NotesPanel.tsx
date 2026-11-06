@@ -4,6 +4,7 @@
 import type { CommentId, ThreadId } from '@sop/core';
 import { Icon, IconButton, type NoteKept, ThreadCard } from '@sop/ui';
 import { type KeyboardEvent, type MouseEvent, type Ref, useId, useRef } from 'react';
+import { claudeReplyRenderer } from '../claude/ui/feature';
 import type { NoteEntry, NoteList, NotesFilter } from './model';
 import styles from './NotesPanel.module.css';
 
@@ -123,6 +124,7 @@ export function NotesPanel(p: NotesPanelProps) {
         kept={p.keptOf?.(note) ?? null}
         onRetrySave={p.onRetrySave}
         autoFocus={p.focusNote === note.id}
+        renderClaudeReply={claudeReplyRenderer(note.thread, note.comments)}
       />
     </li>
   );

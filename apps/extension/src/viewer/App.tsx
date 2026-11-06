@@ -73,6 +73,7 @@ import {
 import { notesPanelFeature } from './notes-panel/feature';
 import { type StartOverOffer, useReadingHistory } from './history/use-reading-history';
 import { hitFlashFeature } from './hit-flash';
+import { claudeUiFeature } from './claude/ui/feature';
 import { createHitJumper, type HitJumper, useOpenTarget } from './jump-to-hit';
 import { openSavedCopy, savedCopyName } from './open-saved';
 import { useOriginalLink } from './original-link';
@@ -120,6 +121,8 @@ registerViewerFeature(notesPanelFeature);
 registerViewerFeature(figuresFeature);
 // Phase 3 (S15): the words a search jump landed on, picked out for a moment.
 registerViewerFeature(hitFlashFeature);
+// Phase 4 (slice F): Claude in the thread: its chips, the @Claude suggestion, the confirm dialog and the Ask Claude items.
+registerViewerFeature(claudeUiFeature);
 
 /** Where the reader was when the engine stopped, so the document opens again at the same place. */
 type Resume = Pick<ViewerSnapshot, 'zoom' | 'currentPage' | 'viewRotation' | 'spread' | 'railOpen'>;
