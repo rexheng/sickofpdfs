@@ -708,6 +708,12 @@ test.describe('R100: Enter never answers the save question (TB5 student critic, 
     await page.keyboard.press('Control+Alt+m');
     await expect(savePrompt(page).first(), 'Ctrl+Alt+M asks first').toBeVisible({ timeout: 5000 });
     await page.keyboard.type('Fee', { delay: 40 });
+    // Regression (TB7 held letters): the question held these letters in its own memory until it was answered, where no copy of the note
+    // could reach them. They are the note's letters at once now, so the note keeps them as it keeps every letter.
+    await test.step('the letters typed while it asks are in the note at once', async () => {
+      await expect.poll(() => hooks(page).eval((h) => h.annotations?.state().drafts.map((d) => d.body) ?? []), { timeout: 3000 }).toContain('Fee');
+      await expect(page.getByRole('dialog'), 'and the question shows them').toContainText('Your note: Fee');
+    });
     const save = page.getByRole('dialog').getByRole('button', { name: /^save$/i });
     for (let i = 0; i < 4 && !(await save.evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press('Tab');
     await expect(save, 'Tab reaches Save').toBeFocused();
@@ -715,6 +721,12 @@ test.describe('R100: Enter never answers the save question (TB5 student critic, 
     await waitSaved(page, 30_000);
     await expect.poll(() => noteText(page, 10_000), { timeout: 10_000, message: 'the letters typed while it asked are in the note' }).toBe('Fee');
     await shot(page, testInfo, 'tab-save-space-saved');
+    await test.step('a crash then loses none of them: the note comes back with every letter', async () => {
+      await page.waitForTimeout(300);
+      await crashRenderer(page);
+      const again = await openPaper(openViewer, server, BANK);
+      await expect.poll(() => noteText(again, 20_000).catch(() => ''), { timeout: 25_000, message: 'the note is back after the crash' }).toBe('Fee');
+    });
   });
 });
 

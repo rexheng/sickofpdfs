@@ -4,11 +4,11 @@
 // R96: the question never eats typing. It often opens on the first letter of a note, while the owner is still typing:
 // - no button has the focus when it opens (the dialog itself has it), so Space and letters never press one, and no focus ring
 //   shows; Tab still reaches the buttons;
-// - the letters typed while it is open (Space and Backspace too) are kept, and go into the note box, in order, once it is
-//   answered.
+// - the letters typed while it is open (Space and Backspace too) go into the note box at once, in order (TB7: they were held
+//   until it was answered, and only this tab's memory had them; now the note keeps them as it keeps every letter of the box).
 // R100 (TB5 student critic, the blocker): Enter never answers it. The owner presses Enter to send a note, so Enter on a bank
 // statement saved the bank statement. Now:
-// - the letters typed while it is open show in it ("Your note: …"), after those the note box held already, so the owner sees
+// - the note's letters show in it ("Your note: …"), those typed before it opened and while it is open, so the owner sees
 //   where they went;
 // - only a click on a button, or Tab to a button and then Enter or Space, answers it. Esc means No;
 // - this holds for every PDF, so a quick note on a receipt can never save it.
@@ -58,66 +58,67 @@ const noteBeingWritten = (): HTMLTextAreaElement | null => {
   return box !== null && document.activeElement === box ? box : null;
 };
 
-/** The question shows at most this many of the letters typed into it (the end, where the owner is typing). */
+/** The question shows at most this many of the note's letters (the end, where the owner is typing). */
 const HELD_SHOWN = 160;
 
 /**
- * No lost letters (R96): while the question is open, and between the answer and the moment the note box has the caret (the
- * question takes a moment to close), the letters typed are kept here and put into the box, in order, once it has it. Only
- * while a note box waits for them. `asking` is true while the question is open (R100: then Enter answers nothing).
+ * No lost letters (R96, TB7 held letters): while the question is open, and between the answer and the moment the note box has
+ * the caret (the question takes a moment to close), each letter typed goes into the note box at once, as typing would. The
+ * question holds the keyboard, not the letters: they are the note's from the first key, so the note keeps them the way it keeps
+ * every letter of the box (the drafts journal on a saved PDF, the save-pending record while a save is on its way, and this tab
+ * only while the question is open or after No, as the spec says). Only while a note box is open. `asking` is true while the
+ * question is open (R100: then Enter answers nothing).
  */
-const typedAhead = { active: false, asking: false, until: 0, text: '' };
+const typedAhead = { active: false, asking: false, until: 0 };
 
-/** The question shows the letters held for the note (R100). It reads them through this. */
+/** The question shows the note's letters (R100). It reads them through this. */
 const heldListeners = new Set<() => void>();
-const heldText = (): string => (typedAhead.asking ? typedAhead.text : '');
 function subscribeHeld(cb: () => void): () => void {
   heldListeners.add(cb);
   return () => heldListeners.delete(cb);
 }
-/**
- * The note as it will be once the question is answered: the box's own letters, then the held ones. The question often opens
- * on a note's first letter (R96; since R105, whenever the box has the caret first), and that letter is already in the box,
- * which the question covers: without it the owner would read "Your note: point note" and think the "A" was lost.
- */
-const noteSoFar = (): string => (typedAhead.asking ? `${openNoteBox()?.value ?? ''}${typedAhead.text}` : '');
-function setHeld(text: string): void {
-  typedAhead.text = text;
+const notifyHeld = (): void => {
   for (const cb of heldListeners) cb();
-}
+};
+/**
+ * The note as the question shows it: the box's letters, which hold every letter typed since it opened. The question often opens on
+ * a note's first letter (R96; since R105, whenever the box has the caret first), so without the box's own letters the owner would
+ * read "Your note: point note" and think the "A" was lost.
+ */
+const noteSoFar = (): string => (typedAhead.asking ? (openNoteBox()?.value ?? '') : '');
 
-/** The question opened: from now until it is answered, what is typed is kept for the note box (R96). */
+/** The question opened: from now until it is answered, what is typed goes into the note box (R96). */
 function holdTyping(): void {
   typedAhead.active = true;
   typedAhead.asking = true;
   typedAhead.until = Infinity;
-  for (const cb of heldListeners) cb();
+  notifyHeld();
 }
 
 function startTypeAhead(): void {
   typedAhead.active = true;
   typedAhead.asking = false;
   typedAhead.until = performance.now() + TYPE_AHEAD_MS;
+  notifyHeld();
   setTimeout(() => {
     const box = openNoteBox();
-    if (typedAhead.active && box !== null) {
-      box.focus({ preventScroll: true });
-      flushTypeAhead(box);
-    }
+    if (typedAhead.active && box !== null) putCaretAtEnd(box);
     typedAhead.active = false;
   }, TYPE_AHEAD_MS);
 }
 
-/** Puts the letters typed ahead at the end of the box, as typing would (an input event, so the note keeps them). */
-function flushTypeAhead(box: HTMLTextAreaElement): void {
-  const text = typedAhead.text;
-  typedAhead.text = '';
-  typedAhead.active = false;
-  if (text === '') return;
+function putCaretAtEnd(box: HTMLTextAreaElement): void {
+  box.focus({ preventScroll: true });
+  box.setSelectionRange(box.value.length, box.value.length);
+}
+
+/** Changes the box's text as typing would (an input event, so the note keeps it at once), with the caret at the end. */
+function typeIntoBox(box: HTMLTextAreaElement, edit: (text: string) => string): void {
   // The element's own value setter, past React's tracker, so React sees the input event as a change.
-  Reflect.set(HTMLTextAreaElement.prototype, 'value', box.value + text, box);
+  Reflect.set(HTMLTextAreaElement.prototype, 'value', edit(box.value), box);
   box.setSelectionRange(box.value.length, box.value.length);
   box.dispatchEvent(new Event('input', { bubbles: true }));
+  notifyHeld();
 }
 
 /** A key that types a character (a letter, a digit, Space, punctuation; AltGr characters too), not a shortcut. */
@@ -126,7 +127,7 @@ function typesCharacter(e: KeyboardEvent): boolean {
   return e.key.length === 1 && !e.metaKey && (!(e.ctrlKey || e.altKey) || altGraph);
 }
 
-/** Before every other key handler of the page (it is added first): a letter typed while the box waits is kept for it. */
+/** Before every other key handler of the page (it is added first): a letter typed while the box waits goes into it. */
 function catchTypedAhead(e: KeyboardEvent): void {
   if (e.isComposing) return;
   if (typedAhead.asking) {
@@ -134,51 +135,36 @@ function catchTypedAhead(e: KeyboardEvent): void {
     // (the dialog's own) means No. Enter anywhere else answers nothing: it is how a note is sent, so it is not a Save.
     const onButton = document.activeElement instanceof HTMLButtonElement && document.activeElement.closest('[role="dialog"]') !== null;
     if (onButton && (e.key === 'Enter' || e.key === ' ') && !e.ctrlKey && !e.altKey && !e.metaKey) return; // the button's own press
+    const box = openNoteBox();
     if (e.key === 'Enter') {
       e.preventDefault();
       e.stopImmediatePropagation();
-      if (e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && openNoteBox() !== null) setHeld(`${typedAhead.text}\n`); // a new line of the note
+      if (e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && box !== null) typeIntoBox(box, (t) => `${t}\n`); // a new line of the note
       return;
     }
     if (e.key === 'Backspace' && !e.ctrlKey && !e.altKey && !e.metaKey) {
       e.preventDefault();
       e.stopImmediatePropagation();
-      setHeld(typedAhead.text.slice(0, -1));
+      if (box !== null) typeIntoBox(box, (t) => [...t].slice(0, -1).join('')); // one character, an emoji too
       return;
     }
     if (!typesCharacter(e)) return;
     // Letters never press a button. With a note box waiting, they are the note's letters, and the question shows them.
     e.preventDefault();
     e.stopImmediatePropagation();
-    if (openNoteBox() !== null) setHeld(typedAhead.text + e.key);
+    if (box !== null) typeIntoBox(box, (t) => t + e.key);
     return;
   }
   if (!typedAhead.active) return;
   const box = openNoteBox();
-  if (box === null || performance.now() > typedAhead.until) {
-    typedAhead.active = false;
-    typedAhead.text = '';
-    return;
-  }
-  if (document.activeElement === box) {
-    flushTypeAhead(box); // the box has the caret now: what came before goes in first, then this key as usual
+  if (box === null || performance.now() > typedAhead.until || document.activeElement === box) {
+    typedAhead.active = false; // no box waits, or it has the caret now: this key goes where it goes, as usual
     return;
   }
   if (!typesCharacter(e)) return;
   e.preventDefault();
   e.stopImmediatePropagation(); // not a reading key or a mark key: it is a letter of the note
-  typedAhead.text += e.key;
-}
-
-/**
- * R96 (no lost notes): letters held for the note box are a note kept only in memory, so closing the tab asks "Leave site?" first,
- * as it does for a note in its box (session.ts). Without this, a point or page note whose question opened before its first letter
- * went into the box was lost silently with the tab.
- */
-function guardHeldLetters(e: BeforeUnloadEvent): void {
-  if ((!typedAhead.asking && !typedAhead.active) || typedAhead.text.trim() === '') return;
-  e.preventDefault();
-  e.returnValue = ''; // older Chrome needs it set as well
+  typeIntoBox(box, (t) => t + e.key);
 }
 
 function giveBackToNoteBox(): void {
@@ -186,23 +172,16 @@ function giveBackToNoteBox(): void {
     if (document.querySelector('[role="dialog"]') !== null) return; // still closing
     const box = openNoteBox();
     const active = document.activeElement;
-    if (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement) {
-      if (box !== null && active === box) flushTypeAhead(box);
-      return; // something took it on purpose
-    }
+    if (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement) return; // the box has it, or something took it on purpose
     if (box === null) return;
-    box.focus({ preventScroll: true });
-    box.setSelectionRange(box.value.length, box.value.length);
-    flushTypeAhead(box);
+    putCaretAtEnd(box);
   };
   for (const ms of [0, 30, 80, 160, 320]) setTimeout(tryFocus, ms);
 }
 
-/** The note box takes the caret as the question closes, and then the letters typed meanwhile. */
+/** The note box takes the caret as the question closes. */
 function focusOnClose(): HTMLTextAreaElement | null {
-  const box = openNoteBox();
-  if (box !== null) queueMicrotask(() => flushTypeAhead(box)); // after the dialog has focused it
-  return box;
+  return openNoteBox();
 }
 
 export interface SaveAskDialogProps {
@@ -256,11 +235,7 @@ export function SaveAskDialog({ save }: SaveAskDialogProps) {
   // Added when the viewer starts, before the page's own key handlers, so it sees a typed-ahead letter first.
   useEffect(() => {
     window.addEventListener('keydown', catchTypedAhead, true);
-    window.addEventListener('beforeunload', guardHeldLetters);
-    return () => {
-      window.removeEventListener('keydown', catchTypedAhead, true);
-      window.removeEventListener('beforeunload', guardHeldLetters);
-    };
+    return () => window.removeEventListener('keydown', catchTypedAhead, true);
   }, []);
   const answer = (yes: boolean): void => {
     if (save === null || answered.current) return;
@@ -269,7 +244,6 @@ export function SaveAskDialog({ save }: SaveAskDialogProps) {
     else {
       typedAhead.asking = false;
       typedAhead.active = false;
-      typedAhead.text = '';
     }
     void save.answerAsk(yes).catch(() => {});
     giveBackToNoteBox();
@@ -340,27 +314,24 @@ export function SaveAskDialog({ save }: SaveAskDialogProps) {
       document.removeEventListener('focusout', onLeave, true);
     };
   }, [waiting, save]);
-  // R96: from the moment it opens, typing is held for the note box.
+  // R96: from the moment it opens, typing goes into the note box.
   useEffect(() => {
     if (!open) return;
     answered.current = false;
-    typedAhead.text = typedAhead.active ? typedAhead.text : '';
     holdTyping();
     return () => {
       if (typedAhead.asking) typedAhead.asking = false;
     };
   }, [open]);
   // R100: what was typed while it is open shows in it, so the owner sees the letters were kept (and that Enter did not send).
-  const held = useSyncExternalStore(subscribeHeld, heldText);
   const shown = useSyncExternalStore(subscribeHeld, noteSoFar);
   // R105: the question showed before the note's words were known (the box took the caret late), and the note asks Claude: No.
   useEffect(() => {
     if (!open || answered.current) return;
-    const text = `${openNoteBox()?.value ?? ''}${held}`;
-    if (CLAUDE_NOTE.test(text)) answer(false);
-    // `answer` is made anew each draw; the held letters are what this follows.
+    if (CLAUDE_NOTE.test(shown)) answer(false);
+    // `answer` is made anew each draw; the note's letters are what this follows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, held]);
+  }, [open, shown]);
   if (save === null || state === null) return null;
   return (
     <Dialog
