@@ -51,6 +51,7 @@ The owner has learning disabilities and is highly intelligent. Write to them pla
    - No new unit tests, and no spec-blind test author per slice or round. Tests already written stay.
    - Implementers prove their work with typecheck, lint, a quick run of the feature, and screenshots. They run only the existing walkthroughs that touch their files.
    - At the end of each phase: the full suite (gates 1–3), the four critics, and one short security read of any privacy, network or notes-safety work in that phase.
+   - The walkthrough suite (gate 1) stays at 250 tests or fewer (owner, 2026-11-06). Before adding one, merge it into an existing test as a step.
 
 ## Standing constraints
 
