@@ -82,6 +82,12 @@ describe('firm: a code in the folder', () => {
   it.each<Found>([
     ['Windows OneDrive folder named for the code (G1)', folder('C:\\Users\\Rex\\OneDrive - LSE\\Year 1\\EC1A1 Economics A\\Lectures\\Lecture 4.pdf'), ['EC1A1']],
     ['Mac folder named only the code', folder('/Users/rex/Documents/LSE/EC2B1/week3.pdf'), ['EC2B1']],
+    ['CS231n folder', folder('/home/rex/uni/CS231n/notes.pdf'), ['CS231N']],
+    ['CS50 folder', folder('/home/rex/uni/CS50/notes.pdf'), ['CS50']],
+    ['EC313 folder', folder('/home/rex/uni/EC313/notes.pdf'), ['EC313']],
+    ['MATH 221 folder', folder('/home/rex/uni/MATH 221/notes.pdf'), ['MATH221']],
+    ['6.006 folder', folder('/home/rex/uni/6.006 Algorithms/notes.pdf'), ['6.006']],
+    ['14.01 folder', folder('/home/rex/uni/14.01 Micro/notes.pdf'), ['14.01']],
     ['Mac iCloud path with "Year 2" and "Problem Sheet 2" around the code', folder('/Users/rex/Library/Mobile Documents/com~apple~CloudDocs/Uni/Year 2/PH1105 Classical Mechanics/Problem Sheet 2.pdf'), ['PH1105']],
     ['MIT folder named 14.01 on a Windows drive', folder('D:\\MIT\\14.01 Microeconomics\\Lectures\\lec05.pdf'), ['14.01']],
     ['only a file name, no folder (G1)', folder('EC1A1_Lecture_3.pdf'), ['EC1A1']],
@@ -100,6 +106,10 @@ describe('firm: a code in the folder', () => {
     ['camera-style name with a date and time', folder('C:\\Users\\Rex\\Desktop\\20231031_142501.pdf')],
     ['dotted date in the file name', folder('C:\\Users\\Rex\\Downloads\\Statement 14.01.2023.pdf')],
     ['week and lecture numbers only', folder('/Users/rex/Uni/Week 3/Lecture 12.pdf')],
+    ['checkout folder named like a build (tb6g1)', folder('/home/user/wt-tb6g1/e2e/x7.pdf')],
+    ['checkout folder named like a build (tb6c9)', folder('/home/user/wt-tb6c9/e2e/x7.pdf')],
+    ['project folder (proj2b)', folder('/home/rex/proj2b/x7.pdf')],
+    ['short id folder (a1b2)', folder('/home/rex/a1b2/x7.pdf')],
   ])('%s: nothing', (_name, src) => {
     expect(findCourseCodes(src)).toEqual([]);
   });

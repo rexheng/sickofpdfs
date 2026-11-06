@@ -90,6 +90,14 @@ const DEPARTMENT_WORDS = new Set(
 );
 
 
+/**
+ * Letters of the UK form (EC1A1). The shape is also a build or folder name ("tb6g1", "wt-tb6c9", "a1b2"), so it counts only with a
+ * department's letters.
+ */
+const UK_DEPARTMENTS = new Set(
+  [...DEPARTMENT_WORDS, ...'ec ma st ac fm ir ll ph gv mg sa sp ds eh pp gy ib is ps ge ac ad ay bu ms ma lse'.split(' ')],
+);
+
 /** Two-letter country prefixes of postcodes ("SE-106 91", "DK-1050", "DE-10115"). Not those that are also department codes (EE, ES, IT, MA). */
 const POSTCODE_COUNTRIES = new Set('se dk no fi de nl be at ch fr pl cz sk pt gr ie lt lv hu ro bg hr si lu is gb uk us ca au nz'.split(' '));
 /** A label just before a number that says it is an ID, not a course ("Student ID: AB1234", "Ref. no", "Order #"). */
@@ -126,7 +134,7 @@ function findLetterCodes(text: string, caseless: boolean): Hit[] {
   const apart = new RegExp(`${edgeBefore}([A-Za-z]{2,5})[ \\-_\\u00a0]+(\\d{2,4})([A-Za-z])?${edgeAfter}`, 'g');
   for (const m of text.matchAll(uk)) {
     const letters = m[1] ?? '';
-    if (NOT_A_COURSE.has(letters.toLowerCase()) || (!caseless && m[3] !== (m[3] ?? '').toUpperCase())) continue;
+    if (NOT_A_COURSE.has(letters.toLowerCase()) || !UK_DEPARTMENTS.has(letters.toLowerCase()) || (!caseless && m[3] !== (m[3] ?? '').toUpperCase())) continue;
     hits.push({ at: m.index ?? 0, code: `${letters}${m[2]}${m[3]}${m[4]}`.toUpperCase() });
   }
   for (const m of text.matchAll(joined)) {

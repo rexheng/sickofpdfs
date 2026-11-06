@@ -115,6 +115,25 @@ const COURSE_NAME_WORDS = new Set([
   'notes', 'textbook', 'thesis', 'dissertation',
 ]);
 
+// A course code in a name counts only when its letters are a department's (cs, math, ec, ...). A folder or build name such as
+// "tb6g1", "proj2b" or "wt-tb66" is not one, and a code read from a path may only make the filter more careful, never less (R91).
+const DEPARTMENT_LETTERS = new Set(
+  ('math maths econ phys chem biol bio comp stat stats engl hist psyc psych soc poli phil acct finc fin mgmt mktg cs cse ee ece mech civl engr ' +
+    'ling anth geog geol astr neur musc educ eecs ec ma st ac fm ir ll ph gv mg sa sp ds eh pp gy ib ps bu me ce ch cm mat sta cmpt cpsc comm ' +
+    'law med nurs pols pol econ gov ids mis ops orgb stats phy chm').split(' '),
+);
+
+/** True when the text holds a course code with a department's letters: CS50, CS231n, MATH 221, EC313, EC1A1. */
+export function hasDepartmentCode(text: string): boolean {
+  const re = /(?<![a-z0-9])([a-z]{2,5})[ _-]?(?:\d{2,4}[a-z]?|\d[a-z]\d)(?![a-z0-9])/gi;
+  for (const m of text.matchAll(re)) {
+    const letters = (m[1] ?? '').toLowerCase();
+    const digits = /\d+/.exec(m[0])?.[0] ?? '';
+    if (DEPARTMENT_LETTERS.has(letters) && !(digits.length === 4 && /^(?:19|20)\d\d$/.test(digits))) return true;
+  }
+  return false;
+}
+
 function words(text: string): string[] {
   return text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
 }
@@ -130,8 +149,7 @@ export function nameWords(link: LinkParts | null, fileName: string, title: strin
   const all = [...new Set(words(joined))];
   const negative = all.some((w) => NEGATIVE_NAME_WORDS.has(w));
   const course =
-    all.some((w) => COURSE_NAME_WORDS.has(w) || /^(?:ps|ch|wk|lec|week)\d{1,2}$/.test(w)) ||
-    /(?:^|[^a-z0-9])[a-z]{2}\d[a-z]\d(?:[^a-z0-9]|$)/i.test(joined);
+    all.some((w) => COURSE_NAME_WORDS.has(w) || /^(?:ps|ch|wk|lec|week)\d{1,2}$/.test(w)) || hasDepartmentCode(joined);
   return { negative, course };
 }
 
@@ -140,12 +158,12 @@ const PRIVATE_TITLE_WORDS = new Set(['bank', 'tax', 'cv', 'resume', 'passport'])
 /** A camera or scanner name: IMG_1234, DSC01234, Scan_2023-01-02. */
 const DEVICE_NAME = /(?:^|[^a-z0-9])(?:img|dsc[nf]?|pxl|mvimg|scan|image|photo|cam)[ _-]?\d{3,}/;
 /** A course code: CS50, MATH101, EC1A1, 14.01. */
-const COURSE_CODE = /(?:^|[^a-z0-9])(?:[a-z]{2,4}\d{2,3}[a-z]?|[a-z]{2}\d[a-z]\d)(?![a-z0-9])|(?:^|[\s_-])\d{1,2}\.\d{2,3}(?![a-z0-9]|\.\d)/;
+const MIT_NUMBER = /(?:^|[\s_-])\d{1,2}\.\d{2,3}(?![a-z0-9]|\.\d)/;
 
 /** True when a no-text scan's title looks like a course reading and not like paperwork or a camera's file name (R94). */
 export function scanTitleLooksLikeLearning(link: LinkParts | null, fileName: string, title: string | null): boolean {
   const text = `${link?.path ?? ''} ${fileName} ${title ?? ''}`.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replaceAll('.pdf', ' ');
   const { negative, course } = nameWords(link, fileName, title);
   if (negative || DEVICE_NAME.test(text) || text.split(/[^a-z0-9]+/).some((w) => PRIVATE_TITLE_WORDS.has(w))) return false;
-  return course || /problem[ _-]?sets?/.test(text) || COURSE_CODE.test(text);
+  return course || /problem[ _-]?sets?/.test(text) || hasDepartmentCode(text) || MIT_NUMBER.test(text);
 }
