@@ -18,7 +18,8 @@
 // Safety. Everything from a PDF or from a note is untrusted. The export never writes raw HTML: a `<` that could start a tag
 // becomes `&lt;`, an image becomes a plain link, a link other than http(s) or mailto loses its link, and a quote can only
 // ever be a blockquote (its Markdown marks are escaped, so it cannot become a heading, a list or a code block).
-// Code (spans and fences) is copied as it is. Front matter values are always double-quoted YAML strings.
+// Code (spans and fences) is copied as it is. Maths (`$…$`, `$$…$$`) is copied as written, with a `<` in it as TeX's `\lt `.
+// Front matter values are always double-quoted YAML strings.
 import type { Anchor } from '../model/anchor';
 import type { ExportComment, ExportDocument, ExportMark, ExportThread } from './markdown-input';
 
@@ -169,7 +170,15 @@ function rewriteLink(bang: string, label: string, target: string, ctx: Ctx): str
   return `[${plain || (bang === '!' ? 'image' : t)}](${linkTarget(t)})`;
 }
 
-/** One line of a note: links rewritten, raw HTML made harmless, code spans and web autolinks left alone. */
+/**
+ * A formula on one line: `$$…$$`, or `$…$` that opens before a character that is not a space and closes after one, and
+ * not before a digit (the reply view reads maths by the same rules, ClaudeMaths.tsx).
+ */
+const MATH_SPAN = /\$\$(?:[^$\\]|\\.|\$(?!\$))+?\$\$|\$(?=[^\s$])(?:[^$\\]|\\.)+?(?<=[^\s\\])\$(?!\d)/g;
+/** "$5 and $10": a span that starts with a digit and has a space in it is money. */
+const isMoney = (m: string): boolean => !m.startsWith('$$') && /^\$\d/.test(m) && /\s/.test(m);
+
+/** One line of a note: links rewritten, raw HTML made harmless, code spans, maths and web autolinks left alone. */
 function renderInline(line: string, ctx: Ctx): string {
   const refDef = REF_DEF.exec(line);
   if (refDef && !safeTarget(refDef[2] ?? '')) return `\\${line.trimStart()}`;
@@ -178,6 +187,9 @@ function renderInline(line: string, ctx: Ctx): string {
   const hold = (s: string): string => `\uE000${stash.push(s) - 1}\uE001`;
   let s = line.replace(/[\uE000\uE001]/g, '');
   s = s.replace(CODE_SPAN, (m) => hold(m));
+  // Maths (`$…$`, `$$…$$`, as Claude writes it) is kept as it is written, the form papers use, except that a `<` becomes
+  // TeX's own `\lt `: the same symbol, and never the start of an HTML tag. "$5 and $10" is money, not maths.
+  s = s.replace(MATH_SPAN, (m) => (isMoney(m) ? m : hold(m.replace(/</g, '\\lt '))));
   s = s.replace(AUTOLINK, (m) => hold(m));
   s = s.replace(LINK, (_m, bang: string, label: string, target: string) => rewriteLink(bang, label, target, ctx));
   s = s.replace(/\\</g, '&lt;').replace(/<(?=[A-Za-z/!?])/g, '&lt;');

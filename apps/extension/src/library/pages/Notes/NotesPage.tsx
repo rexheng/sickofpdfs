@@ -1,7 +1,8 @@
 // Notes (plan S14; spec "Every note and thread across all readings, newest first, searchable"). Docs' tabs choose which:
 // All, Mine (threads the owner wrote in), Claude (threads Claude answered in) and Trash (notes deleted in the last 30 days,
 // with Restore). The search pill at the top looks through the notes, the passages they are on and the readings' titles.
-// "Export notes" saves every reading's notes as Markdown (S3's format), one file per reading, in a zip.
+// "Export notes" saves every reading's notes as Markdown (S3's format), one file per reading, in a zip, as a download, and
+// says so in a snackbar. Claude's formulas stay as `$…$`.
 // R77's "Recovered notes" sit at the top of All and Mine whenever there are any.
 import { dayOf } from '@sop/core';
 import { TextButton } from '@sop/ui';
@@ -30,8 +31,22 @@ const QUERIES: Record<Tab, Omit<NotesQuery, 'limit' | 'cursor'>> = { all: {}, mi
 /** The note's newest activity: its latest comment, or (in Trash) when it was deleted. */
 const whenOf = (n: NoteItem): number => n.thread.deletedAt ?? Math.max(0, ...n.comments.map((c) => c.createdAt));
 
-/** lib.dom does not have the save-file picker. */
-type SavePicker = (o: { suggestedName: string; types: { description: string; accept: Record<string, string[]> }[] }) => Promise<FileSystemFileHandle>;
+/** A formula in a reply from Claude, as the export keeps it: `$…$` or `$$…$$` with a TeX command, a sub- or superscript in it. */
+const MATHS = /\$[^$\n]*[\\^_][^$\n]*\$/u;
+
+/** Saves a file the way Chrome saves any download (into the downloads folder, or where Chrome asks). */
+function downloadFile(file: Blob, name: string): void {
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.rel = 'noopener';
+  document.body.append(a);
+  a.click();
+  a.remove();
+  // Chrome has taken the file by then; the address is let go so the zip is not kept in memory.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
 
 export function NotesPage() {
   const library = useLibrary();
@@ -61,23 +76,24 @@ export function NotesPage() {
     );
   };
 
+  // A download, as Chrome saves any file, then a snackbar that says what was saved and where (TB6, student 3: the save-file
+  // picker gave no sign at all when it could not show).
   const exportNotes = async (): Promise<void> => {
-    const show = (globalThis as { showSaveFilePicker?: SavePicker }).showSaveFilePicker;
-    if (show === undefined) {
-      notify({ text: 'This browser can’t save the file.' });
-      return;
-    }
-    let file: FileSystemFileHandle;
-    try {
-      file = await show.call(globalThis, { suggestedName: `sickofpdfs-notes-${dayOf(Date.now())}.zip`, types: [{ description: 'Zip file', accept: { 'application/zip': ['.zip'] } }] });
-    } catch (error) {
-      if (!(error instanceof DOMException && error.name === 'AbortError')) notify({ text: 'Couldn’t save the file. Try again.' });
-      return;
-    }
     setExporting(true);
     try {
-      const files = await data.exportNotes(await file.createWritable());
-      notify({ text: files === 0 ? 'There were no notes to save yet.' : `Saved the notes of ${files === 1 ? '1 reading' : `${files} readings`} as Markdown, in one zip file.` });
+      const chunks: Uint8Array[] = [];
+      const files = await data.exportNotes(new WritableStream<Uint8Array>({ write: (chunk) => void chunks.push(chunk) }));
+      if (files === 0) {
+        notify({ text: 'There are no notes to save yet.' });
+        return;
+      }
+      const zip = new Blob(chunks as BlobPart[], { type: 'application/zip' });
+      const name = `sickofpdfs-notes-${dayOf(Date.now())}.zip`;
+      downloadFile(zip, name);
+      // The zip stores its files as they are, so its text shows whether any note holds a formula.
+      const maths = MATHS.test(await zip.text());
+      const what = files === 1 ? 'the notes of 1 reading' : `the notes of ${files} readings`;
+      notify({ text: `Saved ${what} in ${name}, in your downloads.${maths ? ' Formulas stay as $…$, the form papers use.' : ''}` });
     } catch {
       notify({ text: 'Couldn’t save the notes. Try again.' });
     } finally {

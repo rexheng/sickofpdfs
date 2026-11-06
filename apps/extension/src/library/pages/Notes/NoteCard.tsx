@@ -1,17 +1,19 @@
 // One note thread on the Notes page and on Home: a Google Docs comment card (02 section 4.11) on the library's white card,
-// in Drive's tonal surface. Its head names the reading (a click opens it) and where the note is ("p. 4 · “the passage”");
+// in Drive's tonal surface. Its head names the reading (a click opens it) and where the note is ("Page 4 · “the passage”");
 // then the comments as the viewer shows them. On Home it is short: the first comment, at most 4 lines, and how many replies.
+// A reply from Claude is drawn by the viewer's own reply view (LibraryClaudeReply), Markdown and maths alike (TB6).
 import type { Anchor } from '@sop/core';
 import { CommentItem, FileTypeIcon, TextButton } from '@sop/ui';
 import { type MouseEvent, useState } from 'react';
+import { LibraryClaudeReply } from '../../../viewer/claude/ui/ClaudeReplyView';
 import type { NoteItem } from '../../data/pages-data';
 import styles from './NoteCard.module.css';
 
-/** Where a note is, in the words the viewer's notes panel uses: "Whole document", "p. 4". */
+/** Where a note is, in the words the viewer's notes panel uses (R74, "Page N" everywhere): "Whole document", "Page 4". */
 export function whereLabel(anchor: Anchor, pageIndex: number | null): string {
   if (anchor.kind === 'document') return 'Whole document';
   const page = pageIndex ?? ('page' in anchor ? anchor.page : null);
-  return page === null ? 'Whole document' : `p. ${page + 1}`;
+  return page === null ? 'Whole document' : `Page ${page + 1}`;
 }
 
 /** What the note is on, when it is on something: the passage, or the figure's name. */
@@ -21,6 +23,11 @@ export function onWhat(anchor: Anchor): string | null {
   if (anchor.kind === 'area') return 'An area of the page';
   return null;
 }
+
+/** Settings → Claude, in this library tab. */
+const openClaudeSettingsHere = () => {
+  location.hash = '#/settings/claude';
+};
 
 export interface NoteCardProps {
   note: NoteItem;
@@ -64,7 +71,16 @@ export function NoteCard({ note, now, compact = false, onOpen, onRestore }: Note
       </p>
       <div className={styles.comments}>
         {shown.map((c) => (
-          <CommentItem key={c.id} comment={c} now={now} clamp={compact && !expanded} onShowMore={() => setExpanded(true)} />
+          <CommentItem
+            key={c.id}
+            comment={c}
+            now={now}
+            clamp={compact && !expanded && c.author !== 'claude'}
+            onShowMore={() => setExpanded(true)}
+            renderClaudeReply={(reply) => (
+              <LibraryClaudeReply thread={thread} comment={reply} onOpenReading={onOpen} onOpenSettings={openClaudeSettingsHere} clamp={compact && !expanded} onShowMore={() => setExpanded(true)} />
+            )}
+          />
         ))}
       </div>
       {((compact && replies > 0) || onRestore !== undefined) && (
