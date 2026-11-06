@@ -48,14 +48,6 @@ button.chip:hover {
   background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), var(--sop-tag-bg));
 }
 
-/* No room for a chip: the tag icon and how many, as the note count beside the title is drawn. */
-.tagged {
-  gap: var(--space-1);
-  padding-inline: var(--space-1);
-  font: var(--type-row);
-  font-variation-settings: "opsz" 17;
-}
-
 /* "+2" as a button: it opens the reading's Tags. */
 .moreButton {
   cursor: pointer;

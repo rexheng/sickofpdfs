@@ -51,6 +51,7 @@
 }
 
 .rows {
+  outline: none;
   display: flex;
   flex-direction: column;
   padding-block-start: var(--space-2);

@@ -30,9 +30,6 @@ const FAILED = 'That didn’t work. Try again.';
 /** "2 more tags: policy, Deep Learning". */
 const moreTitle = (rest: readonly ReadingTag[]): string => `${rest.length === 1 ? '1 more tag' : `${rest.length} more tags`}: ${rest.map((t) => t.name).join(', ')}`;
 
-/** "Tags: Course: 14.01, Macroeconomics". */
-const allTitle = (all: readonly ReadingTag[]): string => `Tags: ${all.map((t) => t.name).join(', ')}`;
-
 /** Keeps a click or a double-click on a chip from also opening the reading. */
 const own = (e: MouseEvent) => e.stopPropagation();
 
@@ -42,9 +39,6 @@ export function RowTags({ documentId, list, tags, say, max, tabbable, except = n
   const shown = ordered.slice(0, max);
   const rest = ordered.slice(max);
   const tab = tabbable ? 0 : -1;
-  const more = (count: number, title: string, className: string, tagged = false) => (
-    <MoreTags count={count} title={title} className={className} tabIndex={tab} tagged={tagged} {...(onMore !== undefined ? { onClick: onMore } : {})} />
-  );
   return (
     <span className={styles.tags} onDoubleClick={own}>
       {shown.map((t) =>
@@ -80,9 +74,8 @@ export function RowTags({ documentId, list, tags, say, max, tabbable, except = n
           />
         ),
       )}
-      {rest.length > 0 && more(rest.length, moreTitle(rest), styles.moreRest)}
-      {/* No room for a chip after the title: only how many tags there are. */}
-      {more(ordered.length, allTitle(ordered), styles.moreAll, true)}
+      {/* TB6: one chip and "+N" at every width. A narrow room shortens the chip's name; it never swaps in an icon and a count. */}
+      {rest.length > 0 && <MoreTags count={rest.length} title={moreTitle(rest)} tabIndex={tab} {...(onMore !== undefined ? { onClick: onMore } : {})} />}
     </span>
   );
 }

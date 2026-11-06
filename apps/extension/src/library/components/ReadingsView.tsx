@@ -66,9 +66,10 @@ export interface ReadingsViewProps {
 /**
  * Room for the list's columns: below these widths (px) the Authors and then the Pages columns step aside. S18: Authors
  * goes a little sooner, so the titles keep room when the details panel takes the right side of the window. TB5: sooner
- * again, so a laptop window (1280 px) shows the whole title and a tag rather than "Demaine et al.".
+ * again, so a laptop window (1280 px) shows the whole title and a tag rather than "Demaine et al.". TB6: the 1280 layout holds up to
+ * 1440 px windows too (the table is about 270 px narrower than the window), so Authors only comes back on a wide screen.
  */
-const AUTHORS_MIN = 1000;
+const AUTHORS_MIN = 1300;
 const PAGES_MIN = 720;
 
 const keyOf = (item: LibraryItem) => item.doc.id;

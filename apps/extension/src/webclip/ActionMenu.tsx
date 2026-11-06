@@ -113,7 +113,8 @@ export function ActionMenu() {
   }, []);
 
   useEffect(() => {
-    if (target.kind !== 'loading') list.current?.querySelector<HTMLButtonElement>('button:not([disabled])')?.focus();
+    // Focus the menu itself, not its first row: a row is lit only by the pointer or the arrow keys (Chrome's own menus open unlit).
+    if (target.kind !== 'loading') list.current?.focus();
   }, [target.kind]);
 
   const savePage = async () => {
@@ -176,7 +177,8 @@ export function ActionMenu() {
     const rows = Array.from(list.current?.querySelectorAll<HTMLButtonElement>('button:not([disabled])') ?? []);
     if (rows.length === 0) return;
     const at = rows.indexOf(document.activeElement as HTMLButtonElement);
-    rows[(at + (e.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length]?.focus();
+    const next = at === -1 ? (e.key === 'ArrowDown' ? 0 : rows.length - 1) : (at + (e.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length;
+    rows[next]?.focus();
     e.preventDefault();
   };
 
@@ -189,7 +191,7 @@ export function ActionMenu() {
         </span>
         <span className={styles.word}>sickofpdfs</span>
       </header>
-      <div ref={list} role="menu" aria-label="sickofpdfs" className={styles.rows}>
+      <div ref={list} role="menu" aria-label="sickofpdfs" className={styles.rows} tabIndex={-1}>
         {target.kind === 'page' &&
           (busy ? (
             <div className={styles.busy} role="status">
@@ -203,7 +205,7 @@ export function ActionMenu() {
       </div>
       {line !== null && (
         <p className={styles.line} role={target.kind === 'closed' ? undefined : 'alert'}>
-          <Icon name={line === WHY.none || line === WHY.failed ? 'info' : 'block'} size={20} />
+          <Icon name="info" size={20} />
           <span>{line}</span>
         </p>
       )}

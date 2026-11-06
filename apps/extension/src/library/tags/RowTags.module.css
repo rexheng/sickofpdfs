@@ -2,8 +2,8 @@
  * The tags after a reading's name (TB5: the title comes first). The tags take only the room the title leaves: they grow
  * into what is free after it and never push it (no flex-basis of their own), except for the width of a tag count, which
  * is always kept, so the tags can be reached at any width. In that room: the first chip and how many more there are
- * ("+1"); when a chip does not fit, the tag icon and how many tags there are. A click on either count opens the reading's
- * Tags, with every tag (auto ones with Keep and Remove); they are in the details too.
+ * ("+1"), at every width (a narrow room shortens the chip's name). A click on the count opens the reading's Tags, with
+ * every tag (auto ones with Keep and Remove); they are in the details too.
  */
 .tags {
   container-name: sop-row-tags;
@@ -12,7 +12,7 @@
   flex: 1 0 auto;
   gap: var(--space-1);
   align-items: center;
-  min-inline-size: var(--space-10);
+  min-inline-size: calc(var(--space-10) + var(--space-8));
   overflow: hidden;
 }
 
@@ -22,17 +22,7 @@
   min-inline-size: 0;
 }
 
-.moreAll {
-  display: none;
-}
-
-@container sop-row-tags (max-width: 112px) {
-  .tags > button[data-tag-chip],
-  .tags > .moreRest {
-    display: none;
-  }
-
-  .tags > .moreAll {
-    display: inline-flex;
-  }
+/* The "+N" count always keeps its width; the chip before it gives way. */
+.tags > :not([data-tag-chip]) {
+  flex: none;
 }
