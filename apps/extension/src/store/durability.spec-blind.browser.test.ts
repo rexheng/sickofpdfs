@@ -9,6 +9,7 @@
 // SAH-pool file layer the real store worker uses (Task 28); the store code under test runs inside them.
 import { afterEach, describe, expect, it } from 'vitest';
 import { DOC } from './rows.spec-blind';
+import { SCHEMA_VERSION } from './schema-v2';
 
 const dirs: string[] = [];
 const workers: Worker[] = [];
@@ -47,12 +48,13 @@ describe('the real file', () => {
 
     const second = await once<{ userVersion: number; marks: string[]; comments: string[][]; draftsOfOldTab: string[][]; draftsOfB: string[][] }>('upgradeAndWrite', dir);
     // Ruling N5 (backup re-check, 2 Nov): schema v4 adds the local forgotten list, so the newest version is 4 (was 3).
-    expect(second.userVersion).toBe(4);
+    // Adjusted at the Phase 4 gate, the ladder grew to v6 (v5 tags, v6 passage_vectors): the newest version, whatever it is.
+    expect(second.userVersion).toBe(SCHEMA_VERSION);
     expect(second.marks).toEqual(['m1', 'm3']); // m2 was deleted by this run, m4 was already deleted in v1
     expect(second.draftsOfB).toEqual([['new-draft', 'typed just before the kill']]);
 
     const third = await once<{ userVersion: number; marks: string[]; threads: string[]; comments: string[][]; draftsOfOldTab: string[][]; draftsOfB: string[][]; draftsOfA: string[] }>('read', dir);
-    expect(third.userVersion).toBe(4);
+    expect(third.userVersion).toBe(SCHEMA_VERSION);
     expect(third.marks).toEqual(['m1', 'm3']);
     expect(third.threads).toEqual(['new-thread', 't1', 't2', 't3']);
     expect(third.comments.map((c) => c[0])).toEqual(['c1', 'c2', 'c3', 'c4', 'new-comment']);
