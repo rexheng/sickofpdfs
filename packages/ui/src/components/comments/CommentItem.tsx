@@ -140,7 +140,9 @@ function CommentTime({ comment, now }: { comment: CommentView; now?: number }) {
   if (meta.kind === 'claude-reply' && meta.via === 'connector') parts.push('from claude.ai');
   return (
     <time
-      className={cx(styles.time, comment.draftOfTab !== null && styles.draft)}
+      // Only the owner's unsent text wears the draft style. A reply Claude is still writing in this tab (or one that
+      // stopped with an error) is not a draft of theirs: its time is the plain grey of every sent comment (TB6).
+      className={cx(styles.time, comment.draftOfTab !== null && comment.author === 'me' && styles.draft)}
       dateTime={new Date(comment.createdAt).toISOString()}
       title={formatCommentTimeFull(comment.createdAt)}
     >
