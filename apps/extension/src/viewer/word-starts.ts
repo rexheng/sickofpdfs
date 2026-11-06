@@ -34,12 +34,15 @@ export type WordStartsStrength = 'light' | 'medium' | 'strong';
 /**
  * How heavy each strength draws (R90c): the gain on each face's own regular-to-bold gain (R90b's synthetic bold), and
  * the edge darkening (paintBold's `boost`). At 100% on a 1× screen the letters' gaps and counters leave little room to
- * grow (R90c keeps them open), so the heavier steps also darken the edges, which moves no outline. Measured as the
- * Test build 5 student critic did (the ink of the DiD paper's abstract at 100%, DPR 1, against the switch off): Light
- * +15%, Medium +28%, Strong +42%, the ruling's steps. Medium is the face's own bold with a little edge darkening.
+ * grow (R90c keeps them open), so the heavier steps also darken the edges, which moves no outline. Medium is the face's
+ * own bold with a little edge darkening.
+ *
+ * Each step differs from its neighbour by at least a third of the Off → Light step (Test build 6 visual critic), at
+ * 100% and 200% on 1× and 2× screens, measured on PLOS ONE and Attention: Light at 0.9 was within a fifth of Medium at
+ * 200% and on 2× screens, where edge darkening adds little, so Light is half the face's bold.
  */
 export const WORD_STARTS_LOOK: Readonly<Record<WordStartsStrength, BoldLook>> = {
-  light: { gain: 0.9, boost: 0 },
+  light: { gain: 0.5, boost: 0 },
   medium: { gain: 1, boost: 0.8 },
   strong: { gain: 1.4, boost: 2.2 },
 };
