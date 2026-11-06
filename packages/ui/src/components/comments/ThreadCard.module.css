@@ -54,14 +54,15 @@
 
 /*
  * The open card's comments (ThreadScroll). It spans the card's padding, so the ⋮ buttons, chips and focus rings near
- * the edges are not clipped, and its scroll bar sits at the card's right edge. 4 px above and below keep the rings of
- * the first and last controls whole.
+ * the edges are not clipped, and its scroll bar sits at the card's right edge. 4 px above keeps the first control's
+ * ring whole; the 16 px below is the gap over the reply box, which holds the reply's hover cost line, so that line never
+ * makes a short thread scroll. The negative margins keep Docs' spacing exactly as it was.
  */
 .active > .thread {
   flex-shrink: 1;
   min-block-size: 0;
-  margin: calc(-1 * var(--space-1)) calc(-1 * var(--sop-card-pad-x));
-  padding: var(--space-1) var(--sop-card-pad-x);
+  margin: calc(-1 * var(--space-1)) calc(-1 * var(--sop-card-pad-x)) calc(-1 * var(--space-4));
+  padding: var(--space-1) var(--sop-card-pad-x) var(--space-4);
   overflow-y: auto;
   /* eslint-disable css/use-baseline -- a Chrome-only extension (minimum Chrome 128): Chrome has overflow-anchor since 56,
      overscroll-behavior since 63 and scrollbar-width since 121 */
@@ -75,12 +76,19 @@
   mask-image: linear-gradient(to bottom, transparent, currentcolor var(--space-6));
 }
 
+/* The fade below starts above the 16 px gap at the thread's foot, so it reaches the words. */
 .thread[data-more-below] {
-  mask-image: linear-gradient(to top, transparent, currentcolor var(--space-6));
+  mask-image: linear-gradient(to top, transparent var(--space-4), currentcolor calc(var(--space-4) + var(--space-6)));
 }
 
 .thread[data-more-above][data-more-below] {
-  mask-image: linear-gradient(to bottom, transparent, currentcolor var(--space-6), currentcolor calc(100% - var(--space-6)), transparent);
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    currentcolor var(--space-6),
+    currentcolor calc(100% - var(--space-4) - var(--space-6)),
+    transparent calc(100% - var(--space-4))
+  );
 }
 
 /* A line above the note: "Page 4 · “the passage…”" (Docs sidebar: 12/20 500 on-surface-variant, one line). */
