@@ -80,7 +80,7 @@ export { FIELD_NAMES, SUBJECT_FIELD } from './categorise/subject-fields';
 export { EMBEDDING_DIM, EMBEDDING_MODEL, MAX_ABSTRACT_CHARS, OPENING_PAGES, embeddingInput, withoutNames } from './categorise/text';
 export type { EmbeddingInput, InputKind } from './categorise/text';
 export { createPassageRetriever, focusPassage, buildQuery, MAX_PASSAGES } from './claude/passages';
-export type { PassageRetriever, PassageSource, FocusSource, RetrieverOptions } from './claude/passages';
+export type { PassageRetriever, PassageSource, FocusSource, RetrieverOptions, PassageEmbedder, VectorCache } from './claude/passages';
 export { buildDocumentMap, documentMapTokens, MAP_MAX_TOKENS } from './claude/doc-map';
 export type { MapSource, MapFigure, OutlineEntry, SizedLine } from './claude/doc-map';
 export { inMemoryRankPages } from './claude/rank';

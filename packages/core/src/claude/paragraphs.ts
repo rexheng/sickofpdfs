@@ -64,7 +64,7 @@ const SENTENCE_END = /[.!?]["')\]”’]*(?=\s+[A-Z0-9“"([]|\s*$)/g;
 /** Abbreviations that end in a full stop but not a sentence. */
 const ABBREV = /(?:\b(?:e\.g|i\.e|et al|etc|vs|cf|Fig|Figs|Eq|Eqs|Sec|Tab|No|Dr|approx|resp)|\b[A-Z])\.$/;
 
-function sentenceEnds(s: string): number[] {
+export function sentenceEnds(s: string): number[] {
   const ends: number[] = [];
   for (const m of s.matchAll(SENTENCE_END)) {
     const e = m.index + m[0].length;

@@ -5,7 +5,7 @@
 // 5 passages, each at most 300 tokens, within the budget you give. Same inputs, same bytes out, so the prompt cache holds.
 import type { DocumentId } from '../ids';
 import type { Anchor } from '../model/anchor';
-import { passageSpans, toPassage, tokensOf, type Span } from './paragraphs';
+import { MAX_PASSAGE_TOKENS, passageSpans, sentenceEnds, toPassage, tokensOf, windowsOf, type Span } from './paragraphs';
 import { scorePassages } from './rank';
 import type { Passage } from './types';
 
@@ -22,22 +22,46 @@ export interface PassageSource {
   rankPages(query: string, limit: number): Promise<{ pageIndex: number; rank: number }[]>;
 }
 
+/** Turns texts into unit-length vectors (the extension's MiniLM worker). Cosine similarity is then a dot product. */
+export interface PassageEmbedder { embed(texts: readonly string[]): Promise<Float32Array[]> }
+
 export interface RetrieverOptions {
-  /** How many passages at most. The plan says 5; the measurement script tries more. */
+  /** How many passages at most (default 8), as far as the token budget allows. */
   maxPassages?: number;
   /**
-   * Optional re-ranker (Phase 3's small model, when it is already loaded). Gets the question and the best candidates and
-   * returns one score per candidate, higher is better. If it is slow (over 150 ms) or throws, BM25 order stands.
+   * Meaning search. With it, the best 20 paragraphs by words and the 20 nearest by meaning are fused (reciprocal rank
+   * fusion). Without it, or when it fails, words only.
    */
-  rerank?: (query: string, candidates: readonly string[]) => Promise<number[] | null>;
+  embedder?: PassageEmbedder;
+  /**
+   * How long to wait for vectors before falling back to words. Vectors that finish late are kept for the next question.
+   * Null waits as long as it takes (a saved reading whose vectors are cached). Default 150 ms, the soft limit for a PDF
+   * that is not saved, where vectors are made on the fly.
+   */
+  embedTimeoutMs?: number | null;
+  /** Pages whose paragraphs are looked at when meaning search is on. Default 12; a saved reading with cached vectors can use every page. */
+  candidatePages?: number;
+  /** At most this many paragraphs are embedded for one question: the most word-relevant ones. Default 200. */
+  embedPoolCap?: number;
+  /** Optional store of paragraph vectors, kept for saved readings (local only). Keys are the paragraph text. */
+  vectorCache?: VectorCache;
 }
 
-/** At most this many passages in a default pack (plan §3). */
-export const MAX_PASSAGES = 5;
-/** Pages looked at in detail. */
+/** A place to keep paragraph vectors. The retriever also keeps its own small in-memory copy. */
+export interface VectorCache {
+  get(texts: readonly string[]): Promise<(Float32Array | null)[]>;
+  put(entries: readonly { text: string; vector: Float32Array }[]): Promise<void>;
+}
+
+/** At most this many passages in a pack. The token budget usually stops it sooner. */
+export const MAX_PASSAGES = 8;
+/** Pages looked at in detail: more when meaning search can pick up what words miss. */
 const PAGE_CANDIDATES = 6;
-const RERANK_CANDIDATES = 12;
-export const RERANK_TIMEOUT_MS = 150;
+const PAGE_CANDIDATES_HYBRID = 12;
+const FUSE_EACH = 20;
+const RRF_K = 5;   // measured: a small constant keeps each list's best few near the top (plan slice B, p4b report)
+export const EMBED_TIMEOUT_MS = 150;
+const MEMORY_VECTORS = 3000;
 
 /** What to rank by: the question and the marked quote together (plan slice B). */
 export function buildQuery(question: string, anchor: Anchor | null): string {
@@ -59,11 +83,60 @@ async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
 
 interface Candidate { pageIndex: number; pageRank: number; span: Span }
 
+const dot = (a: Float32Array, b: Float32Array): number => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
+
+/** A sentence next to a passage, added when it fits, so an answer that runs over two sentences stays whole. */
+function expand(text: string, ends: readonly number[], span: Span, room: number, taken: readonly Span[]): Span {
+  const bounds = [0, ...ends];
+  const blank = (from: number, to: number) => text.slice(from, to).trim() === '';
+  let { start, end } = span;
+  const free = (from: number, to: number) => !taken.some((t) => t !== span && from < t.end && to > t.start);
+  let left = Math.min(room, MAX_PASSAGE_TOKENS - tokensOf(end - start));
+  const i = bounds.findLastIndex((x) => x <= span.start && blank(x, span.start));
+  if (i >= 1) {
+    const from = bounds[i - 1] + (text.slice(bounds[i - 1]).length - text.slice(bounds[i - 1]).trimStart().length);
+    const cost = tokensOf(span.start - from);
+    if (cost <= left && span.start - from > 0 && free(from, span.start)) { start = from; left -= cost; }
+  }
+  const j = bounds.findIndex((x) => x >= span.end && blank(span.end, x));
+  if (j >= 0 && j + 1 < bounds.length) {
+    const to = bounds[j + 1];
+    const cost = tokensOf(to - span.end);
+    if (cost <= left && to > span.end && free(span.end, to)) end = to;
+  }
+  return start === span.start && end === span.end ? span : { start, end, text: text.slice(start, end).trim() };
+}
+
 export function createPassageRetriever(src: PassageSource, opts: RetrieverOptions = {}): PassageRetriever {
+  const memory = new Map<string, Float32Array>();
+  const remember = (text: string, v: Float32Array) => {
+    memory.delete(text); memory.set(text, v);
+    while (memory.size > MEMORY_VECTORS) memory.delete(memory.keys().next().value as string);
+  };
+
+  /** Vectors for these texts: memory, then the store's cache, then the embedder (stored again afterwards). */
+  async function vectorsFor(texts: readonly string[]): Promise<(Float32Array | null)[]> {
+    const out: (Float32Array | null)[] = texts.map((t) => memory.get(t) ?? null);
+    const missing = out.flatMap((v, i) => (v ? [] : [i]));
+    if (missing.length > 0 && opts.vectorCache) {
+      const got = await opts.vectorCache.get(missing.map((i) => texts[i])).catch(() => null);
+      got?.forEach((v, k) => { if (v) { out[missing[k]] = v; remember(texts[missing[k]], v); } });
+    }
+    const todo = missing.filter((i) => !out[i]);
+    if (todo.length > 0 && opts.embedder) {
+      const vs = await opts.embedder.embed(todo.map((i) => texts[i]));
+      const fresh: { text: string; vector: Float32Array }[] = [];
+      todo.forEach((i, k) => { const v = vs[k]; if (v) { out[i] = v; remember(texts[i], v); fresh.push({ text: texts[i], vector: v }); } });
+      if (fresh.length > 0) await opts.vectorCache?.put(fresh).catch(() => undefined);
+    }
+    return out;
+  }
+
   return {
     async getPassages(docId, query, tokenBudget, o) {
       if (!(tokenBudget > 0) || src.pageCount <= 0 || query.trim() === '') return [];
-      const ranked = await src.rankPages(query, PAGE_CANDIDATES);
+      const hybrid = opts.embedder !== undefined;
+      const ranked = await src.rankPages(query, hybrid ? (opts.candidatePages ?? PAGE_CANDIDATES_HYBRID) : PAGE_CANDIDATES);
       const seenPages = new Set<number>();
       const pages = ranked.filter((r) => r.pageIndex >= 0 && r.pageIndex < src.pageCount && !seenPages.has(r.pageIndex) && seenPages.add(r.pageIndex));
       const texts = await Promise.all(pages.map((p) => src.text(p.pageIndex)));
@@ -72,31 +145,63 @@ export function createPassageRetriever(src: PassageSource, opts: RetrieverOption
       const excluded = new Set((o?.exclude ?? []).map((p) => `${p.textSource}|${p.pageIndex}|${p.start}|${p.end}`));
       const usable = cands.filter((c) => !excluded.has(`${src.textSource(c.pageIndex)}|${c.pageIndex}|${c.span.start}|${c.span.end}`));
       // BM25 over the paragraphs, then a small lift for passages on pages the page ranker liked best (breaks ties well).
-      const scored = scorePassages(query, usable.map((c) => c.span.text))
-        .filter((s) => s.score > 0)
+      const scoredAll = scorePassages(query, usable.map((c) => c.span.text))
         .map((s) => ({ ...s, score: s.score * (1 + 0.1 * (1 - usable[s.index].pageRank / Math.max(1, pages.length))) }))
         .sort((a, b) => b.score - a.score || a.index - b.index);
+      const byWords = scoredAll.filter((s) => s.score > 0).map((s) => s.index);
 
-      let order = scored.map((s) => s.index);
-      if (opts.rerank && order.length > 1) {
-        const head = order.slice(0, RERANK_CANDIDATES);
-        const scores = await withTimeout(opts.rerank(query, head.map((i) => usable[i].span.text)).catch(() => null), RERANK_TIMEOUT_MS);
-        if (scores && scores.length === head.length && scores.every((x) => Number.isFinite(x))) {
-          const re = head.map((idx, k) => ({ idx, k, s: scores[k] })).sort((a, b) => b.s - a.s || a.k - b.k).map((x) => x.idx);
-          order = [...re, ...order.slice(RERANK_CANDIDATES)];
+      let order = byWords;
+      if (hybrid && usable.length > 0) {
+        // Embed the most word-relevant paragraphs (and, for the rest, whatever is already cached), then fuse the two top-20 lists.
+        const pool = scoredAll.slice(0, opts.embedPoolCap ?? 200).map((s) => s.index);
+        // Meaning is judged on three-sentence windows (a long paragraph's average blurs the one sentence that answers).
+        const wins = pool.flatMap((idx, k) => windowsOf(usable[idx].span.text).map((w) => ({ k, w })));
+        const poolTexts = wins.map((x) => x.w);
+        const work = (async () => {
+          const [qv] = await opts.embedder!.embed([query]);
+          const vs = await vectorsFor(poolTexts);
+          return { qv, vs };
+        })();
+        const wait = opts.embedTimeoutMs === undefined ? EMBED_TIMEOUT_MS : opts.embedTimeoutMs;
+        work.catch(() => undefined);
+        const done = await (wait === null ? work.catch(() => null) : withTimeout(work.catch(() => null), wait));
+        if (done?.qv) {
+          const best = new Array<number>(pool.length).fill(-Infinity);
+          wins.forEach((x, j) => { const v = done.vs[j]; if (v) best[x.k] = Math.max(best[x.k], dot(done.qv, v)); });
+          const near = pool
+            .map((idx, k) => ({ idx, sim: best[k] }))
+            .filter((x) => x.sim > -Infinity)
+            .sort((a, b) => b.sim - a.sim || a.idx - b.idx)
+            .slice(0, FUSE_EACH)
+            .map((x) => x.idx);
+          const fused = new Map<number, number>();
+          [byWords.slice(0, FUSE_EACH), near].forEach((list) => list.forEach((idx, r) => fused.set(idx, (fused.get(idx) ?? 0) + 1 / (RRF_K + r + 1))));
+          order = [...fused].sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([idx]) => idx);
         }
       }
 
-      const out: Passage[] = [];
+      const maxN = opts.maxPassages ?? MAX_PASSAGES;
+      const picked: Candidate[] = [];
       let used = 0;
       for (const idx of order) {
-        if (out.length >= (opts.maxPassages ?? MAX_PASSAGES)) break;
+        if (picked.length >= maxN) break;
         const c = usable[idx];
         const tokens = tokensOf(c.span.text.length);
         if (used + tokens > tokenBudget) continue;
         used += tokens;
-        out.push(toPassage(docId, c.pageIndex, src.textSource(c.pageIndex), c.span, out.length));
+        picked.push(c);
       }
+      // Neighbour sentences, with what is left of the budget, best passages first.
+      const pageText = new Map<number, { text: string; ends: number[] }>();
+      pages.forEach((p, i) => pageText.set(p.pageIndex, { text: texts[i], ends: sentenceEnds(texts[i]) }));
+      const out: Passage[] = picked.map((c, i) => {
+        const pt = pageText.get(c.pageIndex)!;
+        const same = picked.filter((x) => x.pageIndex === c.pageIndex).map((x) => x.span);
+        const grown = expand(pt.text, pt.ends, c.span, tokenBudget - used, same);
+        const extra = tokensOf(grown.text.length) - tokensOf(c.span.text.length);
+        if (extra > 0) { used += extra; c.span = grown; }
+        return toPassage(docId, c.pageIndex, src.textSource(c.pageIndex), c.span, i);
+      });
       return out;
     },
   };
