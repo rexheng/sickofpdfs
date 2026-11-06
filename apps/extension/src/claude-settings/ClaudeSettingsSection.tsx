@@ -17,6 +17,7 @@ import { useLibrary } from '../library/app/context';
 import { formatDate } from '../library/components/format';
 import { SettingsGroup, SettingsNote, SettingsRow, SettingsSection } from '../library/pages/Settings/SettingsSection';
 import { getSpend, monthOf, type SpendRecord } from '../viewer/claude/spend';
+import { costWords } from '../viewer/claude/ui/cost-words';
 import styles from './ClaudeSettingsSection.module.css';
 import { type ApiProblem, cleanKey, deleteKey, keyShapeProblem, listModels, localStoreExists, readSavedKey, savedKeyEnding, saveKey } from './key-check';
 import {
@@ -52,16 +53,8 @@ const MONTH = new Intl.DateTimeFormat('en-GB', { month: 'long' });
 const LONG_DATE = new Intl.DateTimeFormat('en-GB', { dateStyle: 'long' });
 const TIME = new Intl.DateTimeFormat(undefined, { timeStyle: 'short' });
 
-/** "about 0.1 cent", "about 5 cents", "about $1.20": what a question costs, in the words of the spec. */
-export function aboutCost(usd: number): string {
-  if (!Number.isFinite(usd) || usd < 0) return 'cost not known';
-  const cents = usd * 100;
-  if (cents < 0.1) return 'under 0.1 cent';
-  if (cents < 0.95) return `about ${cents.toFixed(1)} cent`;
-  if (cents < 1.5) return 'about 1 cent';
-  if (cents < 99.5) return `about ${Math.round(cents)} cents`;
-  return `about $${usd.toFixed(2)}`;
-}
+/** "less than 1¢", "about 5¢", "$1.20": what a question costs, said the one way the viewer says it too (TB6, visual 6). */
+export const aboutCost = costWords;
 
 /** "$1.23"; an amount above zero but under a cent is "less than 1 cent". */
 function money(usd: number): string {

@@ -1,15 +1,17 @@
 // The questions asked before Claude is sent anything that needs a yes (contracts §6 "Before sending"; plan §4 F):
 // - a PDF that is not in the library: "Send 3 passages to Anthropic?";
-// - an estimate over the owner's limit for asking first ($0.25 unless changed): "This question costs about 31¢";
+// - an estimate over the owner's limit for asking first ($0.25 unless changed): "This question costs about 31¢", and with
+//   a $0 limit "Your limit for asking first is $0, so Claude asks before every question.";
 // - "Ask about the whole document": the pages and the cost first.
 //
 // The runner (slice D) calls `confirmClaude` once per ask, in the order `decide` gives them, and sends nothing until it
-// resolves true. Cancel, Esc and a click outside all mean no. The safe answer has the focus: Enter on a dialog opened from
-// the keyboard presses Cancel, so a key typed late never sends anything (as R100 rules for the save question).
+// resolves true. Cancel, Esc and a click outside all mean no. Cancel has the focus in every one of them, however it was
+// opened (a key, a click on Think harder): Enter presses Cancel, so a key typed late never sends anything (as R100 rules
+// for the save question). Costs are said the one way (cost-words.ts).
 import { Dialog } from '@sop/ui';
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import styles from './ClaudeConfirmDialog.module.css';
-import { formatUsd } from './host';
+import { amountWords, costWords } from './cost-words';
 
 export type ClaudeAsk = 'unsaved' | 'over-threshold' | 'whole-document';
 
@@ -40,7 +42,7 @@ export function sentThings(r: Pick<ClaudeConfirmRequest, 'passages' | 'figures'>
 
 /** The title and the plain sentences of each question. */
 export function confirmWords(r: ClaudeConfirmRequest): { title: string; lines: string[]; send: string } {
-  const cost = formatUsd(r.usd);
+  const cost = costWords(r.usd);
   const withModel = r.model ? ` with ${r.model}` : '';
   switch (r.ask) {
     case 'unsaved': {
@@ -53,17 +55,21 @@ export function confirmWords(r: ClaudeConfirmRequest): { title: string; lines: s
             : `This PDF is not in your library. To answer, Claude needs ${what} from it.`,
           // The document map always goes too (contracts §6): say so, so the owner knows exactly what leaves.
           'They go to Anthropic, who run Claude, with your question and the PDF’s title, abstract and headings. Nothing else is sent.',
-          `About ${cost}${withModel}.`,
+          `It costs ${cost}${withModel}.`,
         ],
         send: 'Send',
       };
     }
     case 'over-threshold': {
-      const limit = r.thresholdUsd != null && Number.isFinite(r.thresholdUsd) ? formatUsd(r.thresholdUsd) : null;
+      const limit = r.thresholdUsd != null && Number.isFinite(r.thresholdUsd) && r.thresholdUsd >= 0 ? r.thresholdUsd : null;
       return {
-        title: `This question costs about ${cost}`,
+        title: `This question costs ${cost}`,
         lines: [
-          limit === null ? 'That is more than usual, so you are asked first.' : `That is more than ${limit}, so you are asked first.`,
+          limit === null
+            ? 'That is more than usual, so you are asked first.'
+            : limit === 0
+              ? 'Your limit for asking first is $0, so Claude asks before every question.'
+              : `Your limit for asking first is ${amountWords(limit)}. This question is over it.`,
           r.model ? `${r.model} would answer it.` : 'Claude would answer it.',
         ],
         send: 'Send',
@@ -73,7 +79,7 @@ export function confirmWords(r: ClaudeConfirmRequest): { title: string; lines: s
       return {
         title: 'Ask about the whole document?',
         lines: [
-          `Claude reads ${r.pages ? `all ${r.pages} pages` : 'every page'}. This costs about ${cost}${withModel}.`,
+          `Claude reads ${r.pages ? `all ${r.pages} pages` : 'every page'}. This costs ${cost}${withModel}.`,
           'For a question about one part, ask on that passage instead. It costs much less.',
         ],
         send: 'Send',
@@ -106,8 +112,39 @@ export function ClaudeConfirmDialog({ request, onAnswer }: ClaudeConfirmDialogPr
           {line}
         </p>
       ))}
+      {request !== null && <CancelFirst key={confirmKey(request)} />}
     </Dialog>
   );
+}
+
+/** Each question its own number, so the next one in the queue gets the focus put on its Cancel again. */
+const keys = new WeakMap<ClaudeConfirmRequest, number>();
+let lastKey = 0;
+function confirmKey(r: ClaudeConfirmRequest): number {
+  const known = keys.get(r);
+  if (known !== undefined) return known;
+  lastKey += 1;
+  keys.set(r, lastKey);
+  return lastKey;
+}
+
+/**
+ * Puts the focus on Cancel once the dialog has opened. The dialog would give it to itself when opened with the pointer
+ * (Think harder is clicked), where Enter then does nothing; here every question has Cancel focused, as the whole-document
+ * one already had from the keyboard (TB6, experience 8). Cancel is the first action. It runs after the dialog's own
+ * opening focus, which comes once this has mounted.
+ */
+function CancelFirst() {
+  const mark = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const dialog = mark.current?.closest('[role="dialog"]');
+      const cancel = [...(dialog?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent === 'Cancel');
+      if (cancel !== undefined && dialog?.contains(document.activeElement) !== false) cancel.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  return <span ref={mark} hidden />;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
