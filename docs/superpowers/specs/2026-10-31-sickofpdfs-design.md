@@ -317,7 +317,7 @@ The "+ New" button offers Upload PDF, Open file and Paste link. In an Incognito 
   The PDF is saved as a reading with the page as its source link. Every reading feature then works on it: marks, comments, Bold word starts, caret browsing, search, tags, topics and @Claude.
 - Nothing is sent anywhere, and the page is read only on the owner's click. It uses the `activeTab` and `scripting` permissions, so the extension never reads pages on its own.
 - The owner's click is the decision, so the learning filter doesn't judge it. The every-page hard-block check (R91) still runs: card, bank or ID numbers make the reading not searchable, with the D9 warning.
-- Saving the same page again opens the existing reading. A page that changed since is saved as a new version, linked to the old one.
+- Saving the same page again opens the existing reading. A page that changed since is saved as a new version, linked to the old one. The owner's marks and notes move to the new version, re-anchored on their quotes. A note that can't be placed shows under "Couldn't place" with its quote and is never deleted. The earlier version says "Your notes moved to the newer version".
 - If no article can be found (a web app, a login page), the menu says so plainly: "This page doesn't have an article to save."
 - On a PDF tab, the menu offers "Open library" only. The viewer already saves PDFs.
 
