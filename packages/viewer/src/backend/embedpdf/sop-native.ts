@@ -22,6 +22,7 @@ import type {
   Glyph,
   GlyphOutline,
   GlyphPlacement,
+  GlyphShapeOptions,
   GlyphShapes,
   LinkTarget,
   OutlineItem,
@@ -43,7 +44,8 @@ import type {
 } from '../types';
 import type { EngineApi, OpenedDocument } from './rpc';
 import { BoldFaces, faceStyle } from '../../marks/bold-faces';
-import { STEM_LETTERS, type StemMeasures, stemMeasures } from '../../marks/synthetic-bold';
+import { glyphInk, type InkPicture, luminanceOf } from '../../marks/glyph-ink';
+import { pageToDevice, STEM_LETTERS, type StemMeasures, stemMeasures } from '../../marks/synthetic-bold';
 
 /** FPDF_GetFormType's result (fpdf_formfill.h FORMTYPE_*), by value. */
 const FORM_TYPES: FormType[] = ['none', 'acroform', 'xfa-full', 'xfa-foreground'];
@@ -71,6 +73,7 @@ const MAX_OUTLINE_ITEMS = 100_000;
 /** FPDF_PAGEOBJ_* in fpdf_edit.h, by value. */
 const PAGE_OBJECT_TYPES: PageObjectType[] = ['unknown', 'text', 'path', 'image', 'shading', 'form'];
 const FPDF_PAGEOBJ_TEXT = 1;
+const FPDF_PAGEOBJ_IMAGE = 3;
 const FPDF_PAGEOBJ_FORM = 5;
 /** FPDFText_FindStart flags (fpdf_text.h). */
 const FPDF_MATCHCASE = 1;
@@ -108,6 +111,27 @@ const FORCE_BOLD_WEIGHT = 700;
 const FACE_OBJECTS_READ = 4000;
 /** Outline coordinates are written to 1/100 pt (0.05 px at 400% on a DPR-2 screen). */
 const OUTLINE_PRECISION = 100;
+/**
+ * A glyph is drawn bold only when at least this share of its box is inside its clip path and the page box (R90: a
+ * reading aid never draws text the page does not show, such as rows a statement keeps clipped away).
+ */
+const MIN_SHOWN_SHARE = 0.5;
+/** A page's clip paths are read from at most this many of its objects (in form XObjects, this deep). */
+const CLIP_OBJECTS_READ = 20_000;
+const CLIP_FORM_DEPTH = 4;
+/**
+ * Text under an opaque image drawn after it is hidden when the image covers this share of the text object's box (a scan
+ * whose recognised words sit under its own picture, R90). Only the page's largest images are compared.
+ */
+const COVERED_SHARE = 0.9;
+const COVER_IMAGES_READ = 64;
+/**
+ * getGlyphShapes' ink check reads the page drawn at this many px a point (once a page): body text has 10 to 15 px an
+ * em, enough to tell a glyph the page shows from one it hides, for some 6 to 15 ms of the engine a page.
+ */
+const INK_SCALE = 1.5;
+/** Pages whose ink pictures are kept (a page's word starts take a few calls). */
+const INK_PAGES_KEPT = 3;
 
 /** renderBitmap refuses bitmaps larger than this (a side, and in all): beyond it the wasm heap would run out. */
 export const MAX_TILE_SIDE = 16_384;
@@ -122,6 +146,11 @@ type ExportName =
   | 'FPDFPageObj_GetBounds'
   | 'FPDFPageObj_GetMarkedContentID'
   | 'FPDFPageObj_GetMatrix'
+  | 'FPDFPageObj_GetClipPath'
+  | 'FPDFPageObj_HasTransparency'
+  | 'FPDFClipPath_CountPaths'
+  | 'FPDFClipPath_CountPathSegments'
+  | 'FPDFClipPath_GetPathSegment'
   | 'FPDFFormObj_CountObjects'
   | 'FPDFFormObj_GetObject'
   | 'FPDFImageObj_GetImagePixelSize'
@@ -303,6 +332,8 @@ interface DocState {
   /** The faces met so far and each one's synthetic bold (R90b), and the pages whose faces were read. */
   faces: BoldFaces;
   facesRead: Set<number>;
+  /** getGlyphShapes' ink pictures, by page, the last INK_PAGES_KEPT pages asked. */
+  inkPictures: Map<number, InkPicture>;
 }
 
 export class SopPdfiumNative extends PdfiumNative implements EngineApi {
@@ -344,7 +375,7 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
       // EmbedPDF's size is PDFium's page size, which is turned by /Rotate; PageSize is the unrotated one.
       return rotation % 180 === 0 ? { width: p.size.width, height: p.size.height, rotation } : { width: p.size.height, height: p.size.width, rotation };
     });
-    this.docs.set(docId, { doc, sizes, linksHidden: new Set(), faces: new BoldFaces(), facesRead: new Set() });
+    this.docs.set(docId, { doc, sizes, linksHidden: new Set(), faces: new BoldFaces(), facesRead: new Set(), inkPictures: new Map() });
     try {
       return { pageCount: doc.pageCount, pages: sizes, metadata: this.metadata(doc), encrypted: doc.isEncrypted };
     } catch (err) {
@@ -979,7 +1010,7 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
    *   1. its text object (FPDFText_GetTextObject) gives the font (FPDFTextObj_GetFont), the size (GetFontSize), the
    *      render mode (GetTextRenderMode) and, with the char, its fill and stroke colours (FPDFText_GetFillColor and
    *      GetStrokeColor), its effective size and its font's weight (FPDFFont_GetWeight, GetFlags' ForceBold). Invisible text is
-   *      skipped: modes 3 and 7, or nothing painted with alpha above 0;
+   *      skipped: modes 3 and 7, or nothing painted with alpha above 0; and so is a glyph the page does not show (walkGlyphs);
    *   2. the outline, in ems: FPDFFont_GetGlyphPath(font, argument, size), the argument being the char's Unicode value
    *      (GLYPH_ARG = unicode), or the forms in glyphArguments for ligatures and joined hyphens. Outlines are cached by
    *      font and argument for as long as the page stays loaded (see outlineCache);
@@ -1007,15 +1038,16 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
   /**
    * The glyphs of chars [charStart, charStart + charCount) for synthetic bold (PdfBackend.getGlyphShapes, R90b): each
    * distinct outline once, in ems, and each glyph's place, paint and its face's bold. The glyphs are getGlyphOutlines'
-   * (the same ligatures, joined hyphens and invisible text left out). A face's bold is matched to the document's own
+   * (the same ligatures, joined hyphens and hidden text left out). A face's bold is matched to the document's own
    * bold face of its family where there is one: the faces of this page are read and measured on their own l, i, n and o
-   * (BoldFaces).
+   * (BoldFaces). With opts.ink, each filled glyph's `ink` is read from a picture of the page (glyphInk; inkPicture).
    */
-  getGlyphShapes(docId: string, pageIndex: number, charStart: number, charCount: number): GlyphShapes {
+  getGlyphShapes(docId: string, pageIndex: number, charStart: number, charCount: number, opts?: GlyphShapeOptions): GlyphShapes {
     const state = this.state(docId);
     const shapes: Float32Array[] = [];
     const ids = new Map<CachedGlyph, number>();
     const glyphs: GlyphPlacement[] = [];
+    let picture: InkPicture | undefined;
     this.walkGlyphs(
       docId,
       pageIndex,
@@ -1034,6 +1066,11 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
         const placed: GlyphPlacement = { charIndex: g.charIndex, shape: id, m: [a, -b, c, -d], x: g.x, y: g.y, fill: g.paint.fill, stroke: g.paint.stroke, fontSize: g.paint.fontSize, bold: state.faces.gainFor(face) };
         if (style?.italic) placed.italic = true;
         if (style?.maths) placed.maths = true;
+        if (opts?.ink === true && placed.fill !== null) {
+          picture ??= this.inkPicture(state, pageIndex);
+          const ink = glyphInk(picture, g.glyph.em, placed.m, placed.x, placed.y, placed.fill);
+          if (ink !== undefined) placed.ink = ink;
+        }
         glyphs.push(placed);
       },
       (pageCtx, mem) => this.readFaces(state, pageIndex, pageCtx, mem),
@@ -1051,6 +1088,10 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
    *   2. the outline, in ems: FPDFFont_GetGlyphPath(font, argument, size), the argument being the char's Unicode value
    *      (GLYPH_ARG = unicode), or the forms in glyphArguments for ligatures and joined hyphens. Outlines are cached by
    *      font and argument for as long as the page stays loaded (see outlineCache).
+   *   3. the glyph is left out unless the page shows it: at least MIN_SHOWN_SHARE of its box (its outline's, placed) must
+   *      be inside the page box and inside its text object's clip path (textClipsOf, which also counts text under an
+   *      opaque image as hidden). A PDF can keep text it never shows, such as the rows of other statement pages clipped
+   *      away under a table, or a scan's recognised words under its picture (R90).
    * PDFium expands a char code with several Unicode chars (a ligature, a surrogate pair) into that many chars, which
    * share the text object and the origin: they are one glyph, at the first of its chars in the range. Every PDFium call
    * goes to the wasm exports directly (P0-5: about 3× cheaper than the wrappers). `before` runs first, on the loaded page.
@@ -1077,6 +1118,7 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
       before?.(pageCtx, mem);
       const end = start + count;
       const crop = this.cropBox(pageCtx.pagePtr, mem);
+      const clips = this.textClipsOf(pageCtx, mem);
       let byFont = this.outlineCache.get(pageCtx);
       if (!byFont) this.outlineCache.set(pageCtx, (byFont = new Map<number, Map<number, CachedGlyph | null>>()));
 
@@ -1129,13 +1171,137 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
           glyph = this.cachedGlyph(byFont, paint.font, arg, paint.size, mem);
           if (glyph) break;
         }
-        if (glyph) visit({ charIndex: i, glyph, paint, x: (ox[first - lo] ?? 0) - crop.left, y: crop.top - (oy[first - lo] ?? 0) }, pageCtx, mem);
+        const gx = ox[first - lo] ?? 0;
+        const gy = oy[first - lo] ?? 0;
+        if (glyph && shownShare(glyph, paint.matrix, gx, gy, crop, clips.get(obj) ?? null) >= MIN_SHOWN_SHARE) {
+          visit({ charIndex: i, glyph, paint, x: gx - crop.left, y: crop.top - gy }, pageCtx, mem);
+        }
         i = next;
       }
     } finally {
       x.free(mem);
       pageCtx.release();
     }
+  }
+
+  /**
+   * Where each text object of the page may show, per loaded page: the box of its clip path (the box of each of its
+   * paths, met), met with the clips of the form XObjects it is in, in page space (PDF y up); null where nothing clips
+   * it. A clip path's points are in its object's space, which a form's matrix (FPDFPageObj_GetMatrix) maps to its
+   * parent's, as listPageObjects maps bounds. A box is never smaller than the clip, so a glyph is never left out
+   * because of a clip that is not a rectangle. A text object an opaque image drawn after it covers (COVERED_SHARE of its
+   * box) shows nothing: its box is empty.
+   */
+  private readonly textClips = new WeakMap<PageContext, Map<number, PdfBox | null>>();
+
+  private textClipsOf(pageCtx: PageContext, mem: number): Map<number, PdfBox | null> {
+    const known = this.textClips.get(pageCtx);
+    if (known) return known;
+    const clips = new Map<number, PdfBox | null>();
+    this.textClips.set(pageCtx, clips);
+    const x = this.x;
+    const h = this.h;
+    // In drawing order: each text object's box, and each opaque image's.
+    const texts: { obj: number; order: number; box: PdfBox }[] = [];
+    const images: { order: number; box: PdfBox }[] = [];
+    let seen = 0;
+    const boundsOf = (obj: number, toPage: Matrix | null): PdfBox | null => {
+      if (!x.FPDFPageObj_GetBounds(obj, mem, mem + 4, mem + 8, mem + 12)) return null;
+      let [l, b, r, t] = [h.float(mem), h.float(mem + 4), h.float(mem + 8), h.float(mem + 12)];
+      if (toPage) [l, b, r, t] = transformBox(toPage, l, b, r, t);
+      return { left: l, bottom: b, right: r, top: t };
+    };
+    const visit = (obj: number, depth: number, toPage: Matrix | null, outer: PdfBox | null): void => {
+      if (++seen > CLIP_OBJECTS_READ) return;
+      const box = meet(outer, this.clipBox(obj, toPage, mem));
+      const type = x.FPDFPageObj_GetType(obj);
+      if (type === FPDF_PAGEOBJ_TEXT) {
+        clips.set(obj, box);
+        const own = boundsOf(obj, toPage);
+        if (own) texts.push({ obj, order: seen, box: own });
+      } else if (type === FPDF_PAGEOBJ_IMAGE && x.FPDFPageObj_HasTransparency(obj) === 0) {
+        const own = boundsOf(obj, toPage);
+        const shown = own && meet(own, box);
+        if (shown && shown.right > shown.left && shown.top > shown.bottom) images.push({ order: seen, box: shown });
+      } else if (type === FPDF_PAGEOBJ_FORM && depth < CLIP_FORM_DEPTH) {
+        x.FPDFPageObj_GetMatrix(obj, mem); // FS_MATRIX: the form matrix, form space → its parent's space
+        const own: Matrix = [h.float(mem), h.float(mem + 4), h.float(mem + 8), h.float(mem + 12), h.float(mem + 16), h.float(mem + 20)];
+        const inner = toPage ? concat(own, toPage) : own;
+        const count = x.FPDFFormObj_CountObjects(obj);
+        for (let k = 0; k < count; k++) visit(x.FPDFFormObj_GetObject(obj, k), depth + 1, inner, box);
+      }
+    };
+    const count = x.FPDFPage_CountObjects(pageCtx.pagePtr);
+    for (let i = 0; i < count; i++) visit(x.FPDFPage_GetObject(pageCtx.pagePtr, i), 0, null, null);
+    if (images.length > 0) {
+      const area = (b: PdfBox) => Math.max(0, b.right - b.left) * Math.max(0, b.top - b.bottom);
+      const covers = images.sort((a, b) => area(b.box) - area(a.box)).slice(0, COVER_IMAGES_READ);
+      for (const t of texts) {
+        const size = area(t.box);
+        if (!(size > 0)) continue;
+        const hidden = covers.some((im) => im.order > t.order && area(meet(t.box, im.box) ?? t.box) >= COVERED_SHARE * size);
+        if (hidden) clips.set(t.obj, { left: t.box.left, bottom: t.box.bottom, right: t.box.left, top: t.box.bottom });
+      }
+    }
+    return clips;
+  }
+
+  /** The box of `obj`'s own clip path in page space (`toPage`: its space → the page's), or null when it has none. */
+  private clipBox(obj: number, toPage: Matrix | null, mem: number): PdfBox | null {
+    const x = this.x;
+    const clip = x.FPDFPageObj_GetClipPath(obj);
+    const paths = clip ? x.FPDFClipPath_CountPaths(clip) : -1;
+    let box: PdfBox | null = null;
+    for (let p = 0; p < paths; p++) {
+      const segments = x.FPDFClipPath_CountPathSegments(clip, p);
+      if (segments <= 0) continue;
+      let [l, b, r, t] = [Infinity, Infinity, -Infinity, -Infinity];
+      for (let k = 0; k < segments; k++) {
+        x.FPDFPathSegment_GetPoint(x.FPDFClipPath_GetPathSegment(clip, p, k), mem, mem + 4);
+        const px = this.h.float(mem);
+        const py = this.h.float(mem + 4);
+        l = Math.min(l, px);
+        r = Math.max(r, px);
+        b = Math.min(b, py);
+        t = Math.max(t, py);
+      }
+      if (toPage) [l, b, r, t] = transformBox(toPage, l, b, r, t);
+      box = meet(box, { left: l, bottom: b, right: r, top: t });
+    }
+    return box;
+  }
+
+  /**
+   * The page drawn as the viewer shows it (its /Rotate, annotations on) at INK_SCALE px a point, as luminance, for
+   * getGlyphShapes' ink check: drawn the first time a page asks, and kept for the last INK_PAGES_KEPT pages.
+   */
+  private inkPicture(state: DocState, pageIndex: number): InkPicture {
+    const kept = state.inkPictures.get(pageIndex);
+    if (kept) {
+      state.inkPictures.delete(pageIndex);
+      state.inkPictures.set(pageIndex, kept);
+      return kept;
+    }
+    const size = state.sizes[pageIndex];
+    const turned = rotateRect({ x: 0, y: 0, width: size.width, height: size.height }, size.width, size.height, size.rotation);
+    if (!state.linksHidden.has(pageIndex)) {
+      this.hideLinkBorders(state.doc, pageIndex);
+      state.linksHidden.add(pageIndex);
+    }
+    const image = settled(
+      this.renderPageRect(state.doc, this.page(state.doc, pageIndex), { origin: { x: turned.x, y: turned.y }, size: { width: turned.width, height: turned.height } }, {
+        scaleFactor: INK_SCALE,
+        rotation: 0,
+        withAnnotations: true,
+      }),
+    );
+    const picture: InkPicture = { lum: luminanceOf(image.data, image.width, image.height), width: image.width, height: image.height, device: pageToDevice(size, 0, image.width, image.height) };
+    state.inkPictures.set(pageIndex, picture);
+    for (const old of state.inkPictures.keys()) {
+      if (state.inkPictures.size <= INK_PAGES_KEPT) break;
+      state.inkPictures.delete(old);
+    }
+    return picture;
   }
 
   // ---- synthetic bold: the document's faces (R90b) ----
@@ -1485,6 +1651,50 @@ interface TextObjectPaint {
 interface CachedGlyph {
   em: Float32Array;
   placed: Map<string, PlacedOutline>;
+  /** The outline's box in ems (left, bottom, right, top), once shownShare has needed it. */
+  box?: [number, number, number, number];
+}
+
+/** Where two boxes (PDF space) overlap; null is no bound at all. An empty overlap is a box of no area. */
+function meet(a: PdfBox | null, b: PdfBox | null): PdfBox | null {
+  if (!a) return b;
+  if (!b) return a;
+  const left = Math.max(a.left, b.left);
+  const bottom = Math.max(a.bottom, b.bottom);
+  return { left, bottom, right: Math.max(left, Math.min(a.right, b.right)), top: Math.max(bottom, Math.min(a.top, b.top)) };
+}
+
+/**
+ * The share of a glyph's box (its em outline's, placed by `m` at the origin (ox, oy), PDF space) inside the page box
+ * `crop` and the clip box `clip`. A glyph of no area counts by its origin.
+ */
+function shownShare(glyph: CachedGlyph, m: readonly [number, number, number, number], ox: number, oy: number, crop: PdfBox, clip: PdfBox | null): number {
+  const [l0, b0, r0, t0] = (glyph.box ??= emBox(glyph.em));
+  const [a, b, c, d] = m;
+  const xs = [a * l0 + c * b0, a * r0 + c * b0, a * l0 + c * t0, a * r0 + c * t0];
+  const ys = [b * l0 + d * b0, b * r0 + d * b0, b * l0 + d * t0, b * r0 + d * t0];
+  const box: PdfBox = { left: ox + Math.min(...xs), bottom: oy + Math.min(...ys), right: ox + Math.max(...xs), top: oy + Math.max(...ys) };
+  // FPDF_GetPageBoundingBox gives top and bottom as PDF y; either may be the larger.
+  const page: PdfBox = { left: Math.min(crop.left, crop.right), right: Math.max(crop.left, crop.right), bottom: Math.min(crop.top, crop.bottom), top: Math.max(crop.top, crop.bottom) };
+  const area = (box.right - box.left) * (box.top - box.bottom);
+  if (!(area > 1e-6)) {
+    const holds = (p: PdfBox | null) => p === null || (ox >= p.left && ox <= p.right && oy >= p.bottom && oy <= p.top);
+    return holds(page) && holds(clip) ? 1 : 0;
+  }
+  const shown = meet(meet(box, page), clip) ?? box;
+  return ((shown.right - shown.left) * (shown.top - shown.bottom)) / area;
+}
+
+/** An em outline's box (left, bottom, right, top), its curves' control points included. */
+function emBox(em: Float32Array): [number, number, number, number] {
+  let [l, b, r, t] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (let s = 0; s < em.length; s += 4) {
+    l = Math.min(l, em[s + 1]);
+    r = Math.max(r, em[s + 1]);
+    b = Math.min(b, em[s + 2]);
+    t = Math.max(t, em[s + 2]);
+  }
+  return Number.isFinite(l) ? [l, b, r, t] : [0, 0, 0, 0];
 }
 
 /**

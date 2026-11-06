@@ -264,6 +264,18 @@ export interface GlyphPlacement {
   italic?: true;
   /** Set when its face is a maths face (CMMI, CMSY, Symbol, STIX, "…Math…"): bold word starts leave it alone (R90c). */
   maths?: true;
+  /**
+   * With getGlyphShapes' `ink` option: how much of the glyph the page's own picture shows, from 0 (nothing: the glyph is
+   * covered, or drawn in the colour behind it) to 1 (all of it, in its fill colour). Missing for a glyph with no fill, or
+   * too small to measure. Bold word starts draw only words the page shows (R90).
+   */
+  ink?: number;
+}
+
+/** getGlyphShapes' options. */
+export interface GlyphShapeOptions {
+  /** Measure each glyph's `ink` against a picture of the page (one render per page, kept for the next calls). */
+  ink?: boolean;
 }
 
 /** getGlyphShapes: each distinct outline once, and the glyphs that use them. */
@@ -357,18 +369,20 @@ export interface PdfBackend {
   getTextRuns(doc: DocHandle, pageIndex: number, opts: { budgetMs: number }): Promise<TextRunList>;
   /**
    * The glyph outlines of chars [charStart, charStart + charCount), for bold (P0-5, R29). Left out: chars with no glyph
-   * (PDFium's generated spaces and line breaks, whitespace) and invisible text (render modes 3 and 7, such as a scan's
-   * OCR layer, or a fill with alpha 0), so a visible char in the range with no outline is one bold cannot redraw (the
-   * caller draws the "strong" style there). A ligature, a surrogate pair and PDFium's joined line-end hyphen each give
-   * one outline. A Type3 glyph has no outline. In char order.
+   * (PDFium's generated spaces and line breaks, whitespace) and text the page never shows: invisible text (render modes
+   * 3 and 7, such as a scan's OCR layer, or a fill with alpha 0), and glyphs mostly outside their clip path or the page
+   * box. So a visible char in the range with no outline is one bold cannot redraw (the caller draws the "strong" style
+   * there). A ligature, a surrogate pair and PDFium's joined line-end hyphen each give one outline. A Type3 glyph has no
+   * outline. In char order.
    */
   getGlyphOutlines(doc: DocHandle, pageIndex: number, charStart: number, charCount: number): Promise<GlyphOutline[]>;
   /**
    * The glyphs of chars [charStart, charStart + charCount) for synthetic bold (R90b): getGlyphOutlines' glyphs as em
    * outlines (each distinct one once) and placements, with each face's bold matched to the document's own bold face
-   * where it has one. Bold word starts, bold marks and print with marks draw from this.
+   * where it has one. Bold word starts, bold marks and print with marks draw from this. With `opts.ink`, each glyph's
+   * `ink` says how much of it the page's picture shows.
    */
-  getGlyphShapes(doc: DocHandle, pageIndex: number, charStart: number, charCount: number): Promise<GlyphShapes>;
+  getGlyphShapes(doc: DocHandle, pageIndex: number, charStart: number, charCount: number, opts?: GlyphShapeOptions): Promise<GlyphShapes>;
   /**
    * SHA-256 of an image object's stream data as stored in the file (FPDFImageObj_GetImageDataRaw), computed in the
    * engine. `objectIndex` counts as listPageObjects(doc, pageIndex, { recurseForms: true }) does (depth first, a form

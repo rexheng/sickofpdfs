@@ -12,6 +12,7 @@ import type { Sha256 } from '@sop/core';
 import type {
   FormInfo,
   GlyphOutline,
+  GlyphShapeOptions,
   GlyphShapes,
   OutlineItem,
   PageGlyphs,
@@ -55,7 +56,7 @@ export interface EngineApi {
   /** With opts.budgetMs, the budgeted form (TextRunList); without, every run. */
   getTextRuns(docId: string, pageIndex: number, opts?: { budgetMs?: number }): TextRun[] | TextRunList;
   getGlyphOutlines(docId: string, pageIndex: number, charStart: number, charCount: number): GlyphOutline[];
-  getGlyphShapes(docId: string, pageIndex: number, charStart: number, charCount: number): GlyphShapes;
+  getGlyphShapes(docId: string, pageIndex: number, charStart: number, charCount: number, opts?: GlyphShapeOptions): GlyphShapes;
   hashImageObject(docId: string, pageIndex: number, objectIndex: number): Promise<Sha256 | null>;
 }
 export type EngineMethod = keyof EngineApi;
