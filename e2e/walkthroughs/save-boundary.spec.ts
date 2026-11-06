@@ -594,3 +594,66 @@ test.describe('TB4 ruling: Forget wins over an unsent note in another tab (code 
     expect(await libraryId(b), 'and nothing is saved while it asks').toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------------------------------------------------
+// TB5 student critic, finding 1 (the blocker): on a bank statement, a note typed and sent with Enter saved the bank statement
+// (R96 had made Enter the question's Save). Ruling R100: Enter never answers "Save this PDF to keep your notes?". The letters
+// typed while it is open show in it ("Your note: …") and go into the note. Only a click on a button, or Tab to a button and then
+// Enter or Space, answers it; Esc means No. Not spec-blind: the critic's reproduction (critics-tb5/student/f6.mjs), kept as a
+// regression walkthrough under rule 10's exception (privacy: nothing saved from a private PDF).
+
+const BANK: TlFixture = { name: 'bank', file: 'classifier/not-learning/bank-statement-five-star-bank-sample.pdf', page: 0, dir: 'ltr' };
+const BANK_LINE = { from: 'Premier Checking', to: 'Premier Checking' };
+
+test.describe('R100: Enter never answers the save question (TB5 student critic, finding 1)', () => {
+  // The real filter's verdict: the bank statement is "not learning", so the first note asks.
+  test.beforeEach(async ({ context }) => realVerdict(context));
+
+  test('a note typed on a bank statement and sent with Enter saves nothing: the question shows the note, and Esc keeps it in the tab only', async ({ openViewer, server }, testInfo) => {
+    const NOTE = 'Why is this fee here? Ask the bank.';
+    const page = await openPaper(openViewer, server, BANK);
+    await waitForStore(page);
+    await expect.poll(() => saveKind(page), { timeout: 30_000, message: 'the filter calls the bank statement "not learning"' }).toBe('not-learning');
+    await selectPassage(page, BANK, BANK_LINE);
+    await page.keyboard.press('Control+Alt+m');
+    await expect(savePrompt(page).first(), 'Ctrl+Alt+M asks first').toBeVisible({ timeout: 5000 });
+    await page.keyboard.type(NOTE, { delay: 40 }); // the owner types on, as the critic did
+    await shot(page, testInfo, 'typed-into-the-question');
+
+    await page.keyboard.press('Enter'); // the owner's habit: Enter sends a note
+    const until = Date.now() + 3000;
+    while (Date.now() < until) {
+      expect(await saveKind(page), 'Enter answers nothing: the question is still asking').toBe('asking');
+      expect(await libraryId(page), 'the bank statement is not in the library').toBeNull();
+      await page.waitForTimeout(250);
+    }
+    await expect(savePrompt(page).first(), 'the question is still open').toBeVisible();
+    await expect(page.getByRole('dialog'), 'and it shows the letters typed into it').toContainText(`Your note: ${NOTE}`);
+    await shot(page, testInfo, 'enter-saved-nothing');
+
+    await page.keyboard.press('Escape'); // Esc means No
+    await expect(savePrompt(page), 'Esc answers No').toHaveCount(0);
+    await expect.poll(() => noteText(page, 5000), { timeout: 5000, message: 'the typed note is in the note box' }).toBe(NOTE);
+    expect(await libraryId(page), 'and the bank statement is still not saved').toBeNull();
+    expect((await storeOf(page).stats()).documents, 'no document row').toBe(0);
+    expect(await storedCopies(page), 'no copy of the PDF').toEqual([]);
+    await shot(page, testInfo, 'esc-note-kept-in-the-tab');
+  });
+
+  test('Tab to Save and Space is the owner\'s own answer: it saves, and the letters typed go into the note', async ({ openViewer, server }, testInfo) => {
+    const page = await openPaper(openViewer, server, BANK);
+    await waitForStore(page);
+    await expect.poll(() => saveKind(page), { timeout: 30_000, message: 'the filter calls the bank statement "not learning"' }).toBe('not-learning');
+    await selectPassage(page, BANK, BANK_LINE);
+    await page.keyboard.press('Control+Alt+m');
+    await expect(savePrompt(page).first(), 'Ctrl+Alt+M asks first').toBeVisible({ timeout: 5000 });
+    await page.keyboard.type('Fee', { delay: 40 });
+    const save = page.getByRole('dialog').getByRole('button', { name: /^save$/i });
+    for (let i = 0; i < 4 && !(await save.evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press('Tab');
+    await expect(save, 'Tab reaches Save').toBeFocused();
+    await page.keyboard.press(' ');
+    await waitSaved(page, 30_000);
+    await expect.poll(() => noteText(page, 10_000), { timeout: 10_000, message: 'the letters typed while it asked are in the note' }).toBe('Fee');
+    await shot(page, testInfo, 'tab-save-space-saved');
+  });
+});

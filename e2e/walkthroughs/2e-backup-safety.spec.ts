@@ -15,6 +15,8 @@
 //   9  a quit while a PDF is copied never leaves a short file under its real name.
 // The re-check probes N1 to N5 follow (R87, R88): "Back up anyway" never deletes a lost reading's copies; a waiting removal for a folder
 // that is gone is dropped; the writer never starts a second run on its own; the forgotten list stays local; a hold's badge says why.
+// Last, R101 (TB5 code and security critic, finding 1): a backup that has online lookups on restores into a fresh profile, and nothing
+// goes online.
 // Run: npx playwright test -c e2e/playwright.config.ts 2e-backup-safety --workers=1
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -23,7 +25,10 @@ import { compareHlc, parseLibraryDump, planRestore } from '../../packages/core/s
 import { expect, EXTENSION_ID, grepOpfs, hooks, seedSecret, test } from '../support/test';
 import { TEST_ASSETS } from '../support/server';
 import { ATTENTION, SENTENCE_1, openPaper, postNote, waitSaved, waitStored } from './support/marks.spec-blind';
-import { waitForStore, store as storeOf } from '../support/store-probe.spec-blind';
+import { openViewerIn, waitForStore, store as storeOf } from '../support/store-probe.spec-blind';
+import { launchExtension, waitForExtensionWorker } from '../support/launch';
+import { backedUp } from './support/backup-flow.spec-blind';
+import { PICKER_FOLDER, copyFolderBetween, folderFiles, installBackupFakes, note, openSettings, readFolderText, restoreButton, shotOf, sleep, waitViewerReady, writeFolderFile } from './support/library-p3.spec-blind';
 
 test.setTimeout(300_000);
 
@@ -583,4 +588,68 @@ test('N5 held badge tooltip', async ({ context, server, openViewer, sw }) => {
   console.log('run', JSON.stringify(r));
   await lib.waitForTimeout(3000);
   console.log('badge after 3 s', JSON.stringify(await sw.evaluate(async () => ({ text: await chrome.action.getBadgeText({}), title: await chrome.action.getTitle({}) }))));
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// TB5 code and security critic, finding 1 (major): Restore wrote the backup's settings. A backup with "Online lookups" on turned the
+// switch on here, and the extension asked arXiv and Crossref 4 seconds later; a backup's "Always save from" list came back the same
+// way. Ruling R101: a restore never changes a setting, and its summary says "Your settings were not changed". Not spec-blind: the
+// critic's reproduction (critics-tb5/code-security/e3-restore-crafted.mjs) done through the real Settings page, kept as a regression
+// walkthrough under rule 10's exception (network). Another profile makes a real backup; its library.json is made to say lookups on and
+// "Always save from moodle.lse.ac.uk"; this test's own fresh profile restores it. This profile's net log is the harness's gate
+// (`enforce`): any request to arXiv or Crossref fails the test.
+
+test('R101 restore: a backup with online lookups on restores into a fresh profile; the switch stays off and nothing goes online', async ({ context, server, profiles }, testInfo) => {
+  test.setTimeout(600_000);
+  // ---- another profile makes a real backup of two papers with notes (ResNet lacks fields a lookup would fill) ----
+  const maker = await launchExtension({ userDataDir: await profiles.copy('seeded'), viewport: { width: 1280, height: 900 } });
+  await installBackupFakes(context);
+  const settings = await openSettings(context);
+  try {
+    await waitForExtensionWorker(maker);
+    const made = await backedUp(maker, (source) => openViewerIn(maker, source), server, testInfo);
+    const libraryPath = (await folderFiles(made.settings, PICKER_FOLDER)).find((f) => f.path.endsWith('library.json'))!.path;
+    const dump = JSON.parse(await readFolderText(made.settings, PICKER_FOLDER, libraryPath)) as { tables: Record<string, Record<string, unknown>[]> };
+    const first = dump.tables.documents[0]?.hlc;
+    const stamp = typeof first === 'string' ? first : '';
+    expect(stamp, 'the backup has stamped rows').not.toBe('');
+    dump.tables.settings = [
+      ...dump.tables.settings.filter((r) => r.key !== 'lookups.online' && r.key !== 'filter.allow'),
+      { key: 'lookups.online', value: 'true', rev: 0, hlc: stamp },
+      { key: 'filter.allow', value: JSON.stringify(['moodle.lse.ac.uk']), rev: 0, hlc: stamp },
+    ];
+    await writeFolderFile(made.settings, PICKER_FOLDER, libraryPath, JSON.stringify(dump));
+    expect(await copyFolderBetween(made.settings, PICKER_FOLDER, settings, PICKER_FOLDER), 'the backup folder is copied to this profile').toBeGreaterThan(4);
+  } finally {
+    await maker.close();
+  }
+
+  // ---- this profile: fresh, lookups off ----
+  const toggle = settings.getByRole('switch', { name: /lookup/i }).or(settings.getByRole('checkbox', { name: /lookup/i })).first();
+  await expect(toggle, 'online lookups start switched off here').not.toBeChecked();
+  await settings.bringToFront();
+  await restoreButton(settings).click();
+  const dialog = settings.getByRole('dialog').first();
+  await expect(dialog, 'Restore shows what is in the backup').toContainText(/2 readings/i, { timeout: 30_000 });
+  // The words are checked softly, so a build without them still shows whether the setting changed and whether anything went online.
+  await expect.soft(dialog, 'and says the settings stay as they are').toContainText(/your settings are not changed/i);
+  await shotOf(settings, testInfo, 'r101-restore-dialog');
+  await dialog.getByRole('button', { name: /^restore$/i }).click();
+  await expect(settings.getByText(/came back/i).first(), 'the restore finishes').toBeVisible({ timeout: 120_000 });
+  await expect.soft(settings.getByText(/your settings were not changed/i), 'the summary says the settings were not changed').toBeVisible();
+  await settings.getByText(/came back/i).first().scrollIntoViewIfNeeded();
+  await shotOf(settings, testInfo, 'r101-restore-summary');
+  note(testInfo, 'the restore said', ((await settings.locator('main').textContent()) ?? '').replace(/\s+/g, ' ').slice(0, 600));
+
+  const probe = await openViewerIn(context, server.url('/h/plain.pdf'));
+  await waitViewerReady(probe);
+  await waitForStore(probe);
+  await expect.poll(async () => (await storeOf(probe).stats()).documents, { timeout: 60_000, message: 'the two readings came back' }).toBe(2);
+  expect(await storeOf(probe).call('getSetting', 'lookups.online'), 'the switch is still this computer\'s own: not on').not.toBe(true);
+  const allow = await storeOf(probe).call<unknown>('getSetting', 'filter.allow');
+  expect(Array.isArray(allow) ? allow : [], 'and the backup\'s "Always save from" list did not come back').not.toContain('moodle.lse.ac.uk');
+  await settings.reload();
+  await expect(toggle, 'Settings still shows online lookups off').not.toBeChecked({ timeout: 15_000 });
+  await shotOf(settings, testInfo, 'r101-lookups-still-off');
+  await sleep(20_000); // the critic saw the first lookup 4.4 s after the restore; this profile's net log (the gate) must hold none
 });
