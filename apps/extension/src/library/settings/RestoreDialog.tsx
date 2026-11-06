@@ -52,7 +52,7 @@ export function RestoreDialog({ state, onRestore, onCancel, onChooseAgain }: Res
         {p.leftOut > 0 && <p className={styles.dialogText}>{willLeaveOut(p.leftOut)}</p>}
         <p className={styles.dialogText}>
           Restoring adds what your library is missing and keeps everything you have now. Nothing is deleted. If a note was changed in both places, you keep both
-          versions.
+          versions. Your settings are not changed.
         </p>
       </>
     );

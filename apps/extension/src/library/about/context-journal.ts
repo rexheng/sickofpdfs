@@ -11,8 +11,10 @@
 // viewer tab never adopts words while the library page that typed them is still open, and the other way round.
 // The library adopts only entries an About box wrote (edit ids marked "-ctx-", or a comment entry with its whole row and a
 // whole-document thread): words typed in a note card belong to the viewer's own restore.
+// R101 (TB5 code and security critic, finding 3): words older than the note itself (it was changed since, by a restore, the viewer
+// or later sync) never replace it. They are set aside for "Recovered notes" (draft-journal.ts), and the box shows the newer note.
 import type { CommentId, CommentRow, DocumentId, TabId, ThreadId, ThreadRow } from '@sop/core';
-import { type DraftJournal, type JournalCommentEntry, type JournalEditEntry, localDraftJournal } from '../../viewer/annotations/draft-journal';
+import { type DraftJournal, type JournalCommentEntry, type JournalEditEntry, localDraftJournal, noteIsNewer } from '../../viewer/annotations/draft-journal';
 import { stashMeta } from '../../viewer/annotations/session';
 import { createTabPresence, type TabPresence } from '../../viewer/annotations/tab-presence';
 import type { DocumentNote } from './about-data';
@@ -139,6 +141,11 @@ export function createContextKeeper(o: { journal: DraftJournal | null; tabId: Ta
           if (note !== null && j.kind === 'edit' && j.commentId === note.comment.id && j.editId.includes(EDIT_MARK)) {
             if (j.body === note.comment.body) {
               journal.remove('edit', j.commentId); // it was saved after all
+              continue;
+            }
+            if (noteIsNewer(note.comment, j.at)) {
+              // R101: the note changed after these words were typed. They are kept for "Recovered notes", never saved over it.
+              if (journal.keepAside?.(`${j.commentId}.${j.editId}`, { kind: 'edit', body: j.body, at: j.at }) === true) journal.remove('edit', j.commentId);
               continue;
             }
             journal.put({ ...j, tab: tabId }); // this page owns it now

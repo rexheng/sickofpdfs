@@ -15,6 +15,14 @@
 //   viewer has no notes there, and `localDraftJournal` refuses too). One exception (TB4 ruling, Forget wins, no lost text):
 //   when another tab forgets the PDF, an unsent note this tab still holds is kept here until it is sent, dropped or saved.
 // - An entry goes when the draft is sent or discarded and the store has confirmed it, or when the PDF is forgotten.
+// - Words set aside (`keepAside`, key `sop-draft:r:<id>`) are the owner's, kept for "Recovered notes" only: no PDF takes them back,
+//   and only the owner's Delete there removes them (recovered-notes.ts). They carry no document id, no file fingerprint and no
+//   quote of the PDF, only the words and a time. Two kinds:
+//   - R101: a crash draft older than the note it was for (the note changed since, by a restore, another tab or later sync). It
+//     never overwrites the newer note (`noteIsNewer`);
+//   - TB5 ruling: a note a tab still holds after the owner forgot the PDF with "Never save this file". Its id is a random one made
+//     for it, never the file's fingerprint. While its tab lives it is that tab's (`held`), and it shows under "Recovered notes"
+//     once the tab has gone.
 // - Nothing here syncs or is searched: sync reads the store's outbox, search the store's index.
 // - Only extension pages can read it: localStorage is per origin, and web pages and content scripts have another origin.
 
@@ -58,6 +66,32 @@ export interface JournalEditEntry {
 }
 
 export type JournalEntry = JournalCommentEntry | JournalEditEntry;
+
+/** The words of a note set aside for "Recovered notes" (see the rules above). */
+export interface AsideEntry {
+  v: 1;
+  aside: true;
+  /** A note being written, or an unsent change to a sent note. */
+  kind: 'comment' | 'edit';
+  body: string;
+  /** When the words were typed (ms). */
+  at: number;
+  /** The tab holding the note in memory, and the page life it was made in: it is that tab's until the tab goes. */
+  held?: { tab: TabId; life: string };
+}
+
+export const ASIDE_PREFIX = `${JOURNAL_PREFIX}r:`;
+
+/**
+ * R101: the note was changed after `at`, when the journal's words were typed: its last edit, or when it was made if it was never
+ * edited. Every edit sets `editedAt` to the moment of the edit (here, in another tab, or on the computer a restore brings it from),
+ * so a crash draft older than that never overwrites the note. (Not the row's stamp: that is when the store wrote it, which can be
+ * a moment after an edit session the owner began straight after sending the last one.)
+ */
+export function noteIsNewer(note: Pick<CommentRow, 'createdAt' | 'editedAt'>, at: number): boolean {
+  const changed = note.editedAt ?? note.createdAt;
+  return typeof changed === 'number' && Number.isFinite(changed) && changed > at;
+}
 export type JournalKind = JournalEntry['kind'];
 
 export interface DraftJournal {
@@ -75,6 +109,12 @@ export interface DraftJournal {
   clear(documentId: DocumentId): void;
   /** Runs `fn` while holding this document's journal lock, so two tabs never adopt the same entry. */
   locked<T>(documentId: DocumentId, fn: () => Promise<T>): Promise<T>;
+  /** Sets words aside for "Recovered notes" under `id` (see the rules above). Never throws; false if it could not be written. */
+  keepAside?(id: string, e: Omit<AsideEntry, 'v' | 'aside'>): boolean;
+  /** Removes words set aside under `id` (the note was sent, emptied or saved after all). */
+  removeAside?(id: string): void;
+  /** Words set aside that a tab held: the ones a page of `tab` other than `life` held are that tab's no more (it was reloaded). */
+  releaseAside?(tab: TabId, life: string): void;
 }
 
 /** The part of the Web Storage API the journal uses. */
@@ -182,6 +222,36 @@ export function createDraftJournal(storage: KeyValueStorage): DraftJournal {
       const locks = lockManager();
       if (!locks) return fn();
       return locks.request(`sop-draft-journal:${documentId}`, () => fn());
+    },
+    keepAside(id, e) {
+      const k = `${ASIDE_PREFIX}${id}`;
+      const entry: AsideEntry = { v: 1, aside: true, kind: e.kind, body: e.body, at: e.at, ...(e.held ? { held: e.held } : {}) };
+      try {
+        storage.setItem(k, JSON.stringify(entry));
+        return true;
+      } catch {
+        return false; // full or refused: the words are still where they were (the tab, or the journal entry not yet removed)
+      }
+    },
+    removeAside: (id) => removeKey(`${ASIDE_PREFIX}${id}`),
+    releaseAside(tab, life) {
+      for (const k of keys()) {
+        if (!k.startsWith(ASIDE_PREFIX)) continue;
+        let e: Partial<AsideEntry> | null;
+        try {
+          e = JSON.parse(storage.getItem(k) ?? 'null') as Partial<AsideEntry> | null;
+        } catch {
+          continue;
+        }
+        if (e?.aside !== true || e.held?.tab !== tab || e.held.life === life) continue;
+        const rest = { ...e };
+        delete rest.held;
+        try {
+          storage.setItem(k, JSON.stringify(rest));
+        } catch {
+          // it stays held; it shows once the tab has gone
+        }
+      }
     },
   };
 }

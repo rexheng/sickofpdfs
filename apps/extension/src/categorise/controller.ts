@@ -10,6 +10,11 @@
 // - A reading whose owner keeps its text out of the library (a private PDF saved by choice) is not touched at all: the store never offers it.
 // - It never slows a viewer. It runs on a thread of its own, one reading at a time, waits at least three times as long as a reading took
 //   before the next, waits while other tabs are writing to the library, and frees the model after a minute of nothing to do.
+// - It gives its memory back (TB5 code and security critic, finding 6). Freeing the model leaves the runtime's WebAssembly memory in
+//   the worker, so after a minute with nothing to do it says so (`onIdle`) and the offscreen document ends the worker. The host starts
+//   a new one at the next change that matters (`mattersToCategoriser`). Nothing is lost: every bit of state is in the store.
+// - Topics are refreshed once after every back-fill (TB5 experience critic, finding 4), so a library whose topics were never made (Chrome
+//   closed before the refresh after a burst of saves) gets them at the next start. The owner's tag suggestions are refreshed then too.
 // - The owner always wins (the store keeps that rule): a tag taken off a reading, a renamed tag, an owner's tag are never changed here.
 import {
   clusterTopics,
@@ -26,6 +31,7 @@ import {
 import { CATEGORISER_TAB } from '../store/change-bus';
 import { createStoreClient, type StoreClient } from '../store/client';
 import type { CategoriseInput } from '../store/tags-api';
+import { mattersToCategoriser, VECTOR_PAGES } from './changes';
 import { loadFields, loadSubjects } from './load-subjects';
 import type { Embedder } from '../viewer/filter/embedder';
 import { loadEmbedder } from '../viewer/filter/load-embedder';
@@ -60,6 +66,11 @@ export interface ControllerOptions {
   timing?: Partial<Timing>;
   /** Replaces the model loader (a test's). */
   loadEmbedder?: (base: string) => Promise<Embedder>;
+  /**
+   * Nothing to do for `idleDisposeMs` and the model is freed: the controller has stopped, and the worker can end (host.ts ends it, and
+   * starts a new one at the next change that matters). Without it the controller just sleeps until the next change.
+   */
+  onIdle?: () => void;
 }
 
 export interface CategoriseController {
@@ -77,7 +88,7 @@ const MAX_FAILURES = 3;
 /** A reading just saved may still be waiting for its page text: look again this many times (settleMs apart) before using what is there. */
 const MAX_TEXT_WAITS = 8;
 /** Pages of text the vector is made from (the store's INPUT_PAGES). */
-const TEXT_PAGES = 3;
+const TEXT_PAGES = VECTOR_PAGES;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -137,6 +148,8 @@ export function startCategoriseController(o: ControllerOptions): CategoriseContr
   let suggestAll = false;
   /** The last time another tab (or the owner) changed the library. */
   let lastForeignChange = 0;
+  /** The last time there was work: a reading, a refresh, or a change that matters. The worker ends `idleDisposeMs` after it. */
+  let lastWorkAt = Date.now();
   let wake: (() => void) | null = null;
   const timings = import.meta.env.MODE === 'test' ? new BroadcastChannel(TIMING_CHANNEL) : null;
   /** Test builds only: says how long a step took. Carries numbers and a step name, never a title or a text. */
@@ -153,11 +166,10 @@ export function startCategoriseController(o: ControllerOptions): CategoriseContr
     const now = Date.now();
     if (c.tabId === CATEGORISER_TAB) return; // its own write
     lastForeignChange = now;
+    if (mattersToCategoriser(c)) lastWorkAt = now;
     if (c.table === 'documents' || c.table === 'page_text') {
       if (c.op === 'upsert' && c.documentId !== undefined) {
-        // Only the first pages make the vector; the later pages of a long PDF arriving one by one do not matter.
-        const early = c.table === 'documents' || c.ids.some((id) => Number(id.slice(id.lastIndexOf(':') + 1)) < TEXT_PAGES);
-        if (early) pending.set(c.documentId, now + timing.settleMs);
+        if (mattersToCategoriser(c)) pending.set(c.documentId, now + timing.settleMs);
       } else if (c.op === 'upsert') {
         // Many readings at once with no single id (a restore, later a sync): look through the library again.
         backfillDone = false;
@@ -291,6 +303,10 @@ export function startCategoriseController(o: ControllerOptions): CategoriseContr
       const ids = (await store.categoriseQueue(QUEUE_BATCH)).filter((id) => (failures.get(id) ?? 0) < MAX_FAILURES);
       if (ids.length === 0) {
         backfillDone = true;
+        // Once after every back-fill: the topics (and suggestions) may never have been made, or a reading may have left meanwhile.
+        topicsDue ??= now + timing.refreshDelayMs;
+        suggestAll = true;
+        suggestionsDue ??= now + timing.refreshDelayMs;
         return null;
       }
       for (const id of ids.slice(1)) if (!pending.has(id)) pending.set(id, now);
@@ -310,6 +326,7 @@ export function startCategoriseController(o: ControllerOptions): CategoriseContr
         }
         const id = await nextReading(now);
         if (id !== null) {
+          lastWorkAt = Date.now();
           let ms = 0;
           try {
             ms = await understand(id);
@@ -325,17 +342,25 @@ export function startCategoriseController(o: ControllerOptions): CategoriseContr
         const later = Date.now();
         if (topicsDue !== null && later >= topicsDue && pending.size === 0) {
           topicsDue = null;
+          lastWorkAt = later;
           await refreshTopics();
           continue;
         }
         if (suggestionsDue !== null && later >= suggestionsDue && pending.size === 0) {
           suggestionsDue = null;
+          lastWorkAt = later;
           await refreshSuggestions();
           continue;
         }
         // Nothing to do: free the model after a while, then sleep until a change, or until the next thing is due.
         if (embedder !== null && later - lastEmbedAt > timing.idleDisposeMs) await disposeEmbedder();
         const dues = [...pending.values(), ...(backfillDone ? [] : [backfillDue]), ...(topicsDue === null ? [] : [topicsDue]), ...(suggestionsDue === null ? [] : [suggestionsDue])];
+        // Nothing due at all, for a minute: the worker can end and give its memory back (the host starts it again when needed).
+        if (o.onIdle !== undefined && dues.length === 0 && embedder === null && later - lastWorkAt >= timing.idleDisposeMs) {
+          finish();
+          o.onIdle();
+          return;
+        }
         const next = dues.length > 0 ? Math.max(100, Math.min(...dues) - later) : timing.idleDisposeMs;
         await new Promise<void>((resolve) => {
           wake = resolve;
@@ -348,15 +373,16 @@ export function startCategoriseController(o: ControllerOptions): CategoriseContr
     }
   }
 
+  function finish(): void {
+    if (stopped) return;
+    stopped = true;
+    stopListening();
+    poke();
+    void disposeEmbedder();
+    store.close();
+  }
+
   void loop();
 
-  return {
-    stop() {
-      stopped = true;
-      stopListening();
-      poke();
-      void disposeEmbedder();
-      store.close();
-    },
-  };
+  return { stop: finish };
 }

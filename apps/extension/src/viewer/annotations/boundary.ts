@@ -101,6 +101,11 @@ export interface SaveController {
   withdraw?(): Promise<void>;
   /** R67 (a): completes a save the owner started in a tab that closed or crashed before it finished. Never with an Undo. */
   resumeSave?(): Promise<void>;
+  /**
+   * The PDF is not saved because the owner chose "Never save this file" (here, in another tab's Forget, or before). Notes held then
+   * are kept privately (TB5 ruling: no file fingerprint and no quote in any copy on this computer).
+   */
+  readonly neverChosen?: boolean;
 }
 
 // ---------------------------------------------------------------- S7 and S3 (text access, anchoring)

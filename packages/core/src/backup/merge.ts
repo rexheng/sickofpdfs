@@ -9,7 +9,9 @@
 //     result never depends on which side was which. `compareHlc` is passed in (the real one is `hlc.ts`).
 //   - No lost notes (CLAUDE.md, the first non-negotiable). A restore cannot see which version a computer had seen, as sync
 //     does with `baseRev`, so it reads that from the stamp's device: a computer's later stamp follows its own earlier one (its
-//     clock only goes up), and two versions written on different computers are rivals. For rivals the sync rules apply:
+//     clock only goes up), and two versions written on different computers are rivals. R101: a backup row stamped by THIS computer
+//     (`options.device`) that is newer than the row here is a rival too, since a backup made here can never be newer than the library
+//     here (a crafted or damaged one could be). For rivals the sync rules apply:
 //       - an edit beats a delete, whatever the stamps say (spec sync rules; R58: the deleting side's last words go with it);
 //       - two live comments with different, non-empty bodies keep both: the loser's body becomes a new comment in the same
 //         thread, made exactly as sync makes it (`makeConflictCopy`: same id, `ConflictCopyMeta`, "edited on another device").
@@ -51,6 +53,13 @@ export interface RestoreOptions {
    * (it sorts below every stamp that can be).
    */
   now?: number;
+  /**
+   * This computer's device id, as its own stamps carry it (R101). A backup written here can never hold a newer version of a row than
+   * the library itself, so a backup row stamped by this computer that is newer than the row here is treated as a rival, as one from
+   * another computer is: for a note, the words here are kept as an "edited on another device" copy, and a delete never beats an edit.
+   * Without it, two rows stamped by one computer follow each other, as always.
+   */
+  device?: string;
 }
 
 export type TableCounts = Record<DumpTable, number>;
@@ -189,8 +198,8 @@ interface Hooks {
   keepLoser?(winner: Row, loser: Row): void;
 }
 
-/** Whole-row last writer wins, for one table. Returns the rows to write and how many are new. */
-function mergeLww(table: DumpTable, lRows: readonly Row[], bRows: readonly Row[], cmp: CompareHlc, hooks: Hooks = {}): { rows: Row[]; added: number; updated: number } {
+/** Whole-row last writer wins, for one table. Returns the rows to write and how many are new. `here`: this computer's device id. */
+function mergeLww(table: DumpTable, lRows: readonly Row[], bRows: readonly Row[], cmp: CompareHlc, hooks: Hooks = {}, here?: string): { rows: Row[]; added: number; updated: number } {
   const key = KEY[table];
   const lm = indexBy(lRows, key);
   const rows: Row[] = [];
@@ -206,7 +215,8 @@ function mergeLww(table: DumpTable, lRows: readonly Row[], bRows: readonly Row[]
     }
     if (hooks.keepLocal?.(l, b)) continue;
     const c = cmp(hlcOf(b), hlcOf(l));
-    const rival = rivals(l, b);
+    // R101: this computer's own backup cannot be newer than this computer's library; such a row is treated as another computer's.
+    const rival = rivals(l, b) || (here !== undefined && c > 0 && deviceOf(b) === here);
     const bWins =
       hooks.softDelete === true && rival && isDeleted(l) !== isDeleted(b)
         ? !isDeleted(b) // an edit beats a delete
@@ -310,6 +320,7 @@ function foldSameNameTags(L: Record<DumpTable, Row[]>, B: Record<DumpTable, Row[
  */
 export function planRestore(local: LibraryDump, backup: LibraryDump, compareHlc: CompareHlc, options: RestoreOptions = {}): RestorePlan {
   const cmp: CompareHlc = (a, b) => compareHlc(a, b);
+  const here = options.device;
   const L = rowsOf(local, undefined, false);
   const B = rowsOf(backup, options.now, true);
   foldAliasedDocuments(L, B, cmp);
@@ -337,7 +348,7 @@ export function planRestore(local: LibraryDump, backup: LibraryDump, compareHlc:
         if (l.blobStored !== undefined) merged.blobStored = l.blobStored;
         return merged;
       },
-    }),
+    }, here),
   );
 
   // aliases: every alias is kept; for one fingerprint naming two documents, the smaller document id wins
@@ -383,8 +394,8 @@ export function planRestore(local: LibraryDump, backup: LibraryDump, compareHlc:
 
   // notes
   const authorChanged = (l: Row, b: Row): boolean => l.author !== b.author;
-  done('marks', mergeLww('marks', L.marks, B.marks, cmp, { skip: (b) => !known(b), keepLocal: authorChanged, softDelete: true }));
-  const threadsResult = mergeLww('threads', L.threads, B.threads, cmp, { skip: (b) => !known(b), softDelete: true });
+  done('marks', mergeLww('marks', L.marks, B.marks, cmp, { skip: (b) => !known(b), keepLocal: authorChanged, softDelete: true }, here));
+  const threadsResult = mergeLww('threads', L.threads, B.threads, cmp, { skip: (b) => !known(b), softDelete: true }, here);
   done('threads', threadsResult);
   const threadIds = new Set<string>([...L.threads.map((t) => str(t.id)), ...B.threads.filter(known).map((t) => str(t.id))]);
   // the losing words of two rival comments, as new comments (only where no comment has that id yet)
@@ -401,7 +412,7 @@ export function planRestore(local: LibraryDump, backup: LibraryDump, compareHlc:
     keepLocal: authorChanged,
     softDelete: true,
     keepLoser,
-  });
+  }, here);
   done('comments', { ...commentsResult, rows: [...commentsResult.rows, ...copies.values()], added: commentsResult.added + copies.size });
 
   // reading history: field by field
@@ -433,7 +444,7 @@ export function planRestore(local: LibraryDump, backup: LibraryDump, compareHlc:
   done('settings', mergeLww('settings', L.settings, B.settings, cmp, { skip: (b) => !restorableSetting(str(b.key)) }));
 
   // tags (R92): rows like notes, soft-deleted; a reading's tags and removals follow once their reading and tag are known
-  done('tags', mergeLww('tags', L.tags, B.tags, cmp, { softDelete: true }));
+  done('tags', mergeLww('tags', L.tags, B.tags, cmp, { softDelete: true }, here));
   const tagIds = new Set<string>([...L.tags.map((t) => str(t.id)), ...B.tags.map((t) => str(t.id))]);
   const knownTag = (b: Row): boolean => known(b) && tagIds.has(str(b.tagId));
   const removedKeys = new Set<string>([...L.auto_tag_removed, ...B.auto_tag_removed].map((r) => `${str(r.documentId)}:${str(r.tagId)}`));

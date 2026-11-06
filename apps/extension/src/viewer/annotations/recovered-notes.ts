@@ -5,6 +5,8 @@
 // Two kinds:
 // - A journal entry that cannot be placed: no document id (Test build 2 could write those, the bug R67 fixed), or any
 //   other entry the journal cannot read but that still holds text. No clear ever removes one (R77).
+//   Words the journal set aside (`keepAside`: a crash draft older than its note, R101; a note held after "Never save this file")
+//   are such entries too. One a tab still holds names that tab (`heldBy`): the Notes page shows it once the tab has gone.
 // - A save-pending record (save-pending.ts) whose PDF has not been opened for RECOVER_AFTER_MS. Opening that PDF again
 //   still finishes its save and puts the notes back in place; until then, after 7 days, they show here too. The date is
 //   the record's `at`.
@@ -24,6 +26,8 @@ export interface RecoveredNote {
   kind: 'note' | 'edit' | 'highlight';
   /** When it was typed or last kept (ms). */
   at: number;
+  /** The tab that still holds this note in memory, if one may: it is a recovered note only once that tab has gone. */
+  heldBy?: string;
 }
 
 const fields = (v: unknown): Record<string, unknown> | null => (typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : null);
@@ -84,7 +88,8 @@ export function listRecoveredNotes(now: number = Date.now(), storage: KeyValueSt
     if (canPlace(readRaw(storage, k))) continue; // the journal brings it back when its PDF is opened
     const e = readJson(storage, k);
     if (!e || typeof e.body !== 'string' || e.body.trim() === '') continue;
-    out.push({ key: k, text: e.body, kind: e.kind === 'edit' ? 'edit' : 'note', at: typeof e.at === 'number' ? e.at : 0 });
+    const held = fields(e.held)?.tab;
+    out.push({ key: k, text: e.body, kind: e.kind === 'edit' ? 'edit' : 'note', at: typeof e.at === 'number' ? e.at : 0, ...(typeof held === 'string' ? { heldBy: held } : {}) });
   }
   for (const k of keysWith(storage, PENDING_PREFIX)) {
     const rec = readJson(storage, k) as unknown as PendingSave | null;

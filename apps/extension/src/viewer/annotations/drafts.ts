@@ -17,10 +17,13 @@
 // journal text the store has not confirmed is newer and wins. The journal follows the store's rules: nothing for a PDF that
 // is not saved, an entry per draft, gone once the draft is sent or discarded and the store has confirmed it. One exception
 // (TB4 ruling, Forget wins): an unsent note a tab still holds when another tab forgets the PDF is kept here (`keepUnsaved`).
+// After a Forget with "Never save this file" (TB5 ruling) it is kept privately: set aside with its words only (no file
+// fingerprint, no quote), under a random id, held by this tab until the tab goes; then it is a recovered note.
+// R101: a journal draft older than the note it was for never overwrites the note. It is set aside as a recovered note instead.
 
 import type { CommentId, CommentRow, DocumentId, TabId, ThreadId, ThreadRow } from '@sop/core';
 import type { AnnotationErrorCode, AnnotationsApi, EditDraft } from '../../store/annotations';
-import type { DraftJournal, JournalCommentEntry, JournalEditEntry } from './draft-journal';
+import { type DraftJournal, type JournalCommentEntry, type JournalEditEntry, noteIsNewer } from './draft-journal';
 import type { TabPresence } from './tab-presence';
 
 /**
@@ -59,8 +62,10 @@ export interface DraftKeeper {
    * The note stays in this tab, and its text is kept in the journal only (the store has no document for it now), so a crash
    * loses nothing. Never written to the store; `change` takes over once the PDF is saved again, `drop` removes it. Optional,
    * so a keeper without a journal need not have it.
+   * `private` (TB5 ruling): the owner forgot it with "Never save this file". Only the words are kept, set aside under a random
+   * id with no file fingerprint and no quote of the PDF, held by this tab; once the tab has gone they are a recovered note.
    */
-  keepUnsaved?(row: CommentRow & { draftOfTab: TabId }, thread?: ThreadRow): void;
+  keepUnsaved?(row: CommentRow & { draftOfTab: TabId }, thread?: ThreadRow, o?: { private?: boolean }): void;
   /**
    * Adopt the drafts (and unsent edits) of tabs that are gone. Returns every new-note draft of this document that this tab
    * now owns; the unsent edits are read with `editDrafts` afterwards.
@@ -166,6 +171,9 @@ interface Discard {
 
 const newSlot = (): Slot => ({ seq: 0, dirty: false, firstDirtyAt: null, inflight: null, failed: undefined, confirmedSeq: 0, confirmed: false, journaledSeq: -1 });
 
+/** This page's life: notes set aside and held by this tab in an earlier life of it (before a reload) are its no more. */
+const PAGE_LIFE = globalThis.crypto.randomUUID();
+
 export function createDraftKeeper(d: {
   store: DraftStore | null;
   presence: TabPresence;
@@ -186,6 +194,25 @@ export function createDraftKeeper(d: {
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let retries = 0;
   let disposed = false;
+
+  /** Notes held privately after a Forget with "Never save this file": the random id each one's words are set aside under. */
+  const asideIds = new Map<CommentId, string>();
+  /** The note is sent, dropped, or the keeper has it again: its private copy goes. */
+  const dropAside = (id: CommentId): void => {
+    const aside = asideIds.get(id);
+    if (aside === undefined) return;
+    asideIds.delete(id);
+    journal?.removeAside?.(aside);
+  };
+  /** Words set aside from the journal for "Recovered notes" (R101): an entry older than the note it was for. */
+  const setAside = (j: { kind: 'comment' | 'edit'; commentId: CommentId; body: string; at: number }, key: string): boolean => {
+    if (journal?.keepAside === undefined) return false;
+    if (j.body.trim() !== '' && !journal.keepAside(`${j.commentId}.${key}`, { kind: j.kind, body: j.body, at: j.at })) return false; // kept where it is
+    journal.remove(j.kind, j.commentId);
+    return true;
+  };
+  // A reload of this tab: what its earlier page held privately shows under "Recovered notes" now (that page is gone).
+  journal?.releaseAside?.(d.presence.tabId, PAGE_LIFE);
 
   const usable = (): DraftStore | null => (d.store !== null && !d.memoryOnly() ? d.store : null);
   const report = (id: CommentId | null, error: unknown): void => {
@@ -514,6 +541,10 @@ export function createDraftKeeper(d: {
           journalEdit(x);
         } else if (sent.get(j.commentId)?.body === j.body) {
           journal.remove('edit', j.commentId); // R66: the live text is this text, so the edit was applied; this copy is stale
+        } else if (j.pending && sent.has(j.commentId) && noteIsNewer(sent.get(j.commentId)!, j.at)) {
+          // R101: the note was changed after these words were typed (a restore, another tab). They never replace it: they are
+          // set aside for "Recovered notes", and the note keeps its newer words.
+          setAside(j, j.editId);
         } else if (j.pending) {
           // Never reached the store. If it was sent or cancelled after all, the store refuses it (edit-closed) and it goes.
           const y: EditEntry = { ...newSlot(), commentId: j.commentId, threadId: j.threadId, documentId: j.documentId, editId: j.editId, body: j.body, updatedAt: j.at };
@@ -527,6 +558,27 @@ export function createDraftKeeper(d: {
       }
     }
     if (any) schedule();
+  }
+
+  /**
+   * R101: an unsent change of a tab that is gone, older than the note itself (the note was changed since, by a restore or another
+   * tab), never comes back as the note's editor, where Save or Esc would put the old words over the newer note. Its words (the
+   * newer of the store's copy and the journal's) are set aside for "Recovered notes", and its edit session is closed.
+   */
+  function staleEdits(store: DraftStore, storeEdits: EditDraft[] | null, editedHere: Set<CommentId>, sent: ReadonlyMap<CommentId, CommentRow>): void {
+    if (!journal || storeEdits === null) return;
+    for (const e of storeEdits) {
+      const note = sent.get(e.commentId);
+      const x = edits.get(e.commentId);
+      if (editedHere.has(e.commentId) || note === undefined || x === undefined || x.editId !== e.editId) continue;
+      const j = journal.get('edit', e.commentId);
+      const later = j !== null && j.kind === 'edit' && !j.closing && j.pending && (j.editId > e.editId || (j.editId === e.editId && j.body !== e.body)) ? j : null;
+      const words = later !== null ? { body: later.body, at: later.at, key: later.editId } : { body: e.body, at: e.updatedAt, key: e.editId };
+      if (words.body === note.body || !noteIsNewer(note, words.at)) continue;
+      if (!setAside({ kind: 'edit', commentId: e.commentId, body: words.body, at: words.at }, words.key)) continue; // could not be kept aside: left as it was
+      edits.delete(e.commentId);
+      store.discardEditDraft?.(e.commentId, e.editId).catch((err: unknown) => report(e.commentId, err));
+    }
   }
 
   /**
@@ -586,6 +638,7 @@ export function createDraftKeeper(d: {
       }
       // Typing again after a drop starts a new draft with the same id; the delete that was waiting is no longer wanted.
       if (!e.inflight) discards.delete(`c:${row.id}`);
+      dropAside(row.id); // the PDF is saved again: the keeper has it, in the store and the journal
       e.row = row;
       if (thread) {
         e.thread = thread;
@@ -602,6 +655,7 @@ export function createDraftKeeper(d: {
     flush,
 
     drop(id) {
+      dropAside(id);
       const e = entries.get(id);
       entries.delete(id);
       if (e?.thread) threads.delete(e.thread.id);
@@ -625,8 +679,20 @@ export function createDraftKeeper(d: {
       if (store) runDiscards(store);
     },
 
-    keepUnsaved(row, thread) {
+    keepUnsaved(row, thread, o) {
       if (disposed || !journal || row.documentId === '') return;
+      if (o?.private === true && journal.keepAside !== undefined) {
+        // TB5 ruling: no copy that names the file (its fingerprint) or quotes it stays; only the words, under an id of their own.
+        let aside = asideIds.get(row.id);
+        if (aside === undefined) asideIds.set(row.id, (aside = globalThis.crypto.randomUUID()));
+        if (row.body.trim() === '') {
+          dropAside(row.id);
+          journal.remove('comment', row.id);
+          return;
+        }
+        if (journal.keepAside(aside, { kind: 'comment', body: row.body, at: Date.now(), held: { tab: d.presence.tabId, life: PAGE_LIFE } })) journal.remove('comment', row.id);
+        return;
+      }
       const entry: JournalCommentEntry = {
         v: 1,
         kind: 'comment',
@@ -644,6 +710,7 @@ export function createDraftKeeper(d: {
     },
 
     sent(id) {
+      dropAside(id);
       const e = entries.get(id);
       if (e && !e.dirty && !e.inflight) {
         entries.delete(id);
@@ -766,13 +833,15 @@ export function createDraftKeeper(d: {
           // R66: the comments the store has as sent, to spot a journal entry for text that was sent just before the crash.
           // Read only when an entry could be adopted; if it cannot be read, the entry is shown (text is never dropped).
           const sent = new Map<CommentId, CommentRow>();
-          if (typeof store.listAnnotations === 'function' && journal.list(documentId).some((j) => !j.closing && (j.tab === tabId || !live.includes(j.tab)))) {
+          const mayAdopt = journal.list(documentId).some((j) => !j.closing && (j.tab === tabId || !live.includes(j.tab)));
+          if (typeof store.listAnnotations === 'function' && (mayAdopt || (storeEdits?.length ?? 0) > 0)) {
             try {
               for (const c of (await store.listAnnotations(documentId)).comments) sent.set(c.id, c);
             } catch (err) {
               report(null, err);
             }
           }
+          staleEdits(store, storeEdits, editedHere, sent);
           fromJournal(documentId, new Set(live), new Set(rows.map((r) => r.id)), storeEdits, typedHere, editedHere, sent);
         }
       };

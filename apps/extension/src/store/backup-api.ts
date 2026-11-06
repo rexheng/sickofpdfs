@@ -22,6 +22,11 @@
 //   existing one keeps its value.
 // - What comes from a backup is checked like what comes from the cloud: a row whose types are wrong is skipped (the other
 //   rows still go in), and a row that would break the identity rules is skipped too.
+// - R101 (TB5 code and security critic, findings 1, 2 and 5). A restore never changes a setting: online lookups, the "Always save
+//   from" list and every other setting stay this computer's own choice, so a restore can never turn the network on or save more. A
+//   backup row stamped by this computer that is newer than the row here is treated as a rival (as one from another computer), so the
+//   note here is kept as a copy and never silently replaced. Tag names are cleaned as the owner's own are (no control or direction
+//   characters, at most 60 letters), and a course or topic tag that only forgotten readings had does not come back.
 // - Errors are rejections whose message starts with a code (`bad-input: …`), so the code survives a message port.
 import {
   compareHlc,
@@ -36,9 +41,10 @@ import {
   planRestore,
   type RestoreSummary,
 } from '@sop/core';
-import { clampHlc, type DbRow, dbToWire, isSyncableSetting, MAX_HLC_SKEW_MS, normalizeWireRow, wireToDb } from '@sop/core/sync';
+import { clampHlc, type DbRow, dbToWire, isSyncableSetting, MAX_HLC_SKEW_MS, normalizeWireRow, parseHlc, wireToDb } from '@sop/core/sync';
 import type { StoreChange } from './change-bus';
 import { forgottenAmong } from './forgotten';
+import { tidyTagName } from './tags-api';
 import { isReadOnly, type SqlDb, type SqlValue } from './schema-v2';
 
 /** Where a chunked export is. `version` is what the database's change counter said at the first chunk: a different value later means it changed. */
@@ -238,8 +244,7 @@ export function createBackupApi(db: SqlDb, deps: BackupDeps): BackupApi {
         if (!has('SELECT 1 AS x FROM documents WHERE id = ?', [text(wire.documentId)]) || has('SELECT 1 AS x FROM documents WHERE id = ?', [key])) return false;
         break;
       case 'settings':
-        if (!isSyncableSetting(key)) return false;
-        break;
+        return false; // R101: a restore never changes a setting (screenBackup leaves them out; this is the second lock)
       case 'comments': {
         if (!has('SELECT 1 AS x FROM documents WHERE id = ?', [text(wire.documentId)])) return false;
         // A comment hangs off a thread of its own reading, and an existing one keeps its reading, its thread and its author.
@@ -355,7 +360,9 @@ export function createBackupApi(db: SqlDb, deps: BackupDeps): BackupApi {
           // The plan is made here, against the rows as they are now, and written before anything else can change them.
           const local = readWholeLibrary();
           const screened = screenBackup(local, backup, forgotten);
-          const plan = planRestore(local, screened.dump, compareHlc, { now: deps.now() });
+          // This computer's own device id, as its stamps carry it: a backup row with it that is newer than the row here is a rival.
+          const device = parseHlc(deps.hlc.tick())?.device;
+          const plan = planRestore(local, screened.dump, compareHlc, { now: deps.now(), ...(device !== undefined ? { device } : {}) });
           const written = {} as Record<DumpTable, string[]>;
           let newest: HlcStamp | null = null;
           let skipped = screened.skipped;
@@ -402,7 +409,10 @@ export function createBackupApi(db: SqlDb, deps: BackupDeps): BackupApi {
 
 /**
  * The backup without what must not come back, before the merge is planned:
- *  - readings forgotten here (`forgotten`), with their aliases and everything that hangs off them;
+ *  - every setting (R101: online lookups, the "Always save from" list and the rest stay this computer's own choice);
+ *  - readings forgotten here (`forgotten`), with their aliases and everything that hangs off them, and a course or topic tag (not one
+ *    the owner renamed) that only they had, as Forget takes it (`dropOrphanAutoTags`);
+ *  - tag names as they were written: each is cleaned as the owner's own are, and a tag with nothing left of its name is left out;
  *  - rows that would move a note: an existing mark, thread, comment or location of another reading (a backup row's reading is first
  *    taken through this library's aliases, as the merge does), a comment of another thread or author, a mark of another author, and a
  *    new comment whose thread belongs to another reading.
@@ -432,10 +442,23 @@ function screenBackup(local: LibraryDump, backup: LibraryDump, forgotten: Readon
   out.documents = B.documents.filter((d) => !forgotten.has(text(d.id)));
   out.aliases = B.aliases.filter((a) => !forgotten.has(text(a.sha256)) && notForgotten(a));
   out.history = B.history.filter(notForgotten);
-  out.settings = B.settings;
-  out.tags = B.tags;
+  out.settings = []; // R101: never restored, and not counted as skipped: the summary says "Your settings were not changed"
   out.reading_tags = B.reading_tags.filter(notForgotten);
   out.auto_tag_removed = B.auto_tag_removed.filter(notForgotten);
+  // A tag is named by the backup: its name is cleaned. A course or topic tag that nothing kept here names (only forgotten readings had
+  // it) stays out, as Forget removed it; a tag this library has is merged as usual.
+  const localTags = new Set(L.tags.map((t) => text(t.id)));
+  const named = new Set([...out.reading_tags, ...out.auto_tag_removed].map((r) => text(r.tagId)));
+  out.tags = B.tags.flatMap((t) => {
+    const name = tidyTagName(t.name);
+    if (name === null) {
+      keep(false); // nothing is left of its name: it is counted as an item that could not be used
+      return [];
+    }
+    const orphan = (t.kind === 'course' || t.kind === 'topic') && t.renamed !== true && !named.has(text(t.id)) && !localTags.has(text(t.id));
+    if (orphan) return [];
+    return [name === t.name ? t : { ...t, name }];
+  });
   out.locations = B.locations.filter(notForgotten).filter((b) => keep(sameReading(here.locations.get(text(b.id)), b)));
   out.threads = B.threads.filter(notForgotten).filter((b) => keep(sameReading(here.threads.get(text(b.id)), b)));
   out.marks = B.marks.filter(notForgotten).filter((b) => {

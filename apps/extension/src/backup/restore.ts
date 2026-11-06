@@ -185,6 +185,9 @@ const count = (n: number, one: string, many: string): string => `${n} ${n === 1 
 /** R88's line: "1 reading you removed here was left out" / "3 readings you removed here were left out". */
 export const leftOutLine = (n: number): string => `${count(n, 'reading', 'readings')} you removed here ${n === 1 ? 'was' : 'were'} left out.`;
 
+/** R101's line: a restore brings back readings, notes, tags and history, never a setting. */
+export const SETTINGS_KEPT = 'Your settings were not changed.';
+
 /** What a finished restore did, in short plain sentences, most important first. */
 export function outcomeLines(o: Omit<RestoreOutcome, 'reindex'>): string[] {
   const lines: string[] = [];
@@ -206,5 +209,7 @@ export function outcomeLines(o: Omit<RestoreOutcome, 'reindex'>): string[] {
   if (o.pdfs.damaged > 0) lines.push(`${count(o.pdfs.damaged, 'PDF', 'PDFs')} in the backup ${o.pdfs.damaged === 1 ? 'is' : 'are'} damaged, so ${o.pdfs.damaged === 1 ? 'it was' : 'they were'} not copied.`);
   if (o.pdfs.failed > 0) lines.push(`${count(o.pdfs.failed, 'PDF', 'PDFs')} couldn’t be copied. Restore again to try ${o.pdfs.failed === 1 ? 'it' : 'them'} again.`);
   if (o.skipped > 0) lines.push(`${count(o.skipped, 'item', 'items')} in the backup couldn’t be used here, so ${o.skipped === 1 ? 'it was' : 'they were'} left out.`);
+  // R101: a restore never changes a setting (online lookups, "Always save from" and the rest stay as they are here).
+  if (!changedNothing(o)) lines.push(SETTINGS_KEPT);
   return lines;
 }

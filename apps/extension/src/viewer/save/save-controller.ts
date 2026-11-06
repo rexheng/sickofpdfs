@@ -184,6 +184,8 @@ export interface SaveControllerImpl extends SaveController {
   readonly siteRule: SiteRule | null;
   /** Why the PDF is not saved: the first reason its "Not saved: …" chip showed. Kept while the question is open. */
   readonly whyNotSaved: string | null;
+  /** The PDF is not saved because the owner chose "Never save this file" (TB5: notes held then are kept privately). */
+  readonly neverChosen: boolean;
   /** True when the owner's rules can be changed here ("Never for this file", "Always for this site", reports). */
   readonly hasRules: boolean;
   /** "Never for this file": remembered as a salted fingerprint; the chip then says so, and a mark asks before saving. */
@@ -1002,6 +1004,9 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     },
     get whyNotSaved() {
       return whyNotSaved;
+    },
+    get neverChosen() {
+      return whyNotSaved === NEVER_SAVE_REASON;
     },
     siteRule,
     hasRules: d.rules !== undefined && d.rules !== null,

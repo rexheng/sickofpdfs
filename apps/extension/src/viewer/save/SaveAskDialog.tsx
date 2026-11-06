@@ -5,8 +5,12 @@
 // - no button has the focus when it opens (the dialog itself has it), so Space and letters never press one, and no focus ring
 //   shows; Tab still reaches the buttons;
 // - the letters typed while it is open (Space and Backspace too) are kept, and go into the note box, in order, once it is
-//   answered;
-// - Enter means Save and Esc means No (Enter on a button the keyboard moved to presses that button, as usual).
+//   answered.
+// R100 (TB5 student critic, the blocker): Enter never answers it. The owner presses Enter to send a note, so Enter on a bank
+// statement saved the bank statement. Now:
+// - the letters typed while it is open show in it ("Your note: …"), so the owner sees where they went;
+// - only a click on a button, or Tab to a button and then Enter or Space, answers it. Esc means No;
+// - this holds for every PDF, so a quick note on a receipt can never save it.
 // Closing the tab while the notes are only in memory brings up the browser's "Leave site?" question (session.ts).
 import { HARD_BLOCK_REASON } from '@sop/core';
 import { Dialog } from '@sop/ui';
@@ -14,7 +18,7 @@ import { FORGOTTEN_REASON, NEVER_SAVE_REASON } from '../filter/async-filter';
 import { CARD_ID_PREFIX } from '../notes/CardColumn';
 import cards from '../ui/cards.module.css';
 import type { SaveControllerImpl } from './save-controller';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import { useSaveView } from './StatusChip';
 import styles from './SaveDialogs.module.css';
 
@@ -30,25 +34,39 @@ const openNoteBox = (): HTMLTextAreaElement | null =>
 /** How long letters typed right after the answer are kept for the note box, at most. */
 const TYPE_AHEAD_MS = 1500;
 
+/** The question shows at most this many of the letters typed into it (the end, where the owner is typing). */
+const HELD_SHOWN = 160;
+
 /**
  * No lost letters (R96): while the question is open, and between the answer and the moment the note box has the caret (the
  * question takes a moment to close), the letters typed are kept here and put into the box, in order, once it has it. Only
- * while a note box waits for them. `asking` is true while the question is open: then Enter answers Save.
+ * while a note box waits for them. `asking` is true while the question is open (R100: then Enter answers nothing).
  */
-const typedAhead = { active: false, asking: false, until: 0, text: '', answer: null as ((save: boolean) => void) | null };
+const typedAhead = { active: false, asking: false, until: 0, text: '' };
+
+/** The question shows the letters held for the note (R100). It reads them through this. */
+const heldListeners = new Set<() => void>();
+const heldText = (): string => (typedAhead.asking ? typedAhead.text : '');
+function subscribeHeld(cb: () => void): () => void {
+  heldListeners.add(cb);
+  return () => heldListeners.delete(cb);
+}
+function setHeld(text: string): void {
+  typedAhead.text = text;
+  for (const cb of heldListeners) cb();
+}
 
 /** The question opened: from now until it is answered, what is typed is kept for the note box (R96). */
-function holdTyping(answer: (save: boolean) => void): void {
+function holdTyping(): void {
   typedAhead.active = true;
   typedAhead.asking = true;
   typedAhead.until = Infinity;
-  typedAhead.answer = answer;
+  for (const cb of heldListeners) cb();
 }
 
 function startTypeAhead(): void {
   typedAhead.active = true;
   typedAhead.asking = false;
-  typedAhead.answer = null;
   typedAhead.until = performance.now() + TYPE_AHEAD_MS;
   setTimeout(() => {
     const box = openNoteBox();
@@ -82,25 +100,27 @@ function typesCharacter(e: KeyboardEvent): boolean {
 function catchTypedAhead(e: KeyboardEvent): void {
   if (e.isComposing) return;
   if (typedAhead.asking) {
-    // R96: the question is open. Only Enter (Save) and Esc (No, the dialog's own) answer it; Tab moves between its buttons.
+    // R100: the question is open. Only a click, or Enter or Space on a button the owner moved to with Tab, answers it; Esc
+    // (the dialog's own) means No. Enter anywhere else answers nothing: it is how a note is sent, so it is not a Save.
     const onButton = document.activeElement instanceof HTMLButtonElement && document.activeElement.closest('[role="dialog"]') !== null;
-    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && !onButton) {
+    if (onButton && (e.key === 'Enter' || e.key === ' ') && !e.ctrlKey && !e.altKey && !e.metaKey) return; // the button's own press
+    if (e.key === 'Enter') {
       e.preventDefault();
       e.stopImmediatePropagation();
-      typedAhead.answer?.(true);
+      if (e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && openNoteBox() !== null) setHeld(`${typedAhead.text}\n`); // a new line of the note
       return;
     }
     if (e.key === 'Backspace' && !e.ctrlKey && !e.altKey && !e.metaKey) {
       e.preventDefault();
       e.stopImmediatePropagation();
-      typedAhead.text = typedAhead.text.slice(0, -1);
+      setHeld(typedAhead.text.slice(0, -1));
       return;
     }
     if (!typesCharacter(e)) return;
-    // Space and letters never press a button. With a note box waiting, they are the note's letters.
+    // Letters never press a button. With a note box waiting, they are the note's letters, and the question shows them.
     e.preventDefault();
     e.stopImmediatePropagation();
-    if (openNoteBox() !== null) typedAhead.text += e.key;
+    if (openNoteBox() !== null) setHeld(typedAhead.text + e.key);
     return;
   }
   if (!typedAhead.active) return;
@@ -192,28 +212,24 @@ export function SaveAskDialog({ save }: SaveAskDialogProps) {
     if (openNoteBox() !== null) startTypeAhead();
     else {
       typedAhead.asking = false;
-      typedAhead.answer = null;
       typedAhead.active = false;
       typedAhead.text = '';
     }
     void save.answerAsk(yes).catch(() => {});
     giveBackToNoteBox();
   };
-  const answerRef = useRef(answer);
-  answerRef.current = answer;
   // R96: from the moment it opens, typing is held for the note box.
   useEffect(() => {
     if (!open) return;
     answered.current = false;
     typedAhead.text = typedAhead.active ? typedAhead.text : '';
-    holdTyping((yes) => answerRef.current(yes));
+    holdTyping();
     return () => {
-      if (typedAhead.asking) {
-        typedAhead.asking = false;
-        typedAhead.answer = null;
-      }
+      if (typedAhead.asking) typedAhead.asking = false;
     };
   }, [open]);
+  // R100: what was typed while it is open shows in it, so the owner sees the letters were kept (and that Enter did not send).
+  const held = useSyncExternalStore(subscribeHeld, heldText);
   if (save === null || state === null) return null;
   return (
     <Dialog
@@ -230,6 +246,13 @@ export function SaveAskDialog({ save }: SaveAskDialogProps) {
       <div ref={focusText} tabIndex={-1} className={styles.questionBody}>
         <p className={cards.body}>{whyAsking(save.whyNotSaved ?? undefined, save.decision?.ownerSave !== undefined)}</p>
         <p className={cards.body}>If you choose No, your notes stay only until you close this tab.</p>
+        {held.trim() !== '' && (
+          <p className={styles.heldNote} aria-live="polite">
+            <span className={styles.heldLabel}>Your note: </span>
+            {/* The end of a long note: that is where the owner is typing. */}
+            {held.length > HELD_SHOWN ? `…${held.slice(-HELD_SHOWN)}` : held}
+          </p>
+        )}
       </div>
     </Dialog>
   );

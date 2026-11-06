@@ -47,7 +47,8 @@ const newId = (): string => globalThis.crypto.randomUUID();
 /** Web Locks, where there are any (not in Node tests, and not in a page the browser has blocked them for). */
 const lockManager = (): LockManager | null => (typeof navigator !== 'undefined' && 'locks' in navigator ? navigator.locks : null);
 
-async function tabsHoldingLocks(): Promise<string[]> {
+/** The tabs alive now, by their locks alone (no roll call): what a page that is not a tab itself can ask. */
+export async function tabsHoldingLocks(): Promise<string[]> {
   try {
     const held = (await lockManager()?.query())?.held ?? [];
     return held.flatMap((l) => (l.name?.startsWith(LOCK_PREFIX) ? [l.name.slice(LOCK_PREFIX.length)] : []));

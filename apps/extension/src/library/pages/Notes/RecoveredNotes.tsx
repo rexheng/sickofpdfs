@@ -5,17 +5,27 @@
 import { CommentAvatar, Dialog, formatCommentTime, formatCommentTimeFull, TextButton } from '@sop/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { deleteRecoveredNote, listRecoveredNotes, type RecoveredNote } from '../../../viewer/annotations/recovered-notes';
+import { tabsHoldingLocks } from '../../../viewer/annotations/tab-presence';
 import { useLibrary } from '../../app/context';
 import { copyText } from '../../components/reading-actions';
 import styles from './Notes.module.css';
 
 const KIND_WORDS: Record<RecoveredNote['kind'], string> = { note: 'Note', edit: 'Change to a note, not sent', highlight: 'Highlight' };
 
+/** The recovered notes, without the ones a tab that is still open holds (they are recovered once that tab has gone). */
+async function recoveredNow(): Promise<RecoveredNote[]> {
+  const all = listRecoveredNotes();
+  if (!all.some((n) => n.heldBy !== undefined)) return all;
+  const live = new Set(await tabsHoldingLocks());
+  return all.filter((n) => n.heldBy === undefined || !live.has(n.heldBy));
+}
+
 /** Read again when another tab changes the journal, and when the page comes back into view. */
 export function useRecoveredNotes(): [RecoveredNote[], () => void] {
-  const [notes, setNotes] = useState<RecoveredNote[]>(() => listRecoveredNotes());
-  const refresh = useCallback(() => setNotes(listRecoveredNotes()), []);
+  const [notes, setNotes] = useState<RecoveredNote[]>(() => listRecoveredNotes().filter((n) => n.heldBy === undefined));
+  const refresh = useCallback(() => void recoveredNow().then(setNotes), []);
   useEffect(() => {
+    refresh(); // a note a tab that has gone held shows now
     addEventListener('storage', refresh);
     addEventListener('focus', refresh);
     return () => {

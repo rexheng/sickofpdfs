@@ -14,7 +14,9 @@
 // - Only readings the library holds are ever given a vector or a tag (every write checks `documents`, and the foreign keys back that up).
 //   A reading in Trash gets none and is left out of topics, related readings and groups until it is restored.
 // - A reading whose text the owner keeps out of the library (`index_text` 0: a private PDF saved by choice, R91) is never read, understood
-//   or tagged by the categoriser at all: not its text, not its title, not its link. The owner's own tags still work on it.
+//   or tagged by the categoriser at all: not its text, not its title, not its link. The owner's own tags still work on it. R102: it is
+//   never in related readings, in either direction, never in the topics' corpus and never one of the owner's tag examples, even with
+//   a vector left from before.
 // - The owner always wins. An auto tag never replaces or changes an owner tag. A tag taken off a reading (`auto_tag_removed`) never
 //   comes back on it, whatever the categoriser finds later. Re-adding it by hand clears that.
 // - A tag the owner deletes keeps a row with `deleted_at` set, and the readings that had it are remembered as removals, so a deleted
@@ -273,6 +275,16 @@ export function cleanTagName(raw: unknown): string {
   if (name === '') fail('bad-input', 'A tag needs a name.');
   if ([...name].length > MAX_TAG_CHARS) fail('bad-input', `A tag name can be at most ${MAX_TAG_CHARS} letters long.`);
   return name;
+}
+
+/**
+ * A tag name from outside (a backup being restored, R101): cleaned as the owner's own names are, and cut to MAX_TAG_CHARS letters
+ * rather than refused. Null when nothing is left of it.
+ */
+export function tidyTagName(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const name = [...raw.normalize('NFC').replace(CONTROL, ' ').replace(/\s+/g, ' ').trim().replace(/^#+\s*/, '')].slice(0, MAX_TAG_CHARS).join('').trim();
+  return name === '' ? null : name;
 }
 
 /** A vector as the BLOB stored for it. */
@@ -652,7 +664,10 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
         checkDocId(documentId);
         const count = n === undefined ? 5 : n;
         if (!Number.isInteger(count) || count < 1 || count > 50) fail('bad-input', 'ask for between 1 and 50 related readings');
-        const all = select(`SELECT e.document_id AS id, e.vector AS vector, e.dim AS dim FROM embeddings e JOIN documents d ON d.id = e.document_id WHERE ${LIVE}`);
+        // R102: a reading saved without searchable text (D9, index_text 0) is never related, in either direction: it is not a
+        // candidate, and asking for its own related readings gives none. It should have no vector; one left from before (a
+        // restore can bring the row with index_text 0) is ignored here too.
+        const all = select(`SELECT e.document_id AS id, e.vector AS vector, e.dim AS dim FROM embeddings e JOIN documents d ON d.id = e.document_id WHERE ${LIVE} AND d.index_text = 1`);
         const docs = all.flatMap((r) => {
           const vector = vectorOf(r.vector, num(r, 'dim'));
           return vector === null ? [] : [{ id: str(r, 'id'), vector, text: { title: '', abstract: '' } }];
@@ -826,7 +841,7 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
         for (const r of select(
           `SELECT t.id AS tag_id, t.name AS name, d.id AS id, e.vector AS vector, e.dim AS dim
            FROM tags t JOIN reading_tags rt ON rt.tag_id = t.id AND rt.source = 'owner'
-             JOIN documents d ON d.id = rt.document_id AND ${LIVE} JOIN embeddings e ON e.document_id = d.id
+             JOIN documents d ON d.id = rt.document_id AND ${LIVE} AND d.index_text = 1 JOIN embeddings e ON e.document_id = d.id
            WHERE t.deleted_at IS NULL AND t.kind = 'tag' ORDER BY t.id, d.id`,
         )) {
           const vector = vectorOf(r.vector, num(r, 'dim'));

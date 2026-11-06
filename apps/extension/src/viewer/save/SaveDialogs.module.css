@@ -63,3 +63,20 @@
 .questionBody {
   outline: none;
 }
+
+/* R100: the letters typed while the save question is open, shown in it, so the owner sees they were kept for the note. */
+.heldNote {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--shape-popover);
+  background: var(--gm3-sys-color-surface-container-highest);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.heldLabel {
+  color: var(--gm3-sys-color-on-surface-variant);
+}

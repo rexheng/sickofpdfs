@@ -662,6 +662,8 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     }
     if (s.kind === 'saved') docGone = false;
     mode = computeMode();
+    // The reason can change without the kind ("never" news from another tab after its Forget): the held copies follow it.
+    if (heldAfterForget && mode === 'pending-save') for (const c of drafts.values()) keepUnsavedDraft(c);
     if (mode === 'pending-save' && d.save?.busy === 'save') markOwnerSave(); // Save, Yes, or a learning PDF's own save
     // N2 (re-check of R67): a save finished for a tab that crashed may ask first (not learning). Its notes were already kept,
     // so the record stays while the question is open, and goes only on No (memory-only).
@@ -887,7 +889,10 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     marksVersion++;
   }
 
-  /** TB4 ruling (Forget wins): an unsent note held after another tab's Forget is kept in the journal, never in the store. */
+  /**
+   * TB4 ruling (Forget wins): an unsent note held after another tab's Forget is kept in the journal, never in the store. TB5 ruling:
+   * after "Never save this file" it is kept privately, with its words only (no file fingerprint, no quote).
+   */
   function keepUnsavedDraft(c: CommentRow): void {
     try {
       if (c.body.trim() === '') {
@@ -896,7 +901,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       }
       const stash = rootDrafts.get(c.id);
       const thread = stash ? threads.get(c.threadId) : undefined;
-      d.drafts.keepUnsaved?.(keeperRow(c), thread ? { ...thread, documentId: stampId() } : undefined);
+      d.drafts.keepUnsaved?.(keeperRow(c), thread ? { ...thread, documentId: stampId() } : undefined, { private: d.save?.neverChosen === true });
     } catch (e) {
       report(e, 'drafts.keepUnsaved');
     }
