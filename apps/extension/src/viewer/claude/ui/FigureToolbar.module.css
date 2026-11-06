@@ -1,7 +1,7 @@
 /*
  * The figure toolbar: the viewer's toolbar pill in small (surface-container-highest #333537, fully round, 4 px padding,
- * Drive's menu shadow), at the selected figure's top-right corner: 8 px above it, 4 px inside its top edge, or 8 px under
- * it, whichever keeps the caption clear (FigureToolbar.tsx). Its buttons are the pill's own text
+ * Drive's menu shadow), lined up with the selected figure's right edge: 8 px above the figure and its caption, 8 px under
+ * them, or 4 px inside the figure's top edge, whichever the page has room for, in that order (FigureToolbar.tsx). Its buttons are the pill's own text
  * buttons ("Comment" in the toolbar): 32 px, 14/20 500 in on-surface-variant (#c4c7c5), with the 8% hover layer.
  */
 .bar {

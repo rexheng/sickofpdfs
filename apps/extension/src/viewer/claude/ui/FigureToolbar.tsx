@@ -1,13 +1,14 @@
 // The figure toolbar (plan §4 F; spec "You click a chart. It gets a blue outline."): while a figure is selected, a small
 // pill at its top-right corner offers Ask Claude and Explain this figure, so they are one click away and not only in
 // the right-click menu. It is the viewer toolbar's own pill (#333537, 14/20 500 words in #c4c7c5), smaller. It never
-// covers the caption: it sits above the figure when the caption is below, and inside its top edge otherwise.
+// covers the figure's own words (its caption, the titles of its panels; TB6): it sits above the figure and its caption
+// when the page has room there, else under them, and inside the figure's top edge only when the page has room for
+// neither.
 //
 // It sits in the page list's overlay, so it scrolls with the page and takes its clicks above the text layer. It shows
 // only while the Claude host is there and notes can be written.
 import { TextButton } from '@sop/ui';
-import type { PageFigure } from '@sop/core';
-import { normToCss, type PageBox, type PageSize, pdfRectToNorm, useViewerState } from '@sop/viewer';
+import { normToCss, type PageBox, pdfRectToNorm, useViewerState } from '@sop/viewer';
 import { type RefObject, useEffect, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import type { PageListApi } from '@sop/viewer/react';
@@ -45,21 +46,28 @@ function inContent(rect: readonly [number, number, number, number], box: PageBox
   return { x: box.left + b.x, y: box.top + b.y, width: b.width, height: b.height };
 }
 
-/** The pill is about 40 px tall: a figure shorter than this many of it is too small to hold it inside its top edge. */
-const INSIDE_MIN_PX = 120;
+/** The room the pill needs beside the figure: about 40 px tall, and 8 px clear of it. */
+const BAR_ROOM_PX = 48;
+
+type Box = { x: number; y: number; width: number; height: number };
 
 /**
- * Where the pill goes, so it never covers the caption (controller ruling): above the figure when its caption is below it;
- * inside the figure's top edge when the caption is above it, or when no caption was found (it could be anywhere); under
- * the figure when the figure is too small to hold the pill inside.
+ * Where the pill goes (TB6): above the figure and its caption (the block they make), when the page has room above it;
+ * else under that block, when the page has room there; else inside the figure's top edge, the one place left on the
+ * page. So it is never over the caption or the titles of the figure's panels when the page has any room. `page` and
+ * `block` are content px; `top` is the edge the pill lines up with.
  */
-export function toolbarPlace(figure: Pick<PageFigure, 'captionRect'>, rect: readonly [number, number, number, number], page: PageSize, heightPx: number): 'above' | 'inside' | 'below' {
-  if (figure.captionRect !== null) {
-    const cap = pdfRectToNorm(figure.captionRect, page);
-    const captionAbove = (cap[1] + cap[3]) / 2 < (rect[1] + rect[3]) / 2;
-    if (!captionAbove) return 'above';
-  }
-  return heightPx >= INSIDE_MIN_PX ? 'inside' : 'below';
+export function toolbarPlace(page: Box, block: Box, figure: Box): { place: 'above' | 'inside' | 'below'; top: number } {
+  if (block.y - page.y >= BAR_ROOM_PX) return { place: 'above', top: block.y };
+  if (page.y + page.height - (block.y + block.height) >= BAR_ROOM_PX) return { place: 'below', top: block.y + block.height };
+  return { place: 'inside', top: figure.y };
+}
+
+/** The smallest box holding both. */
+function union(a: Box, b: Box): Box {
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  return { x, y, width: Math.max(a.x + a.width, b.x + b.width) - x, height: Math.max(a.y + a.height, b.y + b.height) - y };
 }
 
 export function FigureToolbar({ controller, onAsk, onExplain }: FigureToolbarProps) {
@@ -74,9 +82,9 @@ export function FigureToolbar({ controller, onAsk, onExplain }: FigureToolbarPro
   const size = host.pages[selected.page];
   if (box === undefined || size === undefined) return null;
   const fig = inContent(selected.rect, box);
-  const place = toolbarPlace(selected.figure, selected.rect, size, fig.height);
+  const caption = selected.figure.captionRect === null ? null : inContent(pdfRectToNorm(selected.figure.captionRect, size), box);
+  const { place, top } = toolbarPlace({ x: box.left, y: box.top, width: box.width, height: box.height }, caption === null ? fig : union(fig, caption), fig);
   const right = fig.x + fig.width;
-  const top = place === 'below' ? fig.y + fig.height : fig.y;
   return createPortal(
     <div className={styles.bar} data-theme="dark" data-place={place} role="toolbar" aria-label="Figure" style={{ left: right, top }}>
       <TextButton label="Ask Claude" icon="auto_awesome" className={styles.button} onMouseDown={(e) => e.preventDefault()} onClick={onAsk} />
