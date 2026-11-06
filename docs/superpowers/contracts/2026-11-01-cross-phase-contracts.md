@@ -385,7 +385,7 @@ export interface DocumentMap { title: string | null; abstract: Passage | null; h
 export interface RegionImage { blob: Blob; mediaType: 'image/png' | 'image/jpeg'; width: number; height: number; scale: number /* px per pt = dpi / 72 */; visualTokens: number }
 export function renderRegion(be: PdfBackend, doc: DocHandle, pageIndex: number, rect: PdfRect,
   o: { maxTokens: number /* 1,600; 3,200 think harder; 4,784 scans */; mark?: { rect?: PdfRect; point?: [number, number] }; format?: 'auto' | 'png' | 'jpeg' }): Promise<RegionImage>;
-export interface FigurePack { label: string | null; pageIndex: number; image: RegionImage; caption: Passage | null; insideText: string; mentions: Passage[] /* ≤ 3 */ }
+export interface FigurePack { label: string | null; pageIndex: number; image: RegionImage; caption: Passage | null; insideText: string; mentions: Passage[] /* ≤ 3 */; more?: RegionImage[] /* P4 C: an enlarged crop for a small mark, or the page image for a scan area; request.ts sends them and cost.ts counts them */ }
 // packages/core/src/claude/types.ts
 export interface ClaudeTurnRequest { documentId: DocumentId; threadId: ThreadId; questionId: CommentId; replyId: CommentId; role: ModelRole;
   scope: 'passages' | 'whole-document'; webSearch: boolean; focus: Anchor | null /* the thread's anchor */ }
