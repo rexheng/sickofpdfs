@@ -52,8 +52,12 @@
   text-align: start;
 }
 
-/* `--_fit` is 1, or a little under when that lets the formula fit the card whole (ClaudeMaths.tsx). */
-.display :global(.katex) {
+/*
+ * `--_fit` is 1, or a little under when that lets the formula fit the card whole (ClaudeMaths.tsx). KaTeX's own sheet
+ * loads later and centres `.katex-display > .katex`, so this names the same pair: the formula starts where the words do,
+ * in the narrow viewer card and the wide Notes page card alike.
+ */
+.display :global(.katex-display > .katex) {
   font-size: calc(var(--sop-maths-size) * var(--_fit, 1));
   text-align: start;
 }
