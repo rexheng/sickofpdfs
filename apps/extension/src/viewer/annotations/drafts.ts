@@ -788,7 +788,8 @@ export function createDraftKeeper(d: {
 
       // Under the journal's lock, so that two tabs opening at once never both adopt one draft from the journal.
       const adopt = async (): Promise<void> => {
-        // Text typed in this tab is newer than anything stored, so these are left as they are.
+        // Text typed in this tab is newer than anything stored, so these are left as they are (and those typed while this pass
+        // waits on the store, added below).
         const typedHere = new Set(entries.keys());
         const editedHere = new Set(edits.keys());
         const live = await d.presence.liveTabs();
@@ -801,20 +802,24 @@ export function createDraftKeeper(d: {
         const rows = await store.listDrafts(documentId, tabId);
         const stored = typeof store.listDraftThreads === 'function' ? await store.listDraftThreads(documentId, tabId) : [];
         for (const t of stored) if (!threads.has(t.id)) threads.set(t.id, t);
+        const fromStore = new Set<CommentId>();
         for (const r of rows) {
           // Phase 4: a reply Claude was writing is not a note of the owner's. Claude's turn runner takes it back (reply-rows.ts).
           if (entries.has(r.id) || r.draftOfTab === null || r.author === 'claude') continue;
           entries.set(r.id, { ...newSlot(), confirmed: true, row: r as Draft, thread: threads.get(r.threadId), threadSaved: true });
+          fromStore.add(r.id);
         }
 
         // R54: the unsent edits of sent notes come back the same way. A failure here must not hide the new-note drafts above.
         let storeEdits: EditDraft[] | null = null;
+        const editsFromStore = new Set<CommentId>();
         try {
           if (typeof store.claimEditDrafts === 'function' && typeof store.listEditDrafts === 'function') {
             await store.claimEditDrafts(documentId, tabId, live);
             storeEdits = await store.listEditDrafts(documentId, tabId);
             for (const e of storeEdits) {
               if (edits.has(e.commentId)) continue;
+              editsFromStore.add(e.commentId);
               edits.set(e.commentId, {
                 ...newSlot(),
                 confirmed: true,
@@ -842,6 +847,12 @@ export function createDraftKeeper(d: {
               report(null, err);
             }
           }
+          // TB7 upgrade check: a note started here (or an edit begun) while this pass waited on the store is this tab's own and
+          // newest, like one typed before the pass began. Without this, its journal copy looked like the stale copy of a tab that
+          // is gone, and was removed while the owner was still typing (a pass runs as the PDF is saved, 1.5 s later, and whenever
+          // the tab is shown again). Only what this pass took from the store is checked against the journal below.
+          for (const id of entries.keys()) if (!fromStore.has(id)) typedHere.add(id);
+          for (const id of edits.keys()) if (!editsFromStore.has(id)) editedHere.add(id);
           staleEdits(store, storeEdits, editedHere, sent);
           fromJournal(documentId, new Set(live), new Set(rows.map((r) => r.id)), storeEdits, typedHere, editedHere, sent);
         }

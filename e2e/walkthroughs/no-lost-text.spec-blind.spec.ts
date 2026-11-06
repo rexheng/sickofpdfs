@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, test } from '../support/test';
+import { expect, hooks, test } from '../support/test';
 import {
   ATTENTION,
   LINES,
@@ -93,10 +93,33 @@ test.describe('No lost text', () => {
   test('a draft left alone for a while is just as safe (300 ms, the saving rule)', async ({ openViewer, server }) => {
     test.skip(!SAVING_AVAILABLE, NO_SAVING);
     const first = await openPaper(openViewer, server, ATTENTION);
+    // Regression (TB7 upgrade check, not spec-blind): as a PDF is saved, the tab looks in the store for drafts to adopt. On a busy
+    // computer that look waits seconds for the store, and a note begun meanwhile lost its copy in the drafts journal when it ended.
+    // The store answers one step of the look slowly here, so the note is typed while the look is still on.
+    await expect.poll(() => hooks(first).eval((h) => h.store !== null), { timeout: 20_000 }).toBe(true);
+    await hooks(first).eval((h, ms) => {
+      const store = h.store as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>;
+      const list = store.listEditDrafts.bind(store);
+      let once = true;
+      store.listEditDrafts = async (...a) => {
+        const out = await list(...a);
+        if (!once) return out;
+        once = false;
+        await new Promise((r) => setTimeout(r, ms));
+        (globalThis as { sopSlowLookDone?: boolean }).sopSlowLookDone = true;
+        return out;
+      };
+    }, 4000);
     await saveFirst(first);
     await selectPassage(first, ATTENTION, LINES.l3);
     await startNote(first);
     const typed = await typeNote(first);
+    await test.step('a note begun while the tab looks for drafts keeps its copy in the drafts journal', async () => {
+      await expect.poll(() => first.evaluate(() => (globalThis as { sopSlowLookDone?: boolean }).sopSlowLookDone === true), { timeout: 15_000 }).toBe(true);
+      await first.waitForTimeout(500); // the look's last step
+      const journal = await first.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('sop-draft:c:')).map((k) => (JSON.parse(localStorage.getItem(k) ?? '{}') as { body?: string }).body));
+      expect(journal, 'every letter of the note is in the drafts journal').toContain(typed);
+    });
     await first.waitForTimeout(300);
     await crashRenderer(first);
     const again = await openViewer(addressOf(server));
