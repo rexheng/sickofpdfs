@@ -207,12 +207,12 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
   - The owner's own bold marks still show whole words bold.
   - It turns with the page (rotation) and works in two-page view and presentation mode.
   - It never prints.
-- **Where it can't work.** Pages without real text outlines (scans, and OCR text) are left as they are. The first time such a page is shown with the switch on, a quiet note says: "Bold word starts works on text pages. This page is a scanned image."
+- **Where it can't work.** Pages without real text outlines (scans, and OCR text) are left as they are. The first time such a page is shown with the switch on, a quiet note says: "Bold word starts works on text pages. This page is a scanned image." Text the page never shows is left alone: clipped away, off the page, under a picture, or in the colour behind it. A page with real text, or a picture slide in a deck whose slides have text, is not a scan.
 - **The switch.**
   - It sits in the View menu as "Bold word starts" (Alt+Shift+S turns it on or off) with Off, Light, Medium and Strong as one radio group.
   - It is listed in the shortcut sheet.
   - It is remembered on this computer for every PDF, and is off until the owner turns it on.
-  - Settings → Reading → "How bold" sets the weight (Light, Medium or Strong). The letter rule stays the same; only how heavy the bold is changes. Each strength pairs a growth gain with a little edge darkening that moves no outline: Light 0.9× growth; Medium 1× growth and 0.8 edge darkening; Strong 1.4× growth and 2.2 edge darkening (R90c, measured at +15%, +28% and +42% ink).
+  - Settings → Reading → "How bold" sets the weight (Light, Medium or Strong). The letter rule stays the same; only how heavy the bold is changes. Each strength pairs a growth gain with a little edge darkening that moves no outline: Light 0.5× growth; Medium 1× growth and 0.8 edge darkening; Strong 1.4× growth and 2.2 edge darkening (R90c; changed at the Phase 4 gate). Each step adds at least a third as much ink as Off to Light, at 100% and 200% on 1× and 2× screens.
 - **Speed.** It is drawn for visible pages first, after the page's own render, so it never delays the first paint or scrolling. It is cached per page and zoom. Turning it on shows bold on the visible pages within 300 ms on the reference laptop.
 
 **R93: Caret browsing (Nov 2, owner request).** A text cursor (caret) for reading and selecting by keyboard, like Chrome's caret browsing and Foxit's text cursor.
