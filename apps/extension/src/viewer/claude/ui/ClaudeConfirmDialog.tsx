@@ -1,5 +1,6 @@
 // The questions asked before Claude is sent anything that needs a yes (contracts §6 "Before sending"; plan §4 F):
-// - a PDF that is not in the library: "Send 3 passages to Anthropic?";
+// - a PDF the owner did not choose for Claude (R105): "Send 3 passages to Anthropic?". It says "This PDF is not in your library",
+//   or, when a note or a mark saved it, "You haven't chosen to save this PDF yourself";
 // - an estimate over the owner's limit for asking first ($0.25 unless changed): "This question costs about 31¢", and with
 //   a $0 limit "Your limit for asking first is $0, so Claude asks before every question.";
 // - "Ask about the whole document": the pages and the cost first.
@@ -28,6 +29,11 @@ export interface ClaudeConfirmRequest {
   model?: string | null;
   /** The owner's "ask first above" amount (claude.confirmOverUsd), in dollars. */
   thresholdUsd?: number | null;
+  /**
+   * R105, "unsaved": the PDF is in the library, but a note or a mark saved it, not the owner. The dialog then says that, not
+   * "This PDF is not in your library" (the chip says "Saved to library").
+   */
+  inLibrary?: boolean;
 }
 
 /** "3 passages", "this figure", "a figure and 2 passages": what leaves the computer, counted. */
@@ -50,9 +56,9 @@ export function confirmWords(r: ClaudeConfirmRequest): { title: string; lines: s
       return {
         title: `Send ${what} to Anthropic?`,
         lines: [
-          what === 'your question'
-            ? 'This PDF is not in your library. To answer, Claude needs your question.'
-            : `This PDF is not in your library. To answer, Claude needs ${what} from it.`,
+          `${r.inLibrary === true ? 'You haven’t chosen to save this PDF yourself.' : 'This PDF is not in your library.'} ${
+            what === 'your question' ? 'To answer, Claude needs your question.' : `To answer, Claude needs ${what} from it.`
+          }`,
           // The document map always goes too (contracts §6): say so, so the owner knows exactly what leaves.
           'They go to Anthropic, who run Claude, with your question and the PDF’s title, abstract and headings. Nothing else is sent.',
           `It costs ${cost}${withModel}.`,
