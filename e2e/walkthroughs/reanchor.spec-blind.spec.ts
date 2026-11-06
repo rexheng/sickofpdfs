@@ -42,6 +42,7 @@ import {
   selectPassage,
   settle,
   saveFirst,
+  shutRail,
   threadUnderlineColour,
   waitSaved,
   waitStored,
@@ -112,6 +113,9 @@ test('a stamped re-download shows the same marks and notes on the same words, wi
   await shot(a, testInfo, 'original');
 
   const b = await openServed(openViewer, server, '/gen/attention-stamped.pdf');
+  // Triage (Phase 3 gate, R98): the rail stays open at 1280 px, so a tab opened on a PDF with notes shows them as margin
+  // markers; shut it (F4) to see the cards. The note is there either way (the Notes button counts it, a marker shows).
+  await shutRail(b);
   const fxB = await showPage(b, 0);
   expect(await waitSaved(b), 'the stamped copy is the same library document, not a new one').toBe(id);
   const sentence = await selectPassage(b, fxB, SENTENCE_1);
@@ -141,6 +145,7 @@ test('the same file under another address (moved or renamed) shows the same note
   await waitStored(a, (x) => x.comments.some((c) => c.body === 'Follows the file, not the address' && c.draftOfTab === null), 'the note is stored');
 
   const b = await openServed(openViewer, server, '/gen/folder-two/renamed-copy-1.pdf');
+  await shutRail(b); // Triage (Phase 3 gate, R98), as above
   await showPage(b, 0);
   expect(await waitSaved(b)).toBe(id);
   await expect(cardWith(b, 'Follows the file, not the address'), 'the note is there at the new address').toBeVisible({ timeout: 15_000 });
@@ -182,6 +187,7 @@ test('if the passage has moved a little (a word changed), the note is placed on 
   await seedNote(b, { pageIndex: index, at: TARGET.v2, quote: TARGET.v1, body: 'A note on the placebo sentence' });
   await b.reload();
   await b.waitForFunction(() => (globalThis as unknown as { __sopTest?: { viewerState?: () => string } }).__sopTest?.viewerState?.() === 'ready', undefined, { timeout: 25_000 });
+  await shutRail(b); // Triage (Phase 3 gate, R98): the rail opens again on a reload at 1280 px, as above
   const fxB = await showPage(b, index);
   expect(await waitSaved(b), 'the same library document').toBe(id);
   const card = cardWith(b, 'A note on the placebo sentence');

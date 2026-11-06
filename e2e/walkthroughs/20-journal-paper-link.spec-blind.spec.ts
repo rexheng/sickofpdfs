@@ -38,8 +38,11 @@ test('a journal paper is saved by itself, listed with its real title, and reopen
   note(testInfo, 'the chip tooltip says', tip);
   // Triage (S11, rule 7): Attention's References heading is on page 10 of 15, outside the first and last 5 pages the filter reads
   // (spec, Learning filter step 1), so it is saved on its arXiv number, citations and Abstract. The hover lists those, strongest first.
-  expect(tip, 'the reasons name what the filter found, strongest first').toMatch(/^arXiv number/i);
-  expect(tip.split(',').length, 'up to four of them').toBeGreaterThanOrEqual(3);
+  // Triage (Phase 3 gate, TB4 fix A item 6): the hover is now one plain sentence, "Saved because it looks like a paper: it has
+  // an arXiv number, many citations and an abstract.", still strongest first.
+  expect(tip, 'the reasons name what the filter found, strongest first').toMatch(/^Saved because it looks like a paper: it has an arXiv number\b/i);
+  const found = tip.replace(/^.*?\bit has\s+/i, '').replace(/\.$/, '').split(/,\s*|\s+and\s+/);
+  expect(found.length, `at least three of them (${found.join(' | ')})`).toBeGreaterThanOrEqual(3);
   await shot(page, testInfo, 'chip-reasons');
 
   const id = await libraryId(page);

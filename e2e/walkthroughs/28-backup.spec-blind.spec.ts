@@ -23,7 +23,7 @@ import { createHash } from 'node:crypto';
 import { expect, test } from '../support/test';
 import { waitForExtensionWorker } from '../support/launch';
 import { store as storeOf } from '../support/store-probe.spec-blind';
-import { cardWith } from './support/marks.spec-blind';
+import { cardWith, shutRail } from './support/marks.spec-blind';
 import { NOTE_A, NOTE_R, backedUp } from './support/backup-flow.spec-blind';
 import {
   ATTENTION,
@@ -78,9 +78,10 @@ test('a backup holds the PDFs, the notes as Markdown and library.json, and never
   }
   expect(b.list('pdf/'), 'only the two saved PDFs: nothing from the unsaved invoice').toHaveLength(2);
 
-  // library.json: the eight tables, camelCase rows, no drafts
+  // library.json: the eleven tables, camelCase rows, no drafts
+  // Triage (Phase 3 gate, R92 "Tags are kept in backups"): tags, reading_tags and auto_tag_removed joined the first eight.
   const dump = JSON.parse(await b.text('library.json')) as { tables: Record<string, { id?: string; documentId?: string; body?: string; draftOfTab?: string | null }[]> };
-  expect(Object.keys(dump.tables).sort(), 'the eight tables').toEqual(['aliases', 'comments', 'documents', 'history', 'locations', 'marks', 'settings', 'threads']);
+  expect(Object.keys(dump.tables).sort(), 'the eleven tables').toEqual(['aliases', 'auto_tag_removed', 'comments', 'documents', 'history', 'locations', 'marks', 'reading_tags', 'settings', 'tags', 'threads']);
   expect(dump.tables.documents.map((d) => d.id).sort()).toEqual([shaA, shaR].sort());
   expect(dump.tables.comments.map((c) => c.body).sort(), 'both notes are in it').toEqual([NOTE_A, NOTE_R].sort());
   for (const t of ['marks', 'threads', 'comments']) {
@@ -156,6 +157,8 @@ test('forgetting a PDF removes it from the backup: its copy, its notes and its r
   const page = await openViewer(server.url(RESNET.path));
   await waitViewerReady(page);
   await waitForStore(page);
+  // Triage (Phase 3 gate, R98): the rail stays open at 1280 px, so the note shows as a margin marker; shut it to see the card.
+  await shutRail(page);
   await expect(cardWith(page, NOTE_R), 'its note is there').toBeVisible({ timeout: 20_000 });
   let forgot = { asked: false, text: '' };
   if (await fileMenuHas(page, /forget this pdf/i)) forgot = await forgetThisPdf(page);

@@ -595,6 +595,11 @@ test('an Alt+drag that starts on a link draws an area and does not follow the li
   // The control: a plain click on the contents link goes to page 4 ("3.2 Experimental setup").
   await placeAt(page, 0);
   const spot = await linkSpot(page, 'contents');
+  // Triage (Phase 3 gate, load flake): a page's links are read when the main thread is idle, after its first render, so on
+  // a busy machine the click came before the link was there. Wait, as a reader would see the pointer turn into a hand.
+  await expect
+    .poll(() => page.evaluate((p) => document.elementFromPoint(p.x, p.y)?.closest('a.sop-link') != null, spot), { message: 'the contents link is on the page', timeout: 10_000 })
+    .toBe(true);
   await page.mouse.click(spot.x, spot.y);
   await expect.poll(() => pointVisible(page, 3, 318), { message: 'a plain click on the link follows it (the control)', timeout: 6000 }).toBe(true);
   await placeAt(page, 0);

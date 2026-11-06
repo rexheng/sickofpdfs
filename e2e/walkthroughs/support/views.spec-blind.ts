@@ -365,12 +365,15 @@ export async function printNow(page: Page, withMarks: boolean | null): Promise<P
     const roles = ['button', 'radio', 'menuitemradio', 'menuitem', 'option', 'tab'] as const;
     const pick = roles.map((role) => page.getByRole(role, { name: wanted })).reduce((a, b) => a.or(b));
     const tick = page.getByRole('checkbox', { name: MARKS_WORD }).or(page.getByRole('switch', { name: MARKS_WORD })).or(page.getByRole('menuitemcheckbox', { name: MARKS_WORD }));
+    const step = page.getByRole('dialog', { name: 'Print' });
     const deadline = Date.now() + 6_000;
     while (Date.now() < deadline) {
       if ((await printLog(page)).calls > before) break;
       if (await pick.first().isVisible().catch(() => false)) await pick.first().click();
       else if (await tick.first().isVisible().catch(() => false)) await tick.first().setChecked(withMarks);
-      else {
+      // Triage (Phase 3 gate, R99): the Print step shows even when the PDF has no marks, and then it has no marks choice.
+      // There is nothing to choose, so Print (as the null case does).
+      else if (!(await step.isVisible().catch(() => false))) {
         await page.waitForTimeout(150);
         continue;
       }

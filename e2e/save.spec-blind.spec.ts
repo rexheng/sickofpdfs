@@ -212,7 +212,13 @@ test('in an Incognito window the PDF is shown and nothing is ever saved: the chi
   const page = await openViewer(server.url(SAMPLE_PATH));
   await waitReady(page);
   await expect(headerButton(page, CHIP.incognito)).toBeVisible();
-  await expect(headerButton(page, CHIP.incognito), 'the chip is not a button anyone can press').toBeDisabled();
+  // Triage (Phase 3 gate, TB4 fix B1 for TB2 visual 4): the chip is a full-contrast status chip, not a disabled one, so its
+  // tooltip can say why. Pressing it must still do nothing: no menu, no question, no save.
+  await headerButton(page, CHIP.incognito).click();
+  await page.waitForTimeout(400);
+  await expect(page.getByRole('menu'), 'pressing the chip opens no menu').toHaveCount(0);
+  await expect(page.getByRole('dialog'), 'and asks nothing').toHaveCount(0);
+  expect(await save(page).state(), 'and saves nothing').toMatchObject({ kind: 'incognito' });
   await snap(page, testInfo, '7-incognito');
 
   await page.keyboard.press('Control+Alt+s');

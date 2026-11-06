@@ -38,6 +38,7 @@ import {
   selectPassage,
   startNote,
   type TlFixture,
+  shutRail,
   waitSaved,
 } from './support/marks.spec-blind';
 import { chipText, forgetThisPdf, saveFromChip } from './support/library-p3.spec-blind';
@@ -314,6 +315,9 @@ test.describe('a save that fails (R67 a)', () => {
     await failedChip.click(); // the click leaves the note box, which sends the note (leaving a card sends typed text)
     await waitSaved(page, 15_000);
     await page.reload();
+    // Triage (Phase 3 gate, R98): the rail opens again on a reload at 1280 px and the note shows as a margin marker; shut it
+    // to see the card. Before this, the store held the note and the Notes button counted it.
+    await shutRail(page);
     await expect(cardWith(page, NOTE), 'after a reload the note is there').toBeVisible({ timeout: 30_000 });
     await shot(page, testInfo, 'saved-on-try-again');
   });
@@ -560,6 +564,10 @@ test.describe('TB4 ruling: Forget wins over an unsent note in another tab (code 
     await a.bringToFront();
     const forgot = await forgetThisPdf(a); // "Never save this file" left unticked
     expect(forgot.asked, 'Forget asks first').toBe(true);
+    // Triage (Phase 3 gate, test race): the news reaches tab B 30–200 ms after A's Forget returns; until then B still shows
+    // the old "saved". Wait for B to follow, then watch that nothing brings it back.
+    expect(await libraryId(a), 'the library forgot it').toBeNull();
+    await expect.poll(() => saveKind(b), { timeout: 5000, message: 'tab B follows the Forget' }).not.toMatch(/^saved$/);
 
     // Watch for 6 s, as the critic did: no tab and no write may bring the PDF back.
     const until = Date.now() + 6000;
