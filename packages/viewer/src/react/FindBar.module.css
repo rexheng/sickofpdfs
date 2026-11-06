@@ -1,12 +1,13 @@
 /*
  * The find bar: a dark card under the toolbar pill, at the right, where Chrome puts its find bar. The card is the dark
  * menus' surface (#282a2c) with their elevation, so it reads as one piece of the viewer chrome above the #1b1b1b canvas.
- * It is 24 px in from the right, clear of the page list's scrollbar.
+ * It is 24 px in from the right of the page column, clear of its scrollbar. While the notes panel is open the column
+ * ends --viewer-end-inset before the window's edge (the viewer's App.module.css), so the bar never covers the panel.
  */
 .bar {
   position: absolute;
   inset-block-start: calc(var(--viewer-pill-h) + var(--space-2));
-  inset-inline-end: var(--space-6);
+  inset-inline-end: calc(var(--viewer-end-inset, 0px) + var(--space-6));
   z-index: var(--z-viewer-float);
   box-sizing: border-box;
   padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
