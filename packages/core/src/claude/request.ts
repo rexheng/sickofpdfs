@@ -37,7 +37,12 @@ export interface SearchResultBlockParam {
 }
 /** A block held in memory from an earlier request or reply (assistant output, tool results), passed back exactly as it came. */
 export interface HeldBlock { type: string; [key: string]: unknown }
-export interface WebSearchToolParam { type: string; name: 'web_search'; max_uses: number }
+/**
+ * `allowed_callers: ['direct']`: Claude calls the search itself, never from code execution (dynamic filtering). Only then does
+ * Anthropic count every search of a question against `max_uses`, across tool rounds and `pause_turn` continuations (web search
+ * docs, "Max uses"), so a question makes at most one search (owner, 1 Nov). It also keeps the tool eligible for zero data retention.
+ */
+export interface WebSearchToolParam { type: string; name: 'web_search'; max_uses: number; allowed_callers: ['direct'] }
 export type ToolParam = ToolDefinition | WebSearchToolParam;
 export interface MessageParam { role: 'user' | 'assistant'; content: string | (TextBlockParam | DocumentBlockParam | ImageBlockParam | HeldBlock)[] }
 
@@ -54,14 +59,24 @@ export interface MessagesParams {
   output_config: { effort: 'low' | 'medium' };
   cache_control: CacheControl;
   system: string;
-  tools: ToolParam[];
+  /** Left out when the request offers no tools at all (a PDF not chosen for Claude: only the passages the owner agreed to). */
+  tools?: ToolParam[];
   messages: MessageParam[];
   /** Only on Think harder, and only when the model's info lists fallback models. Send with `client.beta.messages`. */
   betas?: string[];
   fallbacks?: 'default';
 }
 
-export interface BuildOptions { role: ModelRole; model: ModelChoice; webSearch: boolean }
+export interface BuildOptions {
+  role: ModelRole;
+  model: ModelChoice;
+  webSearch: boolean;
+  /**
+   * False: no client tools (search_document, get_pages, get_figure), so Claude can read nothing but the pack. For a PDF the owner
+   * did not choose for Claude (R105): the confirm dialog promises "Nothing else is sent". Default true.
+   */
+  clientTools?: boolean;
+}
 
 /** Effort is fixed per role (A2), so the cache holds. The live check may change these values; they are never a setting. */
 export const EFFORT: Readonly<Record<ModelRole, 'low' | 'medium'>> = { 'default': 'low', 'think-harder': 'medium' };
@@ -240,8 +255,8 @@ export async function buildRequest(
   blocks.push(...searchResultBlocks(turns.slice(1)));
 
   // Deep copies: the frozen tool list must stay frozen for every later request, whatever happens to this one.
-  const tools: ToolParam[] = CLIENT_TOOLS.map((t) => structuredClone(t));
-  if (o.webSearch && o.model.webSearchTool) tools.push({ type: o.model.webSearchTool, name: 'web_search', max_uses: MAX_WEB_SEARCHES });
+  const tools: ToolParam[] = o.clientTools === false ? [] : CLIENT_TOOLS.map((t) => structuredClone(t));
+  if (o.webSearch && o.model.webSearchTool) tools.push({ type: o.model.webSearchTool, name: 'web_search', max_uses: MAX_WEB_SEARCHES, allowed_callers: ['direct'] });
 
   const params: MessagesParams = {
     model: o.model.id,
@@ -249,7 +264,7 @@ export async function buildRequest(
     output_config: { effort: EFFORT[o.role] },
     cache_control: { type: 'ephemeral' },
     system: SYSTEM_PROMPT,
-    tools,
+    ...(tools.length > 0 ? { tools } : {}),
     messages,
     ...(o.role === 'think-harder' && o.model.serverFallback ? { betas: [FALLBACK_BETA], fallbacks: 'default' as const } : {}),
   };

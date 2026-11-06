@@ -46,7 +46,8 @@ export function replyErrorFromApi(apiErrorType: string | null, httpStatus: numbe
   // No HTTP status and no API error type: the connection itself failed (offline, cut off, timed out).
   if (apiErrorType === null && httpStatus === null) return replyError('network');
   if (apiErrorType === 'authentication_error' || apiErrorType === 'permission_error' || httpStatus === 401 || httpStatus === 403) return replyError('bad-key');
-  if (apiErrorType === 'rate_limit_error' || httpStatus === 429) return replyError('rate-limited');
+  // TB6 (R105 slice C1): an overloaded server (HTTP 529) is the same to the owner as a busy one: wait a moment, then Try again.
+  if (apiErrorType === 'rate_limit_error' || apiErrorType === 'overloaded_error' || httpStatus === 429 || httpStatus === 529) return replyError('rate-limited');
   return replyError('server');
 }
 
