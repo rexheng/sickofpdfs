@@ -153,6 +153,18 @@ describe('cleanLink: tracking and token params out, fragment out, params sorted 
       ],
     },
     {
+      name: 'a longer key, or a value, that merely contains a sign-in key name is kept (R105, negative)',
+      input: 'https://example.edu/a.pdf?coursecode=EC1A1&author=Smith&skip=2&q=code&sketch=1',
+      base: 'https://example.edu/a.pdf',
+      params: [
+        ['author', 'Smith'],
+        ['coursecode', 'EC1A1'],
+        ['q', 'code'],
+        ['sketch', '1'],
+        ['skip', '2'],
+      ],
+    },
+    {
       name: 'host case folds, path case is kept',
       input: 'HTTPS://Example.EDU/Docs/Reading.PDF?x=1',
       base: 'https://example.edu/Docs/Reading.PDF',
@@ -213,6 +225,23 @@ describe('cleanLink: tracking and token params out, fragment out, params sorted 
     ['Moodle sesskey (spec decision)', 'https://moodle.lse.ac.uk/mod/resource/view.php?id=2345678&sesskey=Zk3d9aQwLm', [['id', '2345678']] as Params],
     ['Moodle sesskey first, in capitals (spec decision)', 'https://moodle.lse.ac.uk/mod/resource/view.php?SESSKEY=Zk3d9aQwLm&id=2345678', [['id', '2345678']] as Params],
     ['Moodle sesskey as the only param, no dangling "?" (spec decision)', 'https://moodle.lse.ac.uk/my/?sesskey=Zk3d9aQwLm', [] as Params],
+    // R105 and the Phase 4 security read: sign-in and gift keys never stay in a stored link.
+    ['accessToken (camel case)', 'https://example.edu/files/a.pdf?accessToken=eyJhbGciOi&id=5', [['id', '5']] as Params],
+    ['ACCESS_TOKEN in capitals', 'https://example.edu/files/a.pdf?ACCESS_TOKEN=ya29.a0&id=5', [['id', '5']] as Params],
+    ['token', 'https://example.edu/files/a.pdf?id=5&Token=abc123', [['id', '5']] as Params],
+    ['an OAuth code', 'https://example.edu/callback/a.pdf?code=4%2F0AX4XfWh&id=5', [['id', '5']] as Params],
+    ['a magic link auth', 'https://example.edu/a.pdf?auth=Zm9vYmFy&id=5', [['id', '5']] as Params],
+    ['a signature sig (Azure SAS)', 'https://store.blob.core.windows.net/c/a.pdf?sv=2022-11-02&sig=abc%3D', [['sv', '2022-11-02']] as Params],
+    ['signature', 'https://example.edu/a.pdf?Signature=abc&id=5', [['id', '5']] as Params],
+    ['session', 'https://example.edu/a.pdf?id=5&session=s3cr3t', [['id', '5']] as Params],
+    ['sessionId (camel case)', 'https://example.edu/a.pdf?sessionId=s3cr3t&id=5', [['id', '5']] as Params],
+    ['SESSIONID in capitals', 'https://example.edu/a.pdf?id=5&SESSIONID=s3cr3t', [['id', '5']] as Params],
+    ['a Medium gift link sk', 'https://medium.com/@someone/a-story-0123456789ab?sk=0f1e2d3c4b5a69788796a5b4c3d2e1f0', [] as Params],
+    [
+      'all of them at once, with tracking, only the param that picks the page stays',
+      'https://example.com/x/page?sk=a&accessToken=b&code=c&auth=d&sig=e&session=f&sessionid=g&utm_source=nl&p=2',
+      [['p', '2']] as Params,
+    ],
   ])('%s is removed', (_name, input, params) => {
     const out = cleanLink(input);
     expect(shape(out).params).toEqual(params);

@@ -3,12 +3,14 @@
 // of the link as the user gave it. Anything that is not an http(s) URL comes back unchanged.
 
 /**
- * Query keys that never choose a document: ads, analytics, "force download", expiring signed-URL parts and session
- * keys (Moodle's `sesskey`: a live key that must never be stored or synced).
+ * Query keys that never choose a document: ads, analytics, "force download", expiring signed-URL parts, and sign-in, session and
+ * gift keys (Moodle's `sesskey`, an OAuth `code`, a magic link's `auth`, Medium's gift `sk`: live keys that must never be stored,
+ * backed up or synced; R105 and the Phase 4 security read). Compared in lower case, so `accessToken` is `accesstoken`.
  */
 const REMOVED_KEYS = new Set([
   'fbclid', 'gclid', 'dclid', 'msclkid', 'mc_cid', 'mc_eid', '_ga', '_gl', 'igshid', 'yclid', 'twclid', 'ttclid',
-  'ref_src', 'refreqid', 'forcedownload', 'token', 'access_token', 'id_token', 'sesskey',
+  'ref_src', 'refreqid', 'forcedownload', 'token', 'access_token', 'accesstoken', 'id_token', 'sesskey',
+  'code', 'auth', 'sig', 'session', 'sessionid', 'session_id', 'sk',
   'googleaccessid', 'expires', 'signature', 'key-pair-id', 'policy',
 ]);
 const REMOVED_PREFIXES = ['utm_', 'x-amz-', 'x-goog-'];
