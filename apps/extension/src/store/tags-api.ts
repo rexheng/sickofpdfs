@@ -16,7 +16,8 @@
 // - A reading whose text the owner keeps out of the library (`index_text` 0: a private PDF saved by choice, R91) is never read, understood
 //   or tagged by the categoriser at all: not its text, not its title, not its link. The owner's own tags still work on it. R102: it is
 //   never in related readings, in either direction, never in the topics' corpus and never one of the owner's tag examples, even with
-//   a vector left from before.
+//   a vector left from before. The same holds for a reading the owner saved although the filter judged it "not learning" (R102,
+//   Nov 6 ruling; `UNDERSTOOD` in reading-flags.ts): it stays searchable, but gets no vector, no topic and no auto tag.
 // - The owner always wins. An auto tag never replaces or changes an owner tag. A tag taken off a reading (`auto_tag_removed`) never
 //   comes back on it, whatever the categoriser finds later. Re-adding it by hand clears that.
 // - A tag the owner deletes keeps a row with `deleted_at` set, and the readings that had it are remembered as removals, so a deleted
@@ -28,6 +29,7 @@
 // - Errors are rejections whose message starts with a code (`bad-input: …`), so the code survives a message port.
 import { type DocumentId, EMBEDDING_MODEL, MAX_TOPICS_PER_DOC, TAG_MIN_DOCS, type HlcStamp, related as relatedIds, type TagKind, type TagSource } from '@sop/core';
 import { CATEGORISER_TAB, type StoreChange } from './change-bus';
+import { UNDERSTOOD } from './reading-flags';
 import { isReadOnly, type SqlDb, type SqlValue } from './schema-v2';
 
 // ---- shapes ------------------------------------------------------------------------------------------------------------------------
@@ -362,7 +364,7 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
   }
   const documentExists = (id: string): boolean => one('SELECT 1 AS x FROM documents WHERE id = ?', [id]) !== undefined;
   /** In the library, not in Trash, and its text not kept out of it: the only readings the categoriser may tag. */
-  const readableDocumentExists = (id: string): boolean => one('SELECT 1 AS x FROM documents WHERE id = ? AND deleted_at IS NULL AND index_text = 1', [id]) !== undefined;
+  const readableDocumentExists = (id: string): boolean => one(`SELECT 1 AS x FROM documents d WHERE d.id = ? AND d.deleted_at IS NULL AND ${UNDERSTOOD}`, [id]) !== undefined;
   const liveTag = (id: string): Row | undefined => one('SELECT * FROM tags WHERE id = ? AND deleted_at IS NULL', [id]);
   const liveTagByName = (name: string): Row | undefined => one('SELECT * FROM tags WHERE name = ? COLLATE NOCASE AND deleted_at IS NULL', [name]);
 
@@ -664,10 +666,10 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
         checkDocId(documentId);
         const count = n === undefined ? 5 : n;
         if (!Number.isInteger(count) || count < 1 || count > 50) fail('bad-input', 'ask for between 1 and 50 related readings');
-        // R102: a reading saved without searchable text (D9, index_text 0) is never related, in either direction: it is not a
-        // candidate, and asking for its own related readings gives none. It should have no vector; one left from before (a
-        // restore can bring the row with index_text 0) is ignored here too.
-        const all = select(`SELECT e.document_id AS id, e.vector AS vector, e.dim AS dim FROM embeddings e JOIN documents d ON d.id = e.document_id WHERE ${LIVE} AND d.index_text = 1`);
+        // R102: a reading saved without searchable text (D9, index_text 0), or saved by the owner although the filter judged it not
+        // learning, is never related, in either direction: it is not a candidate, and asking for its own related readings gives
+        // none. It should have no vector; one left from before (a restore can bring such a row) is ignored here too.
+        const all = select(`SELECT e.document_id AS id, e.vector AS vector, e.dim AS dim FROM embeddings e JOIN documents d ON d.id = e.document_id WHERE ${LIVE} AND ${UNDERSTOOD}`);
         const docs = all.flatMap((r) => {
           const vector = vectorOf(r.vector, num(r, 'dim'));
           return vector === null ? [] : [{ id: str(r, 'id'), vector, text: { title: '', abstract: '' } }];
@@ -721,7 +723,7 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
         if (!Number.isInteger(limit) || limit < 1 || limit > 500) fail('bad-input', 'ask for between 1 and 500 readings');
         return select(
           `SELECT d.id AS id FROM documents d LEFT JOIN embeddings e ON e.document_id = d.id
-           WHERE ${LIVE} AND d.index_text = 1 AND (e.document_id IS NULL
+           WHERE ${LIVE} AND ${UNDERSTOOD} AND (e.document_id IS NULL
              OR e.model <> ? OR e.rules < ${COURSE_RULES} OR e.pages_used <> (SELECT count(*) FROM page_text p WHERE p.document_id = d.id AND p.page_index < ${INPUT_PAGES}))
            ORDER BY d.created_at DESC, d.id LIMIT ?`,
           [EMBEDDING_MODEL, limit],
@@ -731,7 +733,7 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
     categoriseInput: (documentId) =>
       attempt((): CategoriseInput | null => {
         checkDocId(documentId);
-        const d = one('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL AND index_text = 1', [documentId]);
+        const d = one(`SELECT * FROM documents d WHERE d.id = ? AND d.deleted_at IS NULL AND ${UNDERSTOOD}`, [documentId]);
         if (d === undefined) return null;
         const indexText = true;
         const urls: string[] = [];
@@ -795,7 +797,7 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
         let stored = false;
         db.savepoint(() => {
           // Forgotten, trashed or made private while the vector was being made: nothing is kept.
-          if (one('SELECT 1 AS x FROM documents WHERE id = ? AND deleted_at IS NULL AND index_text = 1', [documentId]) === undefined) return;
+          if (!readableDocumentExists(documentId)) return;
           run(
             `INSERT INTO embeddings (document_id, model, dim, vector, text_hash, abstract, pages_used, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT (document_id) DO UPDATE SET model = excluded.model, dim = excluded.dim, vector = excluded.vector, text_hash = excluded.text_hash,
@@ -818,7 +820,7 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
         }
         return select(
           `SELECT d.id AS id, d.title AS title, d.authors AS authors, e.abstract AS abstract, e.vector AS vector, e.dim AS dim
-           FROM embeddings e JOIN documents d ON d.id = e.document_id WHERE ${LIVE} AND d.index_text = 1 ORDER BY d.created_at DESC, d.id LIMIT ?`,
+           FROM embeddings e JOIN documents d ON d.id = e.document_id WHERE ${LIVE} AND ${UNDERSTOOD} ORDER BY d.created_at DESC, d.id LIMIT ?`,
           [limit],
         ).flatMap((r): CorpusDoc[] => {
           const vector = vectorOf(r.vector, num(r, 'dim'));
@@ -841,7 +843,7 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
         for (const r of select(
           `SELECT t.id AS tag_id, t.name AS name, d.id AS id, e.vector AS vector, e.dim AS dim
            FROM tags t JOIN reading_tags rt ON rt.tag_id = t.id AND rt.source = 'owner'
-             JOIN documents d ON d.id = rt.document_id AND ${LIVE} AND d.index_text = 1 JOIN embeddings e ON e.document_id = d.id
+             JOIN documents d ON d.id = rt.document_id AND ${LIVE} AND ${UNDERSTOOD} JOIN embeddings e ON e.document_id = d.id
            WHERE t.deleted_at IS NULL AND t.kind = 'tag' ORDER BY t.id, d.id`,
         )) {
           const vector = vectorOf(r.vector, num(r, 'dim'));
@@ -918,7 +920,7 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
         let added = 0;
         let removed = 0;
         db.savepoint(() => {
-          const live = new Set(select(`SELECT d.id AS id FROM documents d WHERE ${LIVE} AND d.index_text = 1`).map((r) => str(r, 'id')));
+          const live = new Set(select(`SELECT d.id AS id FROM documents d WHERE ${LIVE} AND ${UNDERSTOOD}`).map((r) => str(r, 'id')));
           // The topic tags there are (deleted ones too) and the readings each is known by: carried, or taken off.
           const known = new Map<string, { row: Row; docs: Set<string> }>();
           for (const r of select(`SELECT * FROM tags WHERE kind = 'topic'`)) known.set(str(r, 'id'), { row: r, docs: new Set() });

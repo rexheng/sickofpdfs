@@ -6,6 +6,7 @@ import type { DocumentId, LocationRow } from '@sop/core';
 import { FileTypeIcon, IconButton, TextButton, TextField } from '@sop/ui';
 import { type ReactNode, useEffect, useState } from 'react';
 import { shownTitle } from '../../shared/shown-title';
+import { SAVED_THOUGH_NOT_LEARNING } from '../../store/reading-flags';
 import { formatReadingTime } from '../components/format';
 import { bareName } from '../tags/tag-format';
 import { TagEditor } from '../tags/TagEditor';
@@ -71,6 +72,9 @@ export function AboutDetails({ documentId, about, tags, say, onOpenRelated, cont
   const title = shownTitle(doc.title, link);
   const courses = readingTags.filter((t) => t.kind === 'course').map((t) => bareName(t.name));
   const visited = reading?.pagesVisited.length ?? 0;
+  // R102: a reading saved without searchable text, or saved although it doesn't look like a learning PDF, is never related to
+  // others. It says so, rather than promising related readings that will never come.
+  const keptOut = !doc.indexText || (Array.isArray(doc.saveReasons) && doc.saveReasons.includes(SAVED_THOUGH_NOT_LEARNING));
 
   return (
     <div className={styles.details}>
@@ -116,7 +120,9 @@ export function AboutDetails({ documentId, about, tags, say, onOpenRelated, cont
       </Section>
 
       <Section title="Related readings">
-        {related === null || related.length === 0 ? (
+        {keptOut ? (
+          <p className={styles.note}>This PDF is kept out of related readings and topics, because it doesn’t look like a learning PDF.</p>
+        ) : related === null || related.length === 0 ? (
           <p className={styles.note}>Readings close to this one in meaning show here once sickofpdfs has read a few of your PDFs.</p>
         ) : (
           <ul className={styles.related}>

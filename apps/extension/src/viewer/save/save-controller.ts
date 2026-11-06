@@ -51,6 +51,7 @@ import {
 import type { PdfBackend, SaveController } from '@sop/viewer';
 import type { BlobStore } from '../../store/blob-store';
 import type { StoreChange } from '../../store/change-bus';
+import { SAVED_THOUGH_NOT_LEARNING } from '../../store/reading-flags';
 import { localDraftJournal } from '../annotations/draft-journal';
 import { localPendingSaves } from '../annotations/save-pending';
 import { tabIdentity } from '../annotations/tab-presence';
@@ -257,6 +258,8 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
   let busy: { kind: 'save' | 'forget'; done: Promise<void> } | null = null;
   let decision: FilterDecision | null = null;
   let savedReasons: readonly string[] | null = null;
+  /** The owner reported this PDF as a learning one ("It's for learning"): saving it is not saving it against the filter (R102). */
+  let reportedLearning = false;
   /** D9: the warning of the save by choice this tab made of a hard-blocked PDF. */
   let saveWarning: string | null = null;
   /** The first reason of the last "not learning" state, for the question a mark then asks. */
@@ -474,7 +477,10 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
         hasText: pages.some((t) => /\S/u.test(t)),
         encrypted: open.encrypted,
         blobStored: put !== null,
-        saveReasons: reasons,
+        // R102 (Nov 6 ruling): the filter judged it not learning and the owner saved it anyway (a receipt, a statement, a CV kept
+        // on purpose). It stays searchable unless D9 applies, but is never understood: no related readings, topics or auto tags.
+        // The flag is a save reason, so it is written in the same transaction and goes with the reading into backups and sync.
+        saveReasons: decision?.verdict === 'not-learning' && !reportedLearning ? [...reasons, SAVED_THOUGH_NOT_LEARNING] : reasons,
         location: d.location,
         openedAt,
       }));
@@ -1038,6 +1044,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     async report(label) {
       if (!d.rules) throw new Error('no-rules: reports are not kept here');
       await d.rules.report(loaded.sha256, label);
+      reportedLearning = label === 'learning';
     },
     async contents() {
       if (store === null || state.kind !== 'saved') return { marks: 0, notes: 0 };

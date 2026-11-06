@@ -657,3 +657,52 @@ test.describe('R100: Enter never answers the save question (TB5 student critic, 
     await shot(page, testInfo, 'tab-save-space-saved');
   });
 });
+
+// ---------------------------------------------------------------------------------------------------------------------
+// TB5 student critic, finding 3: a bank statement the owner saved showed as a "Related reading" of Think Stats, and had related
+// readings of its own. Ruling R102, extended (Nov 6): a reading the owner saved after the filter judged it "not learning" stays
+// searchable (unless D9 applies), but never appears in Related readings, in either direction, and never gets topics or auto tags.
+// The flag is written with the save and goes with the reading into backups. Not spec-blind: the student's case, kept as a
+// regression walkthrough under rule 10's exception (privacy).
+
+const THINK_STATS: TlFixture = { name: 'thinkstats', file: 'classifier/learning/textbook-thinkstats2.pdf', page: 0, dir: 'ltr' };
+const THINK_PYTHON: TlFixture = { name: 'thinkpython', file: 'classifier/learning/textbook-thinkpython2.pdf', page: 0, dir: 'ltr' };
+
+test.describe('R102: a private PDF saved on purpose stays out of related readings and topics (TB5 student critic, finding 3)', () => {
+  test.beforeEach(async ({ context }) => realVerdict(context));
+
+  test('a bank statement saved on purpose is never a related reading of Think Stats, has none of its own, and gets no auto tag', async ({ openViewer, server }, testInfo) => {
+    // The bank statement first, so the categoriser has looked at it before it reaches the books.
+    const bank = await openPaper(openViewer, server, BANK);
+    await waitForStore(bank);
+    await expect.poll(() => saveKind(bank), { timeout: 30_000, message: 'the filter calls the bank statement "not learning"' }).toBe('not-learning');
+    await selectPassage(bank, BANK, BANK_LINE);
+    await bank.keyboard.press('Control+Alt+m');
+    await expect(savePrompt(bank).first(), 'Ctrl+Alt+M asks first').toBeVisible({ timeout: 5000 });
+    await bank.getByRole('dialog').getByRole('button', { name: /^save$/i }).click(); // the owner saves it on purpose
+    const bankId = await waitSaved(bank, 30_000);
+    const books: string[] = [];
+    for (const fx of [THINK_STATS, THINK_PYTHON]) {
+      const page = await openPaper(openViewer, server, fx);
+      await waitForStore(page);
+      books.push(await waitSaved(page, 60_000)); // learning: the filter saves it
+    }
+    const [stats, python] = books;
+    const s = storeOf(bank);
+    const related = (id: string) => s.call<string[]>('related', id, 5);
+    // The categoriser has read both books once Think Stats has Think Python as a related reading.
+    await expect.poll(() => related(stats), { timeout: 180_000, intervals: [2000], message: 'the categoriser reads the two books' }).toContain(python);
+    await bank.waitForTimeout(3000);
+    expect(await related(stats), "the bank statement is not among Think Stats' related readings").not.toContain(bankId);
+    expect(await related(python), "nor among Think Python's").not.toContain(bankId);
+    expect(await related(bankId), 'and it has no related readings of its own').toEqual([]);
+    const auto = (await s.call<{ source: string; name: string }[]>('tagsOf', bankId)).filter((t) => t.source === 'auto');
+    expect(auto, 'it gets no auto tag').toEqual([]);
+    expect((await s.getDocument(bankId))?.indexText, 'it stays searchable (no card or bank-number block, so not D9)').toBe(true);
+    // The flag is reading data: it is in the row the backup writes (library.json is this export).
+    const dump = await s.call<{ tables: { documents: { id: string; saveReasons: string[] }[] } }>('exportLibrary');
+    expect(dump.tables.documents.find((d) => d.id === bankId)?.saveReasons, 'the flag goes with the reading into a backup').toContain('not-learning:saved-by-owner');
+    expect(dump.tables.documents.find((d) => d.id === stats)?.saveReasons, 'a reading the filter saved has no such flag').not.toContain('not-learning:saved-by-owner');
+    await shot(bank, testInfo, 'bank-statement-saved-on-purpose');
+  });
+});
