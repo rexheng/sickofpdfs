@@ -158,7 +158,8 @@ test('the card survives a reload, with its dotted underline, on the same words',
   await shot(page, testInfo, 'card-after-reload');
 });
 
-test('Esc with text keeps the note: it is sent, the box closes, and its words stay marked as a note', async ({ openViewer, server }, testInfo) => {
+// TB5 ruling (F4): Esc never sends. It closes the box and keeps the text on its card as "Not sent yet" (it was sent before).
+test('Esc with text keeps the note: the box closes, the text stays on its card as not sent yet, and its words stay marked as a note', async ({ openViewer, server }, testInfo) => {
   const page = await openPaper(openViewer, server, ATTENTION);
   const dots = await threadUnderlineColour(page);
   const sel = await selectPassage(page, ATTENTION, LINES.l1);

@@ -49,8 +49,8 @@ interface Decision {
 const decisionOf = (page: Page): Promise<Decision | null> =>
   hooks(page).eval((h) => (h as unknown as { save?: { decision?(): Decision | null } }).save?.decision?.() ?? null);
 
-/** The banner's "Always for …" button. R91: it names the place, so it no longer says "this site". */
-const alwaysButton = (page: Page) => page.getByRole('button', { name: /^always for /i });
+/** The banner's "Always save from …" button. R91: it names the place, so it no longer says "this site". TB5 (F4): with a verb. */
+const alwaysButton = (page: Page) => page.getByRole('button', { name: /^always save from /i });
 const neverButton = (page: Page) => page.getByRole('button', { name: /never for this file/i });
 /** Every status line on the screen (the banner, the snackbar), as one string. */
 const statusText = async (page: Page): Promise<string> => (await page.getByRole('status').allTextContents()).join(' | ');
@@ -164,7 +164,7 @@ test('M1: the allow list never saves image-only scans, a CV or paperwork that th
   const always = alwaysButton(booklet);
   await expect(always).toBeVisible({ timeout: 40_000 });
   // R91: the button names the place (soft, so the reviewer's own assertion below still runs on an older build)
-  await expect.soft(always, 'the button names the site').toHaveText(/^always for 127\.0\.0\.1$/i);
+  await expect.soft(always, 'the button names the site').toHaveText(/^always save from 127\.0\.0\.1$/i);
   await still(booklet, testInfo, 'banner-named-site');
   await always.click();
   await expect(chipOf(booklet)).toContainText(/saved to library/i, { timeout: 20_000 });
@@ -240,7 +240,7 @@ test('M2: no "Always" for a file in Downloads; a safe folder is named, and still
   expect(await decided(b)).toBe('unsure');
   const always = alwaysButton(b);
   await expect(always).toBeVisible({ timeout: 40_000 });
-  await expect(always, 'the button names the folder').toHaveText(/^always for the folder harbour town$/i);
+  await expect(always, 'the button names the folder').toHaveText(/^always save from the folder harbour town$/i);
   await still(b, testInfo, 'banner-named-folder');
   await always.click();
   await expect(chipOf(b)).toContainText(/saved to library/i, { timeout: 20_000 });
@@ -484,7 +484,8 @@ test('M6: Remove from library on a PDF with no notes asks, offers "Never save th
   await waitForStore(page);
   await waitSaved(page, 60_000);
   await chipOf(page).click();
-  const item = page.getByRole('menuitem', { name: /remove from library/i });
+  // TB5 fix round (F4): the chip's menu uses the library's words, "Forget this PDF…" (and "Move to Trash").
+  const item = page.getByRole('menuitem', { name: /forget this pdf/i });
   await expect(item).toBeVisible();
   await item.click();
   const dialog = await page.getByRole('dialog').first().waitFor({ state: 'visible', timeout: 2500 }).then(() => true, () => false);

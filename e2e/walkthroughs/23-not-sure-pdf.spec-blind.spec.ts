@@ -55,8 +55,8 @@ const SAVE = /^save$/i;
 const NOT_NOW = /^not now$/i;
 const NEVER = /never for this file/i;
 // Triage (filterfix, rule 7): spec R91 has the button name the place ("Always for moodle.lse.ac.uk"), so it no longer says "this
-// site". Here the site is the fixture server's, 127.0.0.1.
-const ALWAYS = /^always for 127\.0\.0\.1$/i;
+// site". Here the site is the fixture server's, 127.0.0.1. TB5 fix round (F4): the button has a verb, "Always save from <place>".
+const ALWAYS = /^always save from 127\.0\.0\.1$/i;
 const banner = (page: Page, name: RegExp) => page.getByRole('button', { name });
 
 test.beforeAll(async () => {
