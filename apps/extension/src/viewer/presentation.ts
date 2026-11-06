@@ -57,7 +57,8 @@ interface Before {
   top: number;
   left: number;
   width: number;
-  height: number;
+  /** The area's bottom edge in the window: back where it was once the window is (a bar above the pages moves only its top). */
+  bottom: number;
 }
 
 /** The presentation running in this tab, if any. `left`: it was full screen and is not any more. */
@@ -140,7 +141,7 @@ export async function enterPresentation(ctx: PresentationContext): Promise<() =>
     top: area.scrollTop,
     left: area.scrollLeft,
     width: area.clientWidth,
-    height: area.clientHeight,
+    bottom: Math.round(area.getBoundingClientRect().bottom),
   };
 
   const signal = new AbortController();
@@ -272,8 +273,8 @@ export async function enterPresentation(ctx: PresentationContext): Promise<() =>
 }
 
 /**
- * Puts the reader back: once the page area is back at its old size and the pages at their old scale, at the old scroll
- * position, or, when the presentation moved on (`reached`), at the top of the page it reached, keeping the old sideways
+ * Puts the reader back once the page area is back in the window: at the old scroll position (with the pages at their old
+ * scale), or, when the presentation moved on (`reached`), at the top of the page it reached, keeping the old sideways
  * position (R99). The page list lays itself out again as the window settles (the browser shows its toolbars again
  * after full screen), so the place is checked each frame and put back if anything moved it, until it has held for
  * STABLE_FRAMES frames, the reader moves the pages, or RESTORE_WINDOW_MS has passed.
@@ -291,7 +292,12 @@ function holdPlace(area: HTMLElement, store: ViewerStore, before: Before, reache
     return box ? { top: Math.min(Math.ceil(box.top - PAGE_GAP), area.scrollHeight - area.clientHeight), left: before.left } : null;
   };
   const put = (): boolean => {
-    const sameView = area.clientWidth === before.width && area.clientHeight === before.height && Math.abs(store.get().scale - before.scale) < 1e-9;
+    // The window is back when the area's width and bottom edge are. Not its height: a bar that shows above the pages as
+    // the presentation ends (the not-sure bar falls due behind the black screen, R95) makes it shorter for good, and the
+    // place must still come back. The old scale is needed only for the old scroll position; the top of the page reached
+    // is found at any scale (fit page follows the height).
+    const backInWindow = area.clientWidth === before.width && Math.round(area.getBoundingClientRect().bottom) === before.bottom;
+    const sameView = backInWindow && (reached !== null || Math.abs(store.get().scale - before.scale) < 1e-9);
     const to = sameView ? target() : null;
     if (to === null) return false;
     if (area.scrollTop !== to.top || area.scrollLeft !== to.left) {

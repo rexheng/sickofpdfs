@@ -366,7 +366,10 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
       const st = session.state();
       if (st.active === null && OPEN_EDIT.current === null) return;
       const el = e.target instanceof Element ? e.target : null;
-      if (!el || el === scroller) return; // the page list's own scroll bar
+      if (!el) return;
+      // The page list's own scroll bars. Only a press on them: while the pages glide aside for the margin, the gutter
+      // they leave is the scroll area itself, and a press there is a click away like any other.
+      if (el === scroller && onScrollBar(scroller, e)) return;
       if (el.closest(`[id^="${CARD_ID_PREFIX}"], [data-note-pin]`)) return; // a card or a pin: its own click decides
       if (el.closest('[data-notes-panel]')) return; // the notes panel (S15) runs its own cards
       if (el.closest('[role="menu"], [role="dialog"], [role="alertdialog"], [data-radix-popper-content-wrapper]')) return;
@@ -730,6 +733,12 @@ function focusEditorSoon(threadId: ThreadId): void {
     box.setSelectionRange(box.value.length, box.value.length);
   };
   for (const ms of [0, 30, 80, 160]) setTimeout(tryFocus, ms);
+}
+
+/** Whether a press on the scroll element itself is on its scroll bars (right of, or below, its content box). */
+function onScrollBar(scroller: HTMLElement, e: PointerEvent): boolean {
+  const r = scroller.getBoundingClientRect();
+  return e.clientX >= r.left + scroller.clientLeft + scroller.clientWidth || e.clientY >= r.top + scroller.clientTop + scroller.clientHeight;
 }
 
 /** The page point under the pointer, when it is over a page. */
