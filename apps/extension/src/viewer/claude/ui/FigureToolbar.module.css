@@ -37,8 +37,19 @@
   color: var(--gm3-sys-color-on-surface-variant);
 }
 
-.button:hover:not(:disabled) {
+.button:hover:not(:disabled, .off) {
   background-color: var(--icon-btn-hover);
+}
+
+/* Greyed out on a private PDF (R105): the disabled look, and no hover or press layer; its tooltip says why. */
+.off {
+  cursor: default;
+  opacity: var(--sop-disabled-content);
+}
+
+.bar .button.off:hover,
+.bar .button.off:active {
+  background-color: transparent;
 }
 
 @keyframes appear {

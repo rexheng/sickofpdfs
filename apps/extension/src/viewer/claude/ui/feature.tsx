@@ -10,9 +10,9 @@
 // Everything here waits for the turn runner (slice D) to set the host (host.ts). Until then no Claude item shows, no
 // command is built, and a note with "@Claude" in it is only a note.
 //
-// R105: on a private PDF (not learning, D9 or R102) every Claude item is greyed out with "Claude doesn't read private files", and
-// the figure toolbar (Ask Claude, Explain) does not show.
-import type { ThreadRow } from '@sop/core';
+// R105: on a private PDF (not learning, D9 or R102) every Claude item is greyed out with "Claude doesn't read private files",
+// the figure toolbar's Ask Claude and Explain included.
+import type { CommentId, ThreadRow } from '@sop/core';
 import type { CommentView, MenuItemDef } from '@sop/ui';
 import { type ReactNode, useCallback, useEffect } from 'react';
 import type { NotesHost, ViewerFeature } from '../../annotations/wire';
@@ -21,7 +21,7 @@ import type { FigureController, Region } from '../../figures/controller';
 import { controllerOf } from '../../figures/registry';
 import { noteCommands } from '../../notes/notes-host';
 import { ClaudeConfirmHost } from './ClaudeConfirmDialog';
-import { ClaudeReplyView } from './ClaudeReplyView';
+import { claudeReplyDismiss, ClaudeReplyView } from './ClaudeReplyView';
 import { FigureToolbar } from './FigureToolbar';
 import { claudeUi, useClaudeUi, useClaudePrivateHint } from './host';
 import { claudeJump, createClaudeJumper } from './jump';
@@ -45,8 +45,12 @@ function ClaudeUiView({ host }: { host: NotesHost }) {
   useEffect(() => {
     const jumper = createClaudeJumper(host);
     claudeJump.set(jumper);
+    // R105: OK on a private PDF's refusal takes the row away, as ⋮ → Delete reply does.
+    const dismiss = (id: CommentId) => void host.session.removeComment(id);
+    claudeReplyDismiss.set(dismiss);
     return () => {
       if (claudeJump.get() === jumper) claudeJump.set(null);
+      if (claudeReplyDismiss.get() === dismiss) claudeReplyDismiss.set(null);
     };
   }, [host]);
 
@@ -69,19 +73,18 @@ function ClaudeUiView({ host }: { host: NotesHost }) {
     <>
       <ClaudeMentions placeOfBox={placeOfBox} />
       <ClaudeConfirmHost />
-      {privateHint === null && (
-        <FigureToolbar
-          controller={figures}
-          onAsk={() => {
-            const r = selected();
-            if (r !== null) askOnRegion(figures, r);
-          }}
-          onExplain={() => {
-            const r = selected();
-            if (r !== null) explainRegion(host, figures, r);
-          }}
-        />
-      )}
+      <FigureToolbar
+        controller={figures}
+        disabledReason={privateHint}
+        onAsk={() => {
+          const r = selected();
+          if (r !== null && privateHint === null) askOnRegion(figures, r);
+        }}
+        onExplain={() => {
+          const r = selected();
+          if (r !== null && privateHint === null) explainRegion(host, figures, r);
+        }}
+      />
     </>
   );
 }

@@ -6,8 +6,9 @@
 // neither.
 //
 // It sits in the page list's overlay, so it scrolls with the page and takes its clicks above the text layer. It shows
-// only while the Claude host is there and notes can be written.
-import { TextButton } from '@sop/ui';
+// only while the Claude host is there and notes can be written. On a private PDF (R105) it still shows, with both buttons
+// greyed out and the hint "Claude doesn't read private files" on hover and keyboard focus, as the menus' Claude rows have.
+import { TextButton, Tooltip } from '@sop/ui';
 import { normToCss, type PageBox, pdfRectToNorm, useViewerState } from '@sop/viewer';
 import { type RefObject, useEffect, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
@@ -19,6 +20,8 @@ export interface FigureToolbarProps {
   controller: FigureController;
   onAsk(this: void): void;
   onExplain(this: void): void;
+  /** Why Claude can't be asked here ("Claude doesn't read private files"): both buttons are greyed out and say it. */
+  disabledReason?: string | null;
 }
 
 /** The page list's overlay, once its first layout has made it. */
@@ -70,7 +73,7 @@ function union(a: Box, b: Box): Box {
   return { x, y, width: Math.max(a.x + a.width, b.x + b.width) - x, height: Math.max(a.y + a.height, b.y + b.height) - y };
 }
 
-export function FigureToolbar({ controller, onAsk, onExplain }: FigureToolbarProps) {
+export function FigureToolbar({ controller, onAsk, onExplain, disabledReason = null }: FigureToolbarProps) {
   const { host } = controller;
   const selected = useSyncExternalStore(controller.subscribe, () => controller.state().selected);
   const overlay = useOverlay(host.pageList);
@@ -87,9 +90,32 @@ export function FigureToolbar({ controller, onAsk, onExplain }: FigureToolbarPro
   const right = fig.x + fig.width;
   return createPortal(
     <div className={styles.bar} data-theme="dark" data-place={place} role="toolbar" aria-label="Figure" style={{ left: right, top }}>
-      <TextButton label="Ask Claude" icon="auto_awesome" className={styles.button} onMouseDown={(e) => e.preventDefault()} onClick={onAsk} />
-      <TextButton label="Explain" icon="insert_chart" className={styles.button} onMouseDown={(e) => e.preventDefault()} onClick={onExplain} title="Explain this figure" />
+      <BarButton label="Ask Claude" icon="auto_awesome" why={disabledReason} onClick={onAsk} />
+      <BarButton label="Explain" icon="insert_chart" why={disabledReason} onClick={onExplain} title="Explain this figure" />
     </div>,
     overlay,
+  );
+}
+
+/**
+ * One of the pill's buttons. Greyed out with a reason, it stays focusable (aria-disabled, not disabled), so its tooltip can
+ * say why on hover and on keyboard focus; pressing it does nothing.
+ */
+function BarButton({ label, icon, why, title, onClick }: { label: string; icon: 'auto_awesome' | 'insert_chart'; why: string | null; title?: string; onClick(this: void): void }) {
+  if (why === null) {
+    return <TextButton label={label} icon={icon} className={styles.button} onMouseDown={(e) => e.preventDefault()} onClick={onClick} {...(title !== undefined ? { title } : {})} />;
+  }
+  return (
+    <Tooltip label={why}>
+      <TextButton
+        label={label}
+        icon={icon}
+        className={`${styles.button} ${styles.off}`}
+        aria-disabled="true"
+        aria-description={why}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => undefined}
+      />
+    </Tooltip>
   );
 }
