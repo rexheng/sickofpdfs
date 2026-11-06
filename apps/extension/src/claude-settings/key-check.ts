@@ -5,7 +5,9 @@
 //   message, a log or an error. Nothing here logs, and no error or answer it gives carries the key or a piece of it, apart
 //   from `savedKeyEnding`, which is the last 4 characters the owner sees as "Key saved ····abcd".
 // - It is sent only to api.anthropic.com, in the `x-api-key` header, and only when the owner presses a button: "Check and save"
-//   (one Models-list call), "Check again" (the same call), or a new model choice (free token counting, model-discovery.ts).
+//   (three small calls: the Models list, then a free token count for each chosen model, everyday and Think harder, that finds
+//   which web search tool it takes),
+//   "Check again" (the same calls), or a new model choice (free token counting, model-discovery.ts). None carries document text.
 //   Opening Settings sends nothing and reads no key.
 // - Reading never creates the local-only database: with no database there is no key and no spend.
 //
@@ -30,7 +32,7 @@ export type Answer<T> = { ok: true; value: T } | { ok: false; problem: ApiProble
 function problemOf(status: number): ApiProblem {
   if (status === 401) return 'bad-key';
   if (status === 403) return 'not-allowed';
-  if (status === 429) return 'busy';
+  if (status === 429 || status === 529) return 'busy'; // 529: Anthropic is overloaded, which the owner meets as "busy" too
   return 'server';
 }
 
