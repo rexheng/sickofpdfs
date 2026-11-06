@@ -68,244 +68,268 @@ const addressOf = (server: { url(p: string): string }): string => server.url(`/f
 test.describe('No lost text', () => {
   test.setTimeout(150_000);
 
-  for (const { name, kill } of KILLS) {
-    test(`${name} 100 ms after the last key: the draft is back in its card, with the caret at the end`, async ({ openViewer, server }, testInfo) => {
-      test.skip(!SAVING_AVAILABLE, NO_SAVING);
+  test('No lost text: a draft survives a crash or a closed tab, waits safely, stays a draft, and Esc or clicking away keeps it', async ({ step }, testInfo) => {
+    test.setTimeout(480_000);
+    for (const { name, kill } of KILLS) {
+      await step(`${name} 100 ms after the last key: the draft is back in its card, with the caret at the end`, async ({ openViewer, server }) => {
+        if (!SAVING_AVAILABLE) {
+          testInfo.annotations.push({ type: 'step skipped', description: NO_SAVING });
+          return;
+        }
+        const first = await openPaper(openViewer, server, ATTENTION);
+        await saveFirst(first);
+        await selectPassage(first, ATTENTION, LINES.l1);
+        await startNote(first);
+        const typed = await typeNote(first);
+        await first.waitForTimeout(100); // "100 ms after typing stops"
+        await shot(first, testInfo, 'typed-just-before-the-kill');
+
+        await kill(first);
+
+        const again = await openViewer(addressOf(server));
+        const box = noteBox(again);
+        await expect(box, 'the draft is back in a note box').toBeVisible({ timeout: 15_000 });
+        await expect.poll(async () => (await readBox(box)).text, { message: 'every character, the new line and the emoji included' }).toBe(typed);
+        expect((await readBox(box)).caretAtEnd, 'the caret is at the end of the text').toBe(true);
+        await shot(again, testInfo, 'draft-back-in-its-card');
+      }, 60_000);
+    }
+    await step('a draft left alone for a while is just as safe (300 ms, the saving rule)', async ({ openViewer, server }) => {
+      if (!SAVING_AVAILABLE) {
+        testInfo.annotations.push({ type: 'step skipped', description: NO_SAVING });
+        return;
+      }
       const first = await openPaper(openViewer, server, ATTENTION);
+      // Regression (TB7 upgrade check, not spec-blind): as a PDF is saved, the tab looks in the store for drafts to adopt. On a busy
+      // computer that look waits seconds for the store, and a note begun meanwhile lost its copy in the drafts journal when it ended.
+      // The store answers one step of the look slowly here, so the note is typed while the look is still on.
+      await expect.poll(() => hooks(first).eval((h) => h.store !== null), { timeout: 20_000 }).toBe(true);
+      await hooks(first).eval((h, ms) => {
+        const store = h.store as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>;
+        const list = store.listEditDrafts.bind(store);
+        let once = true;
+        store.listEditDrafts = async (...a) => {
+          const out = await list(...a);
+          if (!once) return out;
+          once = false;
+          await new Promise((r) => setTimeout(r, ms));
+          (globalThis as { sopSlowLookDone?: boolean }).sopSlowLookDone = true;
+          return out;
+        };
+      }, 4000);
       await saveFirst(first);
-      await selectPassage(first, ATTENTION, LINES.l1);
+      await selectPassage(first, ATTENTION, LINES.l3);
       await startNote(first);
       const typed = await typeNote(first);
-      await first.waitForTimeout(100); // "100 ms after typing stops"
-      await shot(first, testInfo, 'typed-just-before-the-kill');
+      await test.step('a note begun while the tab looks for drafts keeps its copy in the drafts journal', async () => {
+        await expect.poll(() => first.evaluate(() => (globalThis as { sopSlowLookDone?: boolean }).sopSlowLookDone === true), { timeout: 15_000 }).toBe(true);
+        await first.waitForTimeout(500); // the look's last step
+        const journal = await first.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('sop-draft:c:')).map((k) => (JSON.parse(localStorage.getItem(k) ?? '{}') as { body?: string }).body));
+        expect(journal, 'every letter of the note is in the drafts journal').toContain(typed);
+      });
+      await first.waitForTimeout(300);
+      await crashRenderer(first);
+      const again = await openViewer(addressOf(server));
+      await expect.poll(async () => (await readBox(noteBox(again))).text, { timeout: 15_000 }).toBe(typed);
+    }, 60_000);
+    await step('a draft that was never sent is not in the library as a note, and is not shown as sent', async ({ openViewer, server }) => {
+      if (!SAVING_AVAILABLE) {
+        testInfo.annotations.push({ type: 'step skipped', description: NO_SAVING });
+        return;
+      }
+      const page = await openPaper(openViewer, server, ATTENTION);
+      const id = await saveFirst(page);
+      await selectPassage(page, ATTENTION, LINES.l5);
+      await startNote(page);
+      await page.keyboard.type('Not sent yet', { delay: 10 });
+      await page.waitForTimeout(500);
+      const stored = await annotations(page, id);
+      expect(stored.comments.filter((c) => c.draftOfTab === null && c.body === 'Not sent yet'), 'listAnnotations returns live, non-draft rows only').toHaveLength(0);
+      await shot(page, testInfo, 'draft-not-sent');
+    }, 60_000);
+    for (const way of ['Escape', 'clicking away'] as const) {
+      await step(`${way} never loses the text: it is still on the screen as a note`, async ({ openViewer, server }) => {
+        const page = await openPaper(openViewer, server, ATTENTION);
+        await selectPassage(page, ATTENTION, LINES.l1);
+        await startNote(page);
+        await page.keyboard.type(LINE_1, { delay: 15 });
 
-      await kill(first);
+        if (way === 'Escape') await page.keyboard.press('Escape');
+        else await page.mouse.click(8, 400); // somewhere that is not the note
+        await expect.poll(() => owns(page, LINE_1), { message: 'the text is still on the screen (as a card or a draft)' }).toBe(true);
+        await shot(page, testInfo, `after-${way === 'Escape' ? 'esc' : 'click-away'}`);
+      }, 60_000);
+
+      await step(`${way} never loses the text: it is still there after a reload`, async ({ openViewer, server }) => {
+        if (!SAVING_AVAILABLE) {
+          testInfo.annotations.push({ type: 'step skipped', description: NO_SAVING });
+          return;
+        }
+        const page = await openPaper(openViewer, server, ATTENTION);
+        await saveFirst(page);
+        await selectPassage(page, ATTENTION, LINES.l1);
+        await startNote(page);
+        await page.keyboard.type(LINE_1, { delay: 15 });
+        if (way === 'Escape') await page.keyboard.press('Escape');
+        else await page.mouse.click(8, 400);
+        await expect.poll(() => owns(page, LINE_1)).toBe(true);
+
+        await page.reload();
+        // Triage (B2, R98): after the reload the rail is open again and the card folds into a marker; the rail is shut so the card shows.
+        await shutRail(page);
+        await expect.poll(() => owns(page, LINE_1), { timeout: 15_000, message: 'the text is still there after a reload' }).toBe(true);
+        await shot(page, testInfo, 'after-reload');
+      }, 60_000);
+    }
+  });
+
+  test('No lost text: unsent replies and edits survive a crash, and drafts follow the right tab when two tabs share a PDF', async ({ step }, testInfo) => {
+    test.setTimeout(240_000);
+    await step('an unsent reply survives a crash, and the note it belongs to is still there', async ({ openViewer, server }) => {
+      if (!SAVING_AVAILABLE) {
+        testInfo.annotations.push({ type: 'step skipped', description: NO_SAVING });
+        return;
+      }
+      const first = await openPaper(openViewer, server, ATTENTION);
+      await saveFirst(first);
+      await postNote(first, ATTENTION, LINES.l3, 'The note that gets a reply');
+      const card = cardWith(first, 'The note that gets a reply');
+      await card.click();
+      await expect(replyBox(first), 'an active card has a reply box').toBeVisible();
+      await replyBox(first).click();
+      await first.keyboard.type('A reply I never sent', { delay: 15 });
+      await first.waitForTimeout(100);
+      await crashRenderer(first);
 
       const again = await openViewer(addressOf(server));
-      const box = noteBox(again);
-      await expect(box, 'the draft is back in a note box').toBeVisible({ timeout: 15_000 });
-      await expect.poll(async () => (await readBox(box)).text, { message: 'every character, the new line and the emoji included' }).toBe(typed);
-      expect((await readBox(box)).caretAtEnd, 'the caret is at the end of the text').toBe(true);
-      await shot(again, testInfo, 'draft-back-in-its-card');
-    });
-  }
+      await expect(cardWith(again, 'The note that gets a reply'), 'the sent note is back').toBeVisible({ timeout: 15_000 });
+      await expect.poll(() => owns(again, 'A reply I never sent'), { timeout: 15_000, message: 'and so is the reply that was being typed' }).toBe(true);
+      await shot(again, testInfo, 'reply-draft-back');
+    }, 60_000);
+    await step('an unsent edit of a sent note survives a crash, and the sent text stays until the edit is sent', async ({ openViewer, server }) => {
+      if (!SAVING_AVAILABLE) {
+        testInfo.annotations.push({ type: 'step skipped', description: NO_SAVING });
+        return;
+      }
+      const first = await openPaper(openViewer, server, ATTENTION);
+      const id = await saveFirst(first);
+      await postNote(first, ATTENTION, LINES.l7, 'Original wording');
+      const card = cardWith(first, 'Original wording');
+      await card.click();
+      await card.getByRole('button', { name: /more options/i }).first().click();
+      await first.getByRole('menuitem', { name: /^edit$/i }).click();
+      const edit = editBox(first);
+      await expect(edit).toBeVisible();
+      await edit.focus();
+      await first.keyboard.press('End');
+      await first.keyboard.type(' and an unsent addition', { delay: 15 });
+      await first.waitForTimeout(100);
+      await crashRenderer(first);
 
-  test('a draft left alone for a while is just as safe (300 ms, the saving rule)', async ({ openViewer, server }) => {
-    test.skip(!SAVING_AVAILABLE, NO_SAVING);
-    const first = await openPaper(openViewer, server, ATTENTION);
-    // Regression (TB7 upgrade check, not spec-blind): as a PDF is saved, the tab looks in the store for drafts to adopt. On a busy
-    // computer that look waits seconds for the store, and a note begun meanwhile lost its copy in the drafts journal when it ended.
-    // The store answers one step of the look slowly here, so the note is typed while the look is still on.
-    await expect.poll(() => hooks(first).eval((h) => h.store !== null), { timeout: 20_000 }).toBe(true);
-    await hooks(first).eval((h, ms) => {
-      const store = h.store as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>;
-      const list = store.listEditDrafts.bind(store);
-      let once = true;
-      store.listEditDrafts = async (...a) => {
-        const out = await list(...a);
-        if (!once) return out;
-        once = false;
-        await new Promise((r) => setTimeout(r, ms));
-        (globalThis as { sopSlowLookDone?: boolean }).sopSlowLookDone = true;
-        return out;
-      };
-    }, 4000);
-    await saveFirst(first);
-    await selectPassage(first, ATTENTION, LINES.l3);
-    await startNote(first);
-    const typed = await typeNote(first);
-    await test.step('a note begun while the tab looks for drafts keeps its copy in the drafts journal', async () => {
-      await expect.poll(() => first.evaluate(() => (globalThis as { sopSlowLookDone?: boolean }).sopSlowLookDone === true), { timeout: 15_000 }).toBe(true);
-      await first.waitForTimeout(500); // the look's last step
-      const journal = await first.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('sop-draft:c:')).map((k) => (JSON.parse(localStorage.getItem(k) ?? '{}') as { body?: string }).body));
-      expect(journal, 'every letter of the note is in the drafts journal').toContain(typed);
-    });
-    await first.waitForTimeout(300);
-    await crashRenderer(first);
-    const again = await openViewer(addressOf(server));
-    await expect.poll(async () => (await readBox(noteBox(again))).text, { timeout: 15_000 }).toBe(typed);
-  });
+      const again = await openViewer(addressOf(server));
+      await expect.poll(() => owns(again, 'Original wording and an unsent addition'), { timeout: 15_000, message: 'the editor comes back with the unsent text' }).toBe(true);
+      await shot(again, testInfo, 'edit-draft-back');
+      const live = await annotations(again, id);
+      expect(live.comments.filter((c) => c.deletedAt === null).map((c) => c.body), 'the sent text has not been replaced').toEqual(['Original wording']);
+    }, 60_000);
+    // Ruling R65 (restated by the controller). Every page of the extension shares one renderer process, so A's crash kills B too
+    // (crash-report.md); after the owner's one click Chrome's tabs come back by themselves. The draft must come back in the tab
+    // that owned it; if that tab does not come back, the first reopened tab for the PDF adopts it. Never lost, never twice.
+    // The tabs that died are read through a fresh CDP session (lookInside): Playwright never lets a crashed Page be used again.
+    await step("two tabs on one PDF: the draft stays with tab A while A is open; B sees the notes A posted, never A's draft; after a crash and the owner's one click, the draft comes back in tab A and nowhere else", async ({ context, openViewer, server }) => {
+      if (!SAVING_AVAILABLE) {
+        testInfo.annotations.push({ type: 'step skipped', description: NO_SAVING });
+        return;
+      }
+      const a = await openPaper(openViewer, server, ATTENTION);
+      const id = await saveFirst(a);
 
-  test('a draft that was never sent is not in the library as a note, and is not shown as sent', async ({ openViewer, server }, testInfo) => {
-    test.skip(!SAVING_AVAILABLE, NO_SAVING);
-    const page = await openPaper(openViewer, server, ATTENTION);
-    const id = await saveFirst(page);
-    await selectPassage(page, ATTENTION, LINES.l5);
-    await startNote(page);
-    await page.keyboard.type('Not sent yet', { delay: 10 });
-    await page.waitForTimeout(500);
-    const stored = await annotations(page, id);
-    expect(stored.comments.filter((c) => c.draftOfTab === null && c.body === 'Not sent yet'), 'listAnnotations returns live, non-draft rows only').toHaveLength(0);
-    await shot(page, testInfo, 'draft-not-sent');
-  });
+      // A posts a note (Enter) and starts a second one, which it does not finish
+      await selectPassage(a, ATTENTION, LINES.l1);
+      await startNote(a);
+      await a.keyboard.type('Posted from tab A', { delay: 10 });
+      await a.keyboard.press('Enter');
+      await expect(a.getByText('Posted from tab A')).toBeVisible();
+      await expect(noteBox(a), 'the sent note has no new-note box any more').toHaveCount(0);
+      await selectPassage(a, ATTENTION, LINES.l5);
+      await startNote(a);
+      await a.keyboard.type('Still writing in tab A', { delay: 10 });
+      await a.waitForTimeout(400);
 
-  for (const way of ['Escape', 'clicking away'] as const) {
-    test(`${way} never loses the text: it is still on the screen as a note`, async ({ openViewer, server }, testInfo) => {
-      const page = await openPaper(openViewer, server, ATTENTION);
-      await selectPassage(page, ATTENTION, LINES.l1);
-      await startNote(page);
-      await page.keyboard.type(LINE_1, { delay: 15 });
+      const b = await openViewer(addressOf(server));
+      // Triage (B2, R98): B opens with the rail open, where the cards fold into markers; the rail is shut so they show in the margin.
+      await shutRail(b);
+      await expect(b.getByText('Posted from tab A'), 'B shows what A posted').toBeVisible({ timeout: 15_000 });
+      await b.waitForTimeout(500);
+      expect(await owns(b, 'Still writing in tab A'), "B must not show A's draft").toBe(false);
+      expect(await anyBox(b).count(), "B has no box open for A's draft").toBe(0);
+      await shot(b, testInfo, 'tab-b-sees-the-posted-note-not-the-draft');
 
-      if (way === 'Escape') await page.keyboard.press('Escape');
-      else await page.mouse.click(8, 400); // somewhere that is not the note
-      await expect.poll(() => owns(page, LINE_1), { message: 'the text is still on the screen (as a card or a draft)' }).toBe(true);
-      await shot(page, testInfo, `after-${way === 'Escape' ? 'esc' : 'click-away'}`);
-    });
+      // A keeps going and posts the draft: B shows it without a reload
+      await a.bringToFront();
+      await a.keyboard.press('Enter');
+      await expect(b.getByText('Still writing in tab A'), 'tabs stay in step').toBeVisible({ timeout: 8000 });
+      await expect(allCards(b)).toHaveCount(2);
 
-    test(`${way} never loses the text: it is still there after a reload`, async ({ openViewer, server }, testInfo) => {
-      test.skip(!SAVING_AVAILABLE, NO_SAVING);
-      const page = await openPaper(openViewer, server, ATTENTION);
-      await saveFirst(page);
-      await selectPassage(page, ATTENTION, LINES.l1);
-      await startNote(page);
-      await page.keyboard.type(LINE_1, { delay: 15 });
-      if (way === 'Escape') await page.keyboard.press('Escape');
-      else await page.mouse.click(8, 400);
-      await expect.poll(() => owns(page, LINE_1)).toBe(true);
+      // A writes a third note, and the renderer dies 100 ms after the last key: A and B both die. The owner clicks once.
+      await a.bringToFront();
+      await selectPassage(a, ATTENTION, LINES.l9);
+      await startNote(a);
+      const text = 'Third note, left behind';
+      await a.keyboard.type(text, { delay: 10 });
+      await a.waitForTimeout(100);
+      await crashRenderer(a, { closeTab: false });
+      const tabA = await lookInside(context, a);
+      const tabB = await lookInside(context, b);
+      await expect.poll(() => draftsIn(tabA), { timeout: 30_000, message: 'tab A comes back by itself and holds its draft' }).toEqual([text]);
+      await expect.poll(() => boxTextsIn(tabA), { timeout: 10_000, message: "the draft is on A's screen, in a note box" }).toContain(text);
+      await testInfo.attach('tab-a-has-its-draft-back', { body: await tabA.screenshot(), contentType: 'image/png' });
+      await expect.poll(() => draftsIn(tabB), { timeout: 30_000, message: 'tab B comes back too, with no draft' }).toEqual([]);
+      expect(await boxTextsIn(tabB), "B never shows A's draft").not.toContain(text);
 
-      await page.reload();
-      // Triage (B2, R98): after the reload the rail is open again and the card folds into a marker; the rail is shut so the card shows.
-      await shutRail(page);
-      await expect.poll(() => owns(page, LINE_1), { timeout: 15_000, message: 'the text is still there after a reload' }).toBe(true);
-      await shot(page, testInfo, 'after-reload');
-    });
-  }
+      // Never twice: a tab opened now does not get it either, and nothing was sent in its place.
+      const c = await openViewer(addressOf(server));
+      await shutRail(c); // Triage (B2, R98), as for B
+      await expect(c.getByText('Posted from tab A'), 'a new tab shows the sent notes').toBeVisible({ timeout: 15_000 });
+      await c.waitForTimeout(1500);
+      expect(await owns(c, text), 'a new tab never shows the draft that tab A owns').toBe(false);
+      const stored = await annotations(c, id);
+      expect(stored.comments.filter((x) => x.body === text), 'the draft was not sent in its place').toHaveLength(0);
+      expect(await c.evaluate((t) => Object.keys(localStorage).filter((k) => k.startsWith('sop-draft:') && localStorage.getItem(k)?.includes(t)).length, text), 'one copy in the journal').toBe(1);
+      await tabA.detach();
+      await tabB.detach();
+    }, 60_000);
+    await step('if the tab that owned the draft does not come back, the first reopened tab adopts it, and only that one', async ({ context, openViewer, server }) => {
+      if (!SAVING_AVAILABLE) {
+        testInfo.annotations.push({ type: 'step skipped', description: NO_SAVING });
+        return;
+      }
+      const a = await openPaper(openViewer, server, ATTENTION);
+      const id = await saveFirst(a);
+      const b = await openViewer(addressOf(server));
+      await expect(b.getByRole('button', { name: /^saved/i }).first(), 'B opens the saved PDF').toBeVisible({ timeout: 25_000 });
 
-  test('an unsent reply survives a crash, and the note it belongs to is still there', async ({ openViewer, server }, testInfo) => {
-    test.skip(!SAVING_AVAILABLE, NO_SAVING);
-    const first = await openPaper(openViewer, server, ATTENTION);
-    await saveFirst(first);
-    await postNote(first, ATTENTION, LINES.l3, 'The note that gets a reply');
-    const card = cardWith(first, 'The note that gets a reply');
-    await card.click();
-    await expect(replyBox(first), 'an active card has a reply box').toBeVisible();
-    await replyBox(first).click();
-    await first.keyboard.type('A reply I never sent', { delay: 15 });
-    await first.waitForTimeout(100);
-    await crashRenderer(first);
+      await a.bringToFront();
+      await selectPassage(a, ATTENTION, LINES.l3);
+      await startNote(a);
+      const text = 'Written in a tab that never came back';
+      await a.keyboard.type(text, { delay: 10 });
+      await a.waitForTimeout(100);
+      await crashRenderer(a); // A and B die; the owner closes A's crashed tab, then clicks once
 
-    const again = await openViewer(addressOf(server));
-    await expect(cardWith(again, 'The note that gets a reply'), 'the sent note is back').toBeVisible({ timeout: 15_000 });
-    await expect.poll(() => owns(again, 'A reply I never sent'), { timeout: 15_000, message: 'and so is the reply that was being typed' }).toBe(true);
-    await shot(again, testInfo, 'reply-draft-back');
-  });
+      const tabB = await lookInside(context, b);
+      await expect.poll(() => draftsIn(tabB), { timeout: 30_000, message: 'B comes back by itself and adopts the draft of the tab that is gone' }).toEqual([text]);
+      await expect.poll(() => boxTextsIn(tabB), { timeout: 10_000, message: "the draft is on B's screen, in a note box" }).toContain(text);
+      await testInfo.attach('tab-b-adopted-the-draft', { body: await tabB.screenshot(), contentType: 'image/png' });
 
-  test('an unsent edit of a sent note survives a crash, and the sent text stays until the edit is sent', async ({ openViewer, server }, testInfo) => {
-    test.skip(!SAVING_AVAILABLE, NO_SAVING);
-    const first = await openPaper(openViewer, server, ATTENTION);
-    const id = await saveFirst(first);
-    await postNote(first, ATTENTION, LINES.l7, 'Original wording');
-    const card = cardWith(first, 'Original wording');
-    await card.click();
-    await card.getByRole('button', { name: /more options/i }).first().click();
-    await first.getByRole('menuitem', { name: /^edit$/i }).click();
-    const edit = editBox(first);
-    await expect(edit).toBeVisible();
-    await edit.focus();
-    await first.keyboard.press('End');
-    await first.keyboard.type(' and an unsent addition', { delay: 15 });
-    await first.waitForTimeout(100);
-    await crashRenderer(first);
-
-    const again = await openViewer(addressOf(server));
-    await expect.poll(() => owns(again, 'Original wording and an unsent addition'), { timeout: 15_000, message: 'the editor comes back with the unsent text' }).toBe(true);
-    await shot(again, testInfo, 'edit-draft-back');
-    const live = await annotations(again, id);
-    expect(live.comments.filter((c) => c.deletedAt === null).map((c) => c.body), 'the sent text has not been replaced').toEqual(['Original wording']);
-  });
-
-  // Ruling R65 (restated by the controller). Every page of the extension shares one renderer process, so A's crash kills B too
-  // (crash-report.md); after the owner's one click Chrome's tabs come back by themselves. The draft must come back in the tab
-  // that owned it; if that tab does not come back, the first reopened tab for the PDF adopts it. Never lost, never twice.
-  // The tabs that died are read through a fresh CDP session (lookInside): Playwright never lets a crashed Page be used again.
-  test("two tabs on one PDF: the draft stays with tab A while A is open; B sees the notes A posted, never A's draft; after a crash and the owner's one click, the draft comes back in tab A and nowhere else", async ({ context, openViewer, server }, testInfo) => {
-    test.skip(!SAVING_AVAILABLE, NO_SAVING);
-    const a = await openPaper(openViewer, server, ATTENTION);
-    const id = await saveFirst(a);
-
-    // A posts a note (Enter) and starts a second one, which it does not finish
-    await selectPassage(a, ATTENTION, LINES.l1);
-    await startNote(a);
-    await a.keyboard.type('Posted from tab A', { delay: 10 });
-    await a.keyboard.press('Enter');
-    await expect(a.getByText('Posted from tab A')).toBeVisible();
-    await expect(noteBox(a), 'the sent note has no new-note box any more').toHaveCount(0);
-    await selectPassage(a, ATTENTION, LINES.l5);
-    await startNote(a);
-    await a.keyboard.type('Still writing in tab A', { delay: 10 });
-    await a.waitForTimeout(400);
-
-    const b = await openViewer(addressOf(server));
-    // Triage (B2, R98): B opens with the rail open, where the cards fold into markers; the rail is shut so they show in the margin.
-    await shutRail(b);
-    await expect(b.getByText('Posted from tab A'), 'B shows what A posted').toBeVisible({ timeout: 15_000 });
-    await b.waitForTimeout(500);
-    expect(await owns(b, 'Still writing in tab A'), "B must not show A's draft").toBe(false);
-    expect(await anyBox(b).count(), "B has no box open for A's draft").toBe(0);
-    await shot(b, testInfo, 'tab-b-sees-the-posted-note-not-the-draft');
-
-    // A keeps going and posts the draft: B shows it without a reload
-    await a.bringToFront();
-    await a.keyboard.press('Enter');
-    await expect(b.getByText('Still writing in tab A'), 'tabs stay in step').toBeVisible({ timeout: 8000 });
-    await expect(allCards(b)).toHaveCount(2);
-
-    // A writes a third note, and the renderer dies 100 ms after the last key: A and B both die. The owner clicks once.
-    await a.bringToFront();
-    await selectPassage(a, ATTENTION, LINES.l9);
-    await startNote(a);
-    const text = 'Third note, left behind';
-    await a.keyboard.type(text, { delay: 10 });
-    await a.waitForTimeout(100);
-    await crashRenderer(a, { closeTab: false });
-    const tabA = await lookInside(context, a);
-    const tabB = await lookInside(context, b);
-    await expect.poll(() => draftsIn(tabA), { timeout: 30_000, message: 'tab A comes back by itself and holds its draft' }).toEqual([text]);
-    await expect.poll(() => boxTextsIn(tabA), { timeout: 10_000, message: "the draft is on A's screen, in a note box" }).toContain(text);
-    await testInfo.attach('tab-a-has-its-draft-back', { body: await tabA.screenshot(), contentType: 'image/png' });
-    await expect.poll(() => draftsIn(tabB), { timeout: 30_000, message: 'tab B comes back too, with no draft' }).toEqual([]);
-    expect(await boxTextsIn(tabB), "B never shows A's draft").not.toContain(text);
-
-    // Never twice: a tab opened now does not get it either, and nothing was sent in its place.
-    const c = await openViewer(addressOf(server));
-    await shutRail(c); // Triage (B2, R98), as for B
-    await expect(c.getByText('Posted from tab A'), 'a new tab shows the sent notes').toBeVisible({ timeout: 15_000 });
-    await c.waitForTimeout(1500);
-    expect(await owns(c, text), 'a new tab never shows the draft that tab A owns').toBe(false);
-    const stored = await annotations(c, id);
-    expect(stored.comments.filter((x) => x.body === text), 'the draft was not sent in its place').toHaveLength(0);
-    expect(await c.evaluate((t) => Object.keys(localStorage).filter((k) => k.startsWith('sop-draft:') && localStorage.getItem(k)?.includes(t)).length, text), 'one copy in the journal').toBe(1);
-    await tabA.detach();
-    await tabB.detach();
-  });
-
-  test('if the tab that owned the draft does not come back, the first reopened tab adopts it, and only that one', async ({ context, openViewer, server }, testInfo) => {
-    test.skip(!SAVING_AVAILABLE, NO_SAVING);
-    const a = await openPaper(openViewer, server, ATTENTION);
-    const id = await saveFirst(a);
-    const b = await openViewer(addressOf(server));
-    await expect(b.getByRole('button', { name: /^saved/i }).first(), 'B opens the saved PDF').toBeVisible({ timeout: 25_000 });
-
-    await a.bringToFront();
-    await selectPassage(a, ATTENTION, LINES.l3);
-    await startNote(a);
-    const text = 'Written in a tab that never came back';
-    await a.keyboard.type(text, { delay: 10 });
-    await a.waitForTimeout(100);
-    await crashRenderer(a); // A and B die; the owner closes A's crashed tab, then clicks once
-
-    const tabB = await lookInside(context, b);
-    await expect.poll(() => draftsIn(tabB), { timeout: 30_000, message: 'B comes back by itself and adopts the draft of the tab that is gone' }).toEqual([text]);
-    await expect.poll(() => boxTextsIn(tabB), { timeout: 10_000, message: "the draft is on B's screen, in a note box" }).toContain(text);
-    await testInfo.attach('tab-b-adopted-the-draft', { body: await tabB.screenshot(), contentType: 'image/png' });
-
-    const c = await openViewer(addressOf(server));
-    await expect(c.getByRole('button', { name: /^saved/i }).first()).toBeVisible({ timeout: 25_000 });
-    await c.waitForTimeout(1500);
-    expect(await owns(c, text), 'a tab opened later never shows a second copy').toBe(false);
-    expect(await draftsIn(tabB), 'B still has it').toEqual([text]);
-    const stored = await annotations(c, id);
-    expect(stored.comments.filter((x) => x.body === text), 'the draft was not sent in its place').toHaveLength(0);
-    await tabB.detach();
+      const c = await openViewer(addressOf(server));
+      await expect(c.getByRole('button', { name: /^saved/i }).first()).toBeVisible({ timeout: 25_000 });
+      await c.waitForTimeout(1500);
+      expect(await owns(c, text), 'a tab opened later never shows a second copy').toBe(false);
+      expect(await draftsIn(tabB), 'B still has it').toEqual([text]);
+      const stored = await annotations(c, id);
+      expect(stored.comments.filter((x) => x.body === text), 'the draft was not sent in its place').toHaveLength(0);
+      await tabB.detach();
+    }, 60_000);
   });
 });

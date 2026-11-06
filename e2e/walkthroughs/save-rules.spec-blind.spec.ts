@@ -57,54 +57,57 @@ test.describe('on a PDF the filter is not sure about', () => {
   test.skip(!SAVING_AVAILABLE, NO_SAVING);
   // Triage (S11, rule 7): the real filter's tie-breaker now saves the MIT handout by itself (+2), so these save-flow tests force
   // "not sure" with the test build's verdict switch. The "not learning" tests below run under the real filter.
-  test.beforeEach(async ({ context }) => forceVerdict(context, 'unsure'));
 
-  test('the first mark saves it and shows an Undo chip; Undo removes both the save and the mark', async ({ openViewer, server }, testInfo) => {
-    const page = await openPaper(openViewer, server, UNSURE);
-    const tokens = await markTokens(page);
-    await waitForStore(page);
-    await expect(page.getByText(/not sure/i).first(), 'the chip says the filter is not sure about this handout').toBeVisible({ timeout: 25_000 });
-    expect(await libraryId(page), 'nothing is saved before the first mark').toBeNull();
-    await shot(page, testInfo, 'not-sure-chip');
+  test('On a Not sure PDF the first mark or note saves it, and Undo removes both', async ({ step }, testInfo) => {
+    test.setTimeout(240_000);
+    await step('the first mark saves it and shows an Undo chip; Undo removes both the save and the mark', async ({ openViewer, server, context }) => {
+      await forceVerdict(context, 'unsure');
+      const page = await openPaper(openViewer, server, UNSURE);
+      const tokens = await markTokens(page);
+      await waitForStore(page);
+      await expect(page.getByText(/not sure/i).first(), 'the chip says the filter is not sure about this handout').toBeVisible({ timeout: 25_000 });
+      expect(await libraryId(page), 'nothing is saved before the first mark').toBeNull();
+      await shot(page, testInfo, 'not-sure-chip');
 
-    const sel = await selectPassage(page, UNSURE, HANDOUT_LINE);
-    await page.keyboard.press('h');
-    await waitSaved(page, 15_000);
-    await expect(undoChip(page), 'the save shows an Undo chip').toBeVisible({ timeout: 5000 });
-    const marked = await paintOfSelection(page, sel, { name: 'first-mark-saved', testInfo });
-    expect(marked.paint.share(tokens.fill[YELLOW]), `the mark is drawn: ${describe(marked.paint)}`).toBeGreaterThanOrEqual(0.6);
-    await expect(page.getByText(/saved/i).first(), 'and the chip says the PDF is saved').toBeVisible();
-    await shot(page, testInfo, 'saved-with-undo');
+      const sel = await selectPassage(page, UNSURE, HANDOUT_LINE);
+      await page.keyboard.press('h');
+      await waitSaved(page, 15_000);
+      await expect(undoChip(page), 'the save shows an Undo chip').toBeVisible({ timeout: 5000 });
+      const marked = await paintOfSelection(page, sel, { name: 'first-mark-saved', testInfo });
+      expect(marked.paint.share(tokens.fill[YELLOW]), `the mark is drawn: ${describe(marked.paint)}`).toBeGreaterThanOrEqual(0.6);
+      await expect(page.getByText(/saved/i).first(), 'and the chip says the PDF is saved').toBeVisible();
+      await shot(page, testInfo, 'saved-with-undo');
 
-    await undoChip(page).click();
-    await expect.poll(() => libraryId(page), { message: 'Undo takes the PDF out of the library again', timeout: 10_000 }).toBeNull();
-    const stats = await storeOf(page).stats();
-    expect(stats.documents, 'the library is empty again').toBe(0);
-    const gone = await paintOfSelection(page, sel, { name: 'after-undo', testInfo });
-    expect(isPlain(gone.paint), `and the mark is gone too: ${describe(gone.paint)}`).toBe(true);
-    await shot(page, testInfo, 'after-undo');
-  });
-
-  test('the first note saves it too, with the note', async ({ openViewer, server }, testInfo) => {
-    const page = await openPaper(openViewer, server, UNSURE);
-    await waitForStore(page);
-    await expect(page.getByText(/not sure/i).first()).toBeVisible({ timeout: 25_000 });
-    await postNote(page, UNSURE, HANDOUT_LINE, 'My first note on a not-sure PDF');
-    const id = await waitSaved(page, 15_000);
-    // Triage (R67 f, 1 Nov 2026, a spec change): a save a note started shows no Undo chip. A typed note is deliberate
-    // work and must never vanish on a quick Undo; the owner can delete the note itself. Only a first mark gets the chip.
-    await expect(undoChip(page), 'a save started by a note has no Undo (R67 f)').toHaveCount(0);
-    expect((await annotations(page, id)).comments.map((c) => c.body)).toEqual(['My first note on a not-sure PDF']);
-    await reloadAndWait(page, UNSURE);
-    // Triage (tb2notes, ruling R69): the handout's pages are landscape (720 pt, 960 px at 100%), so in this window the page and
-    // the note margin do not fit side by side at 100%. A note never changes the zoom any more: the cards fold into the
-    // toolbar's Notes button, and the note is read in the notes panel (Shift+F4) instead of the margin.
-    await expect
-      .poll(() => page.evaluate(() => (globalThis as unknown as { __sopTest: { annotations: { state(): { threads: unknown[] } } | null } }).__sopTest.annotations?.state().threads.length ?? 0), { message: 'the note is loaded again', timeout: 10_000 })
-      .toBe(1);
-    if ((await cardWith(page, 'My first note on a not-sure PDF').count()) === 0) await page.keyboard.press('Shift+F4');
-    await expect(cardWith(page, 'My first note on a not-sure PDF'), 'and it is there after a reload').toBeVisible({ timeout: 10_000 });
-    await shot(page, testInfo, 'note-saved');
+      await undoChip(page).click();
+      await expect.poll(() => libraryId(page), { message: 'Undo takes the PDF out of the library again', timeout: 10_000 }).toBeNull();
+      const stats = await storeOf(page).stats();
+      expect(stats.documents, 'the library is empty again').toBe(0);
+      const gone = await paintOfSelection(page, sel, { name: 'after-undo', testInfo });
+      expect(isPlain(gone.paint), `and the mark is gone too: ${describe(gone.paint)}`).toBe(true);
+      await shot(page, testInfo, 'after-undo');
+    }, 120_000);
+    await step('the first note saves it too, with the note', async ({ openViewer, server, context }) => {
+      await forceVerdict(context, 'unsure');
+      const page = await openPaper(openViewer, server, UNSURE);
+      await waitForStore(page);
+      await expect(page.getByText(/not sure/i).first()).toBeVisible({ timeout: 25_000 });
+      await postNote(page, UNSURE, HANDOUT_LINE, 'My first note on a not-sure PDF');
+      const id = await waitSaved(page, 15_000);
+      // Triage (R67 f, 1 Nov 2026, a spec change): a save a note started shows no Undo chip. A typed note is deliberate
+      // work and must never vanish on a quick Undo; the owner can delete the note itself. Only a first mark gets the chip.
+      await expect(undoChip(page), 'a save started by a note has no Undo (R67 f)').toHaveCount(0);
+      expect((await annotations(page, id)).comments.map((c) => c.body)).toEqual(['My first note on a not-sure PDF']);
+      await reloadAndWait(page, UNSURE);
+      // Triage (tb2notes, ruling R69): the handout's pages are landscape (720 pt, 960 px at 100%), so in this window the page and
+      // the note margin do not fit side by side at 100%. A note never changes the zoom any more: the cards fold into the
+      // toolbar's Notes button, and the note is read in the notes panel (Shift+F4) instead of the margin.
+      await expect
+        .poll(() => page.evaluate(() => (globalThis as unknown as { __sopTest: { annotations: { state(): { threads: unknown[] } } | null } }).__sopTest.annotations?.state().threads.length ?? 0), { message: 'the note is loaded again', timeout: 10_000 })
+        .toBe(1);
+      if ((await cardWith(page, 'My first note on a not-sure PDF').count()) === 0) await page.keyboard.press('Shift+F4');
+      await expect(cardWith(page, 'My first note on a not-sure PDF'), 'and it is there after a reload').toBeVisible({ timeout: 10_000 });
+      await shot(page, testInfo, 'note-saved');
+    }, 120_000);
   });
 });
 
@@ -122,73 +125,74 @@ async function skipUnlessNotLearning(page: import('@playwright/test').Page): Pro
 test.describe('on a PDF judged not learning', () => {
   test.skip(!SAVING_AVAILABLE, NO_SAVING);
 
-  test('the first mark asks first; No keeps the mark in the tab only, and closing the tab leaves nothing stored', async ({ openViewer, server }, testInfo) => {
-    const page = await openPaper(openViewer, server, RECEIPT);
-    const tokens = await markTokens(page);
-    await waitForStore(page);
-    await skipUnlessNotLearning(page);
-    await expect(page.getByText(/not saved/i).first(), 'the chip says it was not saved').toBeVisible({ timeout: 25_000 });
-    const sel = await selectPassage(page, RECEIPT, INVOICE_LINE);
-    await page.keyboard.press('h');
-    await expect(savePrompt(page).first(), 'the first mark asks: "Save this PDF to keep your notes?"').toBeVisible({ timeout: 5000 });
-    await shot(page, testInfo, 'asks-first');
-    expect(await answerSavePrompt(page, 'No')).toBe(true);
-    await expect(savePrompt(page)).toHaveCount(0);
+  test('On a PDF judged not learning the first mark or note asks: No keeps it in the tab, Yes saves it, AltGr+S is a letter', async ({ step }, testInfo) => {
+    test.setTimeout(360_000);
+    await step('the first mark asks first; No keeps the mark in the tab only, and closing the tab leaves nothing stored', async ({ openViewer, server }) => {
+      const page = await openPaper(openViewer, server, RECEIPT);
+      const tokens = await markTokens(page);
+      await waitForStore(page);
+      await skipUnlessNotLearning(page);
+      await expect(page.getByText(/not saved/i).first(), 'the chip says it was not saved').toBeVisible({ timeout: 25_000 });
+      const sel = await selectPassage(page, RECEIPT, INVOICE_LINE);
+      await page.keyboard.press('h');
+      await expect(savePrompt(page).first(), 'the first mark asks: "Save this PDF to keep your notes?"').toBeVisible({ timeout: 5000 });
+      await shot(page, testInfo, 'asks-first');
+      expect(await answerSavePrompt(page, 'No')).toBe(true);
+      await expect(savePrompt(page)).toHaveCount(0);
 
-    const kept = await paintOfSelection(page, sel, { name: 'after-no', testInfo });
-    expect(kept.paint.share(tokens.fill[YELLOW]), `No keeps the mark in the tab: ${describe(kept.paint)}`).toBeGreaterThanOrEqual(0.6);
-    expect(await libraryId(page), 'but nothing is saved').toBeNull();
+      const kept = await paintOfSelection(page, sel, { name: 'after-no', testInfo });
+      expect(kept.paint.share(tokens.fill[YELLOW]), `No keeps the mark in the tab: ${describe(kept.paint)}`).toBeGreaterThanOrEqual(0.6);
+      expect(await libraryId(page), 'but nothing is saved').toBeNull();
 
-    // a second mark does not ask again
-    await selectPassage(page, RECEIPT, { from: 'Greetings from Amazon', to: 'Web Services' });
-    await page.keyboard.press('Control+u');
-    await page.waitForTimeout(600);
-    await expect(savePrompt(page), 'it only asks once').toHaveCount(0);
+      // a second mark does not ask again
+      await selectPassage(page, RECEIPT, { from: 'Greetings from Amazon', to: 'Web Services' });
+      await page.keyboard.press('Control+u');
+      await page.waitForTimeout(600);
+      await expect(savePrompt(page), 'it only asks once').toHaveCount(0);
 
-    // close the tab; open the PDF again in a new one
-    await page.close();
-    const again = await openPaper(openViewer, server, RECEIPT);
-    await waitForStore(again);
-    const stats = await storeOf(again).stats();
-    expect(stats, 'a PDF that was not saved leaves no trace in the library').toEqual({ documents: 0, aliases: 0, locations: 0, pageText: 0, history: 0, outbox: 0 });
-    const clean = await paintOfSelection(again, sel, { name: 'reopened', testInfo });
-    expect(isPlain(clean.paint), `and the marks are gone from the reopened PDF: ${describe(clean.paint)}`).toBe(true);
-    await shot(again, testInfo, 'reopened-nothing-kept');
-  });
+      // close the tab; open the PDF again in a new one
+      await page.close();
+      const again = await openPaper(openViewer, server, RECEIPT);
+      await waitForStore(again);
+      const stats = await storeOf(again).stats();
+      expect(stats, 'a PDF that was not saved leaves no trace in the library').toEqual({ documents: 0, aliases: 0, locations: 0, pageText: 0, history: 0, outbox: 0 });
+      const clean = await paintOfSelection(again, sel, { name: 'reopened', testInfo });
+      expect(isPlain(clean.paint), `and the marks are gone from the reopened PDF: ${describe(clean.paint)}`).toBe(true);
+      await shot(again, testInfo, 'reopened-nothing-kept');
+    }, 120_000);
+    await step('Yes saves the PDF with the mark, and the mark is there after a reload', async ({ openViewer, server }) => {
+      const page = await openPaper(openViewer, server, RECEIPT);
+      const tokens = await markTokens(page);
+      await waitForStore(page);
+      await skipUnlessNotLearning(page);
+      await expect(page.getByText(/not saved/i).first()).toBeVisible({ timeout: 25_000 });
+      const sel = await selectPassage(page, RECEIPT, INVOICE_LINE);
+      await page.keyboard.press('h');
+      await expect(savePrompt(page).first()).toBeVisible({ timeout: 5000 });
+      expect(await answerSavePrompt(page, 'Yes')).toBe(true);
+      await waitSaved(page, 15_000);
+      await reloadAndWait(page, RECEIPT);
+      const after = await paintOfSelection(page, sel, { name: 'saved-after-yes', testInfo });
+      expect(after.paint.share(tokens.fill[YELLOW]), `the mark survives a reload: ${describe(after.paint)}`).toBeGreaterThanOrEqual(0.6);
+    }, 120_000);
+    await step('a note asks the same question, and a Polish AltGr+S (the letter ś, not Ctrl+Alt+S) saves nothing', async ({ openViewer, server }) => {
+      const page = await openPaper(openViewer, server, RECEIPT);
+      await waitForStore(page);
+      await skipUnlessNotLearning(page);
+      await expect(page.getByText(/not saved/i).first()).toBeVisible({ timeout: 25_000 });
+      await altGr(page, 'ś', 'KeyS');
+      await page.waitForTimeout(800);
+      await expect(savePrompt(page), 'AltGr+S types a letter on a Polish keyboard; it is not the Save shortcut').toHaveCount(0);
+      expect(await libraryId(page)).toBeNull();
 
-  test('Yes saves the PDF with the mark, and the mark is there after a reload', async ({ openViewer, server }, testInfo) => {
-    const page = await openPaper(openViewer, server, RECEIPT);
-    const tokens = await markTokens(page);
-    await waitForStore(page);
-    await skipUnlessNotLearning(page);
-    await expect(page.getByText(/not saved/i).first()).toBeVisible({ timeout: 25_000 });
-    const sel = await selectPassage(page, RECEIPT, INVOICE_LINE);
-    await page.keyboard.press('h');
-    await expect(savePrompt(page).first()).toBeVisible({ timeout: 5000 });
-    expect(await answerSavePrompt(page, 'Yes')).toBe(true);
-    await waitSaved(page, 15_000);
-    await reloadAndWait(page, RECEIPT);
-    const after = await paintOfSelection(page, sel, { name: 'saved-after-yes', testInfo });
-    expect(after.paint.share(tokens.fill[YELLOW]), `the mark survives a reload: ${describe(after.paint)}`).toBeGreaterThanOrEqual(0.6);
-  });
-
-  test('a note asks the same question, and a Polish AltGr+S (the letter ś, not Ctrl+Alt+S) saves nothing', async ({ openViewer, server }, testInfo) => {
-    const page = await openPaper(openViewer, server, RECEIPT);
-    await waitForStore(page);
-    await skipUnlessNotLearning(page);
-    await expect(page.getByText(/not saved/i).first()).toBeVisible({ timeout: 25_000 });
-    await altGr(page, 'ś', 'KeyS');
-    await page.waitForTimeout(800);
-    await expect(savePrompt(page), 'AltGr+S types a letter on a Polish keyboard; it is not the Save shortcut').toHaveCount(0);
-    expect(await libraryId(page)).toBeNull();
-
-    await selectPassage(page, RECEIPT, INVOICE_LINE);
-    await page.keyboard.press('Control+Alt+m');
-    await expect(savePrompt(page).first(), 'the first note asks too').toBeVisible({ timeout: 5000 });
-    expect(await answerSavePrompt(page, 'No')).toBe(true);
-    await expect(noteBox(page), 'then the note box opens').toBeVisible({ timeout: 3000 });
-    await shot(page, testInfo, 'note-after-no');
-    expect(await libraryId(page)).toBeNull();
+      await selectPassage(page, RECEIPT, INVOICE_LINE);
+      await page.keyboard.press('Control+Alt+m');
+      await expect(savePrompt(page).first(), 'the first note asks too').toBeVisible({ timeout: 5000 });
+      expect(await answerSavePrompt(page, 'No')).toBe(true);
+      await expect(noteBox(page), 'then the note box opens').toBeVisible({ timeout: 3000 });
+      await shot(page, testInfo, 'note-after-no');
+      expect(await libraryId(page)).toBeNull();
+    }, 120_000);
   });
 });
 

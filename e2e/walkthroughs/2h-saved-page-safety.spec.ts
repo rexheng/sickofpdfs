@@ -99,50 +99,52 @@ async function inspect(bytes: Buffer) {
   return { actions, titles, subject, lang, extras: { openAction: openAction !== undefined, names: names !== undefined, aa: aa !== undefined } };
 }
 
-test('a hostile page is saved: only plain links, whole outline titles, no key in the source link', async ({ context, sw, server }) => {
-  server.mount('/x/', (_req, res) => {
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    res.end(HOSTILE);
-    return Promise.resolve();
-  });
-  const hostile = await save(context, await tabOf(context, sw, server.url('/x/hostile')));
-  const bytes = await pdfBytes(hostile.viewer, hostile.id);
-  const raw = bytes.toString('latin1');
-  const h = await inspect(bytes);
+test('A saved web page keeps only plain links, whole outline titles and no sign-in key', async ({ step }) => {
+  test.setTimeout(480_000);
+  await step('a hostile page is saved: only plain links, whole outline titles, no key in the source link', async ({ context, sw, server }) => {
+    server.mount('/x/', (_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(HOSTILE);
+      return Promise.resolve();
+    });
+    const hostile = await save(context, await tabOf(context, sw, server.url('/x/hostile')));
+    const bytes = await pdfBytes(hostile.viewer, hostile.id);
+    const raw = bytes.toString('latin1');
+    const h = await inspect(bytes);
 
-  // Only plain links: every action is a URI action with exactly its three keys. No JavaScript, Launch, SubmitForm, GoToR...
-  expect(raw).not.toMatch(/\/S\s*\/(JavaScript|Launch|SubmitForm|ImportData|GoToR|GoToE|Named|Thread|Rendition)/u);
-  expect(raw).not.toMatch(/\/JS\b|\/OpenAction|\/AA\b|\/Launch|\/EmbeddedFile/u);
-  expect(h.actions.length, 'the page has links').toBeGreaterThan(0);
-  for (const a of h.actions) {
-    expect(a.type).toBe('/URI');
-    expect([...a.keys].sort()).toEqual(['/S', '/Type', '/URI']);
-    expect(a.uri).toMatch(/^(https?:\/\/|mailto:)[\x21-\x7e]+$/u);
-  }
-  expect(h.extras).toEqual({ openAction: false, names: false, aa: false });
-  expect(h.lang).toBe('en');
+    // Only plain links: every action is a URI action with exactly its three keys. No JavaScript, Launch, SubmitForm, GoToR...
+    expect(raw).not.toMatch(/\/S\s*\/(JavaScript|Launch|SubmitForm|ImportData|GoToR|GoToE|Named|Thread|Rendition)/u);
+    expect(raw).not.toMatch(/\/JS\b|\/OpenAction|\/AA\b|\/Launch|\/EmbeddedFile/u);
+    expect(h.actions.length, 'the page has links').toBeGreaterThan(0);
+    for (const a of h.actions) {
+      expect(a.type).toBe('/URI');
+      expect([...a.keys].sort()).toEqual(['/S', '/Type', '/URI']);
+      expect(a.uri).toMatch(/^(https?:\/\/|mailto:)[\x21-\x7e]+$/u);
+    }
+    expect(h.extras).toEqual({ openAction: false, names: false, aa: false });
+    expect(h.lang).toBe('en');
 
-  // Every heading is its own whole outline entry, with its characters as written.
-  expect(h.titles).toEqual([
-    'Don’t panic (part 1 — a guide',
-    '1) Setup — what you’ll need',
-    'Paths like C:\\Users\\me) and \\(escapes\\)',
-    '<img src=x onerror=alert(1)> </p><script>alert(2)</script>',
-  ]);
-});
+    // Every heading is its own whole outline entry, with its characters as written.
+    expect(h.titles).toEqual([
+      'Don’t panic (part 1 — a guide',
+      '1) Setup — what you’ll need',
+      'Paths like C:\\Users\\me) and \\(escapes\\)',
+      '<img src=x onerror=alert(1)> </p><script>alert(2)</script>',
+    ]);
+  }, 240_000);
+  await step('a saved blog keeps its curly quotes in the outline and no sign-in key in its source link', async ({ context, sw, server }) => {
+    const blog = await save(context, await tabOf(context, sw, server.url('/a/blog-code?access_token=SECRET123&utm_source=newsletter')));
+    const bytes = await pdfBytes(blog.viewer, blog.id);
+    const h = await inspect(bytes);
+    expect(h.titles).toContain('3. Decide what “missing” means');
+    expect(h.titles).toContain('Cleaning messy CSV files with pandas — Notes from the lab');
 
-test('a saved blog keeps its curly quotes in the outline and no sign-in key in its source link', async ({ context, sw, server }) => {
-  const blog = await save(context, await tabOf(context, sw, server.url('/a/blog-code?access_token=SECRET123&utm_source=newsletter')));
-  const bytes = await pdfBytes(blog.viewer, blog.id);
-  const h = await inspect(bytes);
-  expect(h.titles).toContain('3. Decide what “missing” means');
-  expect(h.titles).toContain('Cleaning messy CSV files with pandas — Notes from the lab');
-
-  // The PDF's links, its subject and the library's row all hold the same cleaned link.
-  expect(bytes.toString('latin1')).not.toMatch(/SECRET123|access_token|utm_source/u);
-  expect(h.subject).not.toMatch(/SECRET123|access_token|utm_source/u);
-  const from = h.actions.find((a) => a.uri?.includes('/a/blog-code'));
-  expect(from?.uri, 'the "From …" link is there').toBe(h.subject);
-  const found = await hooks(blog.viewer).eval((hk, link) => hk.store!.documentAtLink(link), server.url('/a/blog-code'));
-  expect(found, 'the library holds the page under the cleaned link').toBe(blog.id);
+    // The PDF's links, its subject and the library's row all hold the same cleaned link.
+    expect(bytes.toString('latin1')).not.toMatch(/SECRET123|access_token|utm_source/u);
+    expect(h.subject).not.toMatch(/SECRET123|access_token|utm_source/u);
+    const from = h.actions.find((a) => a.uri?.includes('/a/blog-code'));
+    expect(from?.uri, 'the "From …" link is there').toBe(h.subject);
+    const found = await hooks(blog.viewer).eval((hk, link) => hk.store!.documentAtLink(link), server.url('/a/blog-code'));
+    expect(found, 'the library holds the page under the cleaned link').toBe(blog.id);
+  }, 240_000);
 });

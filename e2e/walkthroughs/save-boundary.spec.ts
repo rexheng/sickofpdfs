@@ -127,27 +127,32 @@ async function neverUndo(page: Page, ms: number, message: string): Promise<void>
 }
 
 test.describe('the first note on a "Not sure" PDF (finding 1, the blocker)', () => {
-  for (const how of ['reload', 'close and reopen'] as const) {
-    test(`two letters typed before the save lands, left unsent: after a ${how} the note is back`, async ({ openViewer, server }, testInfo) => {
-      const page = await openNotSure(openViewer, server, BOOK);
-      await selectAWord(page, BOOK);
-      await startNote(page);
-      await page.keyboard.type('Hi', { delay: 5 }); // typing stops before the long save is done
-      const id = await waitSaved(page, 60_000);
-      await page.waitForTimeout(1500); // the box is still open, holding the text, well after the save
-      await shot(page, testInfo, 'typed-and-saved');
 
-      let again = page;
-      if (how === 'reload') await page.reload();
-      else {
-        await page.close();
-        again = await openViewer(address(server, BOOK));
-      }
-      await expect.poll(() => noteText(again).catch(() => ''), { timeout: 30_000, message: 'the unsent note is back in its box' }).toBe('Hi');
-      expect(await libraryId(again), 'and the PDF is still the saved one').toBe(id);
-      await shot(again, testInfo, 'note-back');
-    });
-  }
+  test('A first note on a Not sure PDF is back after a reload or a close and reopen, even with two letters left unsent', async ({ step }, testInfo) => {
+    test.setTimeout(360_000);
+    for (const how of ['reload', 'close and reopen'] as const) {
+      await step(`two letters typed before the save lands, left unsent: after a ${how} the note is back`, async ({ openViewer, server, context }) => {
+        await forceVerdict(context, 'unsure');
+        const page = await openNotSure(openViewer, server, BOOK);
+        await selectAWord(page, BOOK);
+        await startNote(page);
+        await page.keyboard.type('Hi', { delay: 5 }); // typing stops before the long save is done
+        const id = await waitSaved(page, 60_000);
+        await page.waitForTimeout(1500); // the box is still open, holding the text, well after the save
+        await shot(page, testInfo, 'typed-and-saved');
+
+        let again = page;
+        if (how === 'reload') await page.reload();
+        else {
+          await page.close();
+          again = await openViewer(address(server, BOOK));
+        }
+        await expect.poll(() => noteText(again).catch(() => ''), { timeout: 30_000, message: 'the unsent note is back in its box' }).toBe('Hi');
+        expect(await libraryId(again), 'and the PDF is still the saved one').toBe(id);
+        await shot(again, testInfo, 'note-back');
+      }, 180_000);
+    }
+  });
 });
 
 test.describe('a note typed while the chip says "Saving…" (finding 2, R67 a)', () => {
@@ -156,25 +161,30 @@ test.describe('a note typed while the chip says "Saving…" (finding 2, R67 a)',
     { name: 'the tab is closed', go: (p: Page) => p.close({ runBeforeUnload: true }) },
     { name: 'the renderer crashes', go: (p: Page) => crashRenderer(p) },
   ];
-  for (const { name, go } of WAYS) {
-    test(`${name} mid-save: on the next open the save completes and the note is back`, async ({ openViewer, server }, testInfo) => {
-      const page = await openNotSure(openViewer, server, BOOK);
-      await selectAWord(page, BOOK);
-      await startNote(page);
-      await page.keyboard.type(NOTE, { delay: 10 });
-      await expect(savingChip(page), 'the save is still on its way').toBeVisible({ timeout: 2000 });
-      expect(await libraryId(page), 'nothing is in the library yet').toBeNull();
-      await shot(page, testInfo, 'typed-while-saving');
 
-      await go(page);
+  test('A note typed while the chip says Saving… is back on the next open, however the tab went', async ({ step }, testInfo) => {
+    test.setTimeout(360_000);
+    for (const { name, go } of WAYS) {
+      await step(`${name} mid-save: on the next open the save completes and the note is back`, async ({ openViewer, server, context }) => {
+        await forceVerdict(context, 'unsure');
+        const page = await openNotSure(openViewer, server, BOOK);
+        await selectAWord(page, BOOK);
+        await startNote(page);
+        await page.keyboard.type(NOTE, { delay: 10 });
+        await expect(savingChip(page), 'the save is still on its way').toBeVisible({ timeout: 2000 });
+        expect(await libraryId(page), 'nothing is in the library yet').toBeNull();
+        await shot(page, testInfo, 'typed-while-saving');
 
-      const again = await openViewer(address(server, BOOK));
-      await expect.poll(() => noteText(again).catch(() => ''), { timeout: 60_000, message: 'the note is back in its box' }).toBe(NOTE);
-      await waitSaved(again, 60_000);
-      await expect(savedChip(again), 'the save the owner started has completed').toBeVisible({ timeout: 30_000 });
-      await shot(again, testInfo, 'saved-and-note-back');
-    });
-  }
+        await go(page);
+
+        const again = await openViewer(address(server, BOOK));
+        await expect.poll(() => noteText(again).catch(() => ''), { timeout: 60_000, message: 'the note is back in its box' }).toBe(NOTE);
+        await waitSaved(again, 60_000);
+        await expect(savedChip(again), 'the save the owner started has completed').toBeVisible({ timeout: 30_000 });
+        await shot(again, testInfo, 'saved-and-note-back');
+      }, 180_000);
+    }
+  });
 });
 
 test.describe('R105b: a first note\'s save finished after a crash is still a first note\'s save', () => {
@@ -233,85 +243,95 @@ test.describe('R105b: a first note\'s save finished after a crash is still a fir
 });
 
 test.describe('only real content saves (finding 3, R67 b)', () => {
-  test('opening a note box and pressing Esc, with nothing typed, saves nothing and stores nothing', async ({ openViewer, server }, testInfo) => {
-    const page = await openNotSure(openViewer, server, ATTENTION);
-    const sha = await fingerprintOf(page);
-    await selectPassage(page, ATTENTION, LINES.l1);
-    await startNote(page);
-    await page.waitForTimeout(1500);
-    await expect(notSureChip(page), 'an open, empty note box does not save the PDF').toBeVisible();
-    await shot(page, testInfo, 'empty-note-open');
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(3000);
-    await expect(notSureChip(page), 'and after Esc it is still "Not sure"').toBeVisible();
-    expect(await libraryId(page), 'nothing is in the library').toBeNull();
-    expect(await storeOf(page).stats(), 'not a document, location, page of text, history row or outbox row').toEqual(ZERO_STATS);
-    expect(await storedCopies(page), 'no copy of the PDF').toEqual([]);
-    expect(await tracesOf(page, sha), 'and nothing about it in localStorage').toEqual([]);
-    await shot(page, testInfo, 'after-esc');
-  });
 
-  test('a letter typed and deleted again before Esc leaves nothing saved either', async ({ openViewer, server }, testInfo) => {
-    const page = await openNotSure(openViewer, server, ATTENTION);
-    const sha = await fingerprintOf(page);
-    await selectPassage(page, ATTENTION, LINES.l3);
-    await startNote(page);
-    await page.keyboard.type('x');
-    await page.waitForTimeout(400);
-    await page.keyboard.press('Backspace');
-    await page.waitForTimeout(400);
-    await page.keyboard.press('Escape');
-    await expect.poll(() => libraryId(page), { timeout: 15_000, message: 'the save the letter started is taken back' }).toBeNull();
-    await expect(notSureChip(page)).toBeVisible({ timeout: 10_000 });
-    await expect.poll(() => storeOf(page).stats(), { timeout: 10_000 }).toEqual(ZERO_STATS);
-    expect(await storedCopies(page), 'no copy of the PDF').toEqual([]);
-    expect(await tracesOf(page, sha), 'and nothing about it in localStorage').toEqual([]);
-    await shot(page, testInfo, 'erased-and-esc');
+  test('Only real content saves: an empty note box, or a letter typed and deleted, saves nothing', async ({ step }, testInfo) => {
+    test.setTimeout(360_000);
+    await step('opening a note box and pressing Esc, with nothing typed, saves nothing and stores nothing', async ({ openViewer, server, context }) => {
+      await forceVerdict(context, 'unsure');
+      const page = await openNotSure(openViewer, server, ATTENTION);
+      const sha = await fingerprintOf(page);
+      await selectPassage(page, ATTENTION, LINES.l1);
+      await startNote(page);
+      await page.waitForTimeout(1500);
+      await expect(notSureChip(page), 'an open, empty note box does not save the PDF').toBeVisible();
+      await shot(page, testInfo, 'empty-note-open');
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(3000);
+      await expect(notSureChip(page), 'and after Esc it is still "Not sure"').toBeVisible();
+      expect(await libraryId(page), 'nothing is in the library').toBeNull();
+      expect(await storeOf(page).stats(), 'not a document, location, page of text, history row or outbox row').toEqual(ZERO_STATS);
+      expect(await storedCopies(page), 'no copy of the PDF').toEqual([]);
+      expect(await tracesOf(page, sha), 'and nothing about it in localStorage').toEqual([]);
+      await shot(page, testInfo, 'after-esc');
+    }, 180_000);
+    await step('a letter typed and deleted again before Esc leaves nothing saved either', async ({ openViewer, server, context }) => {
+      await forceVerdict(context, 'unsure');
+      const page = await openNotSure(openViewer, server, ATTENTION);
+      const sha = await fingerprintOf(page);
+      await selectPassage(page, ATTENTION, LINES.l3);
+      await startNote(page);
+      await page.keyboard.type('x');
+      await page.waitForTimeout(400);
+      await page.keyboard.press('Backspace');
+      await page.waitForTimeout(400);
+      await page.keyboard.press('Escape');
+      await expect.poll(() => libraryId(page), { timeout: 15_000, message: 'the save the letter started is taken back' }).toBeNull();
+      await expect(notSureChip(page)).toBeVisible({ timeout: 10_000 });
+      await expect.poll(() => storeOf(page).stats(), { timeout: 10_000 }).toEqual(ZERO_STATS);
+      expect(await storedCopies(page), 'no copy of the PDF').toEqual([]);
+      expect(await tracesOf(page, sha), 'and nothing about it in localStorage').toEqual([]);
+      await shot(page, testInfo, 'erased-and-esc');
+    }, 180_000);
   });
 });
 
 test.describe('Undo only removes what it promises (findings 5 and 6, R67 c and f)', () => {
-  test('a save started by a note never shows Undo, while the note is typed or after it is sent', async ({ openViewer, server }, testInfo) => {
-    const page = await openNotSure(openViewer, server, ATTENTION);
-    await selectPassage(page, ATTENTION, LINES.l5);
-    await startNote(page);
-    await page.keyboard.type('A long, deliberate first note that must never vanish on a quick Undo', { delay: 5 });
-    await waitSaved(page, 15_000);
-    await neverUndo(page, 2500, 'no Undo chip while the note is open');
-    await shot(page, testInfo, 'note-saved-no-undo');
-    await page.keyboard.press('Enter');
-    await expect(cardWith(page, 'A long, deliberate first note')).toBeVisible({ timeout: 5000 });
-    await neverUndo(page, 1500, 'nor once it is sent');
-  });
 
-  test('the first-mark Undo goes as soon as a note box opens in the same tab', async ({ openViewer, server }, testInfo) => {
-    const page = await openNotSure(openViewer, server, ATTENTION);
-    await selectPassage(page, ATTENTION, LINES.l1);
-    await page.keyboard.press('h');
-    await waitSaved(page, 15_000);
-    await expect(undoChip(page), 'a first mark saves with an Undo chip').toBeVisible({ timeout: 5000 });
-    await selectPassage(page, ATTENTION, LINES.l7);
-    await startNote(page);
-    await expect(undoChip(page), 'with a note box open there is no Undo').toHaveCount(0, { timeout: 2000 });
-    await shot(page, testInfo, 'note-open-no-undo');
-  });
+  test('Undo only removes what it promises: no Undo for a note\'s save, and the first-mark Undo goes when a note box opens here or in another tab', async ({ step }, testInfo) => {
+    test.setTimeout(540_000);
+    await step('a save started by a note never shows Undo, while the note is typed or after it is sent', async ({ openViewer, server, context }) => {
+      await forceVerdict(context, 'unsure');
+      const page = await openNotSure(openViewer, server, ATTENTION);
+      await selectPassage(page, ATTENTION, LINES.l5);
+      await startNote(page);
+      await page.keyboard.type('A long, deliberate first note that must never vanish on a quick Undo', { delay: 5 });
+      await waitSaved(page, 15_000);
+      await neverUndo(page, 2500, 'no Undo chip while the note is open');
+      await shot(page, testInfo, 'note-saved-no-undo');
+      await page.keyboard.press('Enter');
+      await expect(cardWith(page, 'A long, deliberate first note')).toBeVisible({ timeout: 5000 });
+      await neverUndo(page, 1500, 'nor once it is sent');
+    }, 180_000);
+    await step('the first-mark Undo goes as soon as a note box opens in the same tab', async ({ openViewer, server, context }) => {
+      await forceVerdict(context, 'unsure');
+      const page = await openNotSure(openViewer, server, ATTENTION);
+      await selectPassage(page, ATTENTION, LINES.l1);
+      await page.keyboard.press('h');
+      await waitSaved(page, 15_000);
+      await expect(undoChip(page), 'a first mark saves with an Undo chip').toBeVisible({ timeout: 5000 });
+      await selectPassage(page, ATTENTION, LINES.l7);
+      await startNote(page);
+      await expect(undoChip(page), 'with a note box open there is no Undo').toHaveCount(0, { timeout: 2000 });
+      await shot(page, testInfo, 'note-open-no-undo');
+    }, 180_000);
+    await step('the first-mark Undo goes as soon as another tab writes a note on the same PDF', async ({ openViewer, server, context }) => {
+      await forceVerdict(context, 'unsure');
+      const a = await openNotSure(openViewer, server, ATTENTION);
+      const b = await openNotSure(openViewer, server, ATTENTION);
+      await a.bringToFront();
+      await selectPassage(a, ATTENTION, LINES.l1);
+      await a.keyboard.press('h');
+      await waitSaved(a, 15_000);
+      await expect(undoChip(a), 'tab A: the first mark saved it, with Undo').toBeVisible({ timeout: 5000 });
+      await expect(savedChip(b), 'tab B follows: "Saved to library"').toBeVisible({ timeout: 10_000 });
 
-  test('the first-mark Undo goes as soon as another tab writes a note on the same PDF', async ({ openViewer, server }, testInfo) => {
-    const a = await openNotSure(openViewer, server, ATTENTION);
-    const b = await openNotSure(openViewer, server, ATTENTION);
-    await a.bringToFront();
-    await selectPassage(a, ATTENTION, LINES.l1);
-    await a.keyboard.press('h');
-    await waitSaved(a, 15_000);
-    await expect(undoChip(a), 'tab A: the first mark saved it, with Undo').toBeVisible({ timeout: 5000 });
-    await expect(savedChip(b), 'tab B follows: "Saved to library"').toBeVisible({ timeout: 10_000 });
-
-    await b.bringToFront();
-    await selectPassage(b, ATTENTION, LINES.l9);
-    await startNote(b);
-    await b.keyboard.type('Written in tab B', { delay: 10 });
-    await expect(undoChip(a), "tab A's Undo goes: it would delete tab B's note").toHaveCount(0, { timeout: 3000 });
-    await shot(a, testInfo, 'tab-a-no-undo');
+      await b.bringToFront();
+      await selectPassage(b, ATTENTION, LINES.l9);
+      await startNote(b);
+      await b.keyboard.type('Written in tab B', { delay: 10 });
+      await expect(undoChip(a), "tab A's Undo goes: it would delete tab B's note").toHaveCount(0, { timeout: 3000 });
+      await shot(a, testInfo, 'tab-a-no-undo');
+    }, 180_000);
   });
 });
 
@@ -409,106 +429,116 @@ async function openAt(openViewer: Parameters<typeof openPaper>[0], url: string):
 const saveKind = (page: Page): Promise<string> => hooks(page).eval((h) => h.save.state().kind);
 
 test.describe('R67 tightened: a second download still being identified (secread3 findings 1 and 2)', () => {
-  for (const what of ['a mark', 'a note'] as const) {
-    test(`${what} made on the second download while it is "checking": tab A's first-mark Undo goes, and nothing B made can be undone away`, async ({ openViewer, server }, testInfo) => {
+
+  test('A second download still being identified: a mark or a note made then takes the Undo away, and a note survives the tab closing', async ({ step }, testInfo) => {
+    test.setTimeout(540_000);
+    for (const what of ['a mark', 'a note'] as const) {
+      await step(`${what} made on the second download while it is "checking": tab A's first-mark Undo goes, and nothing B made can be undone away`, async ({ openViewer, server, context }) => {
+        await forceVerdict(context, 'unsure');
+        const copyUrl = await serveBookCopy(server);
+        const a = await openNotSure(openViewer, server, BOOK);
+        await selectAWord(a, BOOK);
+        await a.keyboard.press('h');
+        const id = await waitSaved(a, 60_000);
+        await expect(undoChip(a), 'tab A: the first mark saved the book, with Undo').toBeVisible({ timeout: 5000 });
+
+        const b = await openAt(openViewer, copyUrl);
+        expect(await saveKind(b), 'tab B is still working out which PDF it is').toBe('checking');
+        await selectAWord(b, BOOK);
+        if (what === 'a mark') await b.keyboard.press('h');
+        else {
+          await startNote(b);
+          await b.keyboard.type('keep this', { delay: 10 });
+        }
+        await expect(undoChip(a), "tab A's Undo goes at once: it would delete what tab B made").toHaveCount(0, { timeout: 3000 });
+        await shot(a, testInfo, 'tab-a-no-undo');
+
+        await expect.poll(() => libraryId(b), { timeout: 60_000, message: 'tab B finds the copy is the same book' }).toBe(id);
+        if (what === 'a mark') {
+          await expect.poll(async () => (await storeOf(b).call<{ marks: unknown[] }>('listAnnotations', id)).marks.length, { timeout: 15_000, message: "both tabs' marks are kept" }).toBe(2);
+        } else {
+          await b.close();
+          const again = await openAt(openViewer, copyUrl);
+          await expect.poll(() => noteText(again).catch(() => ''), { timeout: 60_000, message: "tab B's note is kept" }).toBe('keep this');
+        }
+      }, 180_000);
+    }
+    await step('a note typed while the second download is "checking" survives the tab closing before it knows', async ({ openViewer, server, context }) => {
+      await forceVerdict(context, 'unsure');
       const copyUrl = await serveBookCopy(server);
-      const a = await openNotSure(openViewer, server, BOOK);
-      await selectAWord(a, BOOK);
-      await a.keyboard.press('h');
-      const id = await waitSaved(a, 60_000);
-      await expect(undoChip(a), 'tab A: the first mark saved the book, with Undo').toBeVisible({ timeout: 5000 });
+      const first = await openNotSure(openViewer, server, BOOK);
+      await saveFromChip(first); // the owner saves the book (R95: the "Not sure" chip's menu has "Save to library")
+      const id = await waitSaved(first, 60_000);
+      // The chip says "Saved" once all 714 pages of text are stored too; the copy is matched against that text.
+      await expect(savedChip(first), 'the save is complete').toBeVisible({ timeout: 60_000 });
+      await first.close();
 
       const b = await openAt(openViewer, copyUrl);
-      expect(await saveKind(b), 'tab B is still working out which PDF it is').toBe('checking');
+      expect(await saveKind(b), 'still working out which PDF it is').toBe('checking');
       await selectAWord(b, BOOK);
-      if (what === 'a mark') await b.keyboard.press('h');
-      else {
-        await startNote(b);
-        await b.keyboard.type('keep this', { delay: 10 });
-      }
-      await expect(undoChip(a), "tab A's Undo goes at once: it would delete what tab B made").toHaveCount(0, { timeout: 3000 });
-      await shot(a, testInfo, 'tab-a-no-undo');
+      await startNote(b);
+      await b.keyboard.type('remember me', { delay: 10 });
+      expect(await saveKind(b), 'and still checking when the tab closes').toBe('checking');
+      await shot(b, testInfo, 'typed-while-checking');
+      await b.close({ runBeforeUnload: true });
 
-      await expect.poll(() => libraryId(b), { timeout: 60_000, message: 'tab B finds the copy is the same book' }).toBe(id);
-      if (what === 'a mark') {
-        await expect.poll(async () => (await storeOf(b).call<{ marks: unknown[] }>('listAnnotations', id)).marks.length, { timeout: 15_000, message: "both tabs' marks are kept" }).toBe(2);
-      } else {
-        await b.close();
-        const again = await openAt(openViewer, copyUrl);
-        await expect.poll(() => noteText(again).catch(() => ''), { timeout: 60_000, message: "tab B's note is kept" }).toBe('keep this');
-      }
-    });
-  }
-
-  test('a note typed while the second download is "checking" survives the tab closing before it knows', async ({ openViewer, server }, testInfo) => {
-    const copyUrl = await serveBookCopy(server);
-    const first = await openNotSure(openViewer, server, BOOK);
-    await saveFromChip(first); // the owner saves the book (R95: the "Not sure" chip's menu has "Save to library")
-    const id = await waitSaved(first, 60_000);
-    // The chip says "Saved" once all 714 pages of text are stored too; the copy is matched against that text.
-    await expect(savedChip(first), 'the save is complete').toBeVisible({ timeout: 60_000 });
-    await first.close();
-
-    const b = await openAt(openViewer, copyUrl);
-    expect(await saveKind(b), 'still working out which PDF it is').toBe('checking');
-    await selectAWord(b, BOOK);
-    await startNote(b);
-    await b.keyboard.type('remember me', { delay: 10 });
-    expect(await saveKind(b), 'and still checking when the tab closes').toBe('checking');
-    await shot(b, testInfo, 'typed-while-checking');
-    await b.close({ runBeforeUnload: true });
-
-    const again = await openAt(openViewer, copyUrl);
-    await expect.poll(() => noteText(again).catch(() => ''), { timeout: 60_000, message: 'the note is back' }).toBe('remember me');
-    expect(await libraryId(again), 'in the saved book').toBe(id);
-    await shot(again, testInfo, 'note-back');
+      const again = await openAt(openViewer, copyUrl);
+      await expect.poll(() => noteText(again).catch(() => ''), { timeout: 60_000, message: 'the note is back' }).toBe('remember me');
+      expect(await libraryId(again), 'in the saved book').toBe(id);
+      await shot(again, testInfo, 'note-back');
+    }, 180_000);
   });
 });
 
 test.describe('R67 tightened: no Undo for a save that carries a note (secread3 findings 3 and 4)', () => {
-  test('a note whose save failed, then sent with Enter once the engine recovers: the save has no Undo', async ({ openViewer, server }, testInfo) => {
-    const page = await openNotSure(openViewer, server, ATTENTION);
-    await hooks(page).eval((h) => {
-      const b = h.backend as unknown as { getPageText(doc: unknown, i: number): Promise<string>; __real?: unknown };
-      const real = b.getPageText.bind(b);
-      b.__real = real;
-      b.getPageText = (doc, i) => (i >= 5 && i < 10 ? Promise.reject(new Error('engine-failed: test')) : real(doc, i));
-    });
-    await selectPassage(page, ATTENTION, LINES.l11);
-    await startNote(page);
-    await page.keyboard.type('My important note', { delay: 10 });
-    await expect(page.getByRole('button', { name: /couldn.t save\. try again/i })).toBeVisible({ timeout: 15_000 });
-    await hooks(page).eval((h) => {
-      const b = h.backend as unknown as { getPageText: unknown; __real: unknown };
-      b.getPageText = b.__real;
-    });
-    await page.keyboard.press('Enter');
-    await waitSaved(page, 15_000);
-    await neverUndo(page, 3000, 'a save that carries a note never offers Undo');
-    await shot(page, testInfo, 'sent-after-failed-save');
-  });
 
-  test('two tabs closed mid-save: the next open shows "Saving your notes…", finishes the save with no Undo, and both marks are back', async ({ openViewer, server }, testInfo) => {
-    const a = await openNotSure(openViewer, server, BOOK);
-    const b = await openNotSure(openViewer, server, BOOK);
-    await a.bringToFront();
-    await selectAWord(a, BOOK);
-    await a.keyboard.press('h');
-    await expect(savingChip(a), 'tab A is saving').toBeVisible({ timeout: 3000 });
-    await b.bringToFront();
-    await dragSelect(b, 0, ...(await secondWord(b)));
-    await b.keyboard.press('h');
-    await b.waitForTimeout(300);
-    expect(await libraryId(a), 'nothing is in the library yet').toBeNull();
-    await a.close({ runBeforeUnload: true });
-    await b.close({ runBeforeUnload: true });
+  test('No Undo for a save that carries a note: after a failed save, and after two tabs closed mid-save', async ({ step }, testInfo) => {
+    test.setTimeout(360_000);
+    await step('a note whose save failed, then sent with Enter once the engine recovers: the save has no Undo', async ({ openViewer, server, context }) => {
+      await forceVerdict(context, 'unsure');
+      const page = await openNotSure(openViewer, server, ATTENTION);
+      await hooks(page).eval((h) => {
+        const b = h.backend as unknown as { getPageText(doc: unknown, i: number): Promise<string>; __real?: unknown };
+        const real = b.getPageText.bind(b);
+        b.__real = real;
+        b.getPageText = (doc, i) => (i >= 5 && i < 10 ? Promise.reject(new Error('engine-failed: test')) : real(doc, i));
+      });
+      await selectPassage(page, ATTENTION, LINES.l11);
+      await startNote(page);
+      await page.keyboard.type('My important note', { delay: 10 });
+      await expect(page.getByRole('button', { name: /couldn.t save\. try again/i })).toBeVisible({ timeout: 15_000 });
+      await hooks(page).eval((h) => {
+        const b = h.backend as unknown as { getPageText: unknown; __real: unknown };
+        b.getPageText = b.__real;
+      });
+      await page.keyboard.press('Enter');
+      await waitSaved(page, 15_000);
+      await neverUndo(page, 3000, 'a save that carries a note never offers Undo');
+      await shot(page, testInfo, 'sent-after-failed-save');
+    }, 180_000);
+    await step('two tabs closed mid-save: the next open shows "Saving your notes…", finishes the save with no Undo, and both marks are back', async ({ openViewer, server, context }) => {
+      await forceVerdict(context, 'unsure');
+      const a = await openNotSure(openViewer, server, BOOK);
+      const b = await openNotSure(openViewer, server, BOOK);
+      await a.bringToFront();
+      await selectAWord(a, BOOK);
+      await a.keyboard.press('h');
+      await expect(savingChip(a), 'tab A is saving').toBeVisible({ timeout: 3000 });
+      await b.bringToFront();
+      await dragSelect(b, 0, ...(await secondWord(b)));
+      await b.keyboard.press('h');
+      await b.waitForTimeout(300);
+      expect(await libraryId(a), 'nothing is in the library yet').toBeNull();
+      await a.close({ runBeforeUnload: true });
+      await b.close({ runBeforeUnload: true });
 
-    const again = await openAt(openViewer, address(server, BOOK));
-    await expect(again.getByText(/^saving your notes/i), 'the chip says the notes are being saved').toBeVisible({ timeout: 30_000 });
-    await shot(again, testInfo, 'saving-your-notes');
-    await waitSaved(again, 60_000);
-    await neverUndo(again, 2500, 'a save finished on reopen never offers Undo');
-    await expect.poll(() => hooks(again).eval((h) => h.annotations?.state().marks.length ?? 0), { timeout: 15_000, message: 'both marks are back' }).toBe(2);
+      const again = await openAt(openViewer, address(server, BOOK));
+      await expect(again.getByText(/^saving your notes/i), 'the chip says the notes are being saved').toBeVisible({ timeout: 30_000 });
+      await shot(again, testInfo, 'saving-your-notes');
+      await waitSaved(again, 60_000);
+      await neverUndo(again, 2500, 'a save finished on reopen never offers Undo');
+      await expect.poll(() => hooks(again).eval((h) => h.annotations?.state().marks.length ?? 0), { timeout: 15_000, message: 'both marks are back' }).toBe(2);
+    }, 180_000);
   });
 });
 
@@ -669,64 +699,70 @@ test.describe('R100: Enter never answers the save question (TB5 student critic, 
   // The real filter's verdict: the bank statement is "not learning", so the first note asks.
   test.beforeEach(async ({ context }) => realVerdict(context));
 
-  test('a note typed on a bank statement and sent with Enter saves nothing: the question shows the note, and Esc keeps it in the tab only', async ({ openViewer, server }, testInfo) => {
-    const NOTE = 'Why is this fee here? Ask the bank.';
-    const page = await openPaper(openViewer, server, BANK);
-    await waitForStore(page);
-    await expect.poll(() => saveKind(page), { timeout: 30_000, message: 'the filter calls the bank statement "not learning"' }).toBe('not-learning');
-    await selectPassage(page, BANK, BANK_LINE);
-    await page.keyboard.press('Control+Alt+m');
-    await expect(savePrompt(page).first(), 'Ctrl+Alt+M asks first').toBeVisible({ timeout: 5000 });
-    await page.keyboard.type(NOTE, { delay: 40 }); // the owner types on, as the critic did
-    await shot(page, testInfo, 'typed-into-the-question');
+  test('Enter never answers the save question: Enter saves nothing, Tab to Save and Space saves', async ({ step }, testInfo) => {
+    test.setTimeout(360_000);
+    await step('a note typed on a bank statement and sent with Enter saves nothing: the question shows the note, and Esc keeps it in the tab only', async ({ openViewer, server, context }) => {
+      await forceVerdict(context, 'unsure');
+      await realVerdict(context);
+      const NOTE = 'Why is this fee here? Ask the bank.';
+      const page = await openPaper(openViewer, server, BANK);
+      await waitForStore(page);
+      await expect.poll(() => saveKind(page), { timeout: 30_000, message: 'the filter calls the bank statement "not learning"' }).toBe('not-learning');
+      await selectPassage(page, BANK, BANK_LINE);
+      await page.keyboard.press('Control+Alt+m');
+      await expect(savePrompt(page).first(), 'Ctrl+Alt+M asks first').toBeVisible({ timeout: 5000 });
+      await page.keyboard.type(NOTE, { delay: 40 }); // the owner types on, as the critic did
+      await shot(page, testInfo, 'typed-into-the-question');
 
-    await page.keyboard.press('Enter'); // the owner's habit: Enter sends a note
-    const until = Date.now() + 3000;
-    while (Date.now() < until) {
-      expect(await saveKind(page), 'Enter answers nothing: the question is still asking').toBe('asking');
-      expect(await libraryId(page), 'the bank statement is not in the library').toBeNull();
-      await page.waitForTimeout(250);
-    }
-    await expect(savePrompt(page).first(), 'the question is still open').toBeVisible();
-    await expect(page.getByRole('dialog'), 'and it shows the letters typed into it').toContainText(`Your note: ${NOTE}`);
-    await shot(page, testInfo, 'enter-saved-nothing');
+      await page.keyboard.press('Enter'); // the owner's habit: Enter sends a note
+      const until = Date.now() + 3000;
+      while (Date.now() < until) {
+        expect(await saveKind(page), 'Enter answers nothing: the question is still asking').toBe('asking');
+        expect(await libraryId(page), 'the bank statement is not in the library').toBeNull();
+        await page.waitForTimeout(250);
+      }
+      await expect(savePrompt(page).first(), 'the question is still open').toBeVisible();
+      await expect(page.getByRole('dialog'), 'and it shows the letters typed into it').toContainText(`Your note: ${NOTE}`);
+      await shot(page, testInfo, 'enter-saved-nothing');
 
-    await page.keyboard.press('Escape'); // Esc means No
-    await expect(savePrompt(page), 'Esc answers No').toHaveCount(0);
-    await expect.poll(() => noteText(page, 5000), { timeout: 5000, message: 'the typed note is in the note box' }).toBe(NOTE);
-    expect(await libraryId(page), 'and the bank statement is still not saved').toBeNull();
-    expect((await storeOf(page).stats()).documents, 'no document row').toBe(0);
-    expect(await storedCopies(page), 'no copy of the PDF').toEqual([]);
-    await shot(page, testInfo, 'esc-note-kept-in-the-tab');
-  });
-
-  test('Tab to Save and Space is the owner\'s own answer: it saves, and the letters typed go into the note', async ({ openViewer, server }, testInfo) => {
-    const page = await openPaper(openViewer, server, BANK);
-    await waitForStore(page);
-    await expect.poll(() => saveKind(page), { timeout: 30_000, message: 'the filter calls the bank statement "not learning"' }).toBe('not-learning');
-    await selectPassage(page, BANK, BANK_LINE);
-    await page.keyboard.press('Control+Alt+m');
-    await expect(savePrompt(page).first(), 'Ctrl+Alt+M asks first').toBeVisible({ timeout: 5000 });
-    await page.keyboard.type('Fee', { delay: 40 });
-    // Regression (TB7 held letters): the question held these letters in its own memory until it was answered, where no copy of the note
-    // could reach them. They are the note's letters at once now, so the note keeps them as it keeps every letter.
-    await test.step('the letters typed while it asks are in the note at once', async () => {
-      await expect.poll(() => hooks(page).eval((h) => h.annotations?.state().drafts.map((d) => d.body) ?? []), { timeout: 3000 }).toContain('Fee');
-      await expect(page.getByRole('dialog'), 'and the question shows them').toContainText('Your note: Fee');
-    });
-    const save = page.getByRole('dialog').getByRole('button', { name: /^save$/i });
-    for (let i = 0; i < 4 && !(await save.evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press('Tab');
-    await expect(save, 'Tab reaches Save').toBeFocused();
-    await page.keyboard.press(' ');
-    await waitSaved(page, 30_000);
-    await expect.poll(() => noteText(page, 10_000), { timeout: 10_000, message: 'the letters typed while it asked are in the note' }).toBe('Fee');
-    await shot(page, testInfo, 'tab-save-space-saved');
-    await test.step('a crash then loses none of them: the note comes back with every letter', async () => {
-      await page.waitForTimeout(300);
-      await crashRenderer(page);
-      const again = await openPaper(openViewer, server, BANK);
-      await expect.poll(() => noteText(again, 20_000).catch(() => ''), { timeout: 25_000, message: 'the note is back after the crash' }).toBe('Fee');
-    });
+      await page.keyboard.press('Escape'); // Esc means No
+      await expect(savePrompt(page), 'Esc answers No').toHaveCount(0);
+      await expect.poll(() => noteText(page, 5000), { timeout: 5000, message: 'the typed note is in the note box' }).toBe(NOTE);
+      expect(await libraryId(page), 'and the bank statement is still not saved').toBeNull();
+      expect((await storeOf(page).stats()).documents, 'no document row').toBe(0);
+      expect(await storedCopies(page), 'no copy of the PDF').toEqual([]);
+      await shot(page, testInfo, 'esc-note-kept-in-the-tab');
+    }, 180_000);
+    await step('Tab to Save and Space is the owner\'s own answer: it saves, and the letters typed go into the note', async ({ openViewer, server, context }) => {
+      await forceVerdict(context, 'unsure');
+      await realVerdict(context);
+      const page = await openPaper(openViewer, server, BANK);
+      await waitForStore(page);
+      await expect.poll(() => saveKind(page), { timeout: 30_000, message: 'the filter calls the bank statement "not learning"' }).toBe('not-learning');
+      await selectPassage(page, BANK, BANK_LINE);
+      await page.keyboard.press('Control+Alt+m');
+      await expect(savePrompt(page).first(), 'Ctrl+Alt+M asks first').toBeVisible({ timeout: 5000 });
+      await page.keyboard.type('Fee', { delay: 40 });
+      // Regression (TB7 held letters): the question held these letters in its own memory until it was answered, where no copy of the note
+      // could reach them. They are the note's letters at once now, so the note keeps them as it keeps every letter.
+      await test.step('the letters typed while it asks are in the note at once', async () => {
+        await expect.poll(() => hooks(page).eval((h) => h.annotations?.state().drafts.map((d) => d.body) ?? []), { timeout: 3000 }).toContain('Fee');
+        await expect(page.getByRole('dialog'), 'and the question shows them').toContainText('Your note: Fee');
+      });
+      const save = page.getByRole('dialog').getByRole('button', { name: /^save$/i });
+      for (let i = 0; i < 4 && !(await save.evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press('Tab');
+      await expect(save, 'Tab reaches Save').toBeFocused();
+      await page.keyboard.press(' ');
+      await waitSaved(page, 30_000);
+      await expect.poll(() => noteText(page, 10_000), { timeout: 10_000, message: 'the letters typed while it asked are in the note' }).toBe('Fee');
+      await shot(page, testInfo, 'tab-save-space-saved');
+      await test.step('a crash then loses none of them: the note comes back with every letter', async () => {
+        await page.waitForTimeout(300);
+        await crashRenderer(page);
+        const again = await openPaper(openViewer, server, BANK);
+        await expect.poll(() => noteText(again, 20_000).catch(() => ''), { timeout: 25_000, message: 'the note is back after the crash' }).toBe('Fee');
+      });
+    }, 180_000);
   });
 });
 

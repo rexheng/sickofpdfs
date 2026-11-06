@@ -96,61 +96,113 @@ async function showPage(page: Page, index: number): Promise<TlFixture> {
 
 const bytesOfAttention = (): Promise<Buffer> => readFile(join(TEST_ASSETS, ATTENTION.file));
 
-test('a stamped re-download shows the same marks and notes on the same words, with no "Moved" label', async ({ openViewer, server }, testInfo) => {
-  const original = await bytesOfAttention();
-  server.serveSequence('/gen/attention-original.pdf', [original]);
-  server.serveSequence('/gen/attention-stamped.pdf', [await stampPdf(original, { where: 'header' })]);
-  const a = await openServed(openViewer, server, '/gen/attention-original.pdf');
-  const tokens = await markTokens(a);
-  const fx = await showPage(a, 0);
-  // Triage (TB2): saveFirst presses the chip's "Save?" while the stand-in filter calls the paper "Not sure".
-  const id = await saveFirst(a);
-  const green = await selectPassage(a, fx, SENTENCE_1);
-  await highlightFromMenu(a, green, 'green');
-  await postNote(a, fx, LINES.l7, 'Note that must survive a re-download');
-  // Triage (tb2marks), ruling R68: the note makes no highlight of its own, so one mark (the green highlight) is stored.
-  await waitStored(a, (x) => x.marks.length >= 1 && x.comments.some((c) => c.body === 'Note that must survive a re-download' && c.draftOfTab === null), 'the mark and the note are stored');
-  await shot(a, testInfo, 'original');
+test('Notes find their words again: a stamped re-download, a moved file, a changed word, and a passage that is gone', async ({ step }, testInfo) => {
+  test.setTimeout(600_000);
+  await step('a stamped re-download shows the same marks and notes on the same words, with no "Moved" label', async ({ openViewer, server }) => {
+    const original = await bytesOfAttention();
+    server.serveSequence('/gen/attention-original.pdf', [original]);
+    server.serveSequence('/gen/attention-stamped.pdf', [await stampPdf(original, { where: 'header' })]);
+    const a = await openServed(openViewer, server, '/gen/attention-original.pdf');
+    const tokens = await markTokens(a);
+    const fx = await showPage(a, 0);
+    // Triage (TB2): saveFirst presses the chip's "Save?" while the stand-in filter calls the paper "Not sure".
+    const id = await saveFirst(a);
+    const green = await selectPassage(a, fx, SENTENCE_1);
+    await highlightFromMenu(a, green, 'green');
+    await postNote(a, fx, LINES.l7, 'Note that must survive a re-download');
+    // Triage (tb2marks), ruling R68: the note makes no highlight of its own, so one mark (the green highlight) is stored.
+    await waitStored(a, (x) => x.marks.length >= 1 && x.comments.some((c) => c.body === 'Note that must survive a re-download' && c.draftOfTab === null), 'the mark and the note are stored');
+    await shot(a, testInfo, 'original');
 
-  const b = await openServed(openViewer, server, '/gen/attention-stamped.pdf');
-  // Triage (Phase 3 gate, R98): the rail stays open at 1280 px, so a tab opened on a PDF with notes shows them as margin
-  // markers; shut it (F4) to see the cards. The note is there either way (the Notes button counts it, a marker shows).
-  await shutRail(b);
-  const fxB = await showPage(b, 0);
-  expect(await waitSaved(b), 'the stamped copy is the same library document, not a new one').toBe(id);
-  const sentence = await selectPassage(b, fxB, SENTENCE_1);
-  const line = await selectPassage(b, fxB, LINES.l7);
-  await expect(cardWith(b, 'Note that must survive a re-download'), 'the note is on the stamped copy').toBeVisible({ timeout: 15_000 });
-  const hl = await paintOfSelection(b, sentence, { name: 'stamped-green', testInfo });
-  expect(hl.paint.share(tokens.fill[GREEN]), `the green highlight is on the same words in the stamped copy: ${describe(hl.paint)}`).toBeGreaterThanOrEqual(0.6);
-  const cm = await paintOfSelection(b, line);
-  // Triage (tb2marks), ruling R68: a note makes no highlight; its words show its dotted underline.
-  expect(hasDottedUnderline(cm.shot, cm.boxes[0], await threadUnderlineColour(b)), `and so is the note's dotted underline: ${describe(cm.paint)}`).toBe(true);
-  await expect(b.getByText('Moved', { exact: true }), 'the words are exactly where the note says: no "Moved" label').toHaveCount(0);
-  const stats = await storeOf(b).stats();
-  expect(stats.documents, 'the library holds one document').toBe(1);
-  expect((await annotations(b, id)).comments.filter((c) => c.deletedAt === null)).toHaveLength(1);
-  await shot(b, testInfo, 'stamped-copy');
-});
+    const b = await openServed(openViewer, server, '/gen/attention-stamped.pdf');
+    // Triage (Phase 3 gate, R98): the rail stays open at 1280 px, so a tab opened on a PDF with notes shows them as margin
+    // markers; shut it (F4) to see the cards. The note is there either way (the Notes button counts it, a marker shows).
+    await shutRail(b);
+    const fxB = await showPage(b, 0);
+    expect(await waitSaved(b), 'the stamped copy is the same library document, not a new one').toBe(id);
+    const sentence = await selectPassage(b, fxB, SENTENCE_1);
+    const line = await selectPassage(b, fxB, LINES.l7);
+    await expect(cardWith(b, 'Note that must survive a re-download'), 'the note is on the stamped copy').toBeVisible({ timeout: 15_000 });
+    const hl = await paintOfSelection(b, sentence, { name: 'stamped-green', testInfo });
+    expect(hl.paint.share(tokens.fill[GREEN]), `the green highlight is on the same words in the stamped copy: ${describe(hl.paint)}`).toBeGreaterThanOrEqual(0.6);
+    const cm = await paintOfSelection(b, line);
+    // Triage (tb2marks), ruling R68: a note makes no highlight; its words show its dotted underline.
+    expect(hasDottedUnderline(cm.shot, cm.boxes[0], await threadUnderlineColour(b)), `and so is the note's dotted underline: ${describe(cm.paint)}`).toBe(true);
+    await expect(b.getByText('Moved', { exact: true }), 'the words are exactly where the note says: no "Moved" label').toHaveCount(0);
+    const stats = await storeOf(b).stats();
+    expect(stats.documents, 'the library holds one document').toBe(1);
+    expect((await annotations(b, id)).comments.filter((c) => c.deletedAt === null)).toHaveLength(1);
+    await shot(b, testInfo, 'stamped-copy');
+  }, 150_000);
+  await step('the same file under another address (moved or renamed) shows the same notes', async ({ openViewer, server }) => {
+    const original = await bytesOfAttention();
+    server.serveSequence('/gen/folder-one/attention.pdf', [original]);
+    server.serveSequence('/gen/folder-two/renamed-copy-1.pdf', [original]);
+    const a = await openServed(openViewer, server, '/gen/folder-one/attention.pdf');
+    const fx = await showPage(a, 0);
+    // Triage (TB2): saveFirst presses the chip's "Save?" while the stand-in filter calls the paper "Not sure".
+    const id = await saveFirst(a);
+    await postNote(a, fx, LINES.l3, 'Follows the file, not the address');
+    await waitStored(a, (x) => x.comments.some((c) => c.body === 'Follows the file, not the address' && c.draftOfTab === null), 'the note is stored');
 
-test('the same file under another address (moved or renamed) shows the same notes', async ({ openViewer, server }, testInfo) => {
-  const original = await bytesOfAttention();
-  server.serveSequence('/gen/folder-one/attention.pdf', [original]);
-  server.serveSequence('/gen/folder-two/renamed-copy-1.pdf', [original]);
-  const a = await openServed(openViewer, server, '/gen/folder-one/attention.pdf');
-  const fx = await showPage(a, 0);
-  // Triage (TB2): saveFirst presses the chip's "Save?" while the stand-in filter calls the paper "Not sure".
-  const id = await saveFirst(a);
-  await postNote(a, fx, LINES.l3, 'Follows the file, not the address');
-  await waitStored(a, (x) => x.comments.some((c) => c.body === 'Follows the file, not the address' && c.draftOfTab === null), 'the note is stored');
+    const b = await openServed(openViewer, server, '/gen/folder-two/renamed-copy-1.pdf');
+    await shutRail(b); // Triage (Phase 3 gate, R98), as above
+    await showPage(b, 0);
+    expect(await waitSaved(b)).toBe(id);
+    await expect(cardWith(b, 'Follows the file, not the address'), 'the note is there at the new address').toBeVisible({ timeout: 15_000 });
+    await expect(b.getByText('Moved', { exact: true })).toHaveCount(0);
+    await shot(b, testInfo, 'renamed-copy');
+  }, 150_000);
+  await step('if the passage has moved a little (a word changed), the note is placed on the closest match and the card says "Moved"', async ({ openViewer, server }) => {
+    server.serveSequence('/gen/paper-v2.pdf', [await makePaper('v2')]);
+    const b = await openServed(openViewer, server, '/gen/paper-v2.pdf');
+    const index = await pageHolding(b, TARGET.v2);
+    const fx = await showPage(b, index);
+    const id = await saveFirst(b);
+    const tokens = await markTokens(b);
+    // The note's words are the sentence as it was ("anticipation"); this copy says "anticipated".
+    await seedNote(b, { pageIndex: index, at: TARGET.v2, quote: TARGET.v1, body: 'A note on the placebo sentence' });
+    await b.reload();
+    await b.waitForFunction(() => (globalThis as unknown as { __sopTest?: { viewerState?: () => string } }).__sopTest?.viewerState?.() === 'ready', undefined, { timeout: 25_000 });
+    await shutRail(b); // Triage (Phase 3 gate, R98): the rail opens again on a reload at 1280 px, as above
+    const fxB = await showPage(b, index);
+    expect(await waitSaved(b), 'the same library document').toBe(id);
+    const card = cardWith(b, 'A note on the placebo sentence');
+    await expect(card, 'the note is shown').toBeVisible({ timeout: 15_000 });
+    await expect(card, 'a close match is never silent: the card says Moved').toContainText('Moved');
+    const sentence = await selectPassage(b, fxB, TARGET_PASSAGE.v2);
+    const painted = await paintOfSelection(b, sentence, { name: 'moved-highlight', testInfo });
+    expect(painted.paint.share(tokens.fill[YELLOW]) + painted.paint.share(tokens.active[YELLOW]), `and the highlight is on the closest match: ${describe(painted.paint)}`).toBeGreaterThanOrEqual(0.6);
+    void fx;
+    await shot(b, testInfo, 'moved');
+  }, 150_000);
+  await step('if the passage is gone, the note goes under "Couldn\'t place" and nothing is drawn', async ({ openViewer, server }) => {
+    server.serveSequence('/gen/paper-v3.pdf', [await makePaper('v3')]);
+    const b = await openServed(openViewer, server, '/gen/paper-v3.pdf');
+    const index = await pageHolding(b, TARGET.v3);
+    await showPage(b, index);
+    const id = await saveFirst(b);
+    const tokens = await markTokens(b);
+    // The note's words are a sentence this copy does not have at all.
+    await seedNote(b, { pageIndex: index, at: TARGET.v3, quote: TARGET.v1, body: 'A note on a sentence that will go' });
+    await b.reload();
+    await b.waitForFunction(() => (globalThis as unknown as { __sopTest?: { viewerState?: () => string } }).__sopTest?.viewerState?.() === 'ready', undefined, { timeout: 25_000 });
+    await showPage(b, index);
+    expect(await waitSaved(b), 'the same library document').toBe(id);
+    await b.waitForTimeout(1500); // time for the notes to be placed
+    expect(await markPixelsOnPage(b, index, tokens), 'nothing is drawn where the passage used to be (no highlight of any colour)').toBeLessThan(20);
+    await shot(b, testInfo, 'gone-nothing-drawn');
 
-  const b = await openServed(openViewer, server, '/gen/folder-two/renamed-copy-1.pdf');
-  await shutRail(b); // Triage (Phase 3 gate, R98), as above
-  await showPage(b, 0);
-  expect(await waitSaved(b)).toBe(id);
-  await expect(cardWith(b, 'Follows the file, not the address'), 'the note is there at the new address').toBeVisible({ timeout: 15_000 });
-  await expect(b.getByText('Moved', { exact: true })).toHaveCount(0);
-  await shot(b, testInfo, 'renamed-copy');
+    await b.keyboard.press('Shift+F4');
+    await expect(b.getByText(/couldn.t place/i).first(), 'the notes panel has a "Couldn\'t place" section').toBeVisible({ timeout: 5000 });
+    // Triage (TB2): the panel says "Couldn't place" once, on the section heading, not on each card in it.
+    const section = b.getByRole('region', { name: /couldn.t place/i });
+    await expect(section.getByRole('article').filter({ hasText: 'A note on a sentence that will go' }), 'and the note is in it').toBeVisible();
+    await shot(b, testInfo, 'couldnt-place-in-the-panel');
+    expect(await markPixelsOnPage(b, index, tokens), 'still nothing drawn with the panel open').toBeLessThan(20);
+    expect(await allCards(b).count()).toBeGreaterThan(0);
+    expect(await libraryId(b)).toBe(id);
+  }, 150_000);
 });
 
 /**
@@ -175,55 +227,3 @@ async function seedNote(page: Page, o: { pageIndex: number; at: string; quote: s
   );
   await waitStored(page, (x) => x.comments.some((c) => c.body === o.body && c.draftOfTab === null), 'the note is stored');
 }
-
-test('if the passage has moved a little (a word changed), the note is placed on the closest match and the card says "Moved"', async ({ openViewer, server }, testInfo) => {
-  server.serveSequence('/gen/paper-v2.pdf', [await makePaper('v2')]);
-  const b = await openServed(openViewer, server, '/gen/paper-v2.pdf');
-  const index = await pageHolding(b, TARGET.v2);
-  const fx = await showPage(b, index);
-  const id = await saveFirst(b);
-  const tokens = await markTokens(b);
-  // The note's words are the sentence as it was ("anticipation"); this copy says "anticipated".
-  await seedNote(b, { pageIndex: index, at: TARGET.v2, quote: TARGET.v1, body: 'A note on the placebo sentence' });
-  await b.reload();
-  await b.waitForFunction(() => (globalThis as unknown as { __sopTest?: { viewerState?: () => string } }).__sopTest?.viewerState?.() === 'ready', undefined, { timeout: 25_000 });
-  await shutRail(b); // Triage (Phase 3 gate, R98): the rail opens again on a reload at 1280 px, as above
-  const fxB = await showPage(b, index);
-  expect(await waitSaved(b), 'the same library document').toBe(id);
-  const card = cardWith(b, 'A note on the placebo sentence');
-  await expect(card, 'the note is shown').toBeVisible({ timeout: 15_000 });
-  await expect(card, 'a close match is never silent: the card says Moved').toContainText('Moved');
-  const sentence = await selectPassage(b, fxB, TARGET_PASSAGE.v2);
-  const painted = await paintOfSelection(b, sentence, { name: 'moved-highlight', testInfo });
-  expect(painted.paint.share(tokens.fill[YELLOW]) + painted.paint.share(tokens.active[YELLOW]), `and the highlight is on the closest match: ${describe(painted.paint)}`).toBeGreaterThanOrEqual(0.6);
-  void fx;
-  await shot(b, testInfo, 'moved');
-});
-
-test('if the passage is gone, the note goes under "Couldn\'t place" and nothing is drawn', async ({ openViewer, server }, testInfo) => {
-  server.serveSequence('/gen/paper-v3.pdf', [await makePaper('v3')]);
-  const b = await openServed(openViewer, server, '/gen/paper-v3.pdf');
-  const index = await pageHolding(b, TARGET.v3);
-  await showPage(b, index);
-  const id = await saveFirst(b);
-  const tokens = await markTokens(b);
-  // The note's words are a sentence this copy does not have at all.
-  await seedNote(b, { pageIndex: index, at: TARGET.v3, quote: TARGET.v1, body: 'A note on a sentence that will go' });
-  await b.reload();
-  await b.waitForFunction(() => (globalThis as unknown as { __sopTest?: { viewerState?: () => string } }).__sopTest?.viewerState?.() === 'ready', undefined, { timeout: 25_000 });
-  await showPage(b, index);
-  expect(await waitSaved(b), 'the same library document').toBe(id);
-  await b.waitForTimeout(1500); // time for the notes to be placed
-  expect(await markPixelsOnPage(b, index, tokens), 'nothing is drawn where the passage used to be (no highlight of any colour)').toBeLessThan(20);
-  await shot(b, testInfo, 'gone-nothing-drawn');
-
-  await b.keyboard.press('Shift+F4');
-  await expect(b.getByText(/couldn.t place/i).first(), 'the notes panel has a "Couldn\'t place" section').toBeVisible({ timeout: 5000 });
-  // Triage (TB2): the panel says "Couldn't place" once, on the section heading, not on each card in it.
-  const section = b.getByRole('region', { name: /couldn.t place/i });
-  await expect(section.getByRole('article').filter({ hasText: 'A note on a sentence that will go' }), 'and the note is in it').toBeVisible();
-  await shot(b, testInfo, 'couldnt-place-in-the-panel');
-  expect(await markPixelsOnPage(b, index, tokens), 'still nothing drawn with the panel open').toBeLessThan(20);
-  expect(await allCards(b).count()).toBeGreaterThan(0);
-  expect(await libraryId(b)).toBe(id);
-});

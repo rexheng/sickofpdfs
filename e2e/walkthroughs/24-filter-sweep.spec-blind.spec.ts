@@ -49,9 +49,6 @@ test.skip(!FILTER_IN_VIEWER, NO_FILTER);
 test.setTimeout(1_800_000);
 
 // The harness wants the net log read before a test ends, even a test that failed early.
-test.afterEach(async ({ netgate }) => {
-  await netgate.report();
-});
 
 /** Asserts the browser requested the PDFs of the sweep (and the tiny probe PDF) and nothing else. */
 async function expectOnlyThePdfs(netgate: Parameters<typeof requestUrls>[0], origin: string, label: 'learning' | 'not-learning'): Promise<void> {
@@ -111,63 +108,73 @@ async function sweep(label: 'learning' | 'not-learning', openViewer: (u: string)
   return rows;
 }
 
-test('every non-learning fixture is left alone: all 22 are "not learning", the library stays empty and holds no copy', async ({ context, openViewer, server, netgate }, testInfo) => {
-  const logs = collectConsole(context);
-  expect(researchFixtures('not-learning'), 'the 22 research non-learning fixtures are in test-assets (run pnpm fixtures)').toHaveLength(22);
-  const probe = await openViewer(server.url('/h/plain.pdf')); // a tiny PDF whose tab carries the store, to read the library with
-  await waitViewerReady(probe);
-  await waitForStore(probe);
+test('The filter sweep: every non-learning fixture is left alone, and every learning fixture is saved or asked', async ({ step }, testInfo) => {
+  test.setTimeout(3_600_000);
+  await step('every non-learning fixture is left alone: all 22 are "not learning", the library stays empty and holds no copy', async ({ context, openViewer, server, netgate }) => {
+    try {
+      const logs = collectConsole(context);
+      expect(researchFixtures('not-learning'), 'the 22 research non-learning fixtures are in test-assets (run pnpm fixtures)').toHaveLength(22);
+      const probe = await openViewer(server.url('/h/plain.pdf')); // a tiny PDF whose tab carries the store, to read the library with
+      await waitViewerReady(probe);
+      await waitForStore(probe);
 
-  const rows = await sweep('not-learning', openViewer, (p) => server.url(p), probe, testInfo);
+      const rows = await sweep('not-learning', openViewer, (p) => server.url(p), probe, testInfo);
 
-  for (const r of rows) {
-    expect.soft(r.saved, `${r.name} must not be in the library`).toBe(false);
-    if (r.kind === 'left-viewer') {
-      expect.soft(hasForm('not-learning', r.name), `${r.name} left the viewer, which only a form PDF may do`).toBe(true);
-    } else {
-      expect.soft(r.kind, `${r.name}: the filter must say "not learning", not "not sure" (chip: ${r.chip})`).toBe('not-learning');
-      expect.soft(r.chip, `${r.name}: the chip says "Not saved"`).toMatch(/not saved/i);
+      for (const r of rows) {
+        expect.soft(r.saved, `${r.name} must not be in the library`).toBe(false);
+        if (r.kind === 'left-viewer') {
+          expect.soft(hasForm('not-learning', r.name), `${r.name} left the viewer, which only a form PDF may do`).toBe(true);
+        } else {
+          expect.soft(r.kind, `${r.name}: the filter must say "not learning", not "not sure" (chip: ${r.chip})`).toBe('not-learning');
+          expect.soft(r.chip, `${r.name}: the chip says "Not saved"`).toMatch(/not saved/i);
+        }
+      }
+      const stats = await storeOf(probe).stats();
+      expect(stats, 'the library is empty: no document, location, alias, page text or history').toEqual({ documents: 0, aliases: 0, locations: 0, pageText: 0, history: 0, outbox: 0 });
+      expect(await opfsList(probe, 'pdf'), 'and keeps no copy of any of them').toEqual([]);
+      expect(await opfsList(probe, 'thumbs'), 'or a thumbnail').toEqual([]);
+      expect((await allReadings(probe)).length).toBe(0);
+
+      // no trace of any of them anywhere: tables, indexes, files, localStorage, IndexedDB, console
+      const problems = new Set<string>();
+      for (const name of researchFixtures('not-learning')) {
+        const sha = await sha256File(join(TEST_ASSETS, 'classifier', 'not-learning', name));
+        for (const p of await traceProblems(probe, { sha, phrases: [], fileName: name, logs: [...logs], noDrafts: true })) problems.add(p);
+      }
+      expect([...problems], 'none of the 22 left a trace').toEqual([]);
+      await expectOnlyThePdfs(netgate, server.origin, 'not-learning');
+      note(testInfo, 'non-learning verdicts', rows.map((r) => `${r.name}: ${r.chip || r.kind}`).join(' | '));
+    } finally {
+      await netgate.report();
     }
-  }
-  const stats = await storeOf(probe).stats();
-  expect(stats, 'the library is empty: no document, location, alias, page text or history').toEqual({ documents: 0, aliases: 0, locations: 0, pageText: 0, history: 0, outbox: 0 });
-  expect(await opfsList(probe, 'pdf'), 'and keeps no copy of any of them').toEqual([]);
-  expect(await opfsList(probe, 'thumbs'), 'or a thumbnail').toEqual([]);
-  expect((await allReadings(probe)).length).toBe(0);
+  }, 1_800_000);
+  await step('every learning fixture is saved or asked: at most one of the 22 is not saved by itself', async ({ openViewer, server, netgate }) => {
+    try {
+      expect(researchFixtures('learning'), 'the 22 research learning fixtures are in test-assets (run pnpm fixtures)').toHaveLength(22);
+      const probe = await openViewer(server.url('/h/plain.pdf'));
+      await waitViewerReady(probe);
+      await waitForStore(probe);
 
-  // no trace of any of them anywhere: tables, indexes, files, localStorage, IndexedDB, console
-  const problems = new Set<string>();
-  for (const name of researchFixtures('not-learning')) {
-    const sha = await sha256File(join(TEST_ASSETS, 'classifier', 'not-learning', name));
-    for (const p of await traceProblems(probe, { sha, phrases: [], fileName: name, logs: [...logs], noDrafts: true })) problems.add(p);
-  }
-  expect([...problems], 'none of the 22 left a trace').toEqual([]);
-  await expectOnlyThePdfs(netgate, server.origin, 'not-learning');
-  note(testInfo, 'non-learning verdicts', rows.map((r) => `${r.name}: ${r.chip || r.kind}`).join(' | '));
-});
+      const rows = await sweep('learning', openViewer, (p) => server.url(p), probe, testInfo);
 
-test('every learning fixture is saved or asked: at most one of the 22 is not saved by itself', async ({ openViewer, server, netgate }, testInfo) => {
-  expect(researchFixtures('learning'), 'the 22 research learning fixtures are in test-assets (run pnpm fixtures)').toHaveLength(22);
-  const probe = await openViewer(server.url('/h/plain.pdf'));
-  await waitViewerReady(probe);
-  await waitForStore(probe);
-
-  const rows = await sweep('learning', openViewer, (p) => server.url(p), probe, testInfo);
-
-  for (const r of rows) {
-    expect.soft(r.kind, `${r.name} must never be judged "not learning" (chip: ${r.chip})`).not.toBe('not-learning');
-    if (r.kind === 'left-viewer') expect.soft(hasForm('learning', r.name), `${r.name} left the viewer, which only a form PDF may do`).toBe(true);
-  }
-  const notSaved = rows.filter((r) => !r.saved);
-  expect(
-    notSaved.length,
-    `at most 1 of the 22 learning files is not saved by itself; not saved: ${notSaved.map((r) => `${r.name} (${r.kind})`).join(', ')}`,
-  ).toBeLessThanOrEqual(1);
-  for (const r of notSaved) {
-    expect.soft(r.kind, `${r.name} is not saved, so it must at least ask ("Not sure: Save?")`).toMatch(/unsure|left-viewer/);
-  }
-  const readings = await allReadings(probe);
-  expect(readings.length, 'the library holds what was saved').toBe(rows.length - notSaved.length);
-  note(testInfo, 'not saved', notSaved.map((r) => r.name).join(', ') || 'none');
-  await expectOnlyThePdfs(netgate, server.origin, 'learning');
+      for (const r of rows) {
+        expect.soft(r.kind, `${r.name} must never be judged "not learning" (chip: ${r.chip})`).not.toBe('not-learning');
+        if (r.kind === 'left-viewer') expect.soft(hasForm('learning', r.name), `${r.name} left the viewer, which only a form PDF may do`).toBe(true);
+      }
+      const notSaved = rows.filter((r) => !r.saved);
+      expect(
+        notSaved.length,
+        `at most 1 of the 22 learning files is not saved by itself; not saved: ${notSaved.map((r) => `${r.name} (${r.kind})`).join(', ')}`,
+      ).toBeLessThanOrEqual(1);
+      for (const r of notSaved) {
+        expect.soft(r.kind, `${r.name} is not saved, so it must at least ask ("Not sure: Save?")`).toMatch(/unsure|left-viewer/);
+      }
+      const readings = await allReadings(probe);
+      expect(readings.length, 'the library holds what was saved').toBe(rows.length - notSaved.length);
+      note(testInfo, 'not saved', notSaved.map((r) => r.name).join(', ') || 'none');
+      await expectOnlyThePdfs(netgate, server.origin, 'learning');
+    } finally {
+      await netgate.report();
+    }
+  }, 1_800_000);
 });
