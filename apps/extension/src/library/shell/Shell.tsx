@@ -1,6 +1,6 @@
 import { IconButton } from '@sop/ui';
 import { LibraryShell, NavList, ProductMark, SearchPill } from '@sop/ui/library';
-import { type ReactNode, type Ref, useEffect, useRef } from 'react';
+import { type ReactNode, type Ref, useEffect } from 'react';
 import { palette } from '../../shared/palette';
 import { BackupAttention } from '../settings/BackupAttention';
 import { DEFAULT_ROUTE } from '../routes/pages';
@@ -10,12 +10,21 @@ import { NewMenu, type NewMenuHandle } from './NewMenu';
 import { TagsNav } from '../tags/TagsNav';
 import { useTagInAddress } from '../tags/tag-route';
 
+/** The search bar's words, and how the palette finds the bar to open over it. */
+const SEARCH_LABEL = 'Search in library';
+
+/** Where the library's palette opens: over the search bar, as the bar grown into its answers (TB5). Null: no bar. */
+export function searchBarAnchor(): { top: number; left: number; width: number; bar: true } | null {
+  const bar = document.querySelector<HTMLElement>(`[role="search"]:has(input[aria-label="${SEARCH_LABEL}"])`);
+  if (bar === null) return null;
+  const r = bar.getBoundingClientRect();
+  return r.width === 0 ? null : { top: r.top, left: r.left, width: r.width, bar: true };
+}
+
 const NAV_ITEMS = ROUTES.map((r) => ({ id: r.id, label: r.label, icon: r.icon, href: routeHref(r.id), group: r.group }));
 
 export interface ShellProps {
   route: RouteId;
-  search: string;
-  onSearch(this: void, text: string): void;
   onNotify(this: void, text: string): void;
   newMenu: Ref<NewMenuHandle>;
   /** Upload PDF: saves a picked file into the library; null while the library is not open. */
@@ -29,11 +38,11 @@ function typing(target: EventTarget | null): boolean {
 }
 
 /**
- * The library's frame, as Drive's: our mark and the search pill in the top bar, Settings at its right, "+ New" and the
- * navigation on the left, and the page in the white card. "/" puts the cursor in the search pill, as in Drive.
+ * The library's frame, as Drive's: our mark and the search bar in the top bar, Settings at its right, "+ New" and the
+ * navigation on the left, and the page in the white card. The search bar is the Ctrl+K palette's place (TB5: one search
+ * box): a click or a typed letter opens the palette over it. "/" opens it too, as in Drive.
  */
-export function Shell({ route, search, onSearch, onNotify, newMenu, onUpload, children }: ShellProps) {
-  const field = useRef<HTMLInputElement>(null);
+export function Shell({ route, onNotify, newMenu, onUpload, children }: ShellProps) {
   const addressTag = useTagInAddress();
   /** S18: My library showing one tag: that tag's pill is the selected one, not My library's. */
   const tag = route === 'library' ? addressTag : null;
@@ -41,7 +50,7 @@ export function Shell({ route, search, onSearch, onNotify, newMenu, onUpload, ch
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== '/' || e.ctrlKey || e.altKey || e.metaKey || typing(e.target) || e.defaultPrevented) return;
       e.preventDefault();
-      field.current?.focus();
+      palette.open();
     };
     addEventListener('keydown', onKey);
     return () => removeEventListener('keydown', onKey);
@@ -53,8 +62,8 @@ export function Shell({ route, search, onSearch, onNotify, newMenu, onUpload, ch
           <ProductMark label="Library" />
         </a>
       }
-      // Enter looks deeper: the same words in the Ctrl+K palette, which also searches pages and notes (S15).
-      search={<SearchPill ref={field} value={search} onChange={onSearch} label="Search in library" onEnter={() => palette.open({ query: search.trim() })} />}
+      // One search box: the bar opens the Ctrl+K palette in its place, which finds readings, pages and notes (S15, TB5).
+      search={<SearchPill label={SEARCH_LABEL} onOpen={(typed) => palette.open({ query: typed })} />}
       topEnd={
         <>
           <BackupAttention />

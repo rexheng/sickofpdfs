@@ -3,7 +3,7 @@
   inline-size: 100%;
   block-size: 100%;
   object-fit: cover;
-  object-position: top center;
+  object-position: top left; /* a landscape slide keeps the start of its title (TB5) */
 }
 
 .placeholder {

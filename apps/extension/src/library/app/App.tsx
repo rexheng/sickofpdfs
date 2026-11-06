@@ -41,7 +41,6 @@ export function LibraryApp({ connect }: { connect: ConnectLibrary }) {
 
 function Frame({ start, retry }: { start: Start; retry(this: void): void }) {
   const route = useRoute();
-  const [search, setSearch] = useState('');
   const [message, setMessage] = useState<SnackbarMessage | null>(null);
   const nextId = useRef(1);
   const newMenu = useRef<NewMenuHandle>(null);
@@ -69,8 +68,8 @@ function Frame({ start, retry }: { start: Start; retry(this: void): void }) {
   }, [data, thumbnails]);
 
   const context = useMemo<LibraryContextValue | null>(
-    () => (data === null || thumbnails === null ? null : { data, thumbnails, notify, search, pickFile: () => newMenu.current?.pickFile() }),
-    [data, thumbnails, notify, search],
+    () => (data === null || thumbnails === null ? null : { data, thumbnails, notify, pickFile: () => newMenu.current?.pickFile() }),
+    [data, thumbnails, notify],
   );
 
   let page;
@@ -101,7 +100,7 @@ function Frame({ start, retry }: { start: Start; retry(this: void): void }) {
   }
 
   const shell = (
-    <Shell route={route} search={search} onSearch={setSearch} onNotify={(text) => notify({ text })} newMenu={newMenu} onUpload={data?.savePickedPdf ?? null}>
+    <Shell route={route} onNotify={(text) => notify({ text })} newMenu={newMenu} onUpload={data?.savePickedPdf ?? null}>
       {page}
     </Shell>
   );

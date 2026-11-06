@@ -57,6 +57,20 @@ export function registerPaletteOperator(op: PaletteOperator): () => void {
   };
 }
 
+/** The operators that mean something now (`tag`, `course`), for the palette's tip. Empty while none is registered. */
+export function operatorKeys(): string[] {
+  return [...operators.keys()];
+}
+
+/** A `word:` typed that is no operator (`has:notes`): its word, so the palette can say which ones there are. */
+export function unknownOperator(typed: string): string | null {
+  for (const m of typed.matchAll(/(?:^|\s)([a-z]+):/giu)) {
+    const key = (m[1] ?? '').toLowerCase();
+    if (!operators.has(key) && key !== 'http' && key !== 'https') return key;
+  }
+  return null;
+}
+
 export interface ParsedQuery {
   /** The words to search for, with the operators taken out. */
   text: string;

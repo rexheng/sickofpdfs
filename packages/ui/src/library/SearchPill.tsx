@@ -1,26 +1,37 @@
 import '../tokens/tokens.css';
 import { forwardRef } from 'react';
-import { IconButton } from '../components/IconButton';
 import { Icon } from '../icons/Icon';
 import styles from './SearchPill.module.css';
 
 export interface SearchPillProps {
-  value: string;
-  onChange(this: void, value: string): void;
   /** The placeholder, and the field's accessible name: "Search in library". */
   label: string;
-  /** Enter was pressed (not while an input method is composing). */
-  onEnter?(this: void): void;
+  /**
+   * Opens the search this bar stands for (the library's Ctrl+K palette, which then lies over the bar). `typed` is a
+   * letter typed into the bar, which the search starts with; empty for a click, Enter or Down.
+   */
+  onOpen(this: void, typed: string): void;
 }
 
 /**
  * Drive's search bar (02 section 4.2): a 48 px pill on surface-container-high (#e9eef6) with the search icon at the
  * left and the placeholder in Google Sans Text 16/24. While it has the focus it turns white and lifts (elevation 1).
- * A clear button shows once there is text; Escape clears it too, then leaves the field.
+ *
+ * TB5: one search box, as Drive's. The bar is where the search opens: a click, a typed letter, Enter or Down opens the
+ * search over it, and the typing goes on there. The bar itself keeps no text. Escape leaves it.
  */
-export const SearchPill = forwardRef<HTMLInputElement, SearchPillProps>(function SearchPill({ value, onChange, label, onEnter }, ref) {
+export const SearchPill = forwardRef<HTMLInputElement, SearchPillProps>(function SearchPill({ label, onOpen }, ref) {
   return (
-    <div className={styles.pill} role="search">
+    <div
+      className={styles.pill}
+      role="search"
+      // The press opens the search where the bar is; the bar does not take the focus first.
+      onMouseDown={(e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        onOpen('');
+      }}
+    >
       <span className={styles.lead}>
         <Icon name="search" size={24} />
       </span>
@@ -28,22 +39,24 @@ export const SearchPill = forwardRef<HTMLInputElement, SearchPillProps>(function
         ref={ref}
         className={styles.input}
         type="search"
-        value={value}
+        value=""
         placeholder={label}
         aria-label={label}
+        aria-haspopup="dialog"
         autoComplete="off"
         spellCheck={false}
-        onChange={(e) => onChange(e.currentTarget.value)}
+        onChange={(e) => onOpen(e.currentTarget.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.nativeEvent.isComposing) onEnter?.();
-          if (e.key === 'Escape') {
+          if (e.nativeEvent.isComposing) return;
+          if (e.key === 'Enter' || e.key === 'ArrowDown') {
             e.preventDefault();
-            if (value !== '') onChange('');
-            else e.currentTarget.blur();
+            onOpen('');
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            e.currentTarget.blur();
           }
         }}
       />
-      {value !== '' && <IconButton className={styles.clear} icon="close" label="Clear search" size={40} onClick={() => onChange('')} />}
     </div>
   );
 });

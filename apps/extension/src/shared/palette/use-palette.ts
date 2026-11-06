@@ -318,23 +318,7 @@ function buildGroups(answer: Answer | null, query: string, commands: PaletteComm
         }),
       });
     }
-    const pages = answer.hits.filter((h): h is Extract<SearchHit, { kind: 'page' }> => h.kind === 'page');
-    if (pages.length > 0) {
-      groups.push({
-        id: 'pages',
-        heading: 'Pages',
-        rows: spread(pages).map((h) => ({
-          key: `page:${h.documentId}:${h.pageIndex}`,
-          icon: 'description',
-          title: splitMarked(h.snippet),
-          detail: plain(`Page ${h.pageIndex + 1} · ${nameOf(h.documentId)}`),
-          trail: null,
-          compact: false,
-          target: { kind: 'page', documentId: h.documentId, pageIndex: h.pageIndex, terms: answer.terms },
-          command: null,
-        })),
-      });
-    }
+    // The owner's own notes come before the page text (TB5): a word from a note is what they are looking for.
     const notes = answer.hits.filter((h): h is Extract<SearchHit, { kind: 'note' }> => h.kind === 'note');
     if (notes.length > 0) {
       groups.push({
@@ -348,6 +332,23 @@ function buildGroups(answer: Answer | null, query: string, commands: PaletteComm
           trail: null,
           compact: false,
           target: { kind: 'note', documentId: h.documentId, threadId: h.threadId, pageIndex: h.pageIndex },
+          command: null,
+        })),
+      });
+    }
+    const pages = answer.hits.filter((h): h is Extract<SearchHit, { kind: 'page' }> => h.kind === 'page');
+    if (pages.length > 0) {
+      groups.push({
+        id: 'pages',
+        heading: 'Pages',
+        rows: spread(pages).map((h) => ({
+          key: `page:${h.documentId}:${h.pageIndex}`,
+          icon: 'description',
+          title: splitMarked(h.snippet),
+          detail: plain(`Page ${h.pageIndex + 1} · ${nameOf(h.documentId)}`),
+          trail: null,
+          compact: false,
+          target: { kind: 'page', documentId: h.documentId, pageIndex: h.pageIndex, terms: answer.terms },
           command: null,
         })),
       });

@@ -78,6 +78,32 @@
   opacity: 1;
 }
 
+/*
+ * TB5, the library: the panel is the "Search in library" bar grown into its answers (Drive's search). It lies exactly over
+ * the bar, with the bar's round ends, white as a focused bar is, and nothing behind it is dimmed.
+ */
+.barLayer {
+  background-color: transparent;
+  animation: none;
+}
+
+.barPanel {
+  border-radius: var(--shape-search);
+  background-color: var(--gm3-sys-color-surface);
+}
+
+.barPanel > .top {
+  padding: 0;
+}
+
+.barPanel .field {
+  background-color: transparent;
+}
+
+.barPanel .chips {
+  padding-inline: var(--space-4);
+}
+
 /* ---- chips ---- */
 
 .chips {
@@ -318,6 +344,11 @@
   border-block-start: 1px solid var(--gm3-sys-color-outline-variant);
   color: var(--gm3-sys-color-on-surface-variant);
   font: var(--type-tooltip);
+}
+
+/* "Tip: type tag: or course: …", at the right of the key hints. */
+.tip {
+  margin-inline-start: auto;
 }
 
 .key {

@@ -49,13 +49,13 @@
   opacity: 1;
 }
 
-/* The browser's own clear cross: ours is the round button after the field. */
+/* The browser's own clear cross: the bar keeps no text. */
 .input::-webkit-search-cancel-button {
   display: none;
 }
 
-.clear {
-  flex: none;
+.pill {
+  cursor: text;
 }
 
 @media (prefers-reduced-motion: reduce) {

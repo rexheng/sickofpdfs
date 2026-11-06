@@ -10,7 +10,23 @@ import { createPortal } from 'react-dom';
 import { KIND_LABELS, KINDS, OPENED_LABELS, OPENED_RANGES } from '../../library/components/filters';
 import styles from './Palette.module.css';
 import type { PaletteCommandGroup, PaletteStore, PaletteTarget, TextPart } from './types';
+import { operatorKeys, unknownOperator } from './query';
 import { isNarrowed, NO_PALETTE_FILTERS, type PaletteFilters, type PaletteRow, usePalette } from './use-palette';
+
+/**
+ * Where the panel opens (TB5), measured as it opens and again when the window changes size. In the viewer it starts below
+ * the toolbar, never across it. In the library it is the "Search in library" bar itself, grown into its answers, as Drive's
+ * search does: the field lies exactly over the bar, with no dimming behind.
+ */
+export interface PaletteAnchor {
+  /** Its top edge, in window px. */
+  top: number;
+  /** Its left edge and width; without them it is centred. */
+  left?: number;
+  width?: number;
+  /** It grows out of a search bar: the bar's own shape, no scrim. */
+  bar?: boolean;
+}
 
 export interface PaletteProps {
   /** The library store; null while it connects, or when there is none (then `unavailable` says why). */
@@ -23,12 +39,27 @@ export interface PaletteProps {
   /** Opens a hit. Resolves with a plain sentence when it could not be opened (the palette stays open and says it), else null. */
   onOpen(this: void, target: PaletteTarget): Promise<string | null>;
   onClose(this: void): void;
+  /** Where it opens; null (or no answer): centred, a tenth of the way down the window. */
+  anchor?: (() => PaletteAnchor | null) | undefined;
+}
+
+/** The anchor now, and again whenever the window is resized. */
+function useAnchor(measure: PaletteProps['anchor']): PaletteAnchor | null {
+  const [at, setAt] = useState<PaletteAnchor | null>(() => measure?.() ?? null);
+  useEffect(() => {
+    if (measure === undefined) return;
+    const again = () => setAt(measure());
+    addEventListener('resize', again);
+    return () => removeEventListener('resize', again);
+  }, [measure]);
+  return at;
 }
 
 const PLACEHOLDER = 'Search readings, pages and notes';
 
-export function Palette({ store, unavailable = null, commands, initialQuery = '', onOpen, onClose }: PaletteProps) {
+export function Palette({ store, unavailable = null, commands, initialQuery = '', onOpen, onClose, anchor }: PaletteProps) {
   const view = usePalette({ store, commands, initialQuery });
+  const at = useAnchor(anchor);
   const base = useId();
   const input = useRef<HTMLInputElement>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -40,8 +71,10 @@ export function Palette({ store, unavailable = null, commands, initialQuery = ''
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const box = panel.current;
-    input.current?.focus({ preventScroll: true });
-    input.current?.select();
+    // The caret after what it opened with: a letter typed into the library's search bar, and the next ones, run on.
+    const field = input.current;
+    field?.focus({ preventScroll: true });
+    field?.setSelectionRange(field.value.length, field.value.length);
     return () => {
       const here = document.activeElement;
       if (opener?.isConnected === true && (here === null || here === document.body || box?.contains(here) === true)) opener.focus({ preventScroll: true });
@@ -130,6 +163,9 @@ export function Palette({ store, unavailable = null, commands, initialQuery = ''
 
   let optionIndex = -1;
   const typed = view.query.trim() !== '';
+  // S18's `tag:` and `course:`, said where they can be seen (TB5): "tag: or course:".
+  const keys = operatorKeys();
+  const tip = keys.length === 0 ? null : keys.map((k) => `${k}:`).join(' or ');
   const body = unavailable !== null ? (
     <p className={styles.note}>{unavailable}</p>
   ) : view.failed ? (
@@ -138,7 +174,11 @@ export function Palette({ store, unavailable = null, commands, initialQuery = ''
     <p className={styles.note}>
       No results for “{view.query.trim()}”.
       <br />
-      {isNarrowed(view.filters) ? 'Try turning off a filter, or other words.' : 'Try other words, or fewer of them.'}
+      {isNarrowed(view.filters)
+        ? 'Try turning off a filter, or other words.'
+        : unknownOperator(view.query) !== null && tip !== null
+          ? `Try ${tip}, or other words.`
+          : 'Try other words, or fewer of them.'}
     </p>
   ) : view.libraryEmpty ? (
     <p className={styles.note}>Your library is empty. A PDF you save will show up here.</p>
@@ -148,13 +188,31 @@ export function Palette({ store, unavailable = null, commands, initialQuery = ''
 
   return createPortal(
     <div
-      className={styles.layer}
+      className={at?.bar === true ? `${styles.layer} ${styles.barLayer}` : styles.layer}
       onKeyDown={onKeyDown}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div ref={panel} className={styles.panel} role="dialog" aria-modal="true" aria-label="Search">
+      <div
+        ref={panel}
+        className={at?.bar === true ? `${styles.panel} ${styles.barPanel}` : styles.panel}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Search"
+        style={
+          at === null
+            ? undefined
+            : {
+                position: 'absolute',
+                top: at.top,
+                ...(at.left === undefined ? {} : { left: at.left }),
+                // Centred with no width of its own: the 16 px gutters it has when it is not anchored.
+                ...(at.width === undefined ? { width: 'calc(100% - 2 * var(--space-4))' } : { width: at.width, maxWidth: 'none' }),
+                maxHeight: `calc(100vh - ${Math.round(at.top)}px - var(--space-4))`,
+              }
+        }
+      >
         <div className={styles.top}>
           <div className={styles.field}>
             <span className={styles.lead}>
@@ -170,6 +228,7 @@ export function Palette({ store, unavailable = null, commands, initialQuery = ''
               aria-activedescendant={litId}
               aria-autocomplete="list"
               aria-label={PLACEHOLDER}
+              aria-describedby={tip === null ? undefined : `${base}-tip`}
               placeholder={PLACEHOLDER}
               value={view.query}
               autoComplete="off"
@@ -225,16 +284,27 @@ export function Palette({ store, unavailable = null, commands, initialQuery = ''
             </p>
           )}
         </div>
-        <div className={styles.footer} aria-hidden="true">
-          <span>
+        <div className={styles.footer}>
+          <span aria-hidden="true">
             <kbd className={styles.key}>↑</kbd> <kbd className={styles.key}>↓</kbd> Move
           </span>
-          <span>
+          <span aria-hidden="true">
             <kbd className={styles.key}>Enter</kbd> Open
           </span>
-          <span>
+          <span aria-hidden="true">
             <kbd className={styles.key}>Esc</kbd> Close
           </span>
+          {tip !== null && (
+            <span id={`${base}-tip`} className={styles.tip}>
+              Tip: type {keys.map((k, i) => (
+                <span key={k}>
+                  {i > 0 && ' or '}
+                  <kbd className={styles.key}>{k}:</kbd>
+                </span>
+              ))}{' '}
+              to find readings by tag or course
+            </span>
+          )}
         </div>
         <p className={styles.srOnly} role="status">
           {summary}

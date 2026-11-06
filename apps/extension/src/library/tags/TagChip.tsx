@@ -1,5 +1,6 @@
 // A tag chip, as Drive draws its labels: the owner's own tags are tonal; an auto tag (the categoriser's) is lighter, with
 // a dashed edge and the word "auto". Used on rows and cards (small) and in the details and the Tags dialog.
+import { Icon } from '@sop/ui';
 import type { ComponentPropsWithRef } from 'react';
 import styles from './TagChip.module.css';
 import { cx, KIND_WORD } from './tag-format';
@@ -41,11 +42,53 @@ export function TagLabel({ tag, note, className }: { tag: Pick<ReadingTag, 'name
   );
 }
 
-/** "+2": more tags than fit. */
-export function MoreTags({ count, title, className }: { count: number; title: string; className?: string }) {
+/**
+ * "+2": more tags than fit. With `onClick` it is a button that shows them all (the reading's Tags). `tagged`: there is no
+ * room for a chip at all, so it says how many tags there are with the tag icon ("🏷 2"), as the note count beside it does.
+ */
+export function MoreTags({
+  count,
+  title,
+  className,
+  onClick,
+  tabIndex,
+  tagged = false,
+}: {
+  count: number;
+  title: string;
+  className?: string;
+  onClick?: () => void;
+  tabIndex?: number;
+  tagged?: boolean;
+}) {
+  const shown = tagged ? (
+    <>
+      <Icon name="sell" size={20} />
+      <span>{count}</span>
+    </>
+  ) : (
+    `+${count}`
+  );
+  if (onClick === undefined) {
+    return (
+      <span className={cx(styles.chip, styles.more, tagged && styles.tagged, className)} title={title}>
+        {shown}
+      </span>
+    );
+  }
   return (
-    <span className={cx(styles.chip, styles.more, className)} title={title}>
-      +{count}
-    </span>
+    <button
+      type="button"
+      className={cx(styles.chip, styles.more, styles.moreButton, tagged && styles.tagged, className)}
+      title={title}
+      aria-label={`${title}. Show them all`}
+      tabIndex={tabIndex}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+    >
+      {shown}
+    </button>
   );
 }

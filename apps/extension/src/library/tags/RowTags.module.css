@@ -1,33 +1,38 @@
 /*
- * The tags after a reading's name: at most two chips and a "+1". The name column decides how many fit, so a title
- * always keeps its room: in a medium column (a laptop window, or the details panel open) the first chip and how many
- * more there are; in a narrow one none. Every tag is still in the details and the Tags dialog.
+ * The tags after a reading's name (TB5: the title comes first). The tags take only the room the title leaves: they grow
+ * into what is free after it and never push it (no flex-basis of their own), except for the width of a tag count, which
+ * is always kept, so the tags can be reached at any width. In that room: the first chip and how many more there are
+ * ("+1"); when a chip does not fit, the tag icon and how many tags there are. A click on either count opens the reading's
+ * Tags, with every tag (auto ones with Keep and Remove); they are in the details too.
  */
 .tags {
-  display: inline-flex;
-  flex: none;
+  container-name: sop-row-tags;
+  container-type: inline-size;
+  display: flex;
+  flex: 1 0 auto;
   gap: var(--space-1);
   align-items: center;
+  min-inline-size: var(--space-10);
+  overflow: hidden;
 }
 
-/* The "+N" for a medium column (only the first chip shows) waits until it is needed. */
-.moreMedium {
+/* A chip shortens its name ("Deep Le… auto") before it steps aside for the count. */
+.tags > button[data-tag-chip] {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+}
+
+.moreAll {
   display: none;
 }
 
-@container sop-name-cell (max-width: 560px) {
-  .tags > button:nth-of-type(n + 2),
-  .tags > .moreWide {
+@container sop-row-tags (max-width: 112px) {
+  .tags > button[data-tag-chip],
+  .tags > .moreRest {
     display: none;
   }
 
-  .tags > .moreMedium {
+  .tags > .moreAll {
     display: inline-flex;
-  }
-}
-
-@container sop-name-cell (max-width: 400px) {
-  .tags {
-    display: none;
   }
 }

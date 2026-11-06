@@ -111,23 +111,25 @@
   box-shadow: var(--shadow-lib-focus);
 }
 
-/* The header strip, as the grid's: the icon 16 px in, the name 14/20 500 beside it. */
+/* The header strip, as the grid's: the icon 16 px in, the name 14/20 500 beside it, on up to two lines (TB5). */
 .cardHead {
   display: flex;
   gap: var(--space-2);
   align-items: center;
-  block-size: var(--space-12);
+  block-size: var(--space-14);
   padding-inline: var(--space-2);
 }
 
 .cardName {
+  display: -webkit-box;
   flex: 1 1 auto;
   min-inline-size: 0;
   overflow: hidden;
   font: var(--type-row-name);
   font-variation-settings: "opsz" 17;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .cardThumb {

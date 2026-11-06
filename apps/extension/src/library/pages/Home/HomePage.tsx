@@ -74,7 +74,7 @@ function useColumns(minToken: string, fallback: number): [(el: HTMLElement | nul
 
 export function HomePage() {
   const library = useLibrary();
-  const { data, notify, search, pickFile } = library;
+  const { data, notify, pickFile } = library;
   const [folded, toggle] = useFolded();
   const continuing = useContinueReading(data, CONTINUE_ASK);
   const notes = useNotes(data, {}, RECENT_NOTES);
@@ -82,14 +82,6 @@ export function HomePage() {
   const [gridRef, columns] = useColumns('--sop-grid-card-min', 200);
   const [notesRef, noteColumns] = useColumns('--sop-notes-panel-w', 320);
   const now = Date.now();
-
-  // Search lives in My library: typing in the search pill on Home takes the owner there, where the matches are listed. Words
-  // already in the pill when Home opens (typed on another page) do not bounce the owner away again.
-  const typedHere = useRef(search);
-  useEffect(() => {
-    if (search !== typedHere.current && search.trim() !== '') location.hash = routeHref('library');
-    typedHere.current = search;
-  }, [search]);
 
   const state = continuing.state;
   const empty = state.kind === 'ready' && state.total === 0 && notes.state.kind === 'ready' && notes.state.items.length === 0;
@@ -134,7 +126,7 @@ export function HomePage() {
     notesBody = (
       <div ref={notesRef} className={styles.notes}>
         {notes.state.items.slice(0, noteColumns * NOTES_ROWS).map((n) => (
-          <NoteCard key={n.thread.id} note={n} now={now} compact onOpen={() => void openNoteReading(n.thread.documentId, library)} />
+          <NoteCard key={n.thread.id} note={n} now={now} compact onOpen={() => void openNoteReading(n.thread, library)} />
         ))}
       </div>
     );

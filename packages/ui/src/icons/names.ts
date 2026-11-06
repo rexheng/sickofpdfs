@@ -110,6 +110,10 @@ export const ICON_NAMES = [
   'call_merge',
   'workspaces',
   'new_label',
+  // TB5 fix round (F4): "Start from page 1" in the File menu, the "Not saved" chip, and Remove on an auto tag
+  'first_page',
+  'do_not_disturb_on',
+  'label_off',
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

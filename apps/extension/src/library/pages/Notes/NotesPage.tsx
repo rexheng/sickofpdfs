@@ -11,7 +11,7 @@ import { useLibrary } from '../../app/context';
 import type { NoteItem, NotesQuery } from '../../data/pages-data';
 import { RECENT_GROUPS, recentGroup } from '../../components/format';
 import { ViewNote } from '../../components/ReadingsView';
-import { NoteCard, onWhat } from './NoteCard';
+import { NoteCard } from './NoteCard';
 import styles from './Notes.module.css';
 import { openNoteReading } from './open-note';
 import { RestoreLeftOut } from '../../settings/RestoreLeftOut';
@@ -27,38 +27,23 @@ const TABS: readonly { id: Tab; label: string }[] = [
 ];
 const QUERIES: Record<Tab, Omit<NotesQuery, 'limit' | 'cursor'>> = { all: {}, mine: { author: 'me' }, claude: { author: 'claude' }, trash: { trashed: true } };
 
-const fold = (s: string) => s.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase();
-
 /** The note's newest activity: its latest comment, or (in Trash) when it was deleted. */
 const whenOf = (n: NoteItem): number => n.thread.deletedAt ?? Math.max(0, ...n.comments.map((c) => c.createdAt));
-
-/** Search: every word must be in the note's comments, the passage it is on, or the reading's title (accents and case ignored). */
-function matches(n: NoteItem, words: readonly string[]): boolean {
-  const hay = fold([n.title, onWhat(n.thread.anchor) ?? '', ...n.comments.map((c) => c.body)].join(' '));
-  return words.every((w) => hay.includes(w));
-}
 
 /** lib.dom does not have the save-file picker. */
 type SavePicker = (o: { suggestedName: string; types: { description: string; accept: Record<string, string[]> }[] }) => Promise<FileSystemFileHandle>;
 
 export function NotesPage() {
   const library = useLibrary();
-  const { data, notify, search } = library;
+  const { data, notify } = library;
   const [tab, setTab] = useState<Tab>('all');
   const notes = useNotes(data, QUERIES[tab]);
   const state = notes.state;
   const [exporting, setExporting] = useState(false);
   const now = Date.now();
 
-  const words = useMemo(() => fold(search).split(/\s+/).filter(Boolean), [search]);
-  const searching = words.length > 0;
-  const shown = useMemo(() => (state.kind === 'ready' ? state.items.filter((n) => !searching || matches(n, words)) : []), [state, searching, words]);
-
-  // While searching, the rest of the notes are fetched too, so the search sees every one.
-  const { loadMore } = notes;
-  useEffect(() => {
-    if (searching && state.kind === 'ready' && state.nextCursor !== null) loadMore();
-  }, [searching, state, loadMore]);
+  // Search is the Ctrl+K palette (TB5: one search box), which finds notes by their words too.
+  const shown = useMemo(() => (state.kind === 'ready' ? state.items : []), [state]);
 
   const groups = useMemo(() => {
     const out: { label: string; items: NoteItem[] }[] = [];
@@ -151,12 +136,6 @@ export function NotesPage() {
         <p>Your notes are safe. Something went wrong while loading them.</p>
       </EmptyState>
     );
-  } else if (shown.length === 0 && searching) {
-    list = (
-      <EmptyState icon="search_off" title={`No notes match “${search.trim()}”`}>
-        <p>The search looks at your notes, the passages they are on, and the titles of your readings.</p>
-      </EmptyState>
-    );
   } else if (shown.length === 0) list = <Empty tab={tab} />;
   else {
     list = (
@@ -172,7 +151,7 @@ export function NotesPage() {
                   key={n.thread.id}
                   note={n}
                   now={now}
-                  onOpen={() => void openNoteReading(n.thread.documentId, library)}
+                  onOpen={() => void openNoteReading(n.thread, library)}
                   {...(tab === 'trash' ? { onRestore: () => restore(n) } : {})}
                 />
               ))}
@@ -187,8 +166,8 @@ export function NotesPage() {
   return (
     <ContentCard header={header}>
       <div id="notes-panel" role="tabpanel" aria-labelledby={`notes-tab-${tab}`} className={styles.panel}>
-        {(tab === 'all' || tab === 'mine') && !searching && <RestoreLeftOut />}
-        {(tab === 'all' || tab === 'mine') && !searching && <RecoveredNotes now={now} />}
+        {(tab === 'all' || tab === 'mine') && <RestoreLeftOut />}
+        {(tab === 'all' || tab === 'mine') && <RecoveredNotes now={now} />}
         {tab === 'trash' && <ViewNote>Notes in Trash are deleted for good after 30 days. Restore puts one back on its reading.</ViewNote>}
         {list}
       </div>

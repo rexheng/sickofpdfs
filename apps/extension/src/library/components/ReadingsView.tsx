@@ -64,22 +64,16 @@ export interface ReadingsViewProps {
 
 /**
  * Room for the list's columns: below these widths (px) the Authors and then the Pages columns step aside. S18: Authors
- * goes a little sooner, so the titles keep room when the details panel takes the right side of the window.
+ * goes a little sooner, so the titles keep room when the details panel takes the right side of the window. TB5: sooner
+ * again, so a laptop window (1280 px) shows the whole title and a tag rather than "Demaine et al.".
  */
-const AUTHORS_MIN = 900;
+const AUTHORS_MIN = 1000;
 const PAGES_MIN = 720;
 
 const keyOf = (item: LibraryItem) => item.doc.id;
 
-/** Search in the pill: every word must be in the title or the authors (accents and case ignored). */
-function matches(item: LibraryItem, words: readonly string[]): boolean {
-  const hay = fold(`${readingTitle(item)} ${item.doc.authors.join(' ')}`);
-  return words.every((w) => hay.includes(w));
-}
-const fold = (s: string) => s.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase();
-
 export function ReadingsView({ title, view, defaultSort, sortable, groupByDate = false, chips, empty, note, groupable = false, tagFilter = null }: ReadingsViewProps) {
-  const { data, notify, search } = useLibrary();
+  const { data, notify } = useLibrary();
   const tags = data.tags ?? null;
   const say = useMemo(() => sayWith(notify), [notify]);
   const groupingState = useGrouping();
@@ -96,16 +90,12 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
   const readings = useReadings(data, { view, sort, filter });
   const state = readings.state;
 
-  const words = useMemo(() => fold(search).split(/\s+/).filter(Boolean), [search]);
-  const searching = words.length > 0;
-  const shown = useMemo(
-    () => (state.kind === 'ready' ? state.items.filter((i) => (!searching || matches(i, words)) && (!narrowed || tagReadings?.has(i.doc.id) === true)) : []),
-    [state, searching, words, narrowed, tagReadings],
-  );
+  // Search is the Ctrl+K palette (TB5: one search box, over the bar at the top).
+  const shown = useMemo(() => (state.kind === 'ready' ? state.items.filter((i) => !narrowed || tagReadings?.has(i.doc.id) === true) : []), [state, narrowed, tagReadings]);
 
-  // While searching, grouping or showing one tag, the rest of the library is fetched too, so every reading is seen.
+  // While grouping or showing one tag, the rest of the library is fetched too, so every reading is seen.
   const { loadMore } = readings;
-  const needAll = searching || grouping !== 'none' || narrowed;
+  const needAll = grouping !== 'none' || narrowed;
   useEffect(() => {
     if (needAll && state.kind === 'ready' && state.nextCursor !== null) loadMore();
   }, [needAll, state, loadMore]);
@@ -306,7 +296,9 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
           <FileTypeIcon kind="pdf" size={24} />
           <CellText title={readingTitle(i)}>{readingTitle(i)}</CellText>
           <Badges item={i} />
-          {tags !== null && <RowTags documentId={i.doc.id} list={readingTags.get(i.doc.id) ?? []} tags={tags} say={say} max={2} tabbable={false} />}
+          {tags !== null && (
+            <RowTags documentId={i.doc.id} list={readingTags.get(i.doc.id) ?? []} tags={tags} say={say} max={1} tabbable={false} except={tagFilter} onMore={() => tagsFor(i)} />
+          )}
         </>
       ),
     },
@@ -362,13 +354,7 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
       </EmptyState>
     );
   } else if (nothingAtAll) body = empty;
-  else if (shown.length === 0 && searching) {
-    body = (
-      <EmptyState icon="search_off" title={`No readings match “${search.trim()}”`}>
-        <p>The search looks at titles and authors.</p>
-      </EmptyState>
-    );
-  } else if (shown.length === 0 && narrowed && !filtered) {
+  else if (shown.length === 0 && narrowed && !filtered) {
     body = (
       <EmptyState icon="sell" title="No readings have this tag" actions={<TextButton label="Show all readings" variant="tonal" onClick={() => (location.hash = '#/library')} />}>
         <p>Give a reading this tag from its menu: Tags.</p>
@@ -424,7 +410,9 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
               badges: <Badges item={item} compact />,
               more: more(item, active),
               thumbnail: <CardThumbnail id={item.doc.id} stored={item.doc.blobStored} />,
-              ...(cardTags ? { footer: tags !== null && <RowTags documentId={item.doc.id} list={readingTags.get(item.doc.id) ?? []} tags={tags} say={say} max={1} tabbable={false} /> } : {}),
+              ...(cardTags
+                ? { footer: tags !== null && <RowTags documentId={item.doc.id} list={readingTags.get(item.doc.id) ?? []} tags={tags} say={say} max={1} tabbable={false} except={tagFilter} onMore={() => tagsFor(item)} /> }
+                : {}),
             })}
             onOpen={open}
             onMenu={openMenu}

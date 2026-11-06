@@ -8,8 +8,6 @@ export interface LibraryContextValue {
   thumbnails: ThumbnailCache;
   /** Shows a message in the snackbar (bottom left). */
   notify(this: void, message: Omit<SnackbarMessage, 'id'>): void;
-  /** What is typed in the search pill. */
-  search: string;
   /** Opens the file picker of "+ New" → Open file. */
   pickFile(this: void): void;
 }

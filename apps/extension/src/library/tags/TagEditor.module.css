@@ -71,20 +71,23 @@
   list-style: none;
 }
 
+/* TB5: a long name ("Protein Structure and Function") puts Keep and Remove on the next line, at the right: never cut. */
 .autoRow {
   display: flex;
-  gap: var(--space-2);
+  flex-wrap: wrap;
+  column-gap: var(--space-2);
   align-items: center;
   justify-content: space-between;
   min-block-size: var(--btn-h);
 }
 
 .autoRow .autoChip {
-  max-inline-size: none;
+  max-inline-size: 100%;
   min-inline-size: 0;
 }
 
 .autoActions {
   display: inline-flex;
   flex: none;
+  margin-inline-start: auto;
 }

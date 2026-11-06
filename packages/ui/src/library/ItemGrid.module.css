@@ -57,13 +57,17 @@
   box-shadow: var(--shadow-lib-focus);
 }
 
-/* The header strip: icon 16 px in (the card's 8 px padding plus 8), the name at 48 px, ⋮ 4 px from the right. */
+/*
+ * The header strip: icon 16 px in (the card's 8 px padding plus 8), the name at 48 px, ⋮ 4 px from the right. TB5: the
+ * name takes two lines before it is cut, so a paper's title reads whole ("Attention Is All You Need"); the strip is two
+ * lines tall on every card, so the cards stay in line, and a one-line name sits in its middle.
+ */
 .head {
   display: flex;
   gap: var(--space-2);
   align-items: center;
   flex: none;
-  block-size: var(--space-12);
+  block-size: var(--space-14);
   padding-inline-start: var(--space-2);
   margin-inline-end: calc(-1 * var(--space-1));
 }
@@ -74,13 +78,15 @@
 }
 
 .name {
+  display: -webkit-box;
   flex: 1 1 auto;
   min-inline-size: 0;
   overflow: hidden;
   font: var(--type-row-name);
   font-variation-settings: "opsz" 17;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .more {

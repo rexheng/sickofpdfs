@@ -1,13 +1,14 @@
-// Opening the reading a note is on, from the Notes page or Home. It opens where the reading's link is, as the library's rows
-// do (reading-actions.ts); the viewer finds the notes by the PDF's fingerprint. (S15's `?doc=` and `?note=` will open the
-// saved copy at the note itself.)
-import type { DocumentId } from '@sop/core';
+// Opening the reading a note is on, from the Notes page or Home: at the note itself (TB5), as a note found with Ctrl+K opens.
+// The saved copy opens with `?doc=<id>&note=<thread id>#page=<n>`, so the viewer shows the note's card and its passage, and
+// the reader's last spot is not used. A reading with no saved copy opens from its link, at the note's page.
+import type { ThreadRow } from '@sop/core';
 import type { LibraryContextValue } from '../../app/context';
 import { openReading } from '../../components/reading-actions';
+import { openTargetInNewTab } from '../../../shared/palette';
 
-export async function openNoteReading(documentId: DocumentId, { data, notify }: Pick<LibraryContextValue, 'data' | 'notify'>): Promise<void> {
+export async function openNoteReading(thread: Pick<ThreadRow, 'id' | 'documentId' | 'pageIndex'>, { data, notify }: Pick<LibraryContextValue, 'data' | 'notify'>): Promise<void> {
   try {
-    const source = await data.readingSource(documentId);
+    const source = await data.readingSource(thread.documentId);
     if (source === null) {
       notify({ text: 'This reading is no longer in your library.' });
       return;
@@ -16,6 +17,12 @@ export async function openNoteReading(documentId: DocumentId, { data, notify }: 
       notify({ text: 'This reading is in Trash. Restore it to open it.' });
       return;
     }
+    if (data.palette !== undefined) {
+      const problem = await openTargetInNewTab({ kind: 'note', documentId: thread.documentId, threadId: thread.id, pageIndex: thread.pageIndex }, data.palette);
+      if (problem !== null) notify({ text: problem });
+      return;
+    }
+    // The sample library has no store to open a saved copy from: the reading opens as its row does.
     const opened = await openReading({ ...source, firstOpened: 0, lastOpened: 0, readingMs: 0, noteCount: 0 }, data.savedPdf);
     if (!opened) notify({ text: 'This PDF has no saved link or copy to open it from.' });
   } catch {
