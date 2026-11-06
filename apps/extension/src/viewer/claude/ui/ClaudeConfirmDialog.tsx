@@ -1,6 +1,7 @@
 // The questions asked before Claude is sent anything that needs a yes (contracts §6 "Before sending"; plan §4 F):
 // - a PDF the owner did not choose for Claude (R105): "Send 3 passages to Anthropic?". It says "This PDF is not in your library",
-//   or, when a note or a mark saved it, "You haven't chosen to save this PDF yourself";
+//   or, when a note or a mark saved it, "You haven't chosen to save this PDF yourself". It names everything that goes: when the
+//   thread has earlier notes, "Your earlier notes in this thread go too." (R105b);
 // - an estimate over the owner's limit for asking first ($0.25 unless changed): "This question costs about 31¢", and with
 //   a $0 limit "Your limit for asking first is $0, so Claude asks before every question.";
 // - "Ask about the whole document": the pages and the cost first.
@@ -34,6 +35,17 @@ export interface ClaudeConfirmRequest {
    * "This PDF is not in your library" (the chip says "Saved to library").
    */
   inLibrary?: boolean;
+  /** R105b, "unsaved": the thread's earlier notes (and Claude's earlier replies) that go with the question. Left out: none. */
+  earlier?: { notes: number; replies: number };
+}
+
+/** "Your earlier notes in this thread go too.": the thread goes with the question (R105b). Empty when nothing of it does. */
+export function earlierWords(e: ClaudeConfirmRequest['earlier']): string {
+  const notes = e?.notes ?? 0;
+  if (notes <= 0) return '';
+  const replies = (e?.replies ?? 0) > 0;
+  if (notes === 1) return replies ? 'Your earlier note and Claude’s replies in this thread go too.' : 'Your earlier note in this thread goes too.';
+  return replies ? 'Your earlier notes and Claude’s replies in this thread go too.' : 'Your earlier notes in this thread go too.';
 }
 
 /** "3 passages", "this figure", "a figure and 2 passages": what leaves the computer, counted. */
@@ -59,8 +71,9 @@ export function confirmWords(r: ClaudeConfirmRequest): { title: string; lines: s
           `${r.inLibrary === true ? 'You haven’t chosen to save this PDF yourself.' : 'This PDF is not in your library.'} ${
             what === 'your question' ? 'To answer, Claude needs your question.' : `To answer, Claude needs ${what} from it.`
           }`,
-          // The document map always goes too (contracts §6): say so, so the owner knows exactly what leaves.
-          'They go to Anthropic, who run Claude, with your question and the PDF’s title, abstract and headings. Nothing else is sent.',
+          // The document map always goes too (contracts §6), and so does the thread (R105b): say so, so the owner knows exactly what
+          // leaves.
+          ['They go to Anthropic, who run Claude, with your question and the PDF’s title, abstract and headings.', earlierWords(r.earlier), 'Nothing else is sent.'].filter(Boolean).join(' '),
           `It costs ${cost}${withModel}.`,
         ],
         send: 'Send',

@@ -84,6 +84,24 @@ export function plainTurns(comments: readonly CommentRow[]): ThreadTurn[] {
 }
 
 /**
+ * What goes with a question from the thread besides the question itself, counted as `plainTurns` sends it: the owner's earlier
+ * notes, and Claude's finished replies after the first of them. The ask-first dialog says so (R105b: its words stay true).
+ */
+export function earlierInThread(comments: readonly CommentRow[], questionId: CommentId, skip?: ReadonlySet<CommentId>): { notes: number; replies: number } {
+  let notes = 0;
+  let replies = 0;
+  for (const c of commentsUpTo(comments, questionId, skip)) {
+    if (c.id === questionId) continue;
+    if (c.author === 'me') {
+      if (questionText(c.body) !== '') notes++;
+    } else if (notes > 0 && replyBodyToPlainText(c.body) !== '') {
+      replies++; // a reply before any note of the owner's is not sent (the first turn is the owner's)
+    }
+  }
+  return { notes, replies };
+}
+
+/**
  * The turns for a question. When this tab holds the thread's exact blocks and the thread has gained only the owner's new
  * question(s) since, those blocks are reused and the new words appended. Otherwise the thread is rebuilt as plain text.
  */

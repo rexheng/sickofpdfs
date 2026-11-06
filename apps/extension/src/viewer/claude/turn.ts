@@ -34,7 +34,7 @@ import type { ClaudeClient } from './client';
 import { createToolRunner, isClientTool, TOOL_BUDGET, toolCallsOf, type ToolResultBlock } from './client-tools';
 import type { ContextBuilder } from './context';
 import { CUT_SHORT_MESSAGE, MODEL_GONE_MESSAGE, NOT_SENT_MESSAGE, PRIVATE_MESSAGES, replyErrorOf, type PrivateReason } from './errors';
-import { commentsUpTo, questionText, turnsFor, type ThreadHistory } from './history';
+import { commentsUpTo, earlierInThread, questionText, turnsFor, type ThreadHistory } from './history';
 import type { ReplyRows } from './reply-rows';
 
 /** Contract §6: viewer tab only. */
@@ -86,6 +86,11 @@ export interface ConfirmRequest {
    * The dialog must then not say "This PDF is not in your library".
    */
   inLibrary?: boolean;
+  /**
+   * R105b, the "unsaved" question: what of the thread goes too, besides the question (Claude reads the earlier notes in the thread).
+   * Left out when nothing does. The dialog says "Your earlier notes in this thread go too."
+   */
+  earlier?: { notes: number; replies: number };
 }
 
 /** What the tab's live view of a reply is told (slice F's `claudeLive`): the status line and the text between row writes. */
@@ -259,8 +264,11 @@ export function createTurnRunner(d: TurnDeps): ClaudeTurnRunner & TurnMemory {
       const held = d.history.get(threadId);
       // R105: a PDF not chosen for Claude never reuses the blocks of an earlier answer (they may hold pages a tool read).
       const usable = held && held.role === role && !restricted ? held : null;
+      const skip = new Set([replyId, ...(req.skip ?? [])]);
+      // What of the thread goes with the question, for the ask-first dialog's words (its turns are always rebuilt as plain text).
+      const earlier = earlierInThread(comments, questionId, skip);
       const { turns: firstTurns, reused } = turnsFor({
-        held: usable, comments, questionId, skip: new Set([replyId, ...(req.skip ?? [])]),
+        held: usable, comments, questionId, skip,
         ...(req.preset === 'explain-figure' ? { presetQuestion: EXPLAIN_FIGURE_QUESTION } : {}),
       });
       if (firstTurns.length === 0 || firstTurns.at(-1)?.role !== 'user') return await failEarly({ code: 'server', message: 'There is no question to answer in this note.' });
@@ -310,6 +318,7 @@ export function createTurnRunner(d: TurnDeps): ClaudeTurnRunner & TurnMemory {
           ask: verdict.ask, usd: verdict.usd, passages: sent.passages, figures: sent.figures.length, model: model.displayName,
           thresholdUsd: settings.confirmOverUsd, ...(sent.pages !== null ? { pages: sent.pages } : {}),
           ...(verdict.ask === 'unsaved' && req.inLibrary === true ? { inLibrary: true } : {}),
+          ...(verdict.ask === 'unsaved' && earlier.notes > 0 ? { earlier } : {}),
         });
         if (!yes) return await notSent({ figureLabels });
         if (verdict.ask === 'unsaved') d.agreed?.();
