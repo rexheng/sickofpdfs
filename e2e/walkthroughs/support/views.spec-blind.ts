@@ -367,9 +367,6 @@ export async function printNow(page: Page, withMarks: boolean | null): Promise<P
     const tick = page.getByRole('checkbox', { name: MARKS_WORD }).or(page.getByRole('switch', { name: MARKS_WORD })).or(page.getByRole('menuitemcheckbox', { name: MARKS_WORD }));
     const step = page.getByRole('dialog', { name: 'Print' });
     const deadline = Date.now() + 6_000;
-    // Triage (word starts round 3): with no marks on the PDF there is no marks choice, only R99's step that asks which
-    // pages; as in the null case, Enter means Print.
-    const step = page.getByRole('dialog', { name: 'Print' });
     while (Date.now() < deadline) {
       if ((await printLog(page)).calls > before) break;
       if (await pick.first().isVisible().catch(() => false)) await pick.first().click();
