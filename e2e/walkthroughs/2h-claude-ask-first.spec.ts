@@ -268,6 +268,7 @@ test('R105b: judged per reading: a reload and a second tab ask until one Send; t
   const dialogA = sendDialog(a);
   await expect(dialogA, 'a reload asks again').toBeVisible({ timeout: 40_000 });
   await expect(dialogA, 'it says what is true').toContainText(/you haven.t chosen to save this pdf yourself/i);
+  await expect(dialogA.getByRole('button', { name: 'Cancel' }), 'Cancel is the default').toBeFocused();
   expect(messages(replay.requests()), 'nothing is sent while the dialog asks').toHaveLength(0);
   await shot(a, testInfo, 'r105b-reload-asks');
   await dialogA.getByRole('button', { name: 'Cancel' }).click();
@@ -281,6 +282,7 @@ test('R105b: judged per reading: a reload and a second tab ask until one Send; t
   const dialogB = sendDialog(b);
   await expect(dialogB, 'a second tab asks too').toBeVisible({ timeout: 40_000 });
   await expect(dialogB, 'the earlier note in the thread goes too, and the dialog says so').toContainText(/your earlier note in this thread goes too\. nothing else is sent/i);
+  await expect(dialogB.getByRole('button', { name: 'Cancel' }), 'Cancel is the default').toBeFocused();
   expect(messages(replay.requests()), 'nothing is sent while the second tab asks').toHaveLength(0);
   await shot(b, testInfo, 'r105b-second-tab-asks');
   await dialogB.getByRole('button', { name: 'Cancel' }).click();
@@ -330,6 +332,7 @@ test('R105b: judged per reading: a reload and a second tab ask until one Send; t
   await waitSaved(c); // the note saved it again: a new reading, which the owner has not said Send for
   const dialogC = sendDialog(c);
   await expect(dialogC, 'after Forget and reopening, it asks again').toBeVisible({ timeout: 40_000 });
+  await expect(dialogC.getByRole('button', { name: 'Cancel' }), 'Cancel is the default').toBeFocused();
   expect(messages(replay.requests()), 'nothing more was sent').toHaveLength(count);
   await shot(c, testInfo, 'r105b-after-forget-asks');
   await dialogC.getByRole('button', { name: 'Cancel' }).click();
