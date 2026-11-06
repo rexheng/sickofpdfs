@@ -197,7 +197,7 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
   - Outlines are cached per page in points, so at any zoom the bold appears in the same frame as the page.
   - The owner's bold marks and print with marks use the same method, so there is one bold look.
   - **R90c (Nov 2, TB5 critics): the bold never closes the gap between letters.**
-    - Each glyph grows on each side only as far as leaves at least 0.75 device px, and at least 45% of the original gap, to its neighbour. So "cl" never reads as "d", and letters never touch.
+    - Each glyph grows on each side only as far as leaves at least 1 device px, and at least 45% of the original gap, to its neighbour. So "cl" never reads as "d", and letters never touch.
     - At small sizes on a 1× screen, the gain shrinks so every counter keeps at least 1 device px.
     - The strengths are clearly different steps: on body text at 100% on a 1× screen, Light adds about 15% ink, Medium about 28% and Strong about 42%.
     - Light-coloured text (white on slides) gets bold too.
@@ -209,10 +209,10 @@ Pages are drawn by PDFium, Google's PDF engine and the one inside Chrome's viewe
   - It never prints.
 - **Where it can't work.** Pages without real text outlines (scans, and OCR text) are left as they are. The first time such a page is shown with the switch on, a quiet note says: "Bold word starts works on text pages. This page is a scanned image."
 - **The switch.**
-  - It sits in the View menu as "Bold word starts", with a check mark, and has a keyboard shortcut that clashes with nothing in Chrome or the viewer.
+  - It sits in the View menu as "Bold word starts" (Alt+Shift+S turns it on or off) with Off, Light, Medium and Strong as one radio group.
   - It is listed in the shortcut sheet.
   - It is remembered on this computer for every PDF, and is off until the owner turns it on.
-  - Settings → Reading → "How bold" sets the weight (Light, Medium or Strong). The letter rule stays the same; only how heavy the bold is changes. Light is 0.5×, Medium 1× and Strong 1.6× the calibrated gain.
+  - Settings → Reading → "How bold" sets the weight (Light, Medium or Strong). The letter rule stays the same; only how heavy the bold is changes. Each strength pairs a growth gain with a little edge darkening that moves no outline: Light 0.9× growth; Medium 1× growth and 0.8 edge darkening; Strong 1.4× growth and 2.2 edge darkening (R90c, measured at +15%, +28% and +42% ink).
 - **Speed.** It is drawn for visible pages first, after the page's own render, so it never delays the first paint or scrolling. It is cached per page and zoom. Turning it on shows bold on the visible pages within 300 ms on the reference laptop.
 
 **R93: Caret browsing (Nov 2, owner request).** A text cursor (caret) for reading and selecting by keyboard, like Chrome's caret browsing and Foxit's text cursor.
