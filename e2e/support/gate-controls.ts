@@ -41,9 +41,12 @@ async function evaluateInOffscreen(context: BrowserContext, sw: Worker, expressi
         justification: 'network gate control',
       });
     } catch (error) {
-      // The extension's store creates the same document, so a race is expected.
+      // The extension creates the same document (its store, the backup), so a race is expected. While the extension's create
+      // is still loading, Chrome refuses this one and does not list the first yet (TB6 gate): wait for it to show.
       const message = error instanceof Error ? error.message : String(error);
-      if (!message.includes('single offscreen document') || !(await offscreenExists())) throw error;
+      if (!message.includes('single offscreen document')) throw error;
+      for (let i = 0; i < 100 && !(await offscreenExists()); i++) await new Promise((resolve) => setTimeout(resolve, 50));
+      if (!(await offscreenExists())) throw error;
     }
   });
   const cdp = await context.browser()!.newBrowserCDPSession();
