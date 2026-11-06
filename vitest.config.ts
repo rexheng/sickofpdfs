@@ -25,6 +25,12 @@ export default defineConfig({
       {
         // `pnpm test:browser`: real Chromium (the preinstalled one locally; CI installs it in the workflow)
         server: { fs: { allow: [repoRoot] } },
+        // Vite's dependency scan reads the test files' imports but never follows `new Worker(new URL(...))`, so on a cold cache it
+        // found the workers' packages (@embedpdf/* for the engine, @sqlite.org/sqlite-wasm for the store) mid-run and reloaded, and
+        // only 3 of the test files ran (TB6 gate). Every worker file is scanned as an entry too (vitest adds the test files to
+        // these). Not `include`: pnpm keeps those packages under their own workspace package, where a name given from the root
+        // does not resolve.
+        optimizeDeps: { entries: ['{apps,packages}/*/{src,test}/**/*worker.ts'] },
         test: {
           name: 'browser',
           include: ['**/*.browser.test.{ts,tsx}'],
