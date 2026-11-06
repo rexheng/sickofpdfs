@@ -12,9 +12,11 @@
 //   read private files", and a question asked anyway gets a row in its thread saying why, which stays until it is dismissed.
 //   Nothing is sent. If the owner saves the PDF later, the row says "Claude did not read this".
 // - A PDF the owner did not choose for Claude, judged when the question starts: not in the library (not sure, still checking, a
-//   save that failed), or saved in this tab's visit only by a note or a mark. The first question asks "Send … to Anthropic?" with
-//   Cancel the default, and sends only the pack (no tools, no web search), after the R91 card, bank and ID check. After one Send,
-//   later questions on that reading in this tab do not ask again.
+//   save that failed), or a reading the owner never chose to save (only a first note or a first mark saved it). R105b: this is
+//   judged per reading, from its stored save reasons, not per tab: it asks in every tab and after every reload. The question asks
+//   "Send … to Anthropic?" with Cancel the default, and sends only the pack (no tools, no web search), after the R91 card, bank
+//   and ID check. The owner's Send is kept for the reading on this computer only (agreed.ts), so later questions on it, in any
+//   tab, do not ask again, and it behaves like any saved reading. Undo and Forget end it.
 // - Anything else in the library: yes.
 // Right before anything leaves, the library's row is read again, so a save that lands while a dialog waits (D9, R102) is caught.
 //
@@ -26,13 +28,14 @@ import {
 } from '@sop/core';
 import { createElement, useEffect } from 'react';
 import type { StoreClient } from '../../store/client';
-import { SAVED_THOUGH_NOT_LEARNING } from '../../store/reading-flags';
+import { SAVED_THOUGH_NOT_LEARNING, WEB_PAGE } from '../../store/reading-flags';
 import type { NotesHost, ViewerFeature } from '../annotations/wire';
 import { isIncognito } from '../incognito';
 import { publishRuntime } from '../runtime';
 import { claudeNoteWaiting } from '../save/claude-note';
-import { SAVED_BY_FIRST_MARK, SAVED_BY_FIRST_NOTE, SAVED_BY_OWNER } from '../save/save-controller';
+import { SAVED_BY_FIRST_MARK, SAVED_BY_FIRST_NOTE } from '../save/save-controller';
 import { libraryStore } from '../use-store';
+import { claudeAgreements } from './agreed';
 import { createClaudeClient, hasKey } from './client';
 import { createContextBuilder, createWorkerEmbedder, type ContextBuilder } from './context';
 import { CUT_SHORT_MESSAGE, NOT_READ_MESSAGE, PRIVATE_HINT, PRIVATE_MESSAGES, type PrivateReason } from './errors';
@@ -66,20 +69,36 @@ const DEFAULT_CONFIRM_OVER_USD = 0.25;
 const SAVE_WAIT_MS = 30_000;
 /** A moment for a save the note's first keystroke started to show as busy. */
 const SAVE_GRACE_MS = 200;
-/** The save states in which the PDF is not in the library. Seen once in this tab's visit, a later note-made save is not a choice. */
-const OUTSIDE = new Set(['unsure', 'not-learning', 'asking', 'memory-only']);
 /** The save states of a PDF judged private (not learning: the save question, its No, "Never save this file"). */
 const PRIVATE_KINDS = new Set(['not-learning', 'asking', 'memory-only']);
 
 /** The save controller's view of why the PDF is not saved, where it gives one (SaveControllerImpl). */
 type SaveWhy = { decision?: { rule?: string; reasons?: readonly string[] } | null; whyNotSaved?: string | null };
 
-/** What a reading's row says for Claude: D9 (`indexText`), R102 (`notLearning`), and whether only a note or a mark saved it. */
+/** What a reading's row says for Claude: D9 (`indexText`), R102 (`notLearning`), and whether the owner chose to save it. */
 interface ReadingFlags {
   indexText: boolean;
   notLearning: boolean;
-  /** Saved by a first note or a first mark, never by the owner's own Save (R105: not the owner's choice for Claude). */
-  byNote: boolean;
+  /** R105b: the owner chose to save it (`ownerChoseToSave`). Saved only by a first note or a first mark: false. */
+  chosen: boolean;
+  /** When the reading was saved: the owner's Send is kept for this save of it (agreed.ts). */
+  createdAt: number;
+}
+
+/** The save reasons of a save the owner did not choose (R105): the first note or the first mark saved the PDF. */
+const NOT_CHOSEN = new Set<string>([SAVED_BY_FIRST_NOTE, SAVED_BY_FIRST_MARK]);
+/** Save reasons that are flags on a reading (R102, R103), not why it was saved. */
+const isFlag = (r: string): boolean => r === SAVED_THOUGH_NOT_LEARNING || r === WEB_PAGE || r.startsWith(`${WEB_PAGE}:`);
+
+/**
+ * R105b: whether the owner chose to save this reading, from its stored save reasons. Their own Save counts (the chip, the banner,
+ * the save question, Ctrl+Alt+S, "Save this page"), and so does the filter's own save of a learning PDF (an "Always save from"
+ * rule, the score). "Your first note saved it" and "Your first mark saved it" do not. A reading a note saved and the filter saved
+ * again later (the store merges the reasons) was chosen.
+ */
+export function ownerChoseToSave(reasons: readonly string[]): boolean {
+  if (!reasons.some((r) => NOT_CHOSEN.has(r))) return true;
+  return reasons.some((r) => !NOT_CHOSEN.has(r) && !isFlag(r));
 }
 
 const isRec = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -145,10 +164,12 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
   let settings: TurnSettings | null = null;
   let disposed = false;
   const flags = new Map<DocumentId, ReadingFlags | null>();
-  /** R105: this tab saw the PDF outside the library (not sure, not learning) during this visit. */
-  let seenOutside = host.save !== undefined && OUTSIDE.has(host.save.state.kind);
-  /** R105: the owner said Send to "Send … to Anthropic?" for this reading, in this tab. Later questions do not ask again. */
-  let agreed = false;
+  /**
+   * R105b: the owner said Send to "Send … to Anthropic?" in this tab, for this file. While the PDF is not in the library only this
+   * tab remembers it (a PDF that is not saved leaves no trace). Once it is a reading, the Send is kept for the reading (agreed.ts),
+   * where every tab and every reload reads it. An Undo or a Forget ends it.
+   */
+  let agreedHere = false;
   /** A question here has built its pack (the local search is warm): later ones do not say "Getting ready…". */
   let warm = false;
   /** R105: the private refusals shown in this tab, with whether the PDF was in the library then (for "Claude did not read this"). */
@@ -251,7 +272,8 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
           f = {
             indexText: row.indexText,
             notLearning: reasons.includes(SAVED_THOUGH_NOT_LEARNING),
-            byNote: (reasons.includes(SAVED_BY_FIRST_NOTE) || reasons.includes(SAVED_BY_FIRST_MARK)) && !reasons.includes(SAVED_BY_OWNER),
+            chosen: ownerChoseToSave(reasons),
+            createdAt: row.createdAt,
           };
         }
       } catch (e) {
@@ -305,8 +327,11 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
     if (id === null) return privacyMoved();
     void readFlags(id).then(privacyMoved, privacyMoved);
   };
+  let lastKind = host.save?.state.kind ?? null;
   const stopSave = host.save?.subscribe((st) => {
-    if (OUTSIDE.has(st.kind)) seenOutside = true;
+    // R105b: an Undo or a Forget, here or in another tab, ends the owner's Send with the reading.
+    if (lastKind === 'saved' && st.kind !== 'saved') agreedHere = false;
+    lastKind = st.kind;
     refreshFlags();
   });
   void session.ready.then(refreshFlags, refreshFlags);
@@ -318,9 +343,25 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
     return save.busy === 'save' || save.state.kind === 'asking' || (save.state.kind === 'saved' && session.state().mode !== 'stored');
   };
 
+  /** Keeps the owner's Send for this reading, on this computer (R105b). A failure only means the next tab or reload asks again. */
+  const keepAgreement = (id: DocumentId, f: ReadingFlags): Promise<void> =>
+    !f.indexText || f.notLearning ? Promise.resolve() : claudeAgreements.add(id, f.createdAt).catch((e: unknown) => log(e, 'agreed'));
+
+  /**
+   * R105b: the owner chose this reading for Claude: they chose to save it, or said Send for it once, in any tab, before or after a
+   * reload. A Send in this tab from before the PDF was a reading (its save landed later) is kept for the reading now.
+   */
+  async function chosenFor(id: DocumentId, f: ReadingFlags): Promise<boolean> {
+    if (f.chosen) return true;
+    if (await claudeAgreements.has(id, f.createdAt)) return true;
+    if (!agreedHere) return false;
+    await keepAgreement(id, f);
+    return true;
+  }
+
   /**
    * Waits for a save on its way, then says whether this PDF is in the library, and whether the owner chose it for Claude (R105,
-   * judged when the question starts: a PDF this tab saw outside the library, then saved only by a note or a mark, was not chosen).
+   * judged when the question starts; R105b, per reading: its save reasons and the owner's Send kept for it).
    */
   async function settle(threadId: ThreadId): Promise<{ documentId: DocumentId | null; inLibrary: boolean; chosen: boolean }> {
     if (incognito) return { documentId: null, inLibrary: false, chosen: false };
@@ -340,7 +381,8 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
     const f = stored !== null ? await readFlags(stored) : null;
     const p = privacyNow(stored ?? documentId);
     const inLibrary = p.saved && p.reason === null;
-    return { documentId, inLibrary, chosen: inLibrary && !(seenOutside && f?.byNote === true) };
+    const chosen = inLibrary && stored !== null && f !== null && !disposed && (await chosenFor(stored, f));
+    return { documentId, inLibrary, chosen };
   }
 
   /** The pack builder for this PDF. A PDF not in the library uses no library search and keeps no vectors in the library. */
@@ -402,9 +444,10 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
       if (o.preset) presets.set(o.replyId, o.preset);
       const documentId = s.documentId ?? thread.documentId;
       // R105: a PDF the owner did not choose for Claude sends only the pack, and asks first until the owner has said Send once. A
-      // reading in the library that the owner has said Send for is theirs for Claude from then on, tools and all.
-      const saved = s.chosen || (agreed && s.inLibrary);
-      const askFirst = !s.chosen && !agreed;
+      // reading in the library that the owner has said Send for is theirs for Claude from then on, tools and all (`settle`). A PDF
+      // not in the library that the owner said Send for in this tab does not ask again here, but still sends only the pack.
+      const saved = s.chosen;
+      const askFirst = !s.chosen && !agreedHere;
       const runner = createTurnRunner({
         client: createClaudeClient,
         context: contextFor(documentId, s.inLibrary),
@@ -421,7 +464,11 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
         // At the start, and again right before anything leaves (a save, a Forget, "Never save this file" while the owner answered).
         privacy: () => privacyCheck(!saved),
         agreed: () => {
-          agreed = true;
+          agreedHere = true;
+          // R105b: kept for the reading at once when the PDF is one (the flags of its row, as `settle` read them).
+          const id = storedDocumentId();
+          const f = id !== null ? flags.get(id) : null;
+          if (id !== null && f) void keepAgreement(id, f);
         },
         preparing: () => !warm || !embedder.alive(),
         comments: commentsOf,

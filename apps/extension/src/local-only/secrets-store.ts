@@ -29,7 +29,8 @@ export const LOCAL_ONLY_STORES: readonly { name: string; options?: IDBObjectStor
   { name: 'secrets', options: { keyPath: 'name' } }, // { name: SecretName, value: string }
   { name: 'meta', options: { keyPath: 'key' } }, // { key: MetaKey, value: string }; claudeSpendMonth holds JSON { month, usd } (Phase 4, A6)
   // Phase 3: salted fingerprints of the files the owner chose "Never save this file" for, { hash, list: 'never-save' }. (The list
-  // of forgotten readings is the library store's own, R89.)
+  // of forgotten readings is the library store's own, R89.) R105b keeps a second list here: the readings the owner said Send for in
+  // "Send … to Anthropic?", { hash, list: 'claude-agreed', since } (`since` is the reading's `createdAt`).
   { name: 'never_save', options: { keyPath: 'hash' } },
   { name: 'filter_reports', options: { keyPath: 'id', autoIncrement: true } }, // Phase 3: { hash, label } from "Report a wrong decision"
   { name: 'handles' }, // out-of-line keys: folder handles
@@ -62,9 +63,19 @@ export interface LocalOnlyStore {
   countNeverSave(): Promise<number>;
   /** "Report a wrong decision": the owner's label and the salted fingerprint, nothing else. A second report of a file replaces the first. */
   addFilterReport(sha: string, label: FilterReportLabel): Promise<void>;
+
+  // R105b: the owner's Send to "Send … to Anthropic?", for one reading, on this computer only. Each takes the reading's id (its
+  // SHA-256) and keeps only an HMAC of it keyed by `filterSalt`, with the reading's `createdAt`: a reading forgotten and saved again
+  // (a Forget in another tab, the Trash purge) is a new reading, and the Send for the old one does not count for it. Reads never
+  // create the salt. Nothing here goes into a backup, an export or sync: none of them can reach this store.
+  /** True when the owner said Send for this reading, as it was saved at `since`. A Send kept for an earlier save of it is removed. */
+  isClaudeAgreed(sha: string, since: number): Promise<boolean>;
+  addClaudeAgreed(sha: string, since: number): Promise<void>;
+  /** Forget or Undo: the Send goes with the reading. */
+  removeClaudeAgreed(sha: string): Promise<void>;
 }
 
-type FingerprintList = 'never-save';
+type FingerprintList = 'never-save' | 'claude-agreed';
 const REPORT_LABELS: readonly FilterReportLabel[] = ['learning', 'not-learning'];
 const FINGERPRINT = /^[0-9a-f]{64}$/;
 
@@ -243,6 +254,35 @@ export async function openLocalOnlyStore(): Promise<LocalOnlyStore> {
         };
       });
     },
+
+    async isClaudeAgreed(sha, since) {
+      assertFingerprint(sha);
+      const s = await salt(false);
+      if (s === null) return false;
+      const hash = await saltedHash(s, 'claude-agreed', sha);
+      const found = await transact<{ since?: unknown } | null>('never_save', 'readonly', (objects, answer) => {
+        const request = objects.get(hash);
+        request.onsuccess = () => {
+          const r = request.result as { list?: unknown; since?: unknown } | undefined;
+          answer(r?.list === 'claude-agreed' ? r : null);
+        };
+      });
+      if (found === null) return false;
+      if (found.since === since) return true;
+      await removeFromList('claude-agreed', sha); // kept for an earlier save of the same file: not this reading's
+      return false;
+    },
+
+    async addClaudeAgreed(sha, since) {
+      assertFingerprint(sha);
+      if (!Number.isFinite(since)) throw new TypeError('A reading’s creation time is a number.');
+      const hash = await saltedHash(await salt(true), 'claude-agreed', sha);
+      return await transact<void>('never_save', 'readwrite', (objects) => {
+        objects.put({ hash, list: 'claude-agreed', since });
+      });
+    },
+
+    removeClaudeAgreed: (sha) => removeFromList('claude-agreed', sha),
 
     async addFilterReport(sha, label) {
       assertFingerprint(sha);
