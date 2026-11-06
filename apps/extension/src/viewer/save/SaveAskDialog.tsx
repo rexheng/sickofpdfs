@@ -261,7 +261,6 @@ export function SaveAskDialog({ save }: SaveAskDialogProps) {
     const no = () => {
       if (!claudeNoteWaiting.active() || answered.current) return;
       answered.current = true;
-      hold.current = { ...hold.current, mode: 'show' };
       typedAhead.asking = false;
       void save.answerAsk(false).catch(() => {});
     };
@@ -287,7 +286,6 @@ export function SaveAskDialog({ save }: SaveAskDialogProps) {
         // No, quietly: nothing is kept (the note stays in this tab), and the thread will say why Claude does not answer.
         if (answered.current) return;
         answered.current = true;
-        hold.current = { ...hold.current, mode: 'show' };
         void save.answerAsk(false).catch(() => {});
         return;
       }
