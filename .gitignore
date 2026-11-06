@@ -28,3 +28,6 @@ apps/extension/public/THIRD_PARTY_NOTICES.txt
 apps/cloud/public/*
 !apps/cloud/public/.gitkeep
 test-results-upgrade/
+
+# test build zips made by pnpm test-build
+/sickofpdfs-test-build-*.zip
