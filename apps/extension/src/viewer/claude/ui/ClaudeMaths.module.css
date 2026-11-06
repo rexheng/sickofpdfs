@@ -1,0 +1,35 @@
+/*
+ * Maths in a reply. KaTeX draws at 1.21 em of the text around it, which towers over Docs' 14/20 body; a little over the
+ * body size reads as part of the sentence. A formula on its own line sits on a line of its own, left-aligned like the
+ * words, and scrolls sideways in the narrow card rather than spilling out of it.
+ */
+.inline :global(.katex) {
+  font-size: var(--sop-maths-size);
+}
+
+.display {
+  display: block;
+  margin-block: var(--space-2);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.display :global(.katex-display) {
+  margin: 0;
+  text-align: start;
+}
+
+.display :global(.katex) {
+  font-size: var(--sop-maths-size);
+  text-align: start;
+}
+
+.display[hidden],
+.inline[hidden] {
+  display: none;
+}
+
+/* A formula KaTeX could not read, or that is still loading: the text as the reply wrote it. */
+.raw {
+  font-family: var(--font-text);
+}

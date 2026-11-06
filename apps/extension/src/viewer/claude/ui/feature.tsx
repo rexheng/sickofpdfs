@@ -1,7 +1,7 @@
 // Claude in the thread as a viewer feature (plan §4 F): App.tsx mounts it with one line, registerViewerFeature(claudeUiFeature).
 //
 // For the open document it sets up:
-// - the chips' jumps (jump.ts): "p. 4" to the passage, "Fig. 3 · p. 5" to the figure;
+// - the chips' jumps (jump.ts): "Page 4" to the passage, "Figure 3 · Page 5" to the figure;
 // - the @Claude suggestion in every note and reply box, and the watch that asks Claude when such a note is sent;
 // - the confirm dialog the runner waits on (ClaudeConfirmDialog.tsx);
 // - the commands "Ask Claude", "Explain this figure" and "Ask Claude about the whole document", and the menu rows that
@@ -143,7 +143,7 @@ export function claudeFigureItems(c: FigureController, region: Extract<Region, {
   if (claudeUi.get() === null) return [];
   const off = !c.editable();
   return [
-    { kind: 'item', id: 'claude.ask', label: 'Ask Claude', icon: 'asterisk', disabled: off, onSelect: () => askOnRegion(c, region) },
+    { kind: 'item', id: 'claude.ask', label: 'Ask Claude', icon: 'auto_awesome', disabled: off, onSelect: () => askOnRegion(c, region) },
     { kind: 'item', id: 'claude.explainFigure', label: 'Explain this figure', icon: 'insert_chart', disabled: off, onSelect: () => explainRegion(c.host, c, region) },
   ];
 }

@@ -1,5 +1,6 @@
-// "p. 4" in a reply from Claude (plan §4 F): a small tonal pill on the text line that jumps to the cited passage and
-// flashes it. Hovering it shows the cited words, so the owner can check a claim without leaving the thread.
+// "Page 4" in a reply from Claude (plan §4 F; R74: "Page N" everywhere): a small tonal pill on the text line that jumps
+// to the cited passage and flashes it. Hovering it shows the cited words, so the owner can check a claim without leaving
+// the thread. The stored body writes "[p. 4](cite:n)" (slice A); the chip always says "Page".
 //
 // The pill itself (ReplyChip) is shared by the page, web source and figure chips: Drive's chip shape at the size of a
 // line of comment text (20 px, 12/16 500), one colour per kind.
@@ -55,6 +56,13 @@ export function quoteTip(quote: string): string | null {
   return `“${q.length > 140 ? `${q.slice(0, 139).trimEnd()}…` : q}”`;
 }
 
+/** "Page 4" for the chip: from the citation's page, else from the body's link text ("p. 4" becomes "Page 4"). */
+export function pageChipLabel(label: string, citation: PageCitation | null): string {
+  if (citation !== null) return `Page ${citation.pageIndex + 1}`;
+  const n = /^\s*p(?:age|\.)?\s*(\d+)\s*$/iu.exec(label)?.[1];
+  return n === undefined ? label : `Page ${n}`;
+}
+
 export interface CitationChipProps {
   /** The link text from the body ("p. 4"). */
   label: string;
@@ -67,8 +75,8 @@ export function CitationChip({ label, citation }: CitationChipProps) {
   return (
     <ReplyChip
       kind="page"
-      label={label}
-      name={page === null ? label : `Go to page ${page}`}
+      label={pageChipLabel(label, citation)}
+      name={page === null ? pageChipLabel(label, null) : `Go to page ${page}`}
       tooltip={citation === null ? null : quoteTip(citation.quote)}
       missing={citation === null}
       onPress={() => {

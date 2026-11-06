@@ -1,11 +1,13 @@
 // The figure toolbar (plan §4 F; spec "You click a chart. It gets a blue outline."): while a figure is selected, a small
-// pill above its top-right corner offers Ask Claude and Explain this figure, so they are one click away and not only in
-// the right-click menu. It is the viewer toolbar's own pill (#333537, 14/20 500 words in #c4c7c5), smaller.
+// pill at its top-right corner offers Ask Claude and Explain this figure, so they are one click away and not only in
+// the right-click menu. It is the viewer toolbar's own pill (#333537, 14/20 500 words in #c4c7c5), smaller. It never
+// covers the caption: it sits above the figure when the caption is below, and inside its top edge otherwise.
 //
 // It sits in the page list's overlay, so it scrolls with the page and takes its clicks above the text layer. It shows
 // only while the Claude host is there and notes can be written.
 import { TextButton } from '@sop/ui';
-import { normToCss, type PageBox, useViewerState } from '@sop/viewer';
+import type { PageFigure } from '@sop/core';
+import { normToCss, type PageBox, type PageSize, pdfRectToNorm, useViewerState } from '@sop/viewer';
 import { type RefObject, useEffect, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import type { PageListApi } from '@sop/viewer/react';
@@ -35,12 +37,29 @@ function useOverlay(pages: RefObject<PageListApi | null>): HTMLElement | null {
   return el;
 }
 
-/** The top-right corner of a 0–1 box of a page, in the page list's content px (the page may be turned). */
-function topRight(rect: readonly [number, number, number, number], box: PageBox): { x: number; y: number } {
+/** A 0–1 box of a page, in the page list's content px (the page may be turned). */
+function inContent(rect: readonly [number, number, number, number], box: PageBox): { x: number; y: number; width: number; height: number } {
   const sideways = box.rotation % 180 !== 0;
   const unrotated = { width: sideways ? box.height : box.width, height: sideways ? box.width : box.height };
   const b = normToCss([rect[0], rect[1], rect[2], rect[3]], unrotated, 1, box.rotation);
-  return { x: box.left + b.x + b.width, y: box.top + b.y };
+  return { x: box.left + b.x, y: box.top + b.y, width: b.width, height: b.height };
+}
+
+/** The pill is about 40 px tall: a figure shorter than this many of it is too small to hold it inside its top edge. */
+const INSIDE_MIN_PX = 120;
+
+/**
+ * Where the pill goes, so it never covers the caption (controller ruling): above the figure when its caption is below it;
+ * inside the figure's top edge when the caption is above it, or when no caption was found (it could be anywhere); under
+ * the figure when the figure is too small to hold the pill inside.
+ */
+export function toolbarPlace(figure: Pick<PageFigure, 'captionRect'>, rect: readonly [number, number, number, number], page: PageSize, heightPx: number): 'above' | 'inside' | 'below' {
+  if (figure.captionRect !== null) {
+    const cap = pdfRectToNorm(figure.captionRect, page);
+    const captionAbove = (cap[1] + cap[3]) / 2 < (rect[1] + rect[3]) / 2;
+    if (!captionAbove) return 'above';
+  }
+  return heightPx >= INSIDE_MIN_PX ? 'inside' : 'below';
 }
 
 export function FigureToolbar({ controller, onAsk, onExplain }: FigureToolbarProps) {
@@ -52,11 +71,15 @@ export function FigureToolbar({ controller, onAsk, onExplain }: FigureToolbarPro
   void layout;
   if (selected === null || overlay === null || !controller.editable()) return null;
   const box = host.pageList.current?.pageBoxes()[selected.page];
-  if (box === undefined) return null;
-  const at = topRight(selected.rect, box);
+  const size = host.pages[selected.page];
+  if (box === undefined || size === undefined) return null;
+  const fig = inContent(selected.rect, box);
+  const place = toolbarPlace(selected.figure, selected.rect, size, fig.height);
+  const right = fig.x + fig.width;
+  const top = place === 'below' ? fig.y + fig.height : fig.y;
   return createPortal(
-    <div className={styles.bar} data-theme="dark" role="toolbar" aria-label="Figure" style={{ left: at.x, top: at.y }}>
-      <TextButton label="Ask Claude" icon="asterisk" className={styles.button} onMouseDown={(e) => e.preventDefault()} onClick={onAsk} />
+    <div className={styles.bar} data-theme="dark" data-place={place} role="toolbar" aria-label="Figure" style={{ left: right, top }}>
+      <TextButton label="Ask Claude" icon="auto_awesome" className={styles.button} onMouseDown={(e) => e.preventDefault()} onClick={onAsk} />
       <TextButton label="Explain" icon="insert_chart" className={styles.button} onMouseDown={(e) => e.preventDefault()} onClick={onExplain} title="Explain this figure" />
     </div>,
     overlay,

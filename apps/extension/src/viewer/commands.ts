@@ -218,9 +218,9 @@ export const SPECS: [ViewerCommandId, CommandSpec][] = [
   ['tools.area', { label: 'Area note', icon: 'select', keys: [] }],
   // Phase 4: a note with "@Claude " ready (the selection or the selected figure); a figure note sent with the fixed question;
   // a note on the whole document with "@Claude ", whose cost is shown first.
-  ['claude.ask', { label: 'Ask Claude', icon: 'asterisk', keys: [] }],
+  ['claude.ask', { label: 'Ask Claude', icon: 'auto_awesome', keys: [] }],
   ['claude.explainFigure', { label: 'Explain this figure', icon: 'insert_chart', keys: [] }],
-  ['claude.wholeDocument', { label: 'Ask Claude about the whole document', icon: 'asterisk', keys: [] }],
+  ['claude.wholeDocument', { label: 'Ask Claude about the whole document', icon: 'auto_awesome', keys: [] }],
 ];
 
 /** What a command does in this tab. Features (wire.ts) hand these in for the commands they own. */

@@ -45,4 +45,5 @@
   --sop-chip-icon: 14px;          /* the glyph before a web source's site or a figure's label, in a 20 px chip */
   --sop-mention-w: 240px;         /* the @Claude suggestion under the note box: at least this wide (it takes the box's width) */
   --sop-mention-row-h: 48px;      /* one suggestion: a 32 px avatar, the name and one quiet line */
+  --sop-maths-size: 1.08em;       /* KaTeX's maths beside 14/20 body text (its own default is 1.21 em) */
 }

@@ -4,17 +4,18 @@
 // What it shows, by the reply row's `meta.status` (contract §3) and, in the tab that runs it, the live stream:
 // - pending: "Reading 4 passages…" with three dots, and Stop.
 // - streaming: the words as they come, with a caret, then the status line ("Searching the web for …") and Stop.
-// - done: the answer with its chips: "p. 4" (jumps and flashes), the site of a web source (opens a new tab), and
-//   "Fig. 3 · p. 5" for a figure (jumps and selects it). Under it Think harder, and on hover the model and the cost.
+// - done: the answer with its chips: "Page 4" (jumps and flashes), the site of a web source (opens a new tab), and
+//   "Figure 3 · Page 5" for a figure (jumps and selects it). Under it Think harder, and on hover the model and the cost.
 // - error: the text so far stays, then one plain sentence and the buttons that help: Try again, Open Settings.
 //
 // The body is Claude's Markdown, drawn as React elements only. Links are limited to `cite:`, `web:` and https (plan
 // §4 F): any other address keeps its words and loses its link. Repeated chips in a row are drawn once (contracts §6
-// leaves merging to the UI); the stored body keeps every one.
+// leaves merging to the UI); the stored body keeps every one. Maths (`$…$`, `$$…$$`) is drawn with KaTeX (ClaudeMaths.tsx).
 import type { ClaudeReplyMeta, CommentRow, ModelRole, PageCitation, ReplyError, ThreadRow, WebSource } from '@sop/core';
 import { type Block, type CommentView, type Inline, parseMarkdown, TextButton } from '@sop/ui';
 import { Fragment, type ReactNode, useMemo } from 'react';
 import { CitationChip } from './CitationChip';
+import { extractMaths, MathView, type MathSpan, splitMaths } from './ClaudeMaths';
 import styles from './ClaudeReplyView.module.css';
 import { FigureChip } from './FigureChip';
 import { claudeUi, type ClaudeUiHost, formatUsd, openClaudeSettings, useClaudeUi } from './host';
@@ -173,11 +174,17 @@ export function costLine(meta: Meta, host: Pick<ClaudeUiHost, 'model'> | null, r
 interface BodyContext {
   citations: ReadonlyMap<number, PageCitation>;
   sources: ReadonlyMap<number, WebSource>;
+  /** The reply's formulas, by the number their placeholder carries (ClaudeMaths.tsx). */
+  maths: readonly MathSpan[];
 }
 
 function ClaudeMarkdown({ source, citations, sources, streaming }: { source: string; citations: BodyContext['citations']; sources: BodyContext['sources']; streaming: boolean }) {
-  const blocks = useMemo(() => parseMarkdown(source).map(mergeChips), [source]);
-  const ctx: BodyContext = { citations, sources };
+  // The maths comes out first, so Markdown never reads a formula's `_`, `*` or `\{` as its own.
+  const { blocks, maths } = useMemo(() => {
+    const m = extractMaths(source);
+    return { blocks: parseMarkdown(m.text).map(mergeChips), maths: m.maths };
+  }, [source]);
+  const ctx: BodyContext = { citations, sources, maths };
   const tail = streaming ? <span className={styles.caret} aria-hidden="true" /> : undefined;
   return (
     <div className={styles.body} aria-busy={streaming ? 'true' : undefined}>
@@ -267,6 +274,40 @@ function renderBlock(block: Block, key: number, ctx: BodyContext, tail: ReactNod
   }
 }
 
+/**
+ * Words with the formulas put back in place of their placeholders. Punctuation right after an inline formula stays on
+ * its line ("…= 1]," never wraps the comma alone onto the next line).
+ */
+function withMaths(text: string, ctx: BodyContext): ReactNode {
+  if (ctx.maths.length === 0) return text;
+  const parts = splitMaths(text);
+  const out: ReactNode[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (typeof part === 'string') {
+      out.push(<Fragment key={i}>{part}</Fragment>);
+      continue;
+    }
+    const m = ctx.maths[part];
+    if (m === undefined) continue;
+    const after = parts[i + 1];
+    // Only a short formula: a long one must still be able to break across lines.
+    const stick = !m.display && m.tex.length <= 40 && typeof after === 'string' ? (/^[,.;:!?)\]]+/u.exec(after)?.[0] ?? '') : '';
+    out.push(
+      stick === '' ? (
+        <MathView key={i} tex={m.tex} display={m.display} />
+      ) : (
+        <span key={i} className={styles.nowrap}>
+          <MathView tex={m.tex} display={false} />
+          {stick}
+        </span>
+      ),
+    );
+    if (stick !== '') parts[i + 1] = (after as string).slice(stick.length);
+  }
+  return out;
+}
+
 /** Only https links keep their target (plan §4 F); anything else is drawn as its words. */
 const HTTPS = /^https:\/\//iu;
 
@@ -274,7 +315,7 @@ function renderInline(nodes: Inline[], ctx: BodyContext): ReactNode[] {
   return nodes.map((node, i) => {
     switch (node.t) {
       case 'text':
-        return <Fragment key={i}>{node.v}</Fragment>;
+        return <Fragment key={i}>{withMaths(node.v, ctx)}</Fragment>;
       case 'br':
         return <br key={i} />;
       case 'strong':

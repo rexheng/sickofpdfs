@@ -69,6 +69,11 @@
   white-space: pre-wrap;
 }
 
+/* An inline formula and the punctuation after it, kept on one line. */
+.nowrap {
+  white-space: nowrap;
+}
+
 .link {
   color: var(--gm3-sys-color-primary);
   text-decoration: underline;

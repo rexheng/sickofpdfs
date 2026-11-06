@@ -1,4 +1,4 @@
-// Where Claude's chips go (plan §4 F): "p. 4" jumps to the cited passage and flashes it; "Fig. 3 · p. 5" jumps to the
+// Where Claude's chips go (plan §4 F): "Page 4" jumps to the cited passage and flashes it; "Figure 3 · Page 5" jumps to the
 // figure and selects it; a web source opens in a new tab, and only an https address does.
 //
 // Jumps go through the reader's jump history (Task 24), so Back returns to where they were reading, as a link in the PDF

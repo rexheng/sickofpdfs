@@ -67,10 +67,13 @@ const BUILD_ONLY = new Set(['@wxt-dev/module-react']);
  *  - wxt is the build tool. Its small runtime helpers are bundled into the extension, and they use these two.
  *  - onnxruntime-web: ort/ort.wasm.min.mjs is a prebuilt file with onnxruntime-common already inside it. The package's
  *    other dependencies (protobufjs, flatbuffers, long, platform, guid-typescript) are not in that file and not shipped.
+ *  - katex (Phase 4, maths in Claude's replies): the viewer bundles dist/katex.mjs and its CSS and fonts. Its one
+ *    dependency, commander, is for the katex command line only and is not shipped.
  */
 const SHIPPED_DEPENDENCIES = {
   wxt: ['@wxt-dev/storage', '@wxt-dev/browser'],
   'onnxruntime-web': ['onnxruntime-common'],
+  katex: [],
 };
 
 /** What a few packages are for, in plain words. Any other package is listed without this line. */

@@ -1,17 +1,13 @@
-// "Fig. 3 · p. 5" under a reply about a figure (plan §4 F). Claude can't cite an image, so a figure answer always carries
-// this chip (contracts §6): pressing it goes to the figure and selects it, with its blue outline, as the Figures tab does.
+// "Figure 3 · Page 5" under a reply about a figure (plan §4 F; R74, as the figure's card says it). Claude can't cite an
+// image, so a figure answer always carries this chip (contracts §6): pressing it goes to the figure and selects it, with
+// its blue outline, as the Figures tab does.
 import { ReplyChip } from './CitationChip';
 import { claudeJump } from './jump';
 
-/** "Fig. 3" from "Figure 3", "Fig. 2a" from "Fig 2a"; any other label ("Table 2", "Scheme 1") stays as it is. */
-export function shortFigureLabel(label: string): string {
-  const m = /^\s*fig(?:ure|\.)?\s*(\d.*|[ivxlc]+\b.*)$/iu.exec(label);
-  return m ? `Fig. ${m[1]?.trim() ?? ''}` : label.trim();
-}
-
-/** The chip's words: "Fig. 3 · p. 5", or "Fig. 3" while its page is not known. */
+/** The chip's words, as the figure's card says them (R74): "Figure 1 · Page 29", or "Figure 1" while its page is not known. */
 export function figureChipLabel(label: string, pageIndex: number | null): string {
-  return pageIndex === null ? shortFigureLabel(label) : `${shortFigureLabel(label)} · p. ${pageIndex + 1}`;
+  const name = label.trim();
+  return pageIndex === null ? name : `${name} · Page ${pageIndex + 1}`;
 }
 
 export interface FigureChipProps {

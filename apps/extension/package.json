@@ -21,6 +21,7 @@
     "@sqlite.org/sqlite-wasm": "3.54.1-build1",
     "@wxt-dev/module-react": "1.2.2",
     "client-zip": "2.5.1",
+    "katex": "0.19.0",
     "onnxruntime-web": "1.31.1",
     "pdf-lib": "1.17.1",
     "react": "19.3.1",
