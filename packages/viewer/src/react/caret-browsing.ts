@@ -606,12 +606,14 @@ export class CaretBrowsing {
     const scale = cssPerPoint(m.box, size);
     const a = pageToDisplayed(s.x0, s.y0, m.box.rotation, size.width, size.height);
     const b = pageToDisplayed(s.x1, s.y1, m.box.rotation, size.width, size.height);
-    const x0 = a.x * scale;
-    const y0 = a.y * scale;
+    let x0 = a.x * scale;
+    let y0 = a.y * scale;
     const dx = (b.x - a.x) * scale;
     const dy = (b.y - a.y) * scale;
     // A bar from (x0, y0), its length along its own y axis, turned to point at the other end; centred on the line.
     const angle = (Math.atan2(dy, dx) * 180) / Math.PI - 90;
+    // An upright or sideways bar's sides go on whole device pixels, so it is a solid 2 px bar, not a smudge over three.
+    [x0, y0] = snapToDevice(el, x0, y0, angle);
     el.style.height = `${Math.hypot(dx, dy).toFixed(2)}px`;
     el.style.transform = `translate(${x0.toFixed(2)}px, ${y0.toFixed(2)}px) rotate(${angle.toFixed(3)}deg) translateX(-50%)`;
     el.hidden = false;
@@ -704,4 +706,22 @@ export class CaretBrowsing {
       () => {},
     );
   }
+}
+
+/**
+ * The caret's start (x0, y0), in its page layer's CSS px, moved by under a device pixel so that a bar turned by `angle`
+ * (a multiple of 90°: upright or sideways text) and centred on it (translateX(-50%)) has its sides on whole device
+ * pixels. Any other angle is left as it is.
+ */
+function snapToDevice(el: HTMLElement, x0: number, y0: number, angle: number): [number, number] {
+  const turn = ((Math.round(angle) % 360) + 360) % 360;
+  if (Math.abs(angle - Math.round(angle)) > 0.01 || turn % 90 !== 0) return [x0, y0];
+  const layer = el.offsetParent ?? el.parentElement;
+  if (!layer) return [x0, y0];
+  const dpr = globalThis.devicePixelRatio || 1;
+  const at = layer.getBoundingClientRect();
+  const half = el.offsetWidth / 2;
+  // The side the bar's width lies across: x for an upright bar, y for a sideways one.
+  if (turn % 180 === 0) return [Math.round((at.left + x0 - half) * dpr) / dpr - at.left + half, y0];
+  return [x0, Math.round((at.top + y0 - half) * dpr) / dpr - at.top + half];
 }
