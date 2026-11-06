@@ -71,9 +71,11 @@ export function confirmWords(r: ClaudeConfirmRequest): { title: string; lines: s
           `${r.inLibrary === true ? 'You haven’t chosen to save this PDF yourself.' : 'This PDF is not in your library.'} ${
             what === 'your question' ? 'To answer, Claude needs your question.' : `To answer, Claude needs ${what} from it.`
           }`,
-          // The document map always goes too (contracts §6), and so does the thread (R105b): say so, so the owner knows exactly what
-          // leaves.
-          ['They go to Anthropic, who run Claude, with your question and the PDF’s title, abstract and headings.', earlierWords(r.earlier), 'Nothing else is sent.'].filter(Boolean).join(' '),
+          // The document map always goes too (contracts §6), and so does the thread (R105b), on a line of its own: say so, so the
+          // owner knows exactly what leaves.
+          ...(earlierWords(r.earlier) === ''
+            ? ['They go to Anthropic, who run Claude, with your question and the PDF’s title, abstract and headings. Nothing else is sent.']
+            : ['They go to Anthropic, who run Claude, with your question and the PDF’s title, abstract and headings.', `${earlierWords(r.earlier)} Nothing else is sent.`]),
           `It costs ${cost}${withModel}.`,
         ],
         send: 'Send',
