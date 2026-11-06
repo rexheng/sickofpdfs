@@ -38,7 +38,7 @@ export async function claudeRows(page: Page): Promise<{ id: string; status: stri
   return hooks(page).eval((h) =>
     h.annotations!.state().comments.filter((c) => c.author === 'claude').map((c) => {
       const m = c.meta as { status?: string; role?: string | null; error?: { message: string } | null };
-      return { id: c.id as string, status: m.status ?? '', role: m.role ?? null, body: c.body, error: m.error?.message ?? null, draftOfTab: c.draftOfTab as string | null };
+      return { id: c.id, status: m.status ?? '', role: m.role ?? null, body: c.body, error: m.error?.message ?? null, draftOfTab: c.draftOfTab };
     }),
   );
 }
@@ -75,7 +75,7 @@ export function answerThenTool(base: ScenarioStep, tool: { name: string; input: 
     { data: { type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: JSON.stringify(tool.input) } } },
     { data: { type: 'content_block_stop', index } },
   );
-  const delta = events[events.findIndex((e) => e.data.type === 'message_delta')]!;
+  const delta = events[events.findIndex((e) => e.data.type === 'message_delta')];
   (delta.data.delta as Record<string, unknown>).stop_reason = 'tool_use';
   return { events };
 }

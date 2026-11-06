@@ -36,7 +36,7 @@ import { libraryStore } from '../use-store';
 import { createClaudeClient, hasKey } from './client';
 import { createContextBuilder, createWorkerEmbedder, type ContextBuilder } from './context';
 import { CUT_SHORT_MESSAGE, NOT_READ_MESSAGE, PRIVATE_HINT, PRIVATE_MESSAGES, type PrivateReason } from './errors';
-import { createThreadHistory, mentionsClaude } from './history';
+import { createThreadHistory, mentionsClaude, questionText } from './history';
 import { createReplyRows, isClaudeMeta, type ReplyRows } from './reply-rows';
 import type { ClaudeEntryHost } from './entry-api';
 import { createSpend } from './spend';
@@ -390,7 +390,7 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
    * here (a note, a reply, the menus, Explain this figure, the whole document, Think harder, Try again), so every one gets the same
    * privacy checks; a refusal is the turn's own row in the thread.
    */
-  function start(o: { threadId: ThreadId; questionId: CommentId; replyId: CommentId; role: ModelRole; preset?: 'explain-figure' | 'whole-document'; skip?: CommentId[]; moreRoom?: boolean }): void {
+  function start(o: { threadId: ThreadId; questionId: CommentId; replyId: CommentId; role: ModelRole; preset?: 'explain-figure' | 'whole-document'; skip?: CommentId[]; moreRoom?: boolean; estimateUsd?: number }): void {
     const prev = queues.get(o.threadId) ?? Promise.resolve();
     const job = prev.then(async () => {
       if (disposed) return;
@@ -437,9 +437,11 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
         focus: anchorOf(thread),
         saved,
         askFirst,
+        inLibrary: s.inLibrary,
         ...(o.preset ? { preset: o.preset } : {}),
         ...(o.skip ? { skip: o.skip } : {}),
         ...(o.moreRoom ? { moreRoom: true } : {}),
+        ...(o.estimateUsd !== undefined ? { estimateUsd: o.estimateUsd } : {}),
       };
       try {
         const meta: ClaudeReplyMeta = await runner.run(req, () => undefined, abort.signal);
@@ -461,6 +463,19 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
       if (queues.get(o.threadId) === tail) queues.delete(o.threadId);
     });
   }
+
+  /**
+   * About what Think harder costs on this thread: the thread's last pack, with the Think harder model and the question's words.
+   * The button's tooltip shows it, and the Think harder turn asks first with this same amount (one estimate, TB6).
+   */
+  const thinkHarderEstimate = (threadId: ThreadId): number | null => {
+    const pack = packs.get(threadId) ?? null;
+    const model = settings?.models['think-harder'] ?? null;
+    if (!pack || !model) return null;
+    const words = questionText(lastQuestion(threadId)?.body ?? '');
+    const usd = estimate(pack, 'think-harder', model, { webSearch: settings?.webSearch === true && model.webSearchTool !== null, questionTokens: Math.ceil(words.length / 4) + 20 }).usd;
+    return Number.isFinite(usd) ? usd : null;
+  };
 
   /** The owner's latest sent note in the thread: the question. */
   const lastQuestion = (threadId: ThreadId): CommentRow | null =>
@@ -565,7 +580,9 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
       const question = meta?.questionId ?? lastQuestion(threadId)?.id ?? null;
       if (question === null) return;
       const preset = presets.get(replyId) ?? (meta?.scope === 'whole-document' ? 'whole-document' : undefined);
-      start({ threadId, questionId: question, replyId: newId<CommentId>(), role: 'think-harder', skip: [replyId], ...(preset ? { preset } : {}) });
+      // One cost for Think harder (TB6): the ask-first dialog says the same amount the button's tooltip said.
+      const usd = thinkHarderEstimate(threadId);
+      start({ threadId, questionId: question, replyId: newId<CommentId>(), role: 'think-harder', skip: [replyId], ...(preset ? { preset } : {}), ...(usd !== null ? { estimateUsd: usd } : {}) });
     },
 
     model(role) {
@@ -574,12 +591,7 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
       return m ? { displayName: m.displayName } : null;
     },
 
-    thinkHarderUsd(threadId) {
-      const pack = packs.get(threadId) ?? null;
-      const model = settings?.models['think-harder'] ?? null;
-      if (!pack || !model) return null;
-      return estimate(pack, 'think-harder', model, { webSearch: settings?.webSearch === true && model.webSearchTool !== null }).usd;
-    },
+    thinkHarderUsd: (threadId) => thinkHarderEstimate(threadId),
 
     privacy: () => privacyNow(storedDocumentId()).reason,
     privateHint: () => (privateNow() !== null ? PRIVATE_HINT : null),

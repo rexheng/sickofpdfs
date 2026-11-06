@@ -102,19 +102,3 @@ export function openClaudeSettings(): void {
   const url = chrome.runtime.getURL(CLAUDE_SETTINGS_PATH);
   void chrome.tabs.create({ url }).catch(() => window.open(url, '_blank', 'noopener'));
 }
-
-/**
- * About what something costs, in plain words: "0.07¢", "3¢", "31¢", "$1.20". Under a cent it keeps two figures, so a
- * Haiku question never reads "0¢". A cost that is not a number reads "an unknown amount".
- */
-export function formatUsd(usd: number): string {
-  if (!Number.isFinite(usd) || usd < 0) return 'an unknown amount';
-  const cents = usd * 100;
-  if (cents < 0.01) return 'under 0.01¢';
-  if (cents < 1) return `${trim(cents.toFixed(2))}¢`;
-  if (cents < 10) return `${trim(cents.toFixed(1))}¢`;
-  if (cents < 100) return `${Math.round(cents)}¢`;
-  return `$${usd.toFixed(2)}`;
-}
-
-const trim = (s: string): string => s.replace(/\.?0+$/u, '');

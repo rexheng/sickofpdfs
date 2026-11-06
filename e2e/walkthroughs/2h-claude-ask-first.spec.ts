@@ -67,8 +67,8 @@ test('R105: a note saves a "not sure" PDF, and the first @Claude question still 
   await repliesSettle(page);
   const first = messages(replay.requests());
   expect(first, 'one request, after Send').toHaveLength(1);
-  expect(first[0]!.toolNames, 'the first question offers no tools: only the passages the owner agreed to').toEqual([]);
-  expect(first[0]!.webSearch, 'and no web search').toBeNull();
+  expect(first[0].toolNames, 'the first question offers no tools: only the passages the owner agreed to').toEqual([]);
+  expect(first[0].webSearch, 'and no web search').toBeNull();
 
   // After one Send, a later question on this reading does not ask again.
   await cardWith(page, 'what does this sentence say?').click();
@@ -89,7 +89,7 @@ test('Security 1: a "not sure" PDF not in the library sends only the pack; the c
   await replay.attach(page);
   await setUpClaude(page);
   // Claude answers by asking for page 7 (a client tool), then answers from what it was given.
-  replay.use({ steps: [answerThenTool(scenario('ask-passage').steps![0]!, { name: 'get_pages', input: { pages: [7] } }), plainAnswer('The passages do not say more.')] });
+  replay.use({ steps: [answerThenTool(scenario('ask-passage').steps![0], { name: 'get_pages', input: { pages: [7] } }), plainAnswer('The passages do not say more.')] });
   await breakPageText(page, true); // the note's save fails: the PDF stays out of the library
 
   await selectPassage(page, CARD_PAPER, HARBOUR);

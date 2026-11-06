@@ -53,8 +53,15 @@ export type TurnRequest = ClaudeTurnRequest & {
   saved?: boolean;
   /** "Send … to Anthropic?" before anything is sent. Default: when `saved` is false. False once the owner said Send on this reading. */
   askFirst?: boolean;
+  /** The PDF is in the library (a note or a mark saved it), for the dialog's words. */
+  inLibrary?: boolean;
   /** Try again on an answer cut short by the length limit: twice the room. */
   moreRoom?: boolean;
+  /**
+   * The cost estimate the owner was already shown for this question (Think harder's tooltip). The checks and the ask-first dialog
+   * use it, so both say one amount. Without it, the pack's own estimate.
+   */
+  estimateUsd?: number;
 };
 
 /** The owner's Claude settings (contract §6 settings keys), as they are when the question is asked. */
@@ -74,6 +81,11 @@ export interface ConfirmRequest {
   pages?: number;
   model?: string | null;
   thresholdUsd?: number | null;
+  /**
+   * R105, the "unsaved" question: the PDF is in the library, but only a note or a mark saved it (not the owner's choice for Claude).
+   * The dialog must then not say "This PDF is not in your library".
+   */
+  inLibrary?: boolean;
 }
 
 /** What the tab's live view of a reply is told (slice F's `claudeLive`): the status line and the text between row writes. */
@@ -282,11 +294,12 @@ export function createTurnRunner(d: TurnDeps): ClaudeTurnRunner & TurnMemory {
 
       // 4. Cost: cap, "ask first", the whole document. One question at a time, in decide's order.
       const spent = (await d.spend.thisMonth()).usd;
+      const estimateUsd = req.estimateUsd !== undefined && Number.isFinite(req.estimateUsd) ? req.estimateUsd : pack.estimate.usd;
       const confirmed: Ask[] = [];
       for (;;) {
         if (removed()) return await withdraw();
         const verdict = decide({
-          estimateUsd: pack.estimate.usd, spentUsd: spent, capUsd: settings.capUsd, confirmOverUsd: settings.confirmOverUsd,
+          estimateUsd, spentUsd: spent, capUsd: settings.capUsd, confirmOverUsd: settings.confirmOverUsd,
           saved: !askFirst, scope, priceKnown, confirmed,
         });
         if (verdict === 'send') break;
@@ -296,6 +309,7 @@ export function createTurnRunner(d: TurnDeps): ClaudeTurnRunner & TurnMemory {
         const yes = await d.confirm({
           ask: verdict.ask, usd: verdict.usd, passages: sent.passages, figures: sent.figures.length, model: model.displayName,
           thresholdUsd: settings.confirmOverUsd, ...(sent.pages !== null ? { pages: sent.pages } : {}),
+          ...(verdict.ask === 'unsaved' && req.inLibrary === true ? { inLibrary: true } : {}),
         });
         if (!yes) return await notSent({ figureLabels });
         if (verdict.ask === 'unsaved') d.agreed?.();
