@@ -17,6 +17,19 @@ const LOCAL_ONLY_SYNTAX = [
   { selector: "TSImportType[argument.literal.value=/local-only/]", message: LOCAL_ONLY_MESSAGE },
 ];
 
+// Phase 4 (plan §3): only the viewer's Claude client talks to Anthropic. Every other file is barred from the SDK, so the key is
+// read in one place and every request goes through one door (viewer/claude/client.ts). These entries are added to the
+// local-only ones in each block below, because a later block's `no-restricted-imports` replaces an earlier one's (carried
+// requirement): dropping LOCAL_ONLY_IMPORT_PATTERN or LOCAL_ONLY_SYNTAX here would silently open the secrets boundary.
+const SDK_MESSAGE = 'Only apps/extension/src/viewer/claude/client.ts may import the Anthropic SDK (plan §3).';
+const SDK_IMPORT_PATTERN = { group: ['@anthropic-ai/sdk', '@anthropic-ai/sdk/**'], message: SDK_MESSAGE };
+const SDK_SYNTAX = [
+  { selector: "ImportExpression[source.type='Literal'][source.value=/^@anthropic-ai\\/sdk/]", message: SDK_MESSAGE },
+  { selector: "CallExpression[callee.name='require'][arguments.0.value=/^@anthropic-ai\\/sdk/]", message: SDK_MESSAGE },
+  { selector: "TSImportType[argument.literal.value=/^@anthropic-ai\\/sdk/]", message: SDK_MESSAGE },
+];
+const SDK_CLIENT = 'apps/extension/src/viewer/claude/client.ts';
+
 export default defineConfig(
   globalIgnores([
     '**/dist/**',
@@ -96,9 +109,9 @@ export default defineConfig(
   {
     files: ['apps/extension/src/**/*.{ts,tsx,js,mjs}', 'packages/**/*.{ts,tsx,js,mjs}'],
     rules: {
-      'no-restricted-imports': ['error', { patterns: [LOCAL_ONLY_IMPORT_PATTERN] }],
+      'no-restricted-imports': ['error', { patterns: [LOCAL_ONLY_IMPORT_PATTERN, SDK_IMPORT_PATTERN] }],
       // import(), require() and import('...') in a type are not covered by no-restricted-imports.
-      'no-restricted-syntax': ['error', ...LOCAL_ONLY_SYNTAX],
+      'no-restricted-syntax': ['error', ...LOCAL_ONLY_SYNTAX, ...SDK_SYNTAX],
     },
   },
   {
@@ -110,6 +123,12 @@ export default defineConfig(
       'apps/extension/src/library/settings/**',
       'apps/extension/src/claude-settings/**',
     ],
+    // The secrets store is allowed here; the SDK still is not (only the client below may import it).
+    rules: { 'no-restricted-imports': ['error', { patterns: [SDK_IMPORT_PATTERN] }], 'no-restricted-syntax': ['error', ...SDK_SYNTAX] },
+  },
+  // The one door to Anthropic: it reads the key (getSecret) and imports the SDK.
+  {
+    files: [SDK_CLIENT],
     rules: { 'no-restricted-imports': 'off', 'no-restricted-syntax': 'off' },
   },
   // The backup (Phase 3, S13) never reaches the secrets store: no backup file may hold the key. Its folder is barred by the default
@@ -118,8 +137,8 @@ export default defineConfig(
   {
     files: ['apps/extension/src/backup/**', 'apps/extension/src/store/backup-api.ts', 'apps/extension/src/library/settings/{Backup*,Restore*,use-backup}.{ts,tsx}', 'apps/extension/src/store/restore-api.ts'],
     rules: {
-      'no-restricted-imports': ['error', { patterns: [LOCAL_ONLY_IMPORT_PATTERN] }],
-      'no-restricted-syntax': ['error', ...LOCAL_ONLY_SYNTAX],
+      'no-restricted-imports': ['error', { patterns: [LOCAL_ONLY_IMPORT_PATTERN, SDK_IMPORT_PATTERN] }],
+      'no-restricted-syntax': ['error', ...LOCAL_ONLY_SYNTAX, ...SDK_SYNTAX],
     },
   },
 

@@ -7,6 +7,7 @@ import type { CaretPos, CharRange, PageBox, PagePoint, PdfBackend, ViewerSnapsho
 import type { BlobStore } from '../store/blob-store';
 import type { StoreClient } from '../store/client';
 import type { AnnotationSession } from './annotations/session';
+import type { ClaudeEntryHost } from './claude/entry-api';
 import type { OpenedDocument } from './open-document';
 
 /** Where opening the PDF stands. A password prompt is still `loading`. */
@@ -55,6 +56,8 @@ export interface ViewerRuntime {
    * there are no notes, and while no document is open.
    */
   annotations: AnnotationSession | null;
+  /** Phase 4 (plan §8 A3): how @Claude is asked in this tab, while a PDF with notes is open; null otherwise. */
+  claude: ClaudeEntryHost | null;
 }
 
 /** The save controller as tests (and Phase 2's first mark) drive it. */

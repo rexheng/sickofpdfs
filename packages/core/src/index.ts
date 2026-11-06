@@ -84,5 +84,6 @@ export type { PassageRetriever, PassageSource, FocusSource, RetrieverOptions, Pa
 export { buildDocumentMap, documentMapTokens, MAP_MAX_TOKENS } from './claude/doc-map';
 export type { MapSource, MapFigure, OutlineEntry, SizedLine } from './claude/doc-map';
 export { inMemoryRankPages } from './claude/rank';
+export { passageSpans } from './claude/paragraphs';
 export { packWholeDocument, wholeDocumentTokens } from './claude/whole-document';
 export type { WholeDocumentPack, WholeDocumentSource } from './claude/whole-document';

@@ -802,7 +802,8 @@ export function createDraftKeeper(d: {
         const stored = typeof store.listDraftThreads === 'function' ? await store.listDraftThreads(documentId, tabId) : [];
         for (const t of stored) if (!threads.has(t.id)) threads.set(t.id, t);
         for (const r of rows) {
-          if (entries.has(r.id) || r.draftOfTab === null) continue;
+          // Phase 4: a reply Claude was writing is not a note of the owner's. Claude's turn runner takes it back (reply-rows.ts).
+          if (entries.has(r.id) || r.draftOfTab === null || r.author === 'claude') continue;
           entries.set(r.id, { ...newSlot(), confirmed: true, row: r as Draft, thread: threads.get(r.threadId), threadSaved: true });
         }
 

@@ -130,7 +130,7 @@ export interface ConflictCopyMeta { kind: 'conflict-copy'; v: 1; of: CommentId; 
 ```
 
 - A thread is an ordered list of `CommentRow`s (by `createdAt`). The first is the root, and the rest are replies from the owner or from Claude. There are no nested replies.
-- A reply body cites inline with Markdown links: `[p. 4](cite:1)` points at `citations[n = 1]`, and `[source](web:2)` points at `webSources[n = 2]`. The viewer turns them into chips that jump to the passage. Export rewrites them (§9).
+- A reply body cites inline with Markdown links: `[Page 4](cite:1)` points at `citations[n = 1]` (R74, 6 Nov: "Page N" everywhere; replies stored before then say `[p. 4](cite:1)`, and readers take both), and `[source](web:2)` points at `webSources[n = 2]`. The viewer turns them into chips that jump to the passage. Export rewrites them (§9).
 - **A Claude reply's row lifecycle.** `draftOfTab` means "not final yet, owned by this tab". It covers a note being typed and a Claude reply being written.
   1. The tab creates the reply row first: `author 'claude'`, empty body, `draftOfTab = this tab`, status `pending`.
   2. Streamed text is written to the row at most every 500 ms, with status `streaming`.
@@ -230,7 +230,7 @@ CREATE INDEX comment_edits_owner ON comment_edits(document_id, draft_of_tab);
 ```
 
 - **Comment text in search.** v1's `comments_fts` (`comment_id`, `document_id`, `body`) already covers owner notes and Claude replies, including figure explanations. v2 only fixes which rows are indexed. Figure captions are page text, so `page_text_fts` covers them.
-- **The version ladder.** It is reserved now, so parallel plans never collide. Phases 4 and 6 change no local schema.
+- **The version ladder.** It is reserved now, so parallel plans never collide. Phase 6 changes no local schema; Phase 4 took v6 for @Claude's passage vectors (6 Nov).
 
 | `user_version` | Owner | Adds |
 | --- | --- | --- |
@@ -239,11 +239,13 @@ CREATE INDEX comment_edits_owner ON comment_edits(document_id, draft_of_tab);
 | 3 | Phase 3 | `documents_fts` skips trashed documents (trigger rewrite and rebuild); index `history(last_opened)` |
 | 4 | Phase 3 (backup, N5, 2 Nov) | `forgotten(hash TEXT PRIMARY KEY, forgotten_at INTEGER NOT NULL)` and `local_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)`, both `WITHOUT ROWID`, `IF NOT EXISTS` (a v3 database may already have them). Local only (R88) |
 | 5 | Tags and the auto categoriser (R92, 2 Nov) | `tags`, `reading_tags`, `auto_tag_removed` (synced: outbox triggers, in the backup, `SYNCED_TABLES`) and `embeddings` (local only: never in a backup, an export or the outbox). See "Tags and the categoriser" below |
-| 6 | Phase 5 | `sync_state(key TEXT PRIMARY KEY, value TEXT)`: cursor, device registration. Local only |
-| 7 | Phase 7 | `page_ocr` (§9) |
-| 8 | Phase 8 | `pdf_import_refs(document_id, pdf_ref, row_table, row_id, PRIMARY KEY (document_id, pdf_ref))` |
+| 6 | Phase 4 (slice D, 6 Nov) | `passage_vectors(document_id, text_hash, model, dim, vector, created_at, PRIMARY KEY (document_id, text_hash)) WITHOUT ROWID`: @Claude's paragraph vectors of a saved reading (the SHA-256 of each window's text, never the text). Local only: no outbox triggers, not a dump table. Cascades from `documents`, so Forget, the Trash purge and an Undo of a save remove it |
+| 7 | Phase 5 | `sync_state(key TEXT PRIMARY KEY, value TEXT)`: cursor, device registration. Local only |
+| 8 | Phase 7 | `page_ocr` (§9) |
+| 9 | Phase 8 | `pdf_import_refs(document_id, pdf_ref, row_table, row_id, PRIMARY KEY (document_id, pdf_ref))` |
 
   The backup re-check took v4 (ruling N5, 2 Nov) and R92's tags took v5 the same day, so the reserved steps after them moved up: Phase 5 is v6, Phase 7 v7, Phase 8 v8.
+  @Claude's passage vectors took v6 (Phase 4 slice D, 6 Nov), so the reserved steps moved up once more: Phase 5 is v7, Phase 7 v8, Phase 8 v9.
 
 - **Tags and the categoriser (v5, R92).**
   - `tags(id, name, kind 'topic'|'course'|'tag', topic_key, renamed, created_at, updated_at, deleted_at, rev, hlc)`. A live tag's name is unique, ignoring case. A tag the owner deletes keeps its row (`deleted_at`), so a deleted course or topic tag is not made again.
@@ -451,6 +453,14 @@ export interface ClaudeTurnRunner { run(req: ClaudeTurnRequest, onEvent: (e: Cla
   - The Anthropic client is created in the viewer tab, which also makes the calls, because the service worker would cut long streams.
   - The key never enters the store worker, the offscreen document, a message to the service worker, backups, logs, error text or test hooks.
   - The network gate allows `api.anthropic.com` only during a request.
+- **Added by slice D (6 Nov).**
+  - **Privacy, owner rule (p4r2 brief).** Nothing is sent for a PDF that is not saved (memory-only, or a save not landed in 30 s), for a reading saved without searchable text (D9, `indexText` false) or for a reading saved against "not learning" (R102, save reason `not-learning:saved-by-owner`). The entry sends nothing, writes no reply row, and says why in the viewer's note bar ("Claude only reads PDFs in your library…"). `decide` is therefore always called with `saved: true`; its `unsaved` ask is not reached. Incognito: nothing is sent either.
+  - **The reply row in the card.** `AnnotationSession.holdReply(row, { onRemove })` and `releaseReply(id)` (optional members): the session shows a Claude reply this tab holds (pending, streaming, an error kept local) in `state().comments`, and never writes it; a sent copy from the store wins. Deleting it in the card calls `onRemove`, and the runner stops and discards the draft. The draft keeper never adopts a draft whose `author` is `claude`.
+  - **`ClaudeReplyMeta` carries `modelName`** (the model's display name, from its `ModelChoice`) as an extra stored field, so the cost line keeps the name of the model that answered.
+  - **The key header.** The client sends the key once, in `x-api-key` (SDK 1.3.0 would send `Authorization: Bearer`; the client removes that header), the same header Settings' key check uses.
+  - **`passage_vectors` (local schema v6).** `StoreApi.getPassageVectors(documentId, model, hashes)` and `putPassageVectors(documentId, model, entries)`; hashes are the SHA-256 of a text window, never the text; only for live readings that are not D9 or R102. The viewer's `VectorCache` is `storeVectorCache` in `viewer/claude/context.ts`.
+  - **`ClaudeEntryHost`** (`viewer/claude/entry-api.ts`) is `ClaudeEntry` plus `stop`, `retry`, `thinkHarder`, `model`, `thinkHarderUsd`, `privacy` and `running`; the tab sets slice F's `claudeUi` host once at viewer start, which hands each call to the open PDF's entry.
+  - **e2e network gate.** `networkGate: 'claude'` allows requests to the replay double (`/claude/…` on the fixture server); in every other test such a request fails the gate.
 
 ## 7. Sync (Phase 5)
 
@@ -538,7 +548,7 @@ export interface OcrWord { text: string; box: PdfRect /* pt, unrotated page spac
 export interface OcrPageResult { documentId: DocumentId; pageIndex: number; engine: string; engineVersion: string; langs: string[];
   words: OcrWord[]; text: string /* words in reading order; offsets into it are this page's char indices */; createdAt: number }
 export function ocrToPageGlyphs(r: OcrPageResult): PageGlyphs;   // one Glyph per char, boxes split across each word, so the text layer needs no change
-// v7 table (was v5 before the 2 Nov ladder moves): page_ocr(document_id, page_index, engine, engine_version, words TEXT /* JSON OcrWord[] */, created_at, PRIMARY KEY (document_id, page_index))
+// v8 table (was v5 before the 2 Nov ladder moves, v7 before the 6 Nov one): page_ocr(document_id, page_index, engine, engine_version, words TEXT /* JSON OcrWord[] */, created_at, PRIMARY KEY (document_id, page_index))
 ```
 
 - **OCR results merge at `PageTextProvider`.**

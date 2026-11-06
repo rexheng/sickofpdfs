@@ -21,7 +21,7 @@ export interface SqlDb {
 }
 
 /** The newest schema this code knows. A database above this opens read-only. */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 const MARKS_AUTHOR = `ALTER TABLE marks ADD COLUMN author TEXT NOT NULL DEFAULT 'me' CHECK (author IN ('me','claude'))`;
 // Non-NULL = a new thread whose first comment is unsent. Never synced.

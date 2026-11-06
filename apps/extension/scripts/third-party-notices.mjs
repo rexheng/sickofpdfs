@@ -34,6 +34,7 @@
 //   libpng-LICENSE                                           https://github.com/pnggroup/libpng
 //   zlib-LICENSE                                             https://github.com/madler/zlib
 //   libjpeg-turbo-LICENSE.md, libjpeg-turbo-README.ijg       https://github.com/libjpeg-turbo/libjpeg-turbo
+//   standardwebhooks-LICENSE                                 https://github.com/standard-webhooks/standard-webhooks (libraries/LICENSE, MIT; saved 2026-11-06)
 //   openjpeg-LICENSE, lcms-LICENSE, agg-copying, bigint-LICENSE
 //                                                            https://github.com/chromium/pdfium (third_party/…, PDFium's own copies)
 //   emscripten-LICENSE                                       https://github.com/emscripten-core/emscripten
@@ -123,6 +124,8 @@ const FALLBACK_TEXTS = {
   'onnxruntime-web': ['onnxruntime-LICENSE'],
   'onnxruntime-common': ['onnxruntime-LICENSE'],
   '@pdf-lib/fontkit': ['fontkit-LICENSE'],
+  // A dependency of the Anthropic SDK (Phase 4): its npm package carries no licence file; the MIT text is the libraries' own.
+  standardwebhooks: ['standardwebhooks-LICENSE'],
 };
 
 // ───────────────────────────────── reading packages ─────────────────────────────────

@@ -163,6 +163,15 @@ export interface AnnotationSession {
   retryParked(): Promise<void>;
   /** Looks for drafts whose tab is gone and takes them. Runs on open and when this tab becomes visible; wiring may call it too. */
   adoptDrafts(): Promise<void>;
+  /**
+   * Phase 4 (slice D): shows a reply from Claude that this tab holds (pending, streaming, an error kept on this computer, or a
+   * reply on a PDF the store does not keep) with its thread's comments. The session never writes it: Claude's turn runner owns
+   * the row (contract §3). Holding the same id again replaces it. A sent copy from the store wins over a held one. `onRemove` is
+   * told when the owner deletes the reply or its thread here.
+   */
+  holdReply?(row: CommentRow, o?: { onRemove?: () => void }): void;
+  /** Phase 4: stops showing a held reply (its sent copy has arrived, or it was dismissed). */
+  releaseReply?(id: CommentId): void;
   dispose(): void;
 }
 
@@ -348,6 +357,8 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
   const settledHere = new Set<CommentId>();
   /** R54: unsent edits of sent notes, by comment, in the order they began. What the editors show. */
   const edits = new Map<CommentId, SessionEditDraft>();
+  /** Phase 4: Claude's replies this tab holds while they are written (holdReply). Never written by the session. */
+  const held = new Map<CommentId, { row: CommentRow; onRemove?: () => void }>();
   let active: ThreadId | null = null;
   let focusedMark: MarkId | null = null;
 
@@ -430,7 +441,9 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     snap = {
       marks: [...marks.values()].sort(byReading),
       threads: threadList,
-      comments: [...comments.values()].filter((c) => liveThreads.has(c.threadId)).sort(byCreated),
+      comments: [...comments.values(), ...[...held.values()].map((h) => h.row).filter((r) => !comments.has(r.id))]
+        .filter((c) => liveThreads.has(c.threadId))
+        .sort(byCreated),
       drafts: [...drafts.values()].sort(byCreated),
       placement: new Map(placement),
       active,
@@ -1626,9 +1639,27 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     for (const dr of [...drafts.values()]) if (dr.threadId === thread.id) cancelDraft(dr.id);
   }
 
+  /** Phase 4: the owner removed a held Claude reply (or its thread): it goes from view, and its runner is told. */
+  function dropHeld(match: (row: CommentRow) => boolean): boolean {
+    let any = false;
+    for (const [id, h] of [...held]) {
+      if (!match(h.row)) continue;
+      held.delete(id);
+      any = true;
+      try {
+        h.onRemove?.();
+      } catch (e) {
+        report(e, 'holdReply.onRemove');
+      }
+    }
+    if (any) emit();
+    return any;
+  }
+
   function removeThreadImpl(id: ThreadId): Committed | null {
     const thread = threads.get(id);
     if (!thread) return null;
+    dropHeld((r) => r.threadId === id);
     if (thread.draftOfTab !== null) {
       const root = rootDraftOf(id);
       if (root) cancelDraft(root.id);
@@ -1642,6 +1673,10 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
   function removeCommentImpl(id: CommentId): Committed | null {
     if (drafts.has(id)) {
       cancelDraft(id);
+      return null;
+    }
+    if (held.has(id) && !comments.has(id)) {
+      dropHeld((r) => r.id === id);
       return null;
     }
     const c = comments.get(id);
@@ -1909,7 +1944,10 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     const before = comments.size;
     tidyAfterRemoval();
     resolveLater(moved.filter((id) => marks.has(id as MarkId) || threads.has(id as ThreadId)));
-    if (a || b || c || comments.size !== before) emit();
+    // Phase 4: a held Claude reply whose sent copy is now in the store is shown from the store from here on.
+    let heldGone = false;
+    for (const id of [...held.keys()]) if (comments.has(id) && held.get(id)?.row.draftOfTab === null) heldGone = held.delete(id) || heldGone;
+    if (a || b || c || heldGone || comments.size !== before) emit();
   }
 
   function onStoreChange(c: StoreChange): void {
@@ -2309,6 +2347,16 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     redo: () => mutate('redo', () => undoRedo('redo')),
     retryParked: () => mutate('retryParked', () => retryParkedImpl()),
     adoptDrafts: () => adoptDraftsImpl(),
+
+    holdReply(row, o) {
+      if (disposed || row.author !== 'claude') return;
+      const onRemove = o?.onRemove ?? held.get(row.id)?.onRemove;
+      held.set(row.id, onRemove ? { row, onRemove } : { row });
+      emit();
+    },
+    releaseReply(id) {
+      if (held.delete(id)) emit();
+    },
 
     dispose() {
       if (disposed) return;

@@ -75,6 +75,7 @@ import { notesPanelFeature } from './notes-panel/feature';
 import { type StartOverOffer, useReadingHistory } from './history/use-reading-history';
 import { hitFlashFeature } from './hit-flash';
 import { claudeUiFeature } from './claude/ui/feature';
+import { claudeEntryFeature } from './claude/entry';
 import { createHitJumper, type HitJumper, useOpenTarget } from './jump-to-hit';
 import { openSavedCopy, savedCopyName } from './open-saved';
 import { useOriginalLink } from './original-link';
@@ -124,6 +125,8 @@ registerViewerFeature(figuresFeature);
 registerViewerFeature(hitFlashFeature);
 // Phase 4 (slice F): Claude in the thread: its chips, the @Claude suggestion, the confirm dialog and the Ask Claude items.
 registerViewerFeature(claudeUiFeature);
+// Phase 4 (slice D): @Claude's turn runner for the open PDF (the entry the Claude items call).
+registerViewerFeature(claudeEntryFeature);
 
 /** Where the reader was when the engine stopped, so the document opens again at the same place. */
 type Resume = Pick<ViewerSnapshot, 'zoom' | 'currentPage' | 'viewRotation' | 'spread' | 'railOpen'>;

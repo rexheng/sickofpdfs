@@ -37,6 +37,11 @@ export const VIEWER_ROOT = '#viewer-root';
 export interface GateReport {
   /** http(s)/ws(s) URLs that anything of ours requested, other than from the fixture server: this must be empty. */
   external: string[];
+  /**
+   * Requests to the recorded-response double (`/claude/...` on the fixture server): what would have gone to api.anthropic.com. Allowed
+   * only in a test that says `networkGate: 'claude'` (a Claude walkthrough); in every other test this must be empty.
+   */
+  claude: string[];
   /** Hosts Chromium's own services contacted (network time, Gaia, updater, ...); not ours, listed for the record. */
   browserServiceHosts: string[];
   /**
@@ -62,9 +67,12 @@ interface Options {
    * Crossref: Settings → Online lookups is off until the owner turns it on, so a lookup in a test that did not turn it on is a failure.
    * `lookups`: for a test that turns Online lookups on. The only requests allowed are the lookups' own, to exactly export.arxiv.org and
    * api.crossref.org and carrying an id and nothing else (`isLookupRequest`); anything else fails the test.
+   * `claude`: for a Claude walkthrough (plan Phase 4 §6). Requests to the recorded-response double (`/claude/...` on the fixture
+   * server, which a test build sends Anthropic's calls to) are allowed; anything external still fails. In `enforce` and `lookups`,
+   * a request to the double fails the test: nothing may reach Anthropic, real or replayed, without a Claude action.
    * `observe`: for the gate's own positive controls; the test must call `netgate.report()` and assert on it.
    */
-  networkGate: 'enforce' | 'lookups' | 'observe';
+  networkGate: 'enforce' | 'lookups' | 'claude' | 'observe';
 }
 
 interface Fixtures {
@@ -126,8 +134,10 @@ export const test = base.extend<Options & Fixtures, WorkerFixtures>({
         await context.close();
         await waitForNetlog(netlogPath); // under load the browser can still be writing the log after it has closed
         const requests = await readNetlogRequests(netlogPath);
+        const claudePrefix = server.url('/claude/');
         return {
           external: await netlogExternalUrls(netlogPath, server.origin),
+          claude: requests.filter((r) => r.url.startsWith(claudePrefix)).map((r) => r.url),
           browserServiceHosts: await netlogBrowserServiceHosts(netlogPath),
           recording: requests.some((r) => r.url === server.url(GATE_PING) && r.initiator === `chrome-extension://${EXTENSION_ID}` && !r.browserService),
         };
@@ -171,6 +181,7 @@ export const test = base.extend<Options & Fixtures, WorkerFixtures>({
     }
     // A gate that recorded nothing would pass on anything.
     expect(report.recording, "the net log does not show the extension's own ping: the gate is not recording").toBe(true);
+    if (networkGate !== 'claude') expect(report.claude, 'requests to Anthropic (the replay double) in a test that asked Claude nothing').toEqual([]);
     if (networkGate === 'lookups') {
       expect(report.external.filter((u) => !isLookupRequest(u)), 'requests to anything but an id-only lookup of arXiv or Crossref').toEqual([]);
       return;

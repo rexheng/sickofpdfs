@@ -73,9 +73,9 @@ Tier: **high** = spec-blind tests plus a security read; **visual** = in the gall
 - **Produces.** `createOcrEngine(assets): OcrEngine` (§9). **Consumes** `OcrWord`.
 - **Depends on** 7.0's Decision, and the onnxruntime-web version Phase 3 pins. Security read: no URL except `chrome.runtime.getURL` files.
 
-**7.3 OCR service: schema v7, store API, scheduler, two hosts** — NOW against a fake engine and page source; merges after Phase 5's v6 (the ladder moved up twice on 2 Nov: v4 is the backup's forgotten list, v5 the tags) · high · opus (scheduling) · L
+**7.3 OCR service: schema v8, store API, scheduler, two hosts** — NOW against a fake engine and page source; merges after Phase 5's v7 (the ladder moved up twice on 2 Nov: v4 is the backup's forgotten list, v5 the tags; and once on 6 Nov: v6 is @Claude's passage vectors) · high · opus (scheduling) · L
 - **Goal.** Pages are read in the right order, results are kept, and no note is ever lost.
-- **Owns.** `apps/extension/src/ocr/{service,scheduler,page-source,progress,adopt,upgrade}.ts`. Modify `apps/extension/src/store/{schema,migrate,store-api}.ts` (SCHEMA_V7 `page_ocr`; methods in §9) and the offscreen entry (starts the service).
+- **Owns.** `apps/extension/src/ocr/{service,scheduler,page-source,progress,adopt,upgrade}.ts`. Modify `apps/extension/src/store/{schema,migrate,store-api}.ts` (SCHEMA_V8 `page_ocr`; methods in §9) and the offscreen entry (starts the service).
 - **Behaviour.**
   - Order: visible pages, then near pages in the scroll direction, then the rest outward. One page in flight (an engine cannot stop mid-page).
   - Saved PDFs run in the offscreen page with its own `PdfBackend` over the OPFS copy, so work continues after the tab closes; the tab's `hint()` is a small message. Unsaved PDFs (D7.1): the tab hosts the service in memory and writes nothing; `adopt()` writes what it has if the PDF is saved later.
@@ -141,7 +141,7 @@ Tier: **high** = spec-blind tests plus a security read; **visual** = in the gall
 
 **8.4 Import on open** — high · sonnet · M
 - **Goal.** Notes made in other apps show up as editable notes, once.
-- **Owns.** `apps/extension/src/viewer/import/{import-annotations,ImportChip}.ts(x)`. Modify store `schema/migrate/store-api` (SCHEMA_V8 `pdf_import_refs`, `applyImport`, `undoImport`).
+- **Owns.** `apps/extension/src/viewer/import/{import-annotations,ImportChip}.ts(x)`. Modify store `schema/migrate/store-api` (SCHEMA_V9 `pdf_import_refs`, `applyImport`, `undoImport`).
 - **Behaviour.**
   - Saved PDFs only; unsaved ones just display. After the first page is drawn, read annotations on a budget, build anchors with Phase 2's `buildTextAnchor` and `charRangeInRect`, and write rows and refs in one transaction.
   - Hide the originals in the open handle so nothing draws twice. Show "Imported 6 notes from the PDF · Undo"; Undo removes the rows and un-hides.
@@ -170,7 +170,7 @@ Tier: **high** = spec-blind tests plus a security read; **visual** = in the gall
 
 | Round | Slices | Starts |
 | --- | --- | --- |
-| **A (NOW)** | 7.0, 8.0 (spikes); 7.1, 7.3, 8.1, 8.5a (contract-only, against mocks) | Now. 7.3 merges after Phase 5's v6. |
+| **A (NOW)** | 7.0, 8.0 (spikes); 7.1, 7.3, 8.1, 8.5a (contract-only, against mocks) | Now. 7.3 merges after Phase 5's v7. |
 | **B** | 7.2 (needs 7.0); 8.2 (8.0, Task 15, Phase 2); 7.4 (Phase 3's runtime); 8.5b; 8.6 | When the spike reports land and Phases 2–3 merge. |
 | **C** | 7.5; 8.3; 8.4 | After B. Then the Phase 7 gate and the Phase 8 gate. |
 

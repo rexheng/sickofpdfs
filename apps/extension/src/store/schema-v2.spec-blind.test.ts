@@ -36,10 +36,10 @@ describe('upgrade from a filled v1 database', () => {
     const before = snapshot(db);
     expect(before['comments'].rows).toHaveLength(6); // the dataset is really filled: notes, a Claude reply, a draft, a tombstone
 
-    // Schema v5 (R92, 2 Nov) adds tags and the categoriser's vectors, so the newest version is 5 (v4 was ruling N5's forgotten list).
-    expect(migrate(db as never)).toBe(5);
+    // Schema v6 (Phase 4 slice D, 6 Nov) adds @Claude's passage vectors, so the newest version is 6 (v5 was R92's tags, v4 ruling N5's forgotten list).
+    expect(migrate(db as never)).toBe(6);
 
-    expect(userVersion(db)).toBe(5);
+    expect(userVersion(db)).toBe(6);
     expect(sameAfter(db, before)).toEqual(before);
     // the new columns hold their documented defaults on old rows
     expect(all(db, 'SELECT DISTINCT author FROM marks').map((r) => r.author)).toEqual(['me']);
@@ -61,13 +61,13 @@ describe('upgrade from a filled v1 database', () => {
     const schema = schemaText(db);
     const rows = Object.fromEntries(V1_TABLES.map((t) => [t, dump(db, t)]));
 
-    expect(migrate(db as never)).toBe(5);
+    expect(migrate(db as never)).toBe(6);
     expect(schemaText(db)).toBe(schema);
 
     // "run twice": the steps themselves must survive being run again (a restored backup, a downgrade tool, a retry)
     db.exec('PRAGMA user_version = 1');
     expect(() => migrate(db as never)).not.toThrow();
-    expect(userVersion(db)).toBe(5);
+    expect(userVersion(db)).toBe(6);
     expect(Object.fromEntries(V1_TABLES.map((t) => [t, dump(db, t)]))).toEqual(rows);
     expect(schemaText(db)).toBe(schema);
   });
@@ -175,7 +175,7 @@ describe('an upgrade that cannot finish', () => {
       expect(sameAfter(db, before)).toEqual(before);
     } else {
       expect(failed).toBe(false);
-      expect(userVersion(db)).toBe(5);
+      expect(userVersion(db)).toBe(6);
       expect(columnNames(db, 'marks')).toContain('author');
       expect(columnNames(db, 'threads')).toContain('draft_of_tab');
       expect(sameAfter(db, before)).toEqual(before);
@@ -222,8 +222,8 @@ describe('a database from a newer version', () => {
 describe('a new database', () => {
   it('lands on v2 with the contracted columns, the draft index and the author constraint', async () => {
     const db = await openMemoryDb();
-    expect(migrate(db as never)).toBe(5);
-    expect(migrate(db as never)).toBe(5);
+    expect(migrate(db as never)).toBe(6);
+    expect(migrate(db as never)).toBe(6);
     expect(columnNames(db, 'marks')).toContain('author');
     expect(columnNames(db, 'threads')).toContain('draft_of_tab');
     expect(all(db, "SELECT name FROM sqlite_schema WHERE type = 'index' AND tbl_name = 'comments'").map((r) => r.name)).toContain('comments_drafts');

@@ -367,9 +367,9 @@ describe('reload: only what was committed survives, and it survives whole', () =
     await env.api.saveDraft(draftRow({ id: 'd1', threadId: 'dt1', body: 'a brand new note, half written', draftOfTab: T_A }), threadRow({ id: 'dt1', draftOfTab: T_A, anchor: textAnchor(1, 20, 30) }));
 
     const db2 = await reopen(env.db);
-    // Ruling N5 (backup re-check, 2 Nov): schema v4 adds the local forgotten list, so the newest version is 4 (was 3).
-    expect(migrate(db2 as never)).toBe(5);
-    expect(userVersion(db2)).toBe(5);
+    // Ruling N5 (backup re-check, 2 Nov): schema v4 adds the local forgotten list; v5 the tags (R92); v6 @Claude's passage vectors (6 Nov).
+    expect(migrate(db2 as never)).toBe(6);
+    expect(userVersion(db2)).toBe(6);
     const { api } = wrapStore(db2);
 
     const notes = await api.listAnnotations(DOC);
