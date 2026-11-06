@@ -1,14 +1,30 @@
 /* The status chip and its Undo, at the right of the header before "Open in Chrome's viewer". */
 .status {
   display: flex;
-  flex: 0 1 auto;
+  flex: none;
   gap: var(--space-1);
   align-items: center;
-  min-inline-size: 0;
 }
 
-/* A long "Not saved: …" label shortens with an ellipsis instead of pushing the file name out (the chip is flex: none). */
+/*
+ * TB6: the chip's words are short ("Not saved · bank statement"), so it is never cut: the file name gives up the room
+ * instead. The whole reason is its hover, and its menu or its question.
+ */
 .chip.chip {
-  flex: 0 1 auto;
-  min-inline-size: 0;
+  flex: none;
+}
+
+/* Undo and Restore: 32 px tall like the header's other buttons, not the 40 px of a dialog's text button. */
+.status .action {
+  block-size: var(--icon-btn);
+}
+
+/*
+ * With "Back to page" in a window under 740 px there is no room for the chip's detail: it says only its state ("Not
+ * saved", "Saved", "Not sure"), never cut and never over the menus. Its hover, its menu and its question keep the rest.
+ */
+@media (width < 740px) {
+  :global(header[data-viewer-back]) .chip [data-chip-detail] {
+    display: none;
+  }
 }

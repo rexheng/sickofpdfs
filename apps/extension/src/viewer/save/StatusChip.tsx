@@ -3,21 +3,24 @@
 // words (TB5). After a first mark saved the PDF, "Undo" stands next to it for 10 s.
 // - R95: on a "not sure" PDF it opens a menu with the banner's choices: Save to library, Never for this file, Always save from
 //   <place>.
-// - R96: a click on a "Not saved: …" chip asks first ("This looks like a bank statement. Save it to your library anyway?"),
+// - R96: a click on a "Not saved · …" chip asks first ("This looks like a bank statement. Save it to your library anyway?"),
 //   with Cancel as the default, so a stray click never saves a private PDF. Ctrl+Alt+S still saves at once.
 //
-// Wording (R73: plain, for an owner who reads best in short sentences):
+// Wording (R73: plain, for an owner who reads best in short sentences). TB6: the chip is short, a state and at most three
+// words of reason, so the header stays small and the chip is never cut; the whole sentence is its hover (also on
+// keyboard focus), and its menu or its question:
 //   not sure      "Not sure: Save to library"                     hover: "This PDF isn't in your library yet. Save it to keep your notes."
-//   a scan        "Not sure: scanned pages · Save to library"     hover: "It's a scan, but its title looks like a course reading." (R94)
-//   not learning  "Not saved: looks like an invoice or receipt"   hover: one plain sentence, "Not saved because it looks like an invoice
+//   a scan        "Not sure · scanned pages"                      hover: "It's a scan, but its title looks like a course reading. …" (R94)
+//   not learning  "Not saved · invoice or receipt"                hover: one plain sentence, "Not saved because it looks like an invoice
 //                                                                 or receipt: it has many money amounts and paperwork words in its
-//                                                                 name." (TB5); a click asks before it saves (R96)
+//                                                                 name." (TB5); a click asks before it saves (R96), and the
+//                                                                 question says it too ("This looks like an invoice or receipt.")
 //   saved         "Saved to library"                              hover: one plain sentence, "Saved because it looks like a paper: it
 //                                                                 has an arXiv number and a References section."
 //   saved, D9     "Saved · text not searchable"                   a PDF with card, bank or ID numbers saved by the owner's choice
 // "No filter yet" never shows.
 import { CHOICES_UNREAD, FILTER_FAILED, FORGOTTEN_REASON, NEVER_SAVE_REASON } from '../filter/async-filter';
-import { HARD_BLOCK_REASON, SCAN_TITLE_REASON, STAND_IN_REASONS, type SaveState } from '@sop/core';
+import { HARD_BLOCK_REASON, LOOKS_LIKE, SCAN_TITLE_REASON, STAND_IN_REASONS, type SaveState } from '@sop/core';
 import { Chip, type ChipProps, Dialog, DropdownMenu, TextButton } from '@sop/ui';
 import { aboutPanel } from '../about/about-panel-state';
 import { useCallback, useState, useSyncExternalStore } from 'react';
@@ -32,19 +35,19 @@ import styles from './StatusChip.module.css';
 export const ALREADY_SAVED = 'Already in your library';
 /** The "Save to library" chip's tooltip (R73). */
 export const NOT_IN_LIBRARY = 'This PDF isn’t in your library yet. Save it to keep your notes.';
-/** The tooltip of a "Not saved: …" chip, which saves when clicked. */
+/** The tooltip of a "Not saved · …" chip, which saves when clicked. */
 const SAVE_ANYWAY = 'Click to save it to your library anyway.';
-/** D9: what a "Not saved: has card or bank numbers" chip adds. */
+/** D9: what a "Not saved · private numbers" chip adds. */
 const SAVE_ANYWAY_PRIVATE = 'Its text won’t be searchable.';
 /** After the chip's Move to Trash (TB5). The chip then says "In Trash" and offers Restore. */
 const MOVED_TO_TRASH_NOTE = 'Moved to Trash. You can restore it for 30 days.';
-/** The memory-only chip's tooltip. */
-const SAVE_HINT = 'Save it to your library (Ctrl+Alt+S)';
+/** The memory-only chip's tooltip: what its short words mean, then what a click does. */
+const SAVE_HINT = 'Your notes stay until you close this tab. Save it to your library (Ctrl+Alt+S)';
 /** The saved chip's menu (TB5): the library's own words for its two ways out. "Forget this PDF…" opens the Forget flow (R75). */
 export const MOVE_TO_TRASH = 'Move to Trash';
 export const FORGET_THIS_PDF = 'Forget this PDF…';
 
-type ChipLook = Pick<ChipProps, 'label' | 'icon' | 'tone' | 'tooltip' | 'disabled'> & {
+type ChipLook = Pick<ChipProps, 'label' | 'detail' | 'icon' | 'tone' | 'tooltip' | 'disabled'> & {
   saves: boolean;
   menu?: boolean;
   /** R95: the "not sure" chip opens the banner's choices. */
@@ -92,6 +95,59 @@ const SAVING_NOTES_HINT = 'Your notes from last time are being saved to your lib
 /** Fixed filter labels that say nothing to the owner on their own: the "not sure" verdict, and the stand-in's words. */
 const QUIET_REASONS = new Set<string>(['not sure if this is a reading', ...STAND_IN_REASONS]);
 
+/** TB6: the chip's few words for each kind of paperwork the filter names ("looks like a bank statement"). */
+const KIND_WORDS: Readonly<Record<keyof typeof LOOKS_LIKE, string>> = {
+  invoice: 'invoice or receipt',
+  bank: 'bank statement',
+  payslip: 'payslip',
+  tax: 'tax form',
+  ticket: 'ticket',
+  contract: 'contract',
+  medical: 'medical letter',
+  insurance: 'insurance letter',
+  letter: 'letter',
+  cv: 'CV',
+  personal: 'personal document',
+};
+
+/** TB6: the chip's few words for every other reason a PDF is not saved. The hover keeps the whole sentence. */
+const REASON_WORDS: ReadonlyMap<string, string> = new Map([
+  ...Object.entries(KIND_WORDS).map(([kind, words]) => [LOOKS_LIKE[kind as keyof typeof LOOKS_LIKE], words] as const),
+  ['looks like a till receipt', 'receipt'],
+  ['looks like paperwork from a bank, shop or airline site', 'paperwork'],
+  ['looks like something other than a reading', 'not a reading'],
+  ['looks like paperwork, not a reading', 'not a reading'],
+  ['looks like a scan with no text', 'scanned pages'],
+  [HARD_BLOCK_REASON, 'private numbers'],
+  [NEVER_SAVE_REASON, 'your choice'],
+  ['matches your deny list', 'your choice'],
+  [FORGOTTEN_REASON, 'you removed it'],
+  [CHOICES_UNREAD, 'couldn’t check'],
+  [FILTER_FAILED, 'couldn’t check'],
+]);
+
+/** A reason this many words long or shorter goes on the chip as it is. */
+const CHIP_WORDS_MAX = 3;
+
+/**
+ * "Not saved · bank statement" (TB6): the state, then at most three words of why. A reason with no short form is shown
+ * when it is short already ("looks like a …" without its first words), and left to the hover when it is not.
+ */
+export function notSavedLabel(reason: string | undefined): string {
+  if (reason === undefined) return 'Not saved · not a reading';
+  const words = REASON_WORDS.get(reason) ?? reason.replace(/^looks like (an? )?/u, '');
+  return words.split(/\s+/u).length <= CHIP_WORDS_MAX ? `Not saved · ${words}` : 'Not saved';
+}
+
+/**
+ * A chip's words split into its state and the rest (TB6): with "Back to page" in a narrow window the header shows only
+ * the state ("Not saved", "Saved", "Not sure"), so the chip is never cut and never runs into the menus. `full` is what
+ * the chip says when there is room; it starts with `state`.
+ */
+function stateFirst(full: string, state: string): Pick<ChipLook, 'label' | 'detail'> {
+  return full.startsWith(state) && full.length > state.length ? { label: state, detail: full.slice(state.length) } : { label: full };
+}
+
 /**
  * What the chip shows for a state; null for none (while the PDF is being checked). One look at a time, in this order:
  * 0. "Saving your notes…": a save a closed or crashed tab left is being finished (R67 tightened 4).
@@ -110,17 +166,17 @@ export function chipFor(state: SaveState, busy: SaveControllerImpl['busy'], save
   if (busy === 'save' && state.kind !== 'saved') return { label: 'Saving…', icon: 'library_add', tone: 'attention', saves: false };
   if (trashed && state.kind === 'saved') return { label: 'In Trash', icon: 'delete', tone: 'neutral', tooltip: IN_TRASH_HINT, saves: false };
   if (failed && busy === null && state.kind !== 'saved' && state.kind !== 'asking' && state.kind !== 'incognito') {
-    return { label: SAVE_FAILED, icon: 'error', tone: 'attention', tooltip: SAVE_FAILED_HINT, saves: true };
+    return { ...stateFirst(SAVE_FAILED, 'Couldn’t save'), icon: 'error', tone: 'attention', tooltip: SAVE_FAILED_HINT, saves: true };
   }
   switch (state.kind) {
     case 'checking':
       return null;
     case 'saved':
       if (notSearchable || warning !== null) {
-        return { label: SAVED_NOT_SEARCHABLE, icon: 'warning', tone: 'saved', tooltip: warning ?? NOT_SEARCHABLE_HINT, saves: false, menu };
+        return { ...stateFirst(SAVED_NOT_SEARCHABLE, 'Saved'), icon: 'warning', tone: 'saved', tooltip: warning ?? NOT_SEARCHABLE_HINT, saves: false, menu };
       }
       return {
-        label: 'Saved to library',
+        ...stateFirst('Saved to library', 'Saved'),
         icon: 'library_add_check',
         tone: 'saved',
         tooltip: savedSentence(savedReasons ?? []) ?? ALREADY_SAVED,
@@ -130,12 +186,12 @@ export function chipFor(state: SaveState, busy: SaveControllerImpl['busy'], save
     case 'unsure': {
       // R94: a scan with no text whose title looks like a reading. The hover is the reason, in one plain sentence.
       if (state.reasons.includes(SCAN_TITLE_REASON)) {
-        return { label: 'Not sure: scanned pages · Save to library', icon: 'library_add', tone: 'attention', tooltip: `${SCAN_TITLE_REASON} ${NOT_IN_LIBRARY}`, saves: true, choices: menu };
+        return { ...stateFirst('Not sure · scanned pages', 'Not sure'), icon: 'library_add', tone: 'attention', tooltip: `${SCAN_TITLE_REASON} ${NOT_IN_LIBRARY}`, saves: true, choices: menu };
       }
       const why = reasonsLine(state.reasons.filter((r) => !QUIET_REASONS.has(r)).slice(0, 2));
       return {
         // The plan's "Not sure: Save?" with R73's plain "Save to library": the filter really is not sure now, and says so.
-        label: 'Not sure: Save to library',
+        ...stateFirst('Not sure: Save to library', 'Not sure'),
         icon: 'library_add',
         tone: 'attention',
         tooltip: why === undefined ? NOT_IN_LIBRARY : `${NOT_IN_LIBRARY} Not sure it’s for learning: ${why}.`,
@@ -146,7 +202,7 @@ export function chipFor(state: SaveState, busy: SaveControllerImpl['busy'], save
     case 'not-learning':
       // TB5: an icon, as the other chips have, and the hover as one plain sentence, as the saved chip's.
       return {
-        label: `Not saved: ${state.reasons[0] ?? 'not a learning PDF'}`,
+        ...stateFirst(notSavedLabel(state.reasons[0]), 'Not saved'),
         icon: 'do_not_disturb_on',
         tone: 'neutral',
         tooltip: notSavedSentence(state.reasons, privateNumbers),
@@ -156,10 +212,10 @@ export function chipFor(state: SaveState, busy: SaveControllerImpl['busy'], save
     case 'asking':
       return { label: 'Not saved', tone: 'neutral', saves: false };
     case 'memory-only':
-      return { label: 'Not saved: notes stay until you close this tab', tone: 'neutral', tooltip: SAVE_HINT, saves: true, asks: true };
+      return { ...stateFirst('Not saved · this tab only', 'Not saved'), tone: 'neutral', tooltip: SAVE_HINT, saves: true, asks: true };
     case 'incognito':
       // A status, not a broken control (TB2 visual 4): full contrast, an icon, and a tooltip that says why.
-      return { label: 'Incognito: view only', icon: 'visibility', tone: 'neutral', tooltip: INCOGNITO_HINT, saves: false };
+      return { ...stateFirst('Incognito: view only', 'Incognito'), icon: 'visibility', tone: 'neutral', tooltip: INCOGNITO_HINT, saves: false };
   }
 }
 
@@ -400,6 +456,7 @@ export function StatusChip({ save, returnFocus, ui }: StatusChipProps) {
       {state.kind === 'saved' && trashed && (
         <TextButton
           label="Restore"
+          className={styles.action}
           disabled={restoring}
           onClick={() => {
             setRestoring(true);
@@ -408,7 +465,7 @@ export function StatusChip({ save, returnFocus, ui }: StatusChipProps) {
         />
       )}
       {state.kind === 'saved' && state.undoable && (
-        <TextButton label="Undo" disabled={busy === 'forget'} onClick={() => quietly(save.undo())} />
+        <TextButton label="Undo" className={styles.action} disabled={busy === 'forget'} onClick={() => quietly(save.undo())} />
       )}
     </div>
   );

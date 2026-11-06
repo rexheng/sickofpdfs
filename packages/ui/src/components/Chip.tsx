@@ -7,6 +7,12 @@ import { Tooltip } from './Tooltip';
 
 export interface ChipProps extends Omit<ComponentPropsWithRef<'button'>, 'children' | 'onClick' | 'disabled'> {
   label: string;
+  /**
+   * Words after the label, with their own separator (" · bank statement", ": view only"), that a narrow place may leave
+   * out (`[data-chip-detail] { display: none }`); the label alone must still say the state. Shown, they are part of the
+   * chip's name.
+   */
+  detail?: string;
   icon?: IconName;
   /**
    * saved: tonal (secondary-container), the "Saved to library" state.
@@ -20,7 +26,7 @@ export interface ChipProps extends Omit<ComponentPropsWithRef<'button'>, 'childr
 }
 
 /** The GM3 chip: 32 px tall, radius 8 px, Google Sans Text 14/20 500, a 2 px focus ring. */
-export function Chip({ label, icon, tone, tooltip, onClick, disabled = false, className, ...rest }: ChipProps) {
+export function Chip({ label, detail, icon, tone, tooltip, onClick, disabled = false, className, ...rest }: ChipProps) {
   const chip = (
     <button
       type="button"
@@ -30,7 +36,10 @@ export function Chip({ label, icon, tone, tooltip, onClick, disabled = false, cl
       onClick={onClick}
     >
       {icon !== undefined && <Icon name={icon} size={20} />}
-      <span className={styles.label}>{label}</span>
+      <span className={styles.label}>
+        {label}
+        {detail !== undefined && <span data-chip-detail="">{detail}</span>}
+      </span>
     </button>
   );
   return tooltip === undefined ? chip : <Tooltip label={tooltip}>{chip}</Tooltip>;

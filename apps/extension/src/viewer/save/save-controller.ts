@@ -21,14 +21,14 @@
 //   did not ask for (another tab may have chosen it), covers the reading's id, its downloads and the copy open here, and only
 //   the owner's own explicit Save takes it back. When the choices cannot be read, nothing saves on its own.
 // - R91: every save reads every page for card, bank or ID numbers before anything is written (the filter only sampled the
-//   PDF). An automatic save that finds them stops, and the chip says "Not saved: has card or bank numbers"; a save by the
+//   PDF). An automatic save that finds them stops, and the chip says "Not saved · private numbers"; a save by the
 //   owner's click goes on without searchable text, with the warning (D9), however it started.
 // - R97: "Never save this file" also keeps a text fingerprint (core's `textFingerprint`, a hash of the first pages' text once
 //   stamps and dates are removed), handed to the never-save list, which keeps only a salted HMAC of it, like the file's own
 //   fingerprint. So a re-download with other bytes is still "never". The text and the unsalted hash stay in memory.
 // - TB4 ruling (Forget wins): when another tab deletes the saved PDF, this controller alone decides what follows. It reads
 //   whether that was the owner's Forget (the store's forgotten list, or "never save") before it leaves "saved"; a Forget then
-//   reads "Not saved: removed from your library" here too, and nothing saves until the owner acts. Only an Undo goes back
+//   reads "Not saved · you removed it" here too, and nothing saves until the owner acts. Only an Undo goes back
 //   to "Not sure" (the session then saves again what it holds, R67 tightened 1).
 import {
   type DocumentId,
@@ -194,7 +194,7 @@ export interface SaveControllerImpl extends SaveController {
   readonly saveWarning: string | null;
   /** "Always for this site": the allow-list entry this PDF's link gives; null for a file picked from disk. */
   readonly siteRule: SiteRule | null;
-  /** Why the PDF is not saved: the first reason its "Not saved: …" chip showed. Kept while the question is open. */
+  /** Why the PDF is not saved: the first reason behind its "Not saved · …" chip. Kept while the question is open. */
   readonly whyNotSaved: string | null;
   /** The PDF is not saved because the owner chose "Never save this file" (TB5: notes held then are kept privately). */
   readonly neverChosen: boolean;
@@ -692,7 +692,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
   /**
    * R67 (d) and the TB4 ruling: another tab deleted the saved PDF. This tab stays "saved" (the session has stopped writing,
    * session.ts `suspectDocGone`) until it knows which delete it was, then follows in one step: an Undo goes back to "Not sure",
-   * the owner's Forget to "Not saved: removed from your library" (or "you chose never to save this file"), where a mark asks.
+   * the owner's Forget to "Not saved · you removed it" (or "Not saved · your choice"), where a mark asks.
    * Nothing is saved again on its own after a Forget.
    */
   let followingDelete: DocumentId | null = null;
