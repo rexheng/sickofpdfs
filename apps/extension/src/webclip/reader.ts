@@ -8,6 +8,7 @@
 //   read (another site's picture) or that has not loaded yet is fetched the way the page itself would fetch it, from the
 //   browser's cache when it is there. A picture that still cannot be read is left out, and the PDF says so.
 // - It reads what the owner sees, signed in or not: the page's own document, never a fresh download of it.
+import { cleanLink } from '@sop/core/canonical-link';
 import { Readability } from '@mozilla/readability';
 import { type Article, type Block, bylineAuthors, type ImageRef, type ImageResult, type Inline, type ListItem, MAX_IMAGE_PX, type ReadResult, type TableRow } from './article';
 
@@ -76,13 +77,14 @@ function sourceLink(doc: Document): string {
       const c = new URL(canonical);
       if ((c.protocol === 'https:' || c.protocol === 'http:') && c.host === here.host) {
         c.hash = '';
-        return c.href;
+        return cleanLink(c.href);
       }
     } catch {
       // a broken canonical link: the page's own address is used
     }
   }
-  return here.href;
+  // Session keys and tracking parts go here, so the PDF, the plan and the library all hold the same link.
+  return cleanLink(here.href);
 }
 
 function publishedFromMeta(doc: Document): string | null {
@@ -365,7 +367,14 @@ function absolute(href: string, doc: Document): string | null {
 function linkOf(a: HTMLAnchorElement, doc: Document): string | null {
   const raw = a.getAttribute('href') ?? '';
   if (raw.startsWith('#')) return null;
-  if (/^mailto:/iu.test(raw)) return raw;
+  if (/^mailto:/iu.test(raw)) {
+    try {
+      const u = new URL(raw.trim());
+      return u.protocol === 'mailto:' ? u.href : null;
+    } catch {
+      return null;
+    }
+  }
   return absolute(raw, doc);
 }
 

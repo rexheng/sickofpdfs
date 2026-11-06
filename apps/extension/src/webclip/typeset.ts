@@ -10,7 +10,7 @@
 // - A heading never ends a page, and a paragraph never leaves a single line at the foot or the head of a page.
 // - Headings become the PDF's outline, so the viewer's contents list them.
 import fontkit from '@pdf-lib/fontkit';
-import { PDFArray, PDFDocument, type PDFFont, type PDFImage, PDFName, PDFNumber, type PDFPage, PDFString, rgb, type RGB } from 'pdf-lib';
+import { PDFArray, PDFDocument, type PDFFont, type PDFImage, PDFHexString, PDFName, PDFNumber, type PDFPage, rgb, type RGB } from 'pdf-lib';
 import { type Article, type Block, type ImageRef, type ImageResult, type Inline, textOfRuns } from './article';
 
 export interface TypesetFonts {
@@ -838,14 +838,35 @@ function drawFooters(ctx: Context, pages: readonly PDFPage[]): void {
   });
 }
 
+/**
+ * The only action this file can write: a plain link to a web page or an email address (`S /URI`), with the address as a hex
+ * string of its ASCII. Page text can never close the string or add keys. Anything else gets no link at all (it stays plain text).
+ * No JavaScript, Launch, SubmitForm or other action is ever built here.
+ */
+function safeUri(href: string): string | null {
+  try {
+    const u = new URL(href);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:' && u.protocol !== 'mailto:') return null;
+    return /^[\x21-\x7e]+$/u.test(u.href) ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function uriString(uri: string): PDFHexString {
+  return PDFHexString.of(Array.from(uri, (c) => c.charCodeAt(0).toString(16).padStart(2, '0')).join(''));
+}
+
 function addLinks(ctx: Context): void {
   for (const l of ctx.links) {
+    const href = safeUri(l.href);
+    if (href === null) continue;
     const annot = ctx.doc.context.obj({
       Type: 'Annot',
       Subtype: 'Link',
       Rect: l.rect,
       Border: [0, 0, 0],
-      A: { Type: 'Action', S: 'URI', URI: PDFString.of(l.href) },
+      A: { Type: 'Action', S: 'URI', URI: uriString(href) },
     });
     l.page.node.addAnnot(ctx.doc.context.register(annot));
   }
@@ -859,7 +880,7 @@ function addOutline(ctx: Context, items: readonly { title: string; page: PDFPage
   const refs = items.map(() => context.nextRef());
   items.forEach((item, i) => {
     const dict = context.obj({});
-    dict.set(PDFName.of('Title'), PDFString.of(item.title.slice(0, 200)));
+    dict.set(PDFName.of('Title'), PDFHexString.fromText(item.title.slice(0, 200)));
     dict.set(PDFName.of('Parent'), root);
     if (i > 0) dict.set(PDFName.of('Prev'), refs[i - 1]);
     if (i < refs.length - 1) dict.set(PDFName.of('Next'), refs[i + 1]);
@@ -942,7 +963,8 @@ export async function typesetArticle(input: TypesetInput): Promise<TypesetResult
   doc.setProducer('sickofpdfs');
   doc.setCreationDate(new Date(input.savedAt));
   doc.setModificationDate(new Date(input.savedAt));
-  doc.setLanguage(article.lang ?? 'en');
+  // A language tag is page text too: only a real tag (letters, digits, hyphens) is written.
+  doc.setLanguage(/^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8}){0,4}$/u.test(article.lang ?? '') ? (article.lang as string) : 'en');
   const bytes = await doc.save({ useObjectStreams: true });
   return { bytes, pageCount: pages.length, missingPictures: missing };
 }

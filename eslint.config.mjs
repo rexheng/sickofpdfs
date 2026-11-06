@@ -30,6 +30,12 @@ const SDK_SYNTAX = [
 ];
 const SDK_CLIENT = 'apps/extension/src/viewer/claude/client.ts';
 
+// Spec R103: the extension never reads a page on its own. chrome.scripting may be called only from the toolbar menu's click path:
+// the menu (webclip/ActionMenu.tsx) puts the page script in, and webclip/make-pdf.ts reads the article's pictures through it.
+const SCRIPTING_MESSAGE = 'Only webclip/ActionMenu.tsx and webclip/make-pdf.ts may use chrome.scripting, from the toolbar menu click (spec R103).';
+const SCRIPTING_SYNTAX = [{ selector: "MemberExpression[property.name='scripting']", message: SCRIPTING_MESSAGE }];
+const SCRIPTING_FILES = ['apps/extension/src/webclip/ActionMenu.tsx', 'apps/extension/src/webclip/make-pdf.ts'];
+
 export default defineConfig(
   globalIgnores([
     '**/dist/**',
@@ -111,7 +117,7 @@ export default defineConfig(
     rules: {
       'no-restricted-imports': ['error', { patterns: [LOCAL_ONLY_IMPORT_PATTERN, SDK_IMPORT_PATTERN] }],
       // import(), require() and import('...') in a type are not covered by no-restricted-imports.
-      'no-restricted-syntax': ['error', ...LOCAL_ONLY_SYNTAX, ...SDK_SYNTAX],
+      'no-restricted-syntax': ['error', ...LOCAL_ONLY_SYNTAX, ...SDK_SYNTAX, ...SCRIPTING_SYNTAX],
     },
   },
   {
@@ -124,18 +130,26 @@ export default defineConfig(
       'apps/extension/src/claude-settings/**',
     ],
     // The secrets store is allowed here; the SDK still is not (only the client below may import it).
-    rules: { 'no-restricted-imports': ['error', { patterns: [SDK_IMPORT_PATTERN] }], 'no-restricted-syntax': ['error', ...SDK_SYNTAX] },
+    rules: { 'no-restricted-imports': ['error', { patterns: [SDK_IMPORT_PATTERN] }], 'no-restricted-syntax': ['error', ...SDK_SYNTAX, ...SCRIPTING_SYNTAX] },
   },
   // The one door to Anthropic: it reads the key (getSecret) and imports the SDK.
   {
     files: [SDK_CLIENT],
-    rules: { 'no-restricted-imports': 'off', 'no-restricted-syntax': 'off' },
+    rules: { 'no-restricted-imports': 'off', 'no-restricted-syntax': ['error', ...SCRIPTING_SYNTAX] },
   },
   // The backup (Phase 3, S13) never reaches the secrets store: no backup file may hold the key. Its folder is barred by the default
   // block above already; it is named here on purpose, with the Backup section, which sits in the settings folder that is allowed.
   // These entries come after the allowed list, so they win.
   {
     files: ['apps/extension/src/backup/**', 'apps/extension/src/store/backup-api.ts', 'apps/extension/src/library/settings/{Backup*,Restore*,use-backup}.{ts,tsx}', 'apps/extension/src/store/restore-api.ts'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [LOCAL_ONLY_IMPORT_PATTERN, SDK_IMPORT_PATTERN] }],
+      'no-restricted-syntax': ['error', ...LOCAL_ONLY_SYNTAX, ...SDK_SYNTAX, ...SCRIPTING_SYNTAX],
+    },
+  },
+  // The two files that may use chrome.scripting (the secrets and SDK bars stay as they are for them).
+  {
+    files: SCRIPTING_FILES,
     rules: {
       'no-restricted-imports': ['error', { patterns: [LOCAL_ONLY_IMPORT_PATTERN, SDK_IMPORT_PATTERN] }],
       'no-restricted-syntax': ['error', ...LOCAL_ONLY_SYNTAX, ...SDK_SYNTAX],
