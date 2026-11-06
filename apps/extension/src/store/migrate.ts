@@ -4,7 +4,7 @@ import { SCHEMA_V1, triggersV1 } from './schema';
 import { applySchemaV2, guardNewerSchema, refreshCommentsFtsTrigger, userVersion } from './schema-v2';
 import { applySchemaV3 } from './schema-v3';
 import { applySchemaV4 } from './schema-v4';
-import { applySchemaV5 } from './schema-v5';
+import { applySchemaV5, ensureCategoriserLocals } from './schema-v5';
 
 /**
  * The connection settings, set on every open. Deleted rows are overwritten in the file (secure_delete), and the journal
@@ -35,6 +35,7 @@ export function migrate(db: Sqlite3Database): number {
   if (userVersion(db) < 3) applySchemaV3(db);
   if (userVersion(db) < 4) applySchemaV4(db);
   if (userVersion(db) < 5) applySchemaV5(db);
+  if (userVersion(db) >= 5) ensureCategoriserLocals(db);
   // R67: drafts never touch comments_fts. Idempotent and a no-op when the trigger is current; repairs databases made before the fix.
   if (userVersion(db) >= 2) refreshCommentsFtsTrigger(db);
   return userVersion(db);

@@ -114,6 +114,8 @@ export interface SaveLocation {
   raw: string;
   /** The course or web page the PDF was opened from. */
   viaPage: string | null;
+  /** The title of that page (R92c), for the categoriser's course codes. Stays on this computer. */
+  viaTitle?: string | null;
 }
 
 export interface SaveControllerDeps {

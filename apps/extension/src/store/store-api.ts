@@ -70,7 +70,7 @@ export interface SaveDocumentInput {
   encrypted: boolean;
   blobStored: boolean;
   saveReasons: string[];
-  location: { kind: LocationKind; raw: string; viaPage: string | null } | null;
+  location: { kind: LocationKind; raw: string; viaPage: string | null; viaTitle?: string | null } | null;
   openedAt: number;
   /** Phase 3. Filled from the PDF's first page (or the DOI and arXiv lookups). Saving again fills only what is empty. */
   year?: number | null;
@@ -87,6 +87,7 @@ export interface TouchLocationInput {
   kind: LocationKind;
   raw: string;
   viaPage: string | null;
+  viaTitle?: string | null;
   at: number;
 }
 
@@ -303,9 +304,10 @@ interface PreparedLocation {
   canonical: string;
   raw: string;
   viaPage: string | null;
+  viaTitle: string | null;
 }
 
-async function prepareLocation(kind: LocationKind, raw: string, viaPage: string | null): Promise<PreparedLocation> {
+async function prepareLocation(kind: LocationKind, raw: string, viaPage: string | null, viaTitle?: string | null): Promise<PreparedLocation> {
   const canonical = canonicalLocation(kind, raw);
   return {
     id: await locationId(kind, canonical),
@@ -314,6 +316,7 @@ async function prepareLocation(kind: LocationKind, raw: string, viaPage: string 
     // Web links lose tracking parameters and session keys before they are stored; a file URL is kept as it was.
     raw: kind === 'url' ? cleanLink(raw) : raw,
     viaPage: viaPage === null ? null : canonicalLink(viaPage),
+    viaTitle: typeof viaTitle === 'string' && viaTitle.trim() !== '' ? viaTitle.slice(0, 300) : null,
   };
 }
 
@@ -361,6 +364,8 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
          hlc = excluded.hlc`,
       [loc.id, documentId, loc.kind, loc.canonical, loc.raw, loc.viaPage, at, at, deps.hlc.tick()],
     );
+    // R92c: the title of the page that led here, for the categoriser's course codes. A local-only table: never in a backup or a sync.
+    if (loc.viaTitle !== null) run(`INSERT INTO source_pages (document_id, title, seen_at) VALUES (?, ?, ?) ON CONFLICT (document_id) DO UPDATE SET title = excluded.title, seen_at = excluded.seen_at`, [documentId, loc.viaTitle, at]);
   };
 
   const base: Pick<StoreApi, (typeof LIBRARY_METHODS)[number]> = {
@@ -446,7 +451,7 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
 
     saveDocument: async (input) => {
       checkSaveInput(input);
-      const loc = input.location ? await prepareLocation(input.location.kind, input.location.raw, input.location.viaPage) : null;
+      const loc = input.location ? await prepareLocation(input.location.kind, input.location.raw, input.location.viaPage, input.location.viaTitle) : null;
       return attempt(() => {
         assertWritable();
         const now = deps.now();
@@ -590,7 +595,7 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
       checkHex(input.documentId, 'the document id');
       checkLocation(input.kind, input.raw, input.viaPage);
       if (!isTime(input.at)) fail('bad-input', 'the time is not a time');
-      const loc = await prepareLocation(input.kind, input.raw, input.viaPage);
+      const loc = await prepareLocation(input.kind, input.raw, input.viaPage, input.viaTitle);
       return attempt(() => {
         assertWritable();
         db.savepoint(() => {

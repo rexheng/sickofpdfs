@@ -6,8 +6,9 @@
 //   position in that order, and a topic's `key` is a hash of its sorted member ids, so the same members always have the same key.
 // - A topic needs at least MIN_TOPIC_SIZE readings, and there is no topic at all until the library has TOPIC_MIN_DOCS readings.
 //   A reading that fits nowhere stays out. A reading may be in up to MAX_TOPICS_PER_DOC topics.
-// - A topic is named (R92b) after the closest bundled academic subject when one is close enough, else by its two most telling terms
-//   (a word or a two-word phrase), never by a generic word (introduction, lecture, notes, chapter, changes, periods, think, ...).
+// - R92c: each reading takes its own closest bundled academic subject(s), at most 2, and the readings that share a subject are that
+//   subject's topic (named and keyed by the subject, so the name never changes as the library grows). Only readings that match no
+//   subject are grouped by closeness and named by their two most telling terms (a word or a two-word phrase), never by a generic word.
 // - `suggestTags` only offers a tag the owner has given to at least TAG_MIN_DOCS readings (the 3-reading rule), never one in
 //   `removed`, and at most MAX_SUGGESTIONS.
 // - `related` is the closest readings by meaning, never the reading itself.
@@ -47,8 +48,6 @@ export const SUGGEST_SIMILARITY = 0.25;
 export const MAX_SUGGESTIONS = 3;
 /** Terms in a topic's name when no subject names it: a term is a word or a two-word phrase. */
 export const TOPIC_NAME_TERMS = 2;
-/** A topic takes the name of the subject closest to its centre when the cosine is at least this (R92b). */
-export const SUBJECT_SIMILARITY = 0.36;
 
 // ---- vectors ---------------------------------------------------------------------------------------------------------------------
 
@@ -199,9 +198,8 @@ export function topicKey(docIds: readonly string[]): string {
 // ---- names ------------------------------------------------------------------------------------------------------------------------
 //
 // R92b. A topic is named, in this order, by:
-//   1. the subject closest in meaning to the topic's centre, from the bundled list of academic subjects (subjects.ts), when it is close
-//      enough (SUBJECT_SIMILARITY) and no larger topic has taken it;
-//   2. otherwise its two most telling terms, a term being a word or a two-word phrase ("Monetary Policy"), each in the order it is written,
+//   1. (R92c) a subject of the bundled list (subjects.ts): see `clusterTopics`, which names those topics itself;
+//   2. for readings that match no subject, its two most telling terms, a term being a word or a two-word phrase ("Monetary Policy"), each in the order it is written,
 //      the more telling first.
 // Generic words (introduction, lecture, notes, chapter, changes, periods, think, ...) and the authors' names (taken out of the text by the
 // caller) never name a topic.
@@ -370,34 +368,76 @@ export interface Subject {
 
 // ---- topics -----------------------------------------------------------------------------------------------------------------------
 
-/** The centre of some readings: their unit vectors added up in the order given and scaled to length 1. */
-function centreOf(vectors: readonly Float32Array[]): Float32Array | null {
-  const first = vectors[0];
-  if (first === undefined) return null;
-  const sum = new Float32Array(first.length);
-  for (const v of vectors) for (let i = 0; i < sum.length; i++) sum[i] = (sum[i]) + (v[i]);
-  return unitOf(sum);
+/** A reading takes a subject of the bundled list when its own closeness to the subject's name is at least this (R92c, measured). */
+export const READING_SUBJECT_SIMILARITY = 0.34;
+/** A reading's second subject must be within this of its first (R92c). */
+export const READING_SUBJECT_MARGIN = 0.10;
+/** The most subjects one reading takes (R92c). */
+export const MAX_SUBJECTS_PER_DOC = 2;
+/** The key of a topic made from a subject: it never changes, whoever else is in the library. */
+export const subjectTopicKey = (name: string): string => `subject:${name}`;
+
+/** The subjects a reading takes by itself: its closest one(s) above the threshold, at most MAX_SUBJECTS_PER_DOC. Depends on this reading alone. */
+export function subjectsOfReading(vector: Float32Array, subjects: readonly Subject[]): { name: string; score: number }[] {
+  const v = unitOf(vector);
+  if (v === null) return [];
+  const scored: { name: string; score: number }[] = [];
+  for (const s of subjects) {
+    const u = unitOf(s.vector);
+    if (u === null || typeof s.name !== 'string' || s.name === '') continue;
+    const score = dot(v, u);
+    if (score >= READING_SUBJECT_SIMILARITY) scored.push({ name: s.name, score });
+  }
+  scored.sort((a, b) => b.score - a.score || byCode(a.name, b.name));
+  const best = scored[0];
+  if (best === undefined) return [];
+  return scored.filter((x, i) => i < MAX_SUBJECTS_PER_DOC && x.score >= best.score - READING_SUBJECT_MARGIN);
 }
 
 /**
- * Groups readings that are close in meaning into topics. See the file's header for what is promised. `opts.minDocs` is the number of
- * readings the library must hold before any topic is made (default TOPIC_MIN_DOCS). `opts.subjects` is the bundled list of academic
- * subjects with their vectors (R92b): a topic takes the name of the closest one when it is close enough; without the list, or when none is
- * close enough, it is named by its two most telling terms.
+ * Groups readings into topics. See the file's header for what is promised. `opts.minDocs` is the number of readings the library must hold
+ * before any topic is made (default TOPIC_MIN_DOCS).
+ *
+ * R92c: with `opts.subjects` (the bundled list of academic subjects with their vectors), each reading takes its own closest subject(s) and
+ * the readings that share a subject are that subject's topic, named and keyed by the subject, so a topic's name never changes as the library
+ * grows. Only the readings that match no subject are grouped by closeness and named by their most telling terms. Without subjects every
+ * reading is grouped by closeness (what the unit tests run).
  */
 export function clusterTopics(docs: Doc[], opts?: { minDocs?: number; subjects?: readonly Subject[] }): Topic[] {
   const minDocs = opts?.minDocs ?? TOPIC_MIN_DOCS;
   const units = prepare(docs);
   if (units.length < Math.max(minDocs, MIN_TOPIC_SIZE)) return [];
+  const stats = wordStats(units);
 
-  const groups = groupBySimilarity(units, MERGE_SIMILARITY).filter((g) => g.length >= MIN_TOPIC_SIZE);
-  if (groups.length === 0) return [];
+  const subjects = (opts?.subjects ?? []).flatMap((s) => {
+    const v = unitOf(s.vector);
+    return v === null || typeof s.name !== 'string' || s.name === '' ? [] : [{ name: s.name, vector: v }];
+  });
+  const bySubject = new Map<string, string[]>();
+  const matched = new Set<string>();
+  if (subjects.length > 0) {
+    for (const u of units) {
+      for (const m of subjectsOfReading(u.v, subjects)) {
+        matched.add(u.id);
+        bySubject.set(m.name, [...(bySubject.get(m.name) ?? []), u.id]);
+      }
+    }
+  }
+  const out: Topic[] = [];
+  const used = new Set<string>();
+  const bySize = [...bySubject].filter(([, ids]) => ids.length >= MIN_TOPIC_SIZE).sort((a, b) => b[1].length - a[1].length || byCode(a[0], b[0]));
+  for (const [name, ids] of bySize) {
+    used.add(name);
+    out.push({ key: subjectTopicKey(name), docIds: [...ids].sort(byCode), name });
+  }
 
-  // Members of each group, then every other reading that is close enough joins too (at most MAX_TOPICS_PER_DOC topics each).
+  // The readings that match no subject are grouped by closeness, as before.
+  const rest = units.filter((u) => !matched.has(u.id));
+  const groups = rest.length < MIN_TOPIC_SIZE ? [] : groupBySimilarity(rest, MERGE_SIMILARITY).filter((g) => g.length >= MIN_TOPIC_SIZE);
   const hard = groups.map((g) => g.map((i) => i));
-  const joined = new Map<number, number[]>(); // reading index -> groups it is in
+  const joined = new Map<number, number[]>(); // reading index (in rest) -> groups it is in
   hard.forEach((g, gi) => g.forEach((i) => joined.set(i, [gi])));
-  units.forEach((u, i) => {
+  rest.forEach((u, i) => {
     const own = joined.get(i) ?? [];
     if (own.length >= MAX_TOPICS_PER_DOC) return;
     const candidates: { gi: number; mean: number }[] = [];
@@ -407,7 +447,7 @@ export function clusterTopics(docs: Doc[], opts?: { minDocs?: number; subjects?:
       let count = 0;
       for (const j of g) {
         if (j === i) continue;
-        total += dot(u.v, (units[j]).v);
+        total += dot(u.v, (rest[j]).v);
         count += 1;
       }
       if (count > 0 && total / count >= ATTACH_SIMILARITY) candidates.push({ gi, mean: total / count });
@@ -418,53 +458,23 @@ export function clusterTopics(docs: Doc[], opts?: { minDocs?: number; subjects?:
   });
   const finalMembers: number[][] = hard.map(() => []);
   for (const [i, gs] of joined) for (const gi of gs) (finalMembers[gi]).push(i);
-
-  const stats = wordStats(units);
-  const topics = finalMembers.map((indexes) => {
-    const docIds = indexes.map((i) => (units[i]).id).sort(byCode);
-    return { key: topicKey(docIds), docIds, indexes };
+  const clusters = finalMembers.map((indexes) => {
+    const docIds = indexes.map((i) => (rest[i]).id).sort(byCode);
+    return { key: topicKey(docIds), docIds };
   });
   // Biggest first, then by key, so the order does not depend on how the groups were found.
-  topics.sort((a, b) => b.docIds.length - a.docIds.length || byCode(a.key, b.key));
-
-  const byId = new Map(units.map((u) => [u.id, u]));
-  const subjects = (opts?.subjects ?? []).flatMap((s) => {
-    const v = unitOf(s.vector);
-    return v === null || typeof s.name !== 'string' || s.name === '' ? [] : [{ name: s.name, vector: v }];
-  });
-
-  // Names are made in that order. A subject goes to the first (biggest) topic it is close enough to; a phrase name already used gets one
-  // more term, and then a number, so no two topics read the same.
-  const used = new Set<string>();
-  const subjectsTaken = new Set<string>();
-  return topics.map((t) => {
-    let name = '';
-    if (subjects.length > 0) {
-      const centre = centreOf(t.docIds.map((id) => (byId.get(id) as Unit).v));
-      if (centre !== null) {
-        let best: { name: string; score: number } | null = null;
-        for (const s of subjects) {
-          if (subjectsTaken.has(s.name)) continue;
-          const score = dot(centre, s.vector);
-          if (score >= SUBJECT_SIMILARITY && (best === null || score > best.score || (score === best.score && byCode(s.name, best.name) < 0))) best = { name: s.name, score };
-        }
-        if (best !== null) {
-          name = best.name;
-          subjectsTaken.add(name);
-        }
-      }
-    }
-    if (name === '' || used.has(name)) {
-      const terms = tellingTerms(t.docIds, stats);
-      name = phraseName(terms, TOPIC_NAME_TERMS, stats);
-      for (let more = TOPIC_NAME_TERMS + 1; (name === '' || used.has(name)) && more <= TOPIC_NAME_TERMS + 2; more++) name = phraseName(terms, more, stats) || name;
-    }
+  clusters.sort((a, b) => b.docIds.length - a.docIds.length || byCode(a.key, b.key));
+  for (const t of clusters) {
+    const terms = tellingTerms(t.docIds, stats);
+    let name = phraseName(terms, TOPIC_NAME_TERMS, stats);
+    for (let more = TOPIC_NAME_TERMS + 1; (name === '' || used.has(name)) && more <= TOPIC_NAME_TERMS + 2; more++) name = phraseName(terms, more, stats) || name;
     if (name === '') name = 'Related readings';
     let unique = name;
     for (let i = 2; used.has(unique); i++) unique = `${name} (${i})`;
     used.add(unique);
-    return { key: t.key, docIds: t.docIds, name: unique };
-  });
+    out.push({ key: t.key, docIds: t.docIds, name: unique });
+  }
+  return out;
 }
 
 // ---- tags -------------------------------------------------------------------------------------------------------------------------

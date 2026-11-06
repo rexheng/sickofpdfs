@@ -1,6 +1,6 @@
 import { splitPageFragment, stripFragment } from '../../shared/urls';
 import { buildViewerUrl, VIEWER_PATH } from '../../shared/viewer-url';
-import { grant } from './grants';
+import { grant, tabTitle } from './grants';
 import { defaultReferer } from './referer';
 import { waitForRequest } from './request-log';
 
@@ -42,7 +42,7 @@ export async function openEmbeddedInTab(tabId: number, url: string, pageUrl: str
   // The owner may have left the page while the worker waited: then the tab is theirs, not the page's. (The document,
   // not the address: a page may rewrite its own address with history.replaceState.)
   if (before !== undefined && (await topDocument()) !== before) return;
-  await grant(tabId, source, { referer: seen ? seen.referer : defaultReferer(pageUrl, source), back: pageUrl });
+  await grant(tabId, source, { referer: seen ? seen.referer : defaultReferer(pageUrl, source), back: pageUrl, pageTitle: await tabTitle(tabId) });
   await suppressEmbeds(tabId, pageUrl);
   await chrome.tabs.update(tabId, { url: buildViewerUrl({ source, back: pageUrl, page }) });
 }

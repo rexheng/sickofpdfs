@@ -47,9 +47,11 @@ export interface Opened {
   referer: string | null;
   /** The page that embedded it, which "Back to page" returns to; null when it was not opened from an embed. */
   back: string | null;
+  /** The title of the page the tab was showing when it opened this PDF (the course page a link was on); null for none. Kept on this computer. */
+  pageTitle?: string | null;
 }
 /** The service worker's own navigations are of the whole tab. */
-const WHOLE_TAB: Opened = { frameId: 0, parentFrameId: -1, referer: null, back: null };
+const WHOLE_TAB: Opened = { frameId: 0, parentFrameId: -1, referer: null, back: null, pageTitle: null };
 
 /** Enough for Back and Forward through the PDFs of one tab; the oldest goes first. */
 const MAX_PER_TAB = 10;
@@ -86,8 +88,8 @@ async function readRefused(): Promise<string[]> {
 }
 
 async function write(tabId: number, target: string, how: Partial<Opened>): Promise<void> {
-  const { frameId, parentFrameId, referer, back } = { ...WHOLE_TAB, ...how };
-  const record: Grant = { url: target, frameId, parentFrameId, referer, back };
+  const { frameId, parentFrameId, referer, back, pageTitle } = { ...WHOLE_TAB, ...how };
+  const record: Grant = { url: target, frameId, parentFrameId, referer, back, pageTitle: pageTitle ?? null };
   const others = (await read(tabId)).filter((g) => g.url !== target);
   await chrome.storage.session.set({ [keyOf(tabId)]: [record, ...others].slice(0, MAX_PER_TAB) });
   const refused = await readRefused();
@@ -205,6 +207,20 @@ export function forgetGrants(tabId: number): Promise<void> {
   return inOrder(() => chrome.storage.session.remove(keyOf(tabId)));
 }
 
+/**
+ * The title of the page the tab is showing now (host permission is enough: no `tabs` permission). Read when the takeover redirects, before the
+ * viewer commits, so it is the page the link was on. Null for a frame, no title, or a failure. Never sent anywhere (R92c).
+ */
+export async function tabTitle(tabId: number, frameId = 0): Promise<string | null> {
+  if (frameId !== 0 && frameId !== undefined) return null;
+  try {
+    const title = (await chrome.tabs.get(tabId)).title;
+    return typeof title === 'string' && title.trim() !== '' ? title.replace(/\s+/g, ' ').trim().slice(0, 300) : null;
+  } catch {
+    return null;
+  }
+}
+
 const recordFailed = () => console.error('sickofpdfs: could not record a PDF the tab opened');
 
 /** The events that grant an address by themselves. Register at the top level of the worker. */
@@ -226,7 +242,9 @@ export function installGrants(): void {
     (details) => {
       if (details.tabId < 0 || details.redirectUrl !== redirected + details.url) return;
       const { frameId, parentFrameId } = details;
-      grant(details.tabId, details.url, { frameId, parentFrameId, referer: requestById(details.requestId)?.referer ?? null }).catch(recordFailed);
+      void tabTitle(details.tabId, frameId)
+        .then((pageTitle) => grant(details.tabId, details.url, { frameId, parentFrameId, referer: requestById(details.requestId)?.referer ?? null, pageTitle }))
+        .catch(recordFailed);
     },
     { urls: ['http://*/*', 'https://*/*'], types: ['main_frame', 'sub_frame'] },
   );

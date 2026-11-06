@@ -29,6 +29,20 @@ import { SCHEMA_VERSION, type SqlDb, userVersion } from './schema-v2';
 /** The newest schema this file brings a database to. */
 export const SCHEMA_V5_VERSION = 5;
 
+/**
+ * R92c, local only (no outbox triggers, not a dump table): the title of the page a reading was opened from, for the categoriser's course codes
+ * (a page titled "EC313 Econometrics - Week 6 reading list"). Hangs off `documents`, so Forget and the Trash purge remove it with the reading.
+ * `embeddings.rules` says which course rules a reading was last tagged by, so a new rule set is applied to readings already in the library.
+ * Run on every open (idempotent), so a library already at v5 gets them too.
+ */
+export function ensureCategoriserLocals(db: SqlDb): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS source_pages (
+    document_id TEXT PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+    title TEXT NOT NULL CHECK (length(title) <= 300), seen_at INTEGER NOT NULL)`);
+  const cols = db.selectObjects(`PRAGMA table_info(embeddings)`);
+  if (!cols.some((c) => c.name === 'rules')) db.exec(`ALTER TABLE embeddings ADD COLUMN rules INTEGER NOT NULL DEFAULT 0`);
+}
+
 /** The tag tables that sync, with their key. `embeddings` is not among them. */
 export const TAG_TABLES = ['tags', 'reading_tags', 'auto_tag_removed'] as const;
 

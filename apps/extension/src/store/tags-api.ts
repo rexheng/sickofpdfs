@@ -77,6 +77,8 @@ export interface CategoriseInput {
   pageTexts: string[];
   /** How many of those pages are stored (a page stored with no text counts). Give it back as `pagesUsed`. */
   pagesPresent: number;
+  /** The title of the page it was opened from (R92c), or null. Used for course codes only; never leaves this computer. */
+  pageTitle: string | null;
   /** The vector stored for it, as the categoriser last made it. */
   embedding: { model: string; textHash: string; pagesUsed: number } | null;
 }
@@ -206,6 +208,8 @@ export const MAX_TAG_CHARS = 60;
 export const COURSE_PREFIX = 'Course: ';
 /** Pages of text given to the categoriser. */
 const INPUT_PAGES = 3;
+/** The version of the course rules (R92c). A reading tagged by older rules is looked at again, so a wrong tag the old rules made goes. */
+export const COURSE_RULES = 2;
 /** The most auto course tags on one reading. */
 const MAX_COURSE_TAGS = 2;
 const MAX_PAGE_CHARS = 6000;
@@ -703,7 +707,7 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
         return select(
           `SELECT d.id AS id FROM documents d LEFT JOIN embeddings e ON e.document_id = d.id
            WHERE ${LIVE} AND d.index_text = 1 AND (e.document_id IS NULL
-             OR e.model <> ? OR e.pages_used <> (SELECT count(*) FROM page_text p WHERE p.document_id = d.id AND p.page_index < ${INPUT_PAGES}))
+             OR e.model <> ? OR e.rules < ${COURSE_RULES} OR e.pages_used <> (SELECT count(*) FROM page_text p WHERE p.document_id = d.id AND p.page_index < ${INPUT_PAGES}))
            ORDER BY d.created_at DESC, d.id LIMIT ?`,
           [EMBEDDING_MODEL, limit],
         ).map((r) => str(r, 'id') as DocumentId);
@@ -748,6 +752,7 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
           // no authors
         }
         const e = one('SELECT model, text_hash, pages_used FROM embeddings WHERE document_id = ?', [documentId]);
+        const page = one('SELECT title FROM source_pages WHERE document_id = ?', [documentId]);
         return {
           id: documentId,
           title: maybeStr(d, 'title'),
@@ -756,6 +761,7 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
           hasText: num(d, 'has_text') === 1,
           pageCount: num(d, 'page_count'),
           indexText,
+          pageTitle: page === undefined ? null : str(page, 'title'),
           urls,
           paths,
           pageTexts,
@@ -797,7 +803,7 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
         }
         return select(
           `SELECT d.id AS id, d.title AS title, d.authors AS authors, e.abstract AS abstract, e.vector AS vector, e.dim AS dim
-           FROM embeddings e JOIN documents d ON d.id = e.document_id WHERE ${LIVE} ORDER BY d.created_at DESC, d.id LIMIT ?`,
+           FROM embeddings e JOIN documents d ON d.id = e.document_id WHERE ${LIVE} AND d.index_text = 1 ORDER BY d.created_at DESC, d.id LIMIT ?`,
           [limit],
         ).flatMap((r): CorpusDoc[] => {
           const vector = vectorOf(r.vector, num(r, 'dim'));
@@ -859,6 +865,7 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
           );
           for (const c of current) if (!wanted.includes(str(c, 'tag_id'))) dropReadingTag(t, documentId, str(c, 'tag_id'));
           for (const tagId of wanted) if (!wasRemoved(documentId, tagId)) putReadingTag(t, documentId, tagId, 'auto');
+          run('UPDATE embeddings SET rules = ? WHERE document_id = ?', [COURSE_RULES, documentId]);
         });
         publish(eventsOf(t, documentId, true));
       }),
@@ -906,6 +913,7 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
           // Which tag each topic is: the one with its key; else the one with the most readings in common (at least half the union).
           const claimed = new Set<string>();
           const tagOf = new Array<string | null>(topics.length).fill(null);
+          const subjectKeyed = (k: Row): boolean => (maybeStr(k, 'topic_key') ?? '').startsWith('subject:');
           topics.forEach((topic, i) => {
             for (const [id, k] of known) {
               if (!claimed.has(id) && maybeStr(k.row, 'topic_key') === topic.key) {
@@ -917,11 +925,21 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
           });
           topics.forEach((topic, i) => {
             if (tagOf[i] !== null) return;
+            // A topic made from a subject (R92c) is its subject's tag for good, whoever is in it: another tag takes it over only by its key.
+            if (topic.key.startsWith('subject:')) {
+              for (const [id, k] of known) {
+                if (!claimed.has(id) && !subjectKeyed(k.row) && k.row.deleted_at == null && str(k.row, 'name').toLowerCase() === topic.name.toLowerCase()) {
+                  tagOf[i] = id;
+                  claimed.add(id);
+                  return;
+                }
+              }
+            }
             const mine = new Set(topic.docIds);
             let best: string | null = null;
             let bestScore = 0.5 - 1e-9;
             for (const [id, k] of [...known].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
-              if (claimed.has(id) || k.docs.size === 0) continue;
+              if (claimed.has(id) || k.docs.size === 0 || subjectKeyed(k.row)) continue;
               let shared = 0;
               for (const d of k.docs) if (mine.has(d)) shared += 1;
               const score = shared / (mine.size + k.docs.size - shared);
@@ -964,7 +982,9 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
                 sets.push('topic_key = ?');
                 binds.push(topic.key);
               }
-              if (!retired && num(row, 'renamed') === 0 && str(row, 'name') !== topic.name) {
+              // A name follows its subject; a name made from words stays as it was first seen, so it does not drift as the library grows.
+              const subjectName = topic.key.startsWith('subject:') || subjectKeyed(row);
+              if (!retired && num(row, 'renamed') === 0 && str(row, 'name') !== topic.name && subjectName) {
                 sets.push('name = ?');
                 binds.push(freeName(cleanTagName(topic.name), tagId));
               }

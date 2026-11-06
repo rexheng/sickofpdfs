@@ -34,7 +34,7 @@ export interface RuntimeReplies {
    * `known: false`: the tab was never seen opening this address. The viewer then loads it without the owner's
    * sign-in, or not at all for a local file. `back`: the page this tab was seen embedding the PDF in ("Back to page").
    */
-  'takeover:prepare-fetch': { known: boolean; referer: string | null; back: string | null };
+  'takeover:prepare-fetch': { known: boolean; referer: string | null; back: string | null; pageTitle?: string | null };
   'takeover:sniffed': undefined;
   'takeover:can-take-over': boolean;
   'takeover:open-file-settings': undefined;

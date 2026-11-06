@@ -24,6 +24,8 @@ export interface CourseCodeSource {
   url?: string;
   path?: string;
   firstPageText?: string;
+  /** The title of the page the PDF was opened from (R92c). Read like the first line of a page. */
+  pageTitle?: string;
 }
 
 /** Words that look like the letters of a course code but are not. A lower-case set, tested on the letters only. */
@@ -87,6 +89,22 @@ const DEPARTMENT_WORDS = new Set(
   ),
 );
 
+
+/** Two-letter country prefixes of postcodes ("SE-106 91", "DK-1050", "DE-10115"). Not those that are also department codes (EE, ES, IT, MA). */
+const POSTCODE_COUNTRIES = new Set('se dk no fi de nl be at ch fr pl cz sk pt gr ie lt lv hu ro bg hr si lu is gb uk us ca au nz'.split(' '));
+/** A label just before a number that says it is an ID, not a course ("Student ID: AB1234", "Ref. no", "Order #"). */
+const ID_LABEL = /(?:\b(?:id|ids|student|reg|registration|ref|reference|passport|licen[cs]e|account|acct|policy|order|invoice|customer|tracking|case|ticket|booking|confirmation|serial|patient|member|membership|employee|badge|no|nr|nbr|number)\b\.?|#)[\s:.\-#]{0,4}$/i;
+
+/**
+ * R92c: a match that is a postcode ("SE-106 91", "DK-1050") or an ID number ("Student ID EC1234", "Order no. CB123") is not a course.
+ * `at`..`end` is the match in `text`.
+ */
+function isAddressOrId(text: string, at: number, end: number, letters: string, digits: string, hyphenated: boolean): boolean {
+  if (hyphenated && POSTCODE_COUNTRIES.has(letters.toLowerCase()) && digits.length >= 3) return true;
+  if (digits.length >= 3 && /^[ \u00a0]\d{2}(?![\d.])/.test(text.slice(end, end + 4))) return true; // "106 91": a postcode's two groups
+  return ID_LABEL.test(text.slice(Math.max(0, at - 24), at));
+}
+
 interface Hit {
   at: number;
   code: string;
@@ -112,12 +130,16 @@ function findLetterCodes(text: string, caseless: boolean): Hit[] {
     hits.push({ at: m.index ?? 0, code: `${letters}${m[2]}${m[3]}${m[4]}`.toUpperCase() });
   }
   for (const m of text.matchAll(joined)) {
+    const at = m.index ?? 0;
+    if (isAddressOrId(text, at, at + m[0].length, m[1] ?? '', m[2] ?? '', false)) continue;
     const code = letterCode(m[1] ?? '', m[2] ?? '', m[3] ?? '');
     if (code !== null) hits.push({ at: m.index ?? 0, code });
   }
   for (const m of text.matchAll(apart)) {
     const letters = m[1] ?? '';
     const capitals = letters === letters.toUpperCase();
+    const from = m.index ?? 0;
+    if (isAddressOrId(text, from, from + m[0].length, letters, m[2] ?? '', /-/.test(m[0].slice(letters.length, m[0].length - (m[2] ?? '').length - (m[3] ?? '').length)))) continue;
     if (!capitals && !DEPARTMENT_WORDS.has(letters.toLowerCase())) continue;
     // A suffix letter after a space-separated number is the start of the next word ("ECON 101 a"), not part of the code.
     const code = letterCode(letters, m[2] ?? '', capitals ? (m[3] ?? '') : '');
@@ -251,6 +273,7 @@ export function findCourseCodes(src: CourseCodeSource): string[] {
   try {
     if (typeof src?.url === 'string' && src.url !== '') found.push(...fromUrl(src.url.slice(0, 4096)));
     if (typeof src?.path === 'string' && src.path !== '') found.push(...fromPath(src.path.slice(0, 4096)));
+    if (typeof src?.pageTitle === 'string' && src.pageTitle !== '') found.push(...fromFirstPage(src.pageTitle.slice(0, 300).replace(/\s+/g, ' ')));
     if (typeof src?.firstPageText === 'string' && src.firstPageText !== '') found.push(...fromFirstPage(src.firstPageText.slice(0, 20_000)));
   } catch {
     // Never throws: whatever was found before the problem stands.

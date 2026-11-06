@@ -30,7 +30,7 @@ export function saveLocationOf(params: ViewerParams, opened: OpenedDocument): Sa
   const file = /^file:/i.test(source);
   if (!file && !/^https?:/i.test(source)) return null;
   const via = opened.back ?? opened.referrer ?? null;
-  return { kind: file ? 'file' : 'url', raw: file ? source : cleanLink(source), viaPage: via === null ? null : canonicalLink(via) };
+  return { kind: file ? 'file' : 'url', raw: file ? source : cleanLink(source), viaPage: via === null ? null : canonicalLink(via), viaTitle: opened.pageTitle ?? null };
 }
 
 let blobStore: Promise<BlobStore | null> | null = null;

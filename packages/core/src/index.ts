@@ -67,7 +67,7 @@ export type { ImportedMeta, ImportRef, PdfAnnotation, PdfImportOptions, PdfImpor
 export { findCourseCodes } from './categorise/course-codes';
 export type { CourseCodeSource } from './categorise/course-codes';
 export {
-  ATTACH_SIMILARITY, MAX_SUGGESTIONS, SUBJECT_SIMILARITY, MAX_TOPICS_PER_DOC, MERGE_SIMILARITY, MIN_TOPIC_SIZE, SUGGEST_SIMILARITY, TAG_MIN_DOCS, TOPIC_MIN_DOCS, clusterTopics, related, suggestTags, topicKey,
+  ATTACH_SIMILARITY, MAX_SUGGESTIONS, READING_SUBJECT_SIMILARITY, READING_SUBJECT_MARGIN, MAX_SUBJECTS_PER_DOC, subjectTopicKey, subjectsOfReading, MAX_TOPICS_PER_DOC, MERGE_SIMILARITY, MIN_TOPIC_SIZE, SUGGEST_SIMILARITY, TAG_MIN_DOCS, TOPIC_MIN_DOCS, clusterTopics, related, suggestTags, topicKey,
 } from './categorise/topics';
 export type { Doc, Subject, Topic } from './categorise/topics';
 export { SUBJECT_NAMES } from './categorise/subjects';

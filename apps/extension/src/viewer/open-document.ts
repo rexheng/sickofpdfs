@@ -30,6 +30,8 @@ export interface OpenedDocument {
    * when there was one. Never the `back` in the viewer's address, which any web page can write.
    */
   back?: string;
+  /** The title of the page the tab showed when it opened this PDF (R92c: a course source for the categoriser; kept on this computer). */
+  pageTitle?: string;
 }
 
 export type OpenOutcome =
@@ -85,7 +87,7 @@ export const BOUNCE_DELAY_MS = 2000;
 export async function openDocument(p: ViewerParams, deps: OpenDocumentDeps): Promise<OpenOutcome> {
   const url = p.source;
   if (url === null) return { kind: 'error', error: new PdfLoadError('network') };
-  const { known, referer, back } = await prepareFetch(url);
+  const { known, referer, back, pageTitle } = await prepareFetch(url);
   markAddress(known);
   deps.onBackPage?.(back);
   if (!known && /^file:/i.test(url)) return { kind: 'refused' };
@@ -106,7 +108,7 @@ export async function openDocument(p: ViewerParams, deps: OpenDocumentDeps): Pro
   }
   const picked = pickedFileName(p);
   if (picked !== null) loaded = { ...loaded, displayName: picked };
-  return openLoaded(loaded, deps, url, { ...(referrer !== undefined ? { referrer } : {}), ...(back !== null ? { back } : {}) });
+  return openLoaded(loaded, deps, url, { ...(referrer !== undefined ? { referrer } : {}), ...(back !== null ? { back } : {}), ...(pageTitle !== null ? { pageTitle } : {}) });
 }
 
 /** Opens a file the person picked ("Import this PDF", "Choose file"). */
@@ -190,13 +192,13 @@ const PREPARE_TIMEOUT_MS = 5000;
  * takeover:prepare-fetch: whether this tab really opened `url`, and the Referer the viewer's own fetch will carry
  * (Task 16's sticky rule). No answer in time, or none at all, counts as an address the tab was not seen opening.
  */
-async function prepareFetch(url: string): Promise<{ known: boolean; referer: string | null; back: string | null }> {
+async function prepareFetch(url: string): Promise<{ known: boolean; referer: string | null; back: string | null; pageTitle: string | null }> {
   const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), PREPARE_TIMEOUT_MS));
   try {
     const reply = await Promise.race([sendRuntimeMessage({ type: 'takeover:prepare-fetch', url }), timeout]);
-    return { known: reply?.known === true, referer: reply?.referer ?? null, back: reply?.back ?? null };
+    return { known: reply?.known === true, referer: reply?.referer ?? null, back: reply?.back ?? null, pageTitle: reply?.pageTitle ?? null };
   } catch {
-    return { known: false, referer: null, back: null };
+    return { known: false, referer: null, back: null, pageTitle: null };
   }
 }
 

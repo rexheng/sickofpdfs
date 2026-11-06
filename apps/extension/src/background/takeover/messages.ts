@@ -130,7 +130,7 @@ async function handle(message: RuntimeMessage, sender: Sender, afterReply: (work
   switch (message.type) {
     case 'takeover:prepare-fetch': {
       // Only the viewer that fills the tab loads a PDF; one in a frame never does (frame-escape.ts).
-      if (!fromExtensionPage(sender) || tabId === undefined || sender.frameId !== 0 || !isOpenableUrl(message.url)) return { known: false, referer: null, back: null };
+      if (!fromExtensionPage(sender) || tabId === undefined || sender.frameId !== 0 || !isOpenableUrl(message.url)) return { known: false, referer: null, back: null, pageTitle: null };
       // The owner's own opening of this viewer address is granted when webNavigation reports it, which can come after.
       await whenWeighed(sender.documentId, OPENING_WAIT_MS);
       const opened = await findGrant(tabId, message.url);
@@ -138,12 +138,13 @@ async function handle(message: RuntimeMessage, sender: Sender, afterReply: (work
       if (!known) await refuse(message.url); // a reload of this tab, or a copy of it, stays refused
       // "Back to page" goes only to the page this tab was seen embedding this PDF in, never to a `back` in the address.
       const back = opened?.back ?? null;
-      if (!/^https?:/.test(message.url)) return { known, referer: null, back };
+      const pageTitle = opened?.pageTitle ?? null;
+      if (!/^https?:/.test(message.url)) return { known, referer: null, back, pageTitle };
       // The Referer of Chrome's own request for this very PDF, as the tab's record keeps it.
       const referer = opened?.referer ?? null;
       if (referer) await setStickyReferer(tabId, message.url, referer);
       else await clearStickyReferer(tabId);
-      return { known, referer, back };
+      return { known, referer, back, pageTitle };
     }
 
     case 'takeover:can-take-over': {

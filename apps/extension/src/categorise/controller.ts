@@ -106,6 +106,8 @@ function courseCodesOf(input: CategoriseInput): string[] {
   for (const url of input.urls) codes.push(...findCourseCodes({ url }));
   for (const path of input.paths) codes.push(...findCourseCodes({ path }));
   // A reading whose text the owner keeps out of the library has no page text to read here.
+  // R92c: the title of the page the PDF was opened from counts too (kept on this computer, never sent anywhere).
+  if (input.pageTitle !== null) codes.push(...findCourseCodes({ pageTitle: input.pageTitle }));
   if (input.indexText) codes.push(...findCourseCodes({ firstPageText: input.pageTexts[0] ?? '' }));
   return [...new Set(codes)];
 }
@@ -227,6 +229,8 @@ export function startCategoriseController(o: ControllerOptions): CategoriseContr
       topicsDue = Date.now() + timing.refreshDelayMs;
     }
     await store.applyCourseTags(id, courseCodesOf(input));
+    // R92c: a reading looked at again by newer rules (no new vector) still needs the topics made again once.
+    topicsDue ??= Date.now() + timing.refreshDelayMs;
     suggestFor.add(id);
     suggestionsDue = Date.now() + timing.refreshDelayMs;
     report('reading', { embedded: ms > 0 ? 1 : 0, embedMs: Math.round(ms), totalMs: Math.round(performance.now() - began), chars: text.text.length });
