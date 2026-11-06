@@ -6,6 +6,7 @@ import { join, resolve, sep } from 'node:path';
 import { pipeline } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { PDFDocument } from 'pdf-lib';
+import { ARTICLE_PAGES, articleImage } from './article-pages';
 import { HEADER_CASES } from './header-cases';
 
 /** The folder `pnpm fixtures` fills (gitignored). */
@@ -86,6 +87,7 @@ function tinyPdfBytes(): Promise<Uint8Array> {
  * Serves the e2e fixtures on 127.0.0.1 at a random port.
  * - `/f/<name>`: `test-assets/<name>` as application/pdf, with `Range` support (`pnpm fixtures` builds that folder).
  * - `/h/*`: the HEADER_CASES, each with its own Content-Type and Content-Disposition, and the pages in HTML_PAGES.
+ * - `/a/*`: web pages with articles and their pictures, for "Save this page to library" (article-pages.ts).
  *   `POST /h/post` answers a PDF. `/h/needs-referer.pdf` answers 403 unless the request's Referer is `/h/referer-page`.
  * CORS is open because extension pages (chrome-extension://...) fetch from this origin.
  */
@@ -158,6 +160,19 @@ export async function startFixtureServer(): Promise<FixtureServer & { close(): P
         return void res.writeHead(200, { 'content-type': 'application/pdf', 'content-length': body.byteLength, 'cache-control': 'no-store' }).end(body);
       }
       if (path === '/h/post') return void res.writeHead(405, { allow: 'POST' }).end(); // only the form's POST answers
+      // R103: the article pages and their pictures (article-pages.ts).
+      const articlePage = ARTICLE_PAGES[path];
+      if (articlePage !== undefined) {
+        const html = Buffer.from(articlePage);
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': html.byteLength, 'cache-control': 'no-store' });
+        return void res.end(req.method === 'HEAD' ? undefined : html);
+      }
+      if (path.startsWith('/a/img/')) {
+        const image = articleImage(path);
+        if (image === null) return void res.writeHead(404).end();
+        res.writeHead(200, { 'content-type': image.type, 'content-length': image.body.byteLength, 'cache-control': 'max-age=3600' });
+        return void res.end(req.method === 'HEAD' ? undefined : image.body);
+      }
       const page = HTML_PAGES[path];
       if (page !== undefined) {
         const html = Buffer.from(htmlPage(page));

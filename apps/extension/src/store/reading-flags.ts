@@ -26,3 +26,35 @@ export const UNDERSTOOD = understood((name) => `d.${name}`);
  * "not learning" never goes online, D9 or not (controller ruling, Nov 6).
  */
 export const MAY_GO_ONLINE = understood((name) => name);
+
+// ---- R103: a reading made from a web page ("Save this page to library") ----
+//
+// Three save reasons mark it, written by its save like the flag above, so they go with the reading into backups, a restore and
+// sync, with no change to the row's shape. None is ever shown as words:
+// - `web-page`: it is a web page saved as a PDF. The library shows a small "Web page" kind beside its title.
+// - `web-page:text:<sha256>`: a fingerprint of the article's words. Saving the same link again compares it: the same words open
+//   this reading; changed words make a new version.
+// - `web-page:earlier:<document id>`: the earlier version of the same page, which About this PDF links to.
+
+/** The save reason of every reading made from a web page. */
+export const WEB_PAGE = 'web-page';
+const WEB_TEXT = 'web-page:text:';
+const WEB_EARLIER = 'web-page:earlier:';
+const HEX64 = /^[0-9a-f]{64}$/u;
+
+/** The save reasons a web page's reading is saved with. */
+export function webPageReasons(o: { textHash: string; earlier: string | null }): string[] {
+  return [WEB_PAGE, `${WEB_TEXT}${o.textHash}`, ...(o.earlier !== null ? [`${WEB_EARLIER}${o.earlier}`] : [])];
+}
+
+/** What a reading's save reasons say about the web page it was made from; null when it was not made from one. */
+export function webPageOf(saveReasons: readonly string[] | null | undefined): { textHash: string | null; earlier: string | null } | null {
+  if (!Array.isArray(saveReasons) || !saveReasons.includes(WEB_PAGE)) return null;
+  const reasons: readonly unknown[] = saveReasons;
+  const pick = (prefix: string): string | null => {
+    const found = reasons.find((r): r is string => typeof r === 'string' && r.startsWith(prefix));
+    const value = found === undefined ? null : found.slice(prefix.length);
+    return value !== null && HEX64.test(value) ? value : null;
+  };
+  return { textHash: pick(WEB_TEXT), earlier: pick(WEB_EARLIER) };
+}

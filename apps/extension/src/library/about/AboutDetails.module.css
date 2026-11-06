@@ -221,3 +221,16 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+/* R103: the earlier version of a saved web page, under where it came from: its label, then a row like a related reading. */
+.earlier {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-block-start: var(--space-3);
+}
+
+.earlier .relatedRow {
+  margin-inline: calc(-1 * var(--space-2));
+  inline-size: calc(100% + 2 * var(--space-2));
+}

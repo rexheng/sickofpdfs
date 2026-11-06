@@ -10,7 +10,8 @@ import { badgeOf, type BadgeState, HELD_TITLES, type HeldReason, WAITING_MESSAGE
 export const BADGE_MESSAGE = 'sop-backup:badge';
 /** The toolbar icon's tooltip while the backup waits for a click, and when nothing needs the owner. */
 export const BADGE_TITLE = WAITING_MESSAGE;
-export const DEFAULT_TITLE = 'Open your library';
+/** The manifest's own title (wxt.config.ts): the toolbar menu saves the page or opens the library (R103). */
+export const DEFAULT_TITLE = 'sickofpdfs: save this page or open your library';
 const BADGE_TEXT = '!';
 /** The error colour of the light theme (GM3 error). A badge cannot read a CSS variable. */
 const BADGE_COLOR = '#B3261C';

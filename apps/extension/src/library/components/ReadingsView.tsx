@@ -40,6 +40,7 @@ import { SelectionBar } from '../tags/SelectionBar';
 import { TagDialog } from '../tags/TagDialog';
 import { TagTitle } from '../tags/TagTitle';
 import { useReadingTags, useTagList, useTagReadings } from '../tags/use-tags';
+import { webPageOf } from '../../store/reading-flags';
 
 export interface ReadingsViewProps {
   /** The page title: "My library". */
@@ -92,6 +93,8 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
 
   // Search is the Ctrl+K palette (TB5: one search box, over the bar at the top).
   const shown = useMemo(() => (state.kind === 'ready' ? state.items.filter((i) => !narrowed || tagReadings?.has(i.doc.id) === true) : []), [state, narrowed, tagReadings]);
+  // R103: readings that a newer version of the same web page links back to ("Earlier version" on their row).
+  const olderVersions = useMemo(() => new Set(state.kind === 'ready' ? state.items.flatMap((i) => webPageOf(i.doc.saveReasons)?.earlier ?? []) : []), [state]);
 
   // While grouping or showing one tag, the rest of the library is fetched too, so every reading is seen.
   const { loadMore } = readings;
@@ -300,7 +303,7 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
         <>
           <FileTypeIcon kind="pdf" size={24} />
           <CellText title={readingTitle(i)}>{readingTitle(i)}</CellText>
-          <Badges item={i} />
+          <Badges item={i} narrow={aboutOpen} older={olderVersions.has(i.doc.id)} />
           {tags !== null && (
             <RowTags documentId={i.doc.id} list={readingTags.get(i.doc.id) ?? []} tags={tags} say={say} max={1} tabbable={false} except={saidAbove(key)} onMore={() => tagsFor(i)} />
           )}
@@ -412,7 +415,7 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
             renderCard={(item, { active, key }) => ({
               icon: <FileTypeIcon kind="pdf" size={24} />,
               title: readingTitle(item),
-              badges: <Badges item={item} compact />,
+              badges: <Badges item={item} compact older={olderVersions.has(item.doc.id)} />,
               more: more(item, active),
               thumbnail: <CardThumbnail id={item.doc.id} stored={item.doc.blobStored} />,
               ...(cardTags
@@ -449,11 +452,28 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
 }
 
 /** After the name: a star when starred, and how many notes it has. */
-function Badges({ item, compact = false }: { item: LibraryItem; compact?: boolean }) {
+/**
+ * `narrow`: the list has little room (the details panel is open), so the web page kind shows as its globe only. `older`: a newer
+ * version of the same web page is in the library.
+ */
+function Badges({ item, compact = false, narrow = false, older = false }: { item: LibraryItem; compact?: boolean; narrow?: boolean; older?: boolean }) {
   const notes = item.noteCount;
-  if (!item.doc.starred && (compact || notes === 0)) return null;
+  // R103: a reading made from a web page ("Save this page to library") says so, quietly, after its title.
+  const web = webPageOf(item.doc.saveReasons) !== null;
+  if (!item.doc.starred && !web && (compact || notes === 0)) return null;
+  const kind = older ? 'Earlier version' : 'Web page';
   return (
     <span className={styles.badges}>
+      {web && (
+        <span className={styles.kind} title={older ? 'Saved from a web page. A newer version is in your library.' : 'Saved from a web page'} aria-label={older ? 'Web page, earlier version' : 'Web page'} role="img">
+          <Icon name="language" size={20} />
+          {!compact && !narrow && (
+            <span className={styles.kindWord} aria-hidden="true">
+              {kind}
+            </span>
+          )}
+        </span>
+      )}
       {item.doc.starred && (
         <span className={styles.badge} title="Starred" aria-label="Starred" role="img">
           <Icon name="star" size={20} filled />

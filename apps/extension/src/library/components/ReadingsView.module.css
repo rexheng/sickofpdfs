@@ -20,6 +20,23 @@
   display: inline-flex;
 }
 
+/* R103: "Web page", the kind of a reading saved from a web page: the globe and a short quiet word, smaller than the title. */
+.kind {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-kind-badge);
+  white-space: nowrap;
+}
+
+/* In a narrow window the word steps aside, as the Authors column does, and the globe stays (its name is on the badge). */
+@media (max-width: 1099px) {
+  .kindWord {
+    display: none;
+  }
+}
+
 .notes {
   display: inline-flex;
   gap: var(--space-1);

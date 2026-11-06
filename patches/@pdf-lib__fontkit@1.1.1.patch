@@ -1,0 +1,34 @@
+diff --git a/dist/fontkit.es.js b/dist/fontkit.es.js
+index 2711b07413d1eb095487d4fddc7273f4afc1d82b..15531d600408ae285971f6729c2390db1b7816f3 100644
+--- a/dist/fontkit.es.js
++++ b/dist/fontkit.es.js
+@@ -32786,8 +32786,11 @@ var TTFSubset = /*#__PURE__*/function (_Subset) {
+     //   name, cmap, OS/2, post
+     this.glyf = [];
+     this.offset = 0;
++    // Patched (sickofpdfs): always the long loca format. The glyphs are copied as they are, and many have an odd length,
++    // so the short format (offsets / 2) pointed into the middle of glyphs and broke their outlines.
+     this.loca = {
+-      offsets: []
++      offsets: [],
++      version: 1
+     };
+     this.hmtx = {
+       metrics: [],
+diff --git a/dist/fontkit.umd.js b/dist/fontkit.umd.js
+index c18af0e3cfce5893cc0012cc3a4e2b69c78d4c95..e6bfadd0cdc22ce0cafbfc5a246eaba6928c29a7 100644
+--- a/dist/fontkit.umd.js
++++ b/dist/fontkit.umd.js
+@@ -40936,8 +40936,11 @@
+ 	    //   name, cmap, OS/2, post
+ 	    this.glyf = [];
+ 	    this.offset = 0;
++	    // Patched (sickofpdfs): always the long loca format. The glyphs are copied as they are, and many have an odd length,
++	    // so the short format (offsets / 2) pointed into the middle of glyphs and broke their outlines.
+ 	    this.loca = {
+-	      offsets: []
++	      offsets: [],
++	      version: 1
+ 	    };
+ 	    this.hmtx = {
+ 	      metrics: [],

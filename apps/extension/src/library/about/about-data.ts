@@ -6,6 +6,7 @@ import type { StoreChange } from '../../store/change-bus';
 import type { StoreClient } from '../../store/client';
 import type { ReadingState } from '../../store/library-api';
 import { shownTitle } from '../../shared/shown-title';
+import { webPageOf } from '../../store/reading-flags';
 
 export interface AboutDetails {
   doc: DocumentRow;
@@ -16,6 +17,10 @@ export interface AboutDetails {
   /** First and last opened (Unix ms), from the history; the save time stands in before it was first read. */
   firstOpened: number;
   lastOpened: number;
+  /** R103: the reading was made from a web page ("Save this page to library"). */
+  webPage: boolean;
+  /** R103: the earlier version of the same web page, when this reading is a newer one; null otherwise (or when it is gone). */
+  earlier: (RelatedReading & { savedAt: number }) | null;
 }
 
 export interface RelatedReading {
@@ -85,7 +90,13 @@ export function createStoreAboutData(client: AboutStore): AboutData {
     if (doc === null) return null;
     const [locations, reading] = await Promise.all([client.listLocations(id).catch(() => []), client.getReading(id).catch(() => null)]);
     locations.sort((a, b) => b.lastSeen - a.lastSeen);
-    return { doc, locations, reading, firstOpened: reading?.firstOpened ?? doc.createdAt, lastOpened: reading?.lastOpened ?? doc.createdAt };
+    const web = webPageOf(doc.saveReasons);
+    const before = web?.earlier == null ? null : await client.getDocument(web.earlier as DocumentId).catch(() => null);
+    const earlier =
+      before === null
+        ? null
+        : { id: before.id, title: shownTitle(before.title, null), authors: before.authors, year: before.year, blobStored: before.blobStored, link: null, savedAt: before.createdAt };
+    return { doc, locations, reading, firstOpened: reading?.firstOpened ?? doc.createdAt, lastOpened: reading?.lastOpened ?? doc.createdAt, webPage: web !== null, earlier };
   };
 
   return {

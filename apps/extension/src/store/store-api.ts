@@ -108,6 +108,12 @@ export interface StoreApi extends AnnotationsApi, PageFiguresApi, LibraryApi, Ba
   putPageText(documentId: DocumentId, pages: readonly { pageIndex: number; text: string }[]): Promise<void>;
   touchLocation(input: TouchLocationInput): Promise<LocationRow>;
   listLocations(documentId: DocumentId): Promise<LocationRow[]>;
+  /**
+   * R103: the library document last seen at this link (its canonical form, as `saveDocument` stores it), or null: a web link, or
+   * a `file:` link for a page on this computer. Saving a web page asks it, so the same page opens the reading it made before.
+   * Reads only.
+   */
+  documentAtLink(raw: string): Promise<DocumentId | null>;
   recordOpen(documentId: DocumentId, at: number): Promise<void>;
   /**
    * Hard delete: the document, everything that hangs off it, every outbox row naming any of it, and its indexed words. Forget also
@@ -143,6 +149,7 @@ export const LIBRARY_METHODS = [
   'putPageText',
   'touchLocation',
   'listLocations',
+  'documentAtLink',
   'recordOpen',
   'forgetDocument',
   'searchPages',
@@ -613,6 +620,15 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
       attempt(() =>
         db.selectObjects('SELECT * FROM locations WHERE document_id = ? ORDER BY last_seen DESC, id', [documentId]).map(locationFromRow),
       ),
+
+    documentAtLink: async (raw) => {
+      if (typeof raw !== 'string' || raw.length === 0 || raw.length > MAX_LINK) fail('bad-input', 'a link is needed');
+      const loc = await prepareLocation(/^file:/iu.test(raw) ? 'file' : 'url', raw, null);
+      return attempt(() => {
+        const r = one('SELECT document_id FROM locations WHERE id = ?', [loc.id]);
+        return r ? (text(r, 'document_id') as DocumentId) : null;
+      });
+    },
 
     recordOpen: (documentId, at) =>
       attempt(() => {

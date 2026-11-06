@@ -143,6 +143,12 @@ export interface SaveControllerDeps {
   incognito: boolean;
   /** Where the PDF was opened from; null for a file picked from disk. */
   location: SaveLocation | null;
+  /**
+   * R103: the PDF was made from a web page ("Save this page to library"). Its title, authors and year are the page's, not read
+   * from the PDF, it gets no DOI or arXiv id (so nothing is looked up online for it), and `reasons` (the web page's flags,
+   * store/reading-flags.ts) are saved with it.
+   */
+  madeFrom?: { title: string; authors: string[]; year: number | null; reasons: string[] };
   now(): number;
 }
 
@@ -459,7 +465,10 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
         : [cause === 'owner' || cause === 'resume' ? SAVED_BY_OWNER : cause === 'first-note' ? SAVED_BY_FIRST_NOTE : SAVED_BY_FIRST_MARK];
     // Page 1 names a reading; paperwork saved by choice (a receipt, a never-save file) keeps its own name instead, which is
     // both the better name for it and keeps the words of a private page out of the library's title.
-    const meta = metadataToSave(pages, owner !== null || decision?.verdict === 'not-learning');
+    const read = metadataToSave(pages, owner !== null || decision?.verdict === 'not-learning');
+    const made = d.madeFrom;
+    const meta = made === undefined ? read : { ...read, title: made.title, authors: made.authors, year: made.year, doi: null, arxivId: null, kind: 'other' as const };
+    const madeReasons = made?.reasons ?? [];
     let created: boolean;
     try {
       ({ created } = await store.saveDocument({
@@ -480,7 +489,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
         // R102 (Nov 6 ruling): the filter judged it not learning and the owner saved it anyway (a receipt, a statement, a CV kept
         // on purpose). It stays searchable unless D9 applies, but is never understood: no related readings, topics or auto tags.
         // The flag is a save reason, so it is written in the same transaction and goes with the reading into backups and sync.
-        saveReasons: decision?.verdict === 'not-learning' && !reportedLearning ? [...reasons, SAVED_THOUGH_NOT_LEARNING] : reasons,
+        saveReasons: [...(decision?.verdict === 'not-learning' && !reportedLearning ? [...reasons, SAVED_THOUGH_NOT_LEARNING] : reasons), ...madeReasons],
         location: d.location,
         openedAt,
       }));

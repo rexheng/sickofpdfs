@@ -1,5 +1,5 @@
-// The toolbar icon opens the library (plan S7): the library tab of this window or another if one is open (it comes to
-// the front), else a new one.
+// "Open library" (plan S7; the toolbar menu's second choice since R103, and the viewer's palette): the library tab of this
+// window or another if one is open (it comes to the front), else a new one.
 export const LIBRARY_PATH = 'library.html';
 
 /** Shows the library: an open library tab comes to the front; otherwise one opens next to the current tab. */
@@ -15,11 +15,4 @@ export async function openLibrary(): Promise<void> {
     return;
   }
   await chrome.tabs.create({ url: page });
-}
-
-/** Registers the toolbar icon's click. Call it synchronously when the service worker starts, so a click wakes it. */
-export function installOpenLibrary(): void {
-  chrome.action.onClicked.addListener(() => {
-    openLibrary().catch((error: unknown) => console.error('sickofpdfs: the library did not open', error));
-  });
 }

@@ -39,6 +39,11 @@
 //   emscripten-LICENSE                                       https://github.com/emscripten-core/emscripten
 //   musl-COPYRIGHT                                           https://github.com/emscripten-core/emscripten (system/lib/libc/musl/COPYRIGHT)
 //   libcxx-LICENSE.TXT                                       https://github.com/llvm/llvm-project (libcxx/LICENSE.TXT)
+//   fontkit-LICENSE                                          https://github.com/foliojs/fontkit (saved 2026-11-06; @pdf-lib/fontkit is
+//                                                            Hopding/fontkit, a fork of it that ships no licence file and whose README says MIT)
+//   fontkit-bundled-LICENSES.txt                             the LICENSE files of the npm packages built into @pdf-lib/fontkit's
+//                                                            dist/fontkit.es.js (buffer, base64-js, ieee754, clone, deep-equal,
+//                                                            @pdf-lib/unicode-properties, tiny-inflate), from their npm tarballs
 // When ONNX Runtime or the model changes version, the guards in manualEntries() stop the build until these are refreshed.
 import { existsSync, realpathSync } from 'node:fs';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
@@ -87,6 +92,15 @@ const WHAT = {
   'hash-wasm': 'Computes the fingerprint of a PDF file.',
   'diff-match-patch': 'Compares text, so a note finds its place again when the text around it changes.',
   wxt: 'The extension build toolkit. A few of its small helpers are inside the extension.',
+  '@mozilla/readability': 'Finds the article on a web page when you save the page to your library (it runs in that page, on this computer).',
+  'pdf-lib': 'Makes the PDF of a web page you save to your library, on this computer.',
+  '@pdf-lib/fontkit': 'Reads the bundled Noto fonts so the PDF of a saved web page has real, selectable text.',
+  '@pdf-lib/standard-fonts': 'Part of pdf-lib.',
+  '@pdf-lib/upng': 'Part of pdf-lib: reads PNG pictures for the PDF of a saved web page.',
+  '@expo-google-fonts/noto-sans-mono':
+    'Noto Sans Mono (the Noto Project, SIL Open Font License), for code in the PDF of a saved web page (pdf/NotoSansMono-Regular.ttf). Only that one font file of the package is in the extension.',
+  pako: 'Compresses and uncompresses data (for pdf-lib and fontkit).',
+  tslib: 'Small helpers that pdf-lib\'s compiled code uses.',
   '@wxt-dev/storage': 'Part of the extension build toolkit (WXT). Small helpers inside the extension.',
   '@wxt-dev/browser': 'Part of the extension build toolkit (WXT). Small helpers inside the extension.',
 };
@@ -105,6 +119,7 @@ const FALLBACK_TEXTS = {
   'react-remove-scroll-bar': ['react-remove-scroll-bar-LICENSE'],
   'onnxruntime-web': ['onnxruntime-LICENSE'],
   'onnxruntime-common': ['onnxruntime-LICENSE'],
+  '@pdf-lib/fontkit': ['fontkit-LICENSE'],
 };
 
 // ───────────────────────────────── reading packages ─────────────────────────────────
@@ -407,6 +422,22 @@ async function manualEntries() {
         { label: 'LICENSE (Pictogrammers Free License)', body: await thirdParty('mdi-LICENSE') },
         { label: 'Apache License 2.0', body: apache },
       ],
+    },
+    // ── What @pdf-lib/fontkit is built from (its dist file has these packages inside it)
+    {
+      name: '@pdf-lib/fontkit, built-in libraries',
+      version: await versionOf('@pdf-lib/fontkit', extensionDir),
+      licence: 'MIT, BSD-3-Clause, ISC',
+      what: 'Code that @pdf-lib/fontkit\'s bundle contains: font table parsing, Unicode data, decompression and Node.js shims.',
+      source: 'https://github.com/Hopding/fontkit',
+      notes: [
+        'Inside dist/fontkit.es.js: buffer, base64-js, ieee754 (BSD-3-Clause), clone, deep-equal, @pdf-lib/unicode-properties, tiny-inflate, ' +
+          '@pdf-lib/restructure, @pdf-lib/brotli, dfa and unicode-trie (MIT), and the events and process shims of rollup-plugin-node-builtins (ISC) ' +
+          'and rollup-plugin-node-globals (MIT).',
+        '@pdf-lib/restructure, @pdf-lib/brotli, dfa and unicode-trie (Devon Govett) and the two rollup shims ship no licence file; their package.json states the licence. ' +
+          'fontkit\'s own MIT text (Devon Govett) is listed with @pdf-lib/fontkit.',
+      ],
+      texts: [{ label: 'the LICENSE files of the packages that ship one', body: await thirdParty('fontkit-bundled-LICENSES.txt') }],
     },
     // ── Code copied into this project
     {

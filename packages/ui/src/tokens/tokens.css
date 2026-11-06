@@ -468,6 +468,22 @@
   /* The Tags dialog: room for the field, its suggestions and a few chips */
   --sop-tag-dialog-w: 420px;
   --sop-tag-dialog-min-h: 240px;
+  /* R103: "Save this page to library". The toolbar button's menu: the light menu, with 40 px rows (it is mostly clicked) under a
+     48 px head holding the product mark at 24 px; a quiet line under the rows says why a choice is missing. */
+  --sop-action-row-h: 40px;
+  --sop-action-head-h: 48px;
+  --sop-action-mark: 24px;
+  --sop-action-mark-radius: 6px;
+  --sop-action-mark-glyph: 16px;
+  --type-action-word: 400 16px/24px var(--font-display);
+  --type-action-note: 400 13px/18px var(--font-text);
+  /* GM3's circular and linear progress indicators: a 20 px ring with a 2.5 px stroke; a 4 px bar */
+  --sop-spinner-stroke: 2.5px;
+  --sop-progress-h: 4px;
+  /* The tab that saves the page: one white card in the middle of the app background */
+  --sop-save-card-w: 560px;
+  /* The "Web page" kind beside a reading's title in the library */
+  --type-kind-badge: 500 12px/16px var(--font-text);
 
   /* ===== Part 3: component roles that change with the theme. tokens-dark.css declares each one again. ===== */
   --menu-bg: var(--gm3-sys-color-surface-container);           /* #f0f4f9 light context menu [live] */

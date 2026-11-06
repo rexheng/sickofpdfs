@@ -75,6 +75,8 @@ export function AboutDetails({ documentId, about, tags, say, onOpenRelated, cont
   // R102: a reading saved without searchable text, or saved although it doesn't look like a learning PDF, is never related to
   // others. It says so, rather than promising related readings that will never come.
   const keptOut = !doc.indexText || (Array.isArray(doc.saveReasons) && doc.saveReasons.includes(SAVED_THOUGH_NOT_LEARNING));
+  // R103: the earlier version of a web page has its own row under "Where it came from", so it is not listed again here.
+  const relatedShown = related?.filter((r) => r.id !== details.earlier?.id) ?? null;
 
   return (
     <div className={styles.details}>
@@ -91,7 +93,7 @@ export function AboutDetails({ documentId, about, tags, say, onOpenRelated, cont
 
       <Section title="Details">
         <dl className={styles.facts}>
-          <Fact label="Kind">{KIND_ONE[doc.kind]}</Fact>
+          <Fact label="Kind">{details.webPage ? 'Web page' : KIND_ONE[doc.kind]}</Fact>
           <Fact label={courses.length > 1 ? 'Courses' : 'Course'}>{courses.length === 0 ? '—' : courses.join(', ')}</Fact>
           <Fact label="Authors">{doc.authors.length === 0 ? '—' : doc.authors.join(', ')}</Fact>
           <Fact label="Year">{doc.year ?? '—'}</Fact>
@@ -116,17 +118,37 @@ export function AboutDetails({ documentId, about, tags, say, onOpenRelated, cont
       </Section>
 
       <Section title="Where it came from">
-        {locations.length === 0 ? <p className={styles.note}>It was added from a file. No link was kept.</p> : <Places locations={locations} />}
+        {locations.length === 0 ? (
+          details.webPage ? (
+            <p className={styles.note}>Saved from a web page. A newer version of it is in your library now.</p>
+          ) : (
+            <p className={styles.note}>It was added from a file. No link was kept.</p>
+          )
+        ) : (
+          <Places locations={locations} webPage={details.webPage} />
+        )}
+        {details.earlier !== null && (
+          <div className={styles.earlier}>
+            <span className={styles.placeKind}>Earlier version</span>
+            <button type="button" className={styles.relatedRow} onClick={() => details.earlier !== null && onOpenRelated(details.earlier)} title={`Open the earlier version, saved ${formatWhen(details.earlier.savedAt)}`}>
+              <FileTypeIcon kind="pdf" size={24} />
+              <span className={styles.relatedText}>
+                <span className={styles.relatedTitle}>{details.earlier.title}</span>
+                <span className={styles.relatedMeta}>Saved {formatWhen(details.earlier.savedAt)}</span>
+              </span>
+            </button>
+          </div>
+        )}
       </Section>
 
       <Section title="Related readings">
         {keptOut ? (
           <p className={styles.note}>This PDF is kept out of related readings and topics, because it doesn’t look like a learning PDF.</p>
-        ) : related === null || related.length === 0 ? (
+        ) : relatedShown === null || relatedShown.length === 0 ? (
           <p className={styles.note}>Readings close to this one in meaning show here once sickofpdfs has read a few of your PDFs.</p>
         ) : (
           <ul className={styles.related}>
-            {related.map((r) => (
+            {relatedShown.map((r) => (
               <li key={r.id}>
                 <button type="button" className={styles.relatedRow} onClick={() => onOpenRelated(r)} title={`Open “${r.title}”`}>
                   <FileTypeIcon kind="pdf" size={24} />
@@ -199,12 +221,12 @@ function shortLink(raw: string): string {
   }
 }
 
-function Places({ locations }: { locations: readonly LocationRow[] }) {
+function Places({ locations, webPage }: { locations: readonly LocationRow[]; webPage: boolean }) {
   return (
     <ul className={styles.places}>
       {locations.slice(0, 5).map((l) => (
         <li key={l.id} className={styles.place}>
-          <span className={styles.placeKind}>{l.kind === 'file' ? 'File on this computer' : 'Web link'}</span>
+          <span className={styles.placeKind}>{l.kind === 'file' ? 'File on this computer' : webPage ? 'Web page' : 'Web link'}</span>
           {l.kind === 'url' ? (
             <ExternalLink href={l.raw}>{shortLink(l.raw)}</ExternalLink>
           ) : (

@@ -54,12 +54,15 @@ export default defineConfig({
     minimum_chrome_version: '128',
     incognito: 'split',
     icons: { 16: 'icon/16.png', 32: 'icon/32.png', 48: 'icon/48.png', 128: 'icon/128.png' },
-    // The toolbar icon opens the library (background/open-library.ts).
-    action: { default_title: 'Open your library' },
-    // Least privilege: each entry is used by the takeover, the store or the viewer. No tabs, downloads, scripting,
-    // activeTab, history, clipboard, nativeMessaging or identity. (tabs.update, tabs.create and tabs.onRemoved need no
+    // The toolbar icon opens its menu (entrypoints/popup, spec R103): "Save this page to library" and "Open library". WXT adds
+    // the popup (action.default_popup) and takes the tooltip from the popup's <title>; this one says the same.
+    action: { default_title: 'sickofpdfs: save this page or open your library' },
+    // Least privilege: each entry is used by the takeover, the store, the viewer or "Save this page to library". No tabs,
+    // downloads, history, clipboard, nativeMessaging or identity. (tabs.update, tabs.create and tabs.onRemoved need no
     // permission, and Chrome fills a sender's tab.url from the host permission for that page.)
-    permissions: ['declarativeNetRequestWithHostAccess', 'webRequest', 'webNavigation', 'storage', 'unlimitedStorage', 'offscreen'],
+    // R103: activeTab and scripting put the page reader (entrypoints/page-reader.ts) into the current tab, and only when the
+    // owner clicks "Save this page to library" in the menu. Nothing reads a page on its own.
+    permissions: ['declarativeNetRequestWithHostAccess', 'webRequest', 'webNavigation', 'storage', 'unlimitedStorage', 'offscreen', 'activeTab', 'scripting'],
     // The schemes PDFs and the pages that show them come from: the redirect and header rules, the request log and
     // the content script need no other (no ws, wss or ftp).
     host_permissions: ['http://*/*', 'https://*/*', 'file:///*'],

@@ -1,0 +1,86 @@
+/* The saving tab: Drive's app background, the product mark where Drive puts its logo, and one white card in the middle. */
+.page {
+  min-block-size: 100vh;
+  background: var(--drive-app-bg);
+  color: var(--gm3-sys-color-on-surface);
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  block-size: var(--topbar-h);
+  padding-inline: var(--space-4);
+}
+
+.card {
+  box-sizing: border-box;
+  inline-size: min(var(--sop-save-card-w), calc(100vw - 2 * var(--space-4)));
+  margin: 12vh auto 0;
+  padding: var(--space-8) var(--space-8) var(--space-6);
+  border-radius: var(--shape-content-card);
+  background: var(--drive-content-bg);
+}
+
+.site {
+  margin: 0 0 var(--space-1);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-chip);
+}
+
+.title {
+  margin: 0 0 var(--space-6);
+  font: var(--type-page-title);
+  overflow-wrap: anywhere;
+}
+
+/* GM3's linear progress indicator: a 4 px primary track on primary-container, with round ends. */
+.bar {
+  overflow: hidden;
+  block-size: var(--sop-progress-h);
+  border-radius: var(--shape-full);
+  background: var(--gm3-sys-color-primary-container);
+}
+
+.fill {
+  display: block;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--gm3-sys-color-primary);
+  transition: inline-size 240ms ease-out;
+}
+
+.step {
+  margin: var(--space-3) 0 0;
+  font: var(--type-body);
+}
+
+.note {
+  margin: var(--space-6) 0 0;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-tooltip);
+}
+
+.done,
+.warning,
+.problem {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  margin: 0 0 var(--space-3);
+  font: var(--type-body);
+}
+
+.done > :first-child {
+  color: var(--gm3-sys-color-tertiary);
+}
+
+.warning > :first-child,
+.problem > :first-child {
+  color: var(--gm3-sys-color-error);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-block-start: var(--space-4);
+}
