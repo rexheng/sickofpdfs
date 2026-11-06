@@ -662,8 +662,8 @@ test('N1: a PDF the filter would save by itself, with a card number on page 7, i
   const d = await decisionOf(page);
   testInfo.annotations.push({ type: 'decision', description: JSON.stringify({ rule: d?.rule, reasons: d?.reasons }) });
   expect(await libraryId(page), 'nothing was saved').toBeNull();
-  // TB6 header (wrong guess adjusted): the short chip says "Not saved · private numbers"; its hover names card, bank or ID numbers.
-  await expect(chipOf(page), 'the chip says why').toContainText(/not saved · private numbers/i);
+  // TB6 header (wrong guess adjusted): the short chip says "Not saved · card or bank numbers" (was "Not saved: has card or bank numbers").
+  await expect(chipOf(page), 'the chip says why').toContainText(/not saved · card or bank numbers/i);
   await still(page, testInfo, 'chip-card-on-page-7');
   expect(await traceProblems(page, { sha, phrases: ['Payment details', 'harbour wall at dawn'], fileName: file }), 'and nothing of it was written').toEqual([]);
 

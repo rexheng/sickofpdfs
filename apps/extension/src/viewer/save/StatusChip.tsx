@@ -6,7 +6,7 @@
 // - R96: a click on a "Not saved · …" chip asks first ("This looks like a bank statement. Save it to your library anyway?"),
 //   with Cancel as the default, so a stray click never saves a private PDF. Ctrl+Alt+S still saves at once.
 //
-// Wording (R73: plain, for an owner who reads best in short sentences). TB6: the chip is short, a state and at most three
+// Wording (R73: plain, for an owner who reads best in short sentences). TB6: the chip is short, a state and at most four
 // words of reason, so the header stays small and the chip is never cut; the whole sentence is its hover (also on
 // keyboard focus), and its menu or its question:
 //   not sure      "Not sure: Save to library"                     hover: "This PDF isn't in your library yet. Save it to keep your notes."
@@ -37,7 +37,7 @@ export const ALREADY_SAVED = 'Already in your library';
 export const NOT_IN_LIBRARY = 'This PDF isn’t in your library yet. Save it to keep your notes.';
 /** The tooltip of a "Not saved · …" chip, which saves when clicked. */
 const SAVE_ANYWAY = 'Click to save it to your library anyway.';
-/** D9: what a "Not saved · private numbers" chip adds. */
+/** D9: what a "Not saved · card or bank numbers" chip adds. */
 const SAVE_ANYWAY_PRIVATE = 'Its text won’t be searchable.';
 /** After the chip's Move to Trash (TB5). The chip then says "In Trash" and offers Restore. */
 const MOVED_TO_TRASH_NOTE = 'Moved to Trash. You can restore it for 30 days.';
@@ -118,7 +118,7 @@ const REASON_WORDS: ReadonlyMap<string, string> = new Map([
   ['looks like something other than a reading', 'not a reading'],
   ['looks like paperwork, not a reading', 'not a reading'],
   ['looks like a scan with no text', 'scanned pages'],
-  [HARD_BLOCK_REASON, 'private numbers'],
+  [HARD_BLOCK_REASON, 'card or bank numbers'],
   [NEVER_SAVE_REASON, 'your choice'],
   ['matches your deny list', 'your choice'],
   [FORGOTTEN_REASON, 'you removed it'],
@@ -126,16 +126,19 @@ const REASON_WORDS: ReadonlyMap<string, string> = new Map([
   [FILTER_FAILED, 'couldn’t check'],
 ]);
 
-/** A reason this many words long or shorter goes on the chip as it is. */
+/** A reason with no short form goes on the chip as it is when it is this many words long or shorter. */
 const CHIP_WORDS_MAX = 3;
 
 /**
- * "Not saved · bank statement" (TB6): the state, then at most three words of why. A reason with no short form is shown
- * when it is short already ("looks like a …" without its first words), and left to the hover when it is not.
+ * "Not saved · bank statement" (TB6): the state, then a few words of why, from REASON_WORDS (at most four, "card or bank
+ * numbers"). A reason with no short form is shown when it is short already ("looks like a …" without its first words),
+ * and left to the hover when it is not.
  */
 export function notSavedLabel(reason: string | undefined): string {
   if (reason === undefined) return 'Not saved · not a reading';
-  const words = REASON_WORDS.get(reason) ?? reason.replace(/^looks like (an? )?/u, '');
+  const short = REASON_WORDS.get(reason);
+  if (short !== undefined) return `Not saved · ${short}`;
+  const words = reason.replace(/^looks like (an? )?/u, '');
   return words.split(/\s+/u).length <= CHIP_WORDS_MAX ? `Not saved · ${words}` : 'Not saved';
 }
 

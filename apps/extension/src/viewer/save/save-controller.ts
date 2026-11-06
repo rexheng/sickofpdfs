@@ -21,7 +21,7 @@
 //   did not ask for (another tab may have chosen it), covers the reading's id, its downloads and the copy open here, and only
 //   the owner's own explicit Save takes it back. When the choices cannot be read, nothing saves on its own.
 // - R91: every save reads every page for card, bank or ID numbers before anything is written (the filter only sampled the
-//   PDF). An automatic save that finds them stops, and the chip says "Not saved · private numbers"; a save by the
+//   PDF). An automatic save that finds them stops, and the chip says "Not saved · card or bank numbers"; a save by the
 //   owner's click goes on without searchable text, with the warning (D9), however it started.
 // - R97: "Never save this file" also keeps a text fingerprint (core's `textFingerprint`, a hash of the first pages' text once
 //   stamps and dates are removed), handed to the never-save list, which keeps only a salted HMAC of it, like the file's own
