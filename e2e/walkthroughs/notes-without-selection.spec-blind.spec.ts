@@ -22,6 +22,7 @@ import {
   WIDE,
   allCards,
   annotations,
+  answerSavePrompt,
   boxOf,
   cardWith,
   clearSelection,
@@ -36,6 +37,7 @@ import {
   pageRect,
   paintOf,
   paintOfSelection,
+  readBox,
   reloadAndWait,
   selectPassage,
   settle,
@@ -181,6 +183,11 @@ test.describe('a scan (scan-120.pdf)', () => {
     await page.mouse.move(centre.x, centre.y);
     await startNoteAnswering(page, 'No');
     await page.keyboard.type('A point note on the scan', { delay: 8 });
+    // Triage (TB6 gate, rule 7): since R105 the question waits, unseen, while the note could still start "@Claude", so it can show
+    // on the first letter instead of at Ctrl+Alt+M. It keeps the letters typed meanwhile and Enter answers nothing (R100).
+    if (await answerSavePrompt(page, 'No', 1000)) {
+      await expect.poll(async () => readBox(noteBox(page)), { message: 'after No the note box has the whole note and the keyboard' }).toMatchObject({ text: 'A point note on the scan', focused: true });
+    }
     await page.keyboard.press('Enter');
     await expect(cardWith(page, 'A point note on the scan'), 'a point note works on a scan').toBeVisible({ timeout: 5000 });
     // Triage (R65 round): the box closes a moment after the card shows (1 in 6 runs counted it while it was still closing,
