@@ -308,6 +308,25 @@ Each document keeps its locations (links and file paths, first and last seen). L
 
 The "+ New" button offers Upload PDF, Open file and Paste link. In an Incognito window the extension only views PDFs: no marks, notes or saving.
 
+**R103: Save a web page as a reading (Nov 6, owner request).** Clicking the extension's toolbar button opens a small Drive-style menu: "Save this page to library" and "Open library".
+- "Save this page" reads the article on the current web page, locally (a Readability-style extraction of the title, author, date, text, headings, lists, quotes and images). It works for Medium posts, news articles and blogs.
+- It makes a clean, readable PDF on this computer, with:
+  - real text and the bundled fonts;
+  - the source link and the date saved on the first page;
+  - the images, at most 1,600 px wide, converted to JPEG or PNG.
+  The PDF is saved as a reading with the page as its source link. Every reading feature then works on it: marks, comments, Bold word starts, caret browsing, search, tags, topics and @Claude.
+- Nothing is sent anywhere, and the page is read only on the owner's click. It uses the `activeTab` and `scripting` permissions, so the extension never reads pages on its own.
+- The owner's click is the decision, so the learning filter doesn't judge it. The every-page hard-block check (R91) still runs: card, bank or ID numbers make the reading not searchable, with the D9 warning.
+- Saving the same page again opens the existing reading. A page that changed since is saved as a new version, linked to the old one.
+- If no article can be found (a web app, a login page), the menu says so plainly: "This page doesn't have an article to save."
+- On a PDF tab, the menu offers "Open library" only. The viewer already saves PDFs.
+
+**R104: Updating never loses the library (Nov 6, owner request).**
+- The extension's ID never changes (the manifest key), so updating by replacing the folder's files and pressing Reload keeps every reading, note, tag and setting. Every test build zip includes a short "How to update without losing your notes" text file.
+- Every test build must pass an upgrade check before it ships: install the previous test build, add readings, notes and tags, replace the files with the new build, reload, and check nothing is lost and the database migrated.
+- After an update, the library shows "Updated to test build N. Your library is safe." once.
+- Removing the extension in Chrome deletes its data; the update text says so plainly, and suggests turning on the backup folder first.
+
 **R92: Tags, the auto categoriser and smart sorting (Nov 2, owner request).** The owner chose two things: auto tags are applied, marked "auto"; and everything runs on the laptop only, with no network.
 - **Tags.** Any reading can carry tags.
   - Add or remove them from the library (a row's menu, or several rows at once), from the viewer's "Saved to library" menu, and from File → "About this PDF".
