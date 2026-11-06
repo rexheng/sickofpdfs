@@ -111,93 +111,95 @@ const sectionOf = (md: string, n: number): string => {
   return at < 0 ? '' : parts[at + 1];
 };
 
-test('Ctrl+Shift+E gives Markdown with front matter, quotes, page numbers, replies, styles and links back that work', async ({ context, openViewer, server }, testInfo) => {
-  const page = await openPaper(openViewer, server, ATTENTION_FX);
-  await waitForStore(page);
-  const id = await saveFirst(page);
-  await makeNotes(page);
-  await shotOf(page, testInfo, '01-marked-up');
+test('Exporting notes as Markdown, with links back that work, also for a paper that is only a local file', async ({ step }, testInfo) => {
+  test.setTimeout(600_000);
+  await step('Ctrl+Shift+E gives Markdown with front matter, quotes, page numbers, replies, styles and links back that work', async ({ context, openViewer, server }) => {
+    const page = await openPaper(openViewer, server, ATTENTION_FX);
+    await waitForStore(page);
+    const id = await saveFirst(page);
+    await makeNotes(page);
+    await shotOf(page, testInfo, '01-marked-up');
 
-  const { name, md } = await exportNotes(page);
-  note(testInfo, 'the Markdown file is called', name);
-  testInfo.annotations.push({ type: 'the Markdown', description: md.slice(0, 3000) });
-  expect(name, 'named by the paper and the first 8 digits of its fingerprint, as a .md').toMatch(new RegExp(`-${id.slice(0, 8)}\\.md$`));
+    const { name, md } = await exportNotes(page);
+    note(testInfo, 'the Markdown file is called', name);
+    testInfo.annotations.push({ type: 'the Markdown', description: md.slice(0, 3000) });
+    expect(name, 'named by the paper and the first 8 digits of its fingerprint, as a .md').toMatch(new RegExp(`-${id.slice(0, 8)}\\.md$`));
 
-  // front matter
-  const front = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(md);
-  expect(front, 'the file starts with front matter between --- lines').not.toBeNull();
-  const fm = front![1];
-  expect(fm, 'it has the title').toMatch(ATTENTION.title);
-  expect(fm, 'the arXiv id').toContain(ATTENTION_ARXIV);
-  expect(fm, 'the source link').toMatch(/https?:\/\/127\.0\.0\.1:\d+\/f\/classifier\/learning\/arxiv-1706\.03762-attention\.pdf/);
-  expect(fm, 'sickofpdfs: { documentId, format: 1 }').toMatch(/sickofpdfs:/);
-  expect(fm).toContain(id);
-  expect(fm).toMatch(/format:\s*1\b/);
+    // front matter
+    const front = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(md);
+    expect(front, 'the file starts with front matter between --- lines').not.toBeNull();
+    const fm = front![1];
+    expect(fm, 'it has the title').toMatch(ATTENTION.title);
+    expect(fm, 'the arXiv id').toContain(ATTENTION_ARXIV);
+    expect(fm, 'the source link').toMatch(/https?:\/\/127\.0\.0\.1:\d+\/f\/classifier\/learning\/arxiv-1706\.03762-attention\.pdf/);
+    expect(fm, 'sickofpdfs: { documentId, format: 1 }').toMatch(/sickofpdfs:/);
+    expect(fm).toContain(id);
+    expect(fm).toMatch(/format:\s*1\b/);
 
-  // the body: the note on the whole paper first, then one section per page
-  const body = md.slice(front![0].length);
-  const firstPage = body.search(/^## Page \d+/m);
-  expect(firstPage, 'there are page sections').toBeGreaterThan(-1);
-  expect(body.indexOf(DOC_NOTE), 'the note on the whole paper comes first').toBeGreaterThan(-1);
-  expect(body.indexOf(DOC_NOTE), 'before the first page section').toBeLessThan(firstPage);
-  expect([...body.matchAll(/^## Page (\d+)/gm)].map((m) => Number(m[1])), 'sections for page 1 and page 3, in order').toEqual([1, 3]);
+    // the body: the note on the whole paper first, then one section per page
+    const body = md.slice(front![0].length);
+    const firstPage = body.search(/^## Page \d+/m);
+    expect(firstPage, 'there are page sections').toBeGreaterThan(-1);
+    expect(body.indexOf(DOC_NOTE), 'the note on the whole paper comes first').toBeGreaterThan(-1);
+    expect(body.indexOf(DOC_NOTE), 'before the first page section').toBeLessThan(firstPage);
+    expect([...body.matchAll(/^## Page (\d+)/gm)].map((m) => Number(m[1])), 'sections for page 1 and page 3, in order').toEqual([1, 3]);
 
-  // page 1
-  const p1 = sectionOf(md, 1);
-  expect(p1, 'a quote as a blockquote').toMatch(/^>.*dominant sequence transduction/im);
-  expect(p1, 'a bold passage is **...**').toMatch(/\*\*[^*]*based solely on attention[^*]*\*\*/);
-  expect(p1, 'a struck passage is ~~...~~').toMatch(/~~[^~]*be superior in quality[^~]*~~/);
-  expect(p1, 'an underlined passage is labelled').toMatch(/underline/i);
-  expect(p1, 'a highlighted passage is labelled').toMatch(/highlight/i);
-  expect(p1, 'the comment is there').toContain(COMMENT);
-  const lines = p1.split('\n');
-  const rootLine = lines.find((l) => l.includes(COMMENT))!;
-  const replyLine = lines.find((l) => l.includes(REPLY));
-  expect(replyLine, 'and its reply').toBeDefined();
-  expect(indentOf(replyLine!), 'the reply is indented under the comment').toBeGreaterThan(indentOf(rootLine));
-  expect(p1, 'a note that holds HTML is not written out as HTML').not.toMatch(/<script/i);
-  expect(p1, 'but its words are still there').toContain('alert(1)');
-  expect(p1, 'a link back to page 1').toMatch(/\]\(https?:\/\/127\.0\.0\.1:\d+\/f\/classifier\/learning\/arxiv-1706\.03762-attention\.pdf#page=1\)/);
+    // page 1
+    const p1 = sectionOf(md, 1);
+    expect(p1, 'a quote as a blockquote').toMatch(/^>.*dominant sequence transduction/im);
+    expect(p1, 'a bold passage is **...**').toMatch(/\*\*[^*]*based solely on attention[^*]*\*\*/);
+    expect(p1, 'a struck passage is ~~...~~').toMatch(/~~[^~]*be superior in quality[^~]*~~/);
+    expect(p1, 'an underlined passage is labelled').toMatch(/underline/i);
+    expect(p1, 'a highlighted passage is labelled').toMatch(/highlight/i);
+    expect(p1, 'the comment is there').toContain(COMMENT);
+    const lines = p1.split('\n');
+    const rootLine = lines.find((l) => l.includes(COMMENT))!;
+    const replyLine = lines.find((l) => l.includes(REPLY));
+    expect(replyLine, 'and its reply').toBeDefined();
+    expect(indentOf(replyLine!), 'the reply is indented under the comment').toBeGreaterThan(indentOf(rootLine));
+    expect(p1, 'a note that holds HTML is not written out as HTML').not.toMatch(/<script/i);
+    expect(p1, 'but its words are still there').toContain('alert(1)');
+    expect(p1, 'a link back to page 1').toMatch(/\]\(https?:\/\/127\.0\.0\.1:\d+\/f\/classifier\/learning\/arxiv-1706\.03762-attention\.pdf#page=1\)/);
 
-  // page 3
-  const p3 = sectionOf(md, 3);
-  expect(p3, 'the note on page 3 is under "Page 3"').toContain(PAGE3_NOTE);
-  expect(p3, 'with its quote').toMatch(/^>.*Encoder and Decoder/im);
-  expect(p1, 'and not under page 1').not.toContain(PAGE3_NOTE);
-  const back = /\]\((https?:\/\/[^\s)]+#page=3)\)/.exec(p3);
-  expect(back, 'a link back to page 3').not.toBeNull();
+    // page 3
+    const p3 = sectionOf(md, 3);
+    expect(p3, 'the note on page 3 is under "Page 3"').toContain(PAGE3_NOTE);
+    expect(p3, 'with its quote').toMatch(/^>.*Encoder and Decoder/im);
+    expect(p1, 'and not under page 1').not.toContain(PAGE3_NOTE);
+    const back = /\]\((https?:\/\/[^\s)]+#page=3)\)/.exec(p3);
+    expect(back, 'a link back to page 3').not.toBeNull();
 
-  // the link back works: it opens the paper in our viewer, on page 3
-  const link = back![1].replace(/^https:/, 'http:');
-  const tab = await context.newPage();
-  await tab.goto(link).catch(() => {});
-  await expect.poll(() => tab.url(), { message: 'the link opens our viewer', timeout: 20_000 }).toMatch(OUR_VIEWER_RE);
-  await waitViewerReady(tab);
-  await expect.poll(() => hooks(tab).eval((h) => h.viewer.currentPage()), { message: 'on page 3', timeout: 20_000 }).toBe(2);
-  await shotOf(tab, testInfo, '02-link-back-opens-page-3');
-});
+    // the link back works: it opens the paper in our viewer, on page 3
+    const link = back![1].replace(/^https:/, 'http:');
+    const tab = await context.newPage();
+    await tab.goto(link).catch(() => {});
+    await expect.poll(() => tab.url(), { message: 'the link opens our viewer', timeout: 20_000 }).toMatch(OUR_VIEWER_RE);
+    await waitViewerReady(tab);
+    await expect.poll(() => hooks(tab).eval((h) => h.viewer.currentPage()), { message: 'on page 3', timeout: 20_000 }).toBe(2);
+    await shotOf(tab, testInfo, '02-link-back-opens-page-3');
+  }, 300_000);
+  await step('a paper that is only a file on this computer links back to the saved copy in the viewer, with its doc and page', async ({ context, tmp }) => {
+    const file = await copyFixture(ATTENTION.file, join(tmp, 'Downloads', 'attention.pdf'));
+    const sha = await shaOf(ATTENTION);
+    const page = await openLocalFile(context, pathToFileURL(file).href);
+    await readyForMarks(page);
+    await saveFirst(page);
+    await postNote(page, ATTENTION_FX, LINES.l3, COMMENT);
+    await clearFocus(page);
 
-test('a paper that is only a file on this computer links back to the saved copy in the viewer, with its doc and page', async ({ context, tmp }, testInfo) => {
-  const file = await copyFixture(ATTENTION.file, join(tmp, 'Downloads', 'attention.pdf'));
-  const sha = await shaOf(ATTENTION);
-  const page = await openLocalFile(context, pathToFileURL(file).href);
-  await readyForMarks(page);
-  await saveFirst(page);
-  await postNote(page, ATTENTION_FX, LINES.l3, COMMENT);
-  await clearFocus(page);
+    const { md } = await exportNotes(page);
+    testInfo.annotations.push({ type: 'the Markdown', description: md.slice(0, 2000) });
+    expect(md).toContain(COMMENT);
+    const link = new RegExp(`\\]\\((chrome-extension://${EXTENSION_ID}/viewer\\.html\\?[^\\s)]*doc=${sha}[^\\s)]*)\\)`).exec(md);
+    expect(link, `a file-only document links back to the viewer with doc=<fingerprint> and a page (looked for chrome-extension://${EXTENSION_ID}/viewer.html?...doc=${sha.slice(0, 8)}...)`).not.toBeNull();
+    expect(link![1], 'and a page').toMatch(/page=1\b/);
 
-  const { md } = await exportNotes(page);
-  testInfo.annotations.push({ type: 'the Markdown', description: md.slice(0, 2000) });
-  expect(md).toContain(COMMENT);
-  const link = new RegExp(`\\]\\((chrome-extension://${EXTENSION_ID}/viewer\\.html\\?[^\\s)]*doc=${sha}[^\\s)]*)\\)`).exec(md);
-  expect(link, `a file-only document links back to the viewer with doc=<fingerprint> and a page (looked for chrome-extension://${EXTENSION_ID}/viewer.html?...doc=${sha.slice(0, 8)}...)`).not.toBeNull();
-  expect(link![1], 'and a page').toMatch(/page=1\b/);
-
-  const tab = await context.newPage();
-  await tab.goto(link![1]);
-  await waitViewerReady(tab);
-  await expect(cardWith(tab, COMMENT), 'the link opens the saved copy with its note').toBeVisible({ timeout: 20_000 });
-  const where = await findOnPage(tab, 0, 'Attention Is All You Need').catch(() => null);
-  expect(where, 'on the right document').not.toBeNull();
-  await shotOf(tab, testInfo, '03-file-only-link-back');
+    const tab = await context.newPage();
+    await tab.goto(link![1]);
+    await waitViewerReady(tab);
+    await expect(cardWith(tab, COMMENT), 'the link opens the saved copy with its note').toBeVisible({ timeout: 20_000 });
+    const where = await findOnPage(tab, 0, 'Attention Is All You Need').catch(() => null);
+    expect(where, 'on the right document').not.toBeNull();
+    await shotOf(tab, testInfo, '03-file-only-link-back');
+  }, 300_000);
 });

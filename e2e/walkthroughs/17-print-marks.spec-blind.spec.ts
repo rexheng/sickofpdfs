@@ -172,162 +172,163 @@ function changedOutside(a: Frame, b: Frame, sheet: Box, keep: Box[], pad: number
 const YELLOW = 0;
 const GREEN = 1;
 
-// ---------------------------------------------------------------------------------------------------------------
+test('Printing with marks: marks and areas print, notes never do', async ({ step }, testInfo) => {
+  test.setTimeout(600_000);
+  // ---------------------------------------------------------------------------------------------------------------
+  await step('printing with marks puts the highlights, underline, strike and bold on the printed page; printing without marks leaves the page plain; nothing else changes', async ({ context, openViewer, server }) => {
+    await useRecordingPrint(context);
+    const page = await openPaper(openViewer, server, ATTENTION);
+    const tokens = await markTokens(page);
 
-test('printing with marks puts the highlights, underline, strike and bold on the printed page; printing without marks leaves the page plain; nothing else changes', async ({ context, openViewer, server }, testInfo) => {
-  await useRecordingPrint(context);
-  const page = await openPaper(openViewer, server, ATTENTION);
-  const tokens = await markTokens(page);
-
-  // The marks: a yellow highlight (H), a green one (the menu), an underline, a strike and bold, on five lines of the abstract.
-  const made: { name: string; sel: Selected }[] = [];
-  const mark = async (name: string, line: (typeof LINES)[keyof typeof LINES], how: () => Promise<void>) => {
-    const sel = await selectPassage(page, ATTENTION, line);
-    await how();
-    made.push({ name, sel });
-  };
-  await mark('yellow highlight', LINES.l1, () => page.keyboard.press('h'));
-  await answerSavePrompt(page, 'Yes', 500);
-  await mark('green highlight', LINES.l3, async () => {
+    // The marks: a yellow highlight (H), a green one (the menu), an underline, a strike and bold, on five lines of the abstract.
+    const made: { name: string; sel: Selected }[] = [];
+    const mark = async (name: string, line: (typeof LINES)[keyof typeof LINES], how: () => Promise<void>) => {
+      const sel = await selectPassage(page, ATTENTION, line);
+      await how();
+      made.push({ name, sel });
+    };
+    await mark('yellow highlight', LINES.l1, () => page.keyboard.press('h'));
+    await answerSavePrompt(page, 'Yes', 500);
+    await mark('green highlight', LINES.l3, async () => {
+      await clearSelection(page);
+      const sel = await selectPassage(page, ATTENTION, LINES.l3);
+      await highlightFromMenu(page, sel, 'green');
+    });
+    await mark('underline', LINES.l5, () => page.keyboard.press('Control+u'));
+    await mark('strike', LINES.l7, () => page.keyboard.press('Alt+Shift+5'));
+    await mark('bold', LINES.l9, () => page.keyboard.press('Control+b'));
     await clearSelection(page);
-    const sel = await selectPassage(page, ATTENTION, LINES.l3);
-    await highlightFromMenu(page, sel, 'green');
-  });
-  await mark('underline', LINES.l5, () => page.keyboard.press('Control+u'));
-  await mark('strike', LINES.l7, () => page.keyboard.press('Alt+Shift+5'));
-  await mark('bold', LINES.l9, () => page.keyboard.press('Control+b'));
-  await clearSelection(page);
-  await settle(page, 600);
-  const onScreen = await pageRect(page, 0);
-  const lines = await Promise.all(made.map(async (m) => (await lineBoxes(page, m.sel))[0]));
-  expect((await markPixelsOnPage(page, 0, tokens)), 'the marks are on the screen before printing').toBeGreaterThan(200);
-  await shot(page, testInfo, 'marks-on-screen');
+    await settle(page, 600);
+    const onScreen = await pageRect(page, 0);
+    const lines = await Promise.all(made.map(async (m) => (await lineBoxes(page, m.sel))[0]));
+    expect((await markPixelsOnPage(page, 0, tokens)), 'the marks are on the screen before printing').toBeGreaterThan(200);
+    await shot(page, testInfo, 'marks-on-screen');
 
-  // ---- Print with marks ----
-  const withChoice = await printWithMarks(page, true);
-  note(testInfo, 'print with marks', withChoice.how);
-  const withPdf = await printedPdf(page);
-  // ---- Print without marks (a second print: the choice does not stay) ----
-  const withoutChoice = await printWithMarks(page, false);
-  note(testInfo, 'print without marks', withoutChoice.how);
-  expect.soft(withChoice.asked && withoutChoice.asked, `Ctrl+P offers the choice "with or without your marks" (with: ${withChoice.how}; without: ${withoutChoice.how})`).toBe(true);
-  const withoutPdf = await printedPdf(page);
+    // ---- Print with marks ----
+    const withChoice = await printWithMarks(page, true);
+    note(testInfo, 'print with marks', withChoice.how);
+    const withPdf = await printedPdf(page);
+    // ---- Print without marks (a second print: the choice does not stay) ----
+    const withoutChoice = await printWithMarks(page, false);
+    note(testInfo, 'print without marks', withoutChoice.how);
+    expect.soft(withChoice.asked && withoutChoice.asked, `Ctrl+P offers the choice "with or without your marks" (with: ${withChoice.how}; without: ${withoutChoice.how})`).toBe(true);
+    const withoutPdf = await printedPdf(page);
 
-  expect((await markPixelsOnPage(page, 0, tokens)), 'after printing the marks are still on the screen').toBeGreaterThan(200);
+    expect((await markPixelsOnPage(page, 0, tokens)), 'after printing the marks are still on the screen').toBeGreaterThan(200);
 
-  const outWith = await openPrintout(openViewer, server, withPdf, 'with-marks');
-  const outWithout = await openPrintout(openViewer, server, withoutPdf, 'without-marks');
-  const pages = await pageCountOf(page);
-  expect(await pageCountOf(outWith), 'the printout has one sheet for each page').toBe(pages);
-  expect(await pageCountOf(outWithout)).toBe(pages);
-  const a = await sheetOf(outWith, 0);
-  const b = await sheetOf(outWithout, 0);
-  await shot(outWith, testInfo, 'printed-with-marks');
-  await shot(outWithout, testInfo, 'printed-without-marks');
-  expect(Math.abs(a.box.right - a.box.left - (onScreen.right - onScreen.left)) + Math.abs(a.box.bottom - a.box.top - (onScreen.bottom - onScreen.top)), 'the sheet is the page, not widened for the margin column').toBeLessThanOrEqual(3);
+    const outWith = await openPrintout(openViewer, server, withPdf, 'with-marks');
+    const outWithout = await openPrintout(openViewer, server, withoutPdf, 'without-marks');
+    const pages = await pageCountOf(page);
+    expect(await pageCountOf(outWith), 'the printout has one sheet for each page').toBe(pages);
+    expect(await pageCountOf(outWithout)).toBe(pages);
+    const a = await sheetOf(outWith, 0);
+    const b = await sheetOf(outWithout, 0);
+    await shot(outWith, testInfo, 'printed-with-marks');
+    await shot(outWithout, testInfo, 'printed-without-marks');
+    expect(Math.abs(a.box.right - a.box.left - (onScreen.right - onScreen.left)) + Math.abs(a.box.bottom - a.box.top - (onScreen.bottom - onScreen.top)), 'the sheet is the page, not widened for the margin column').toBeLessThanOrEqual(3);
 
-  const printed = (i: number): Box[] => [toSheet(lines[i], onScreen, a.box)];
-  const plain = (i: number): Box[] => [toSheet(lines[i], onScreen, b.box)];
-  const grabbed = (f: Frame) => ({ img: f.img, dpr: f.dpr });
+    const printed = (i: number): Box[] => [toSheet(lines[i], onScreen, a.box)];
+    const plain = (i: number): Box[] => [toSheet(lines[i], onScreen, b.box)];
+    const grabbed = (f: Frame) => ({ img: f.img, dpr: f.dpr });
 
-  // yellow and green highlights
-  // Triage note: a printed sheet is a 200 dpi picture shown again at 100%, so more paper pixels are blends of ink and fill than on the screen;
-  // the yellow line read 0.58 with no white at all and #fce494 as its colour. So: at least half in the fill, no white, and the fill is the
-  // line's most common paper colour (the first guess was 0.6, the screen's bound).
-  const highlightOnSheet = (p: ReturnType<typeof paintOf>, fill: (typeof tokens.fill)[number], name: string) => {
-    expect.soft(p.share(fill), `the ${name} highlight is on the printed line, in the mark's ${name} ${hex(fill)}: ${describe(p)}`).toBeGreaterThanOrEqual(0.5);
-    expect.soft(p.neutral, `the ${name} line has no plain paper left: ${describe(p)}`).toBeLessThanOrEqual(0.1);
-    expect.soft(Math.max(...p.dominant.map((c, k) => Math.abs(c - fill[k]))), `its most common paper colour is the ${name} fill: ${describe(p)}`).toBeLessThanOrEqual(12);
-  };
-  highlightOnSheet(paintOf(grabbed(a.frame), printed(0)), tokens.fill[YELLOW], 'yellow');
-  highlightOnSheet(paintOf(grabbed(a.frame), printed(1)), tokens.fill[GREEN], 'green');
-  // underline
-  // Triage note: the underline and the strike come after the green from the menu, and line styles use the last colour (plan section 7,
-  // 'marks.lastColor'), so on the screen they are green: the print is judged in that colour (the first guess was yellow).
-  const LINE = GREEN;
-  const under = strokesOf(grabbed(a.frame), printed(2)[0], lineColours(tokens.line[LINE]));
-  expect.soft(under.rows.length, `an underline in the line colour ${hex(tokens.line[LINE])} runs along the printed words`).toBeGreaterThan(0);
-  expect.soft(Math.min(...under.rows), 'in the lower part of the line').toBeGreaterThanOrEqual(0.6);
-  // strike
-  const strike = strokesOf(grabbed(a.frame), printed(3)[0], lineColours(tokens.line[LINE]), { above: 0, below: 0, cover: 0.2 });
-  expect.soft(strike.rows.length, `a strike in the line colour runs through the printed words`).toBeGreaterThan(0);
-  expect.soft(strike.rows.every((r) => r >= 0.2 && r <= 0.8), 'through the middle of the line').toBe(true);
-  // bold: heavier ink than the same words printed without marks
-  const boldOn = paintOf(grabbed(a.frame), printed(4));
-  const boldOff = paintOf(grabbed(b.frame), plain(4));
-  expect.soft(boldOn.darkness, `bold prints heavier: ${boldOff.darkness.toFixed(0)} black px without marks, ${boldOn.darkness.toFixed(0)} with`).toBeGreaterThanOrEqual(boldOff.darkness * 1.03);
-  expect.soft(boldOn.darkness, 'but it is still the same words').toBeLessThanOrEqual(boldOff.darkness * 2);
+    // yellow and green highlights
+    // Triage note: a printed sheet is a 200 dpi picture shown again at 100%, so more paper pixels are blends of ink and fill than on the screen;
+    // the yellow line read 0.58 with no white at all and #fce494 as its colour. So: at least half in the fill, no white, and the fill is the
+    // line's most common paper colour (the first guess was 0.6, the screen's bound).
+    const highlightOnSheet = (p: ReturnType<typeof paintOf>, fill: (typeof tokens.fill)[number], name: string) => {
+      expect.soft(p.share(fill), `the ${name} highlight is on the printed line, in the mark's ${name} ${hex(fill)}: ${describe(p)}`).toBeGreaterThanOrEqual(0.5);
+      expect.soft(p.neutral, `the ${name} line has no plain paper left: ${describe(p)}`).toBeLessThanOrEqual(0.1);
+      expect.soft(Math.max(...p.dominant.map((c, k) => Math.abs(c - fill[k]))), `its most common paper colour is the ${name} fill: ${describe(p)}`).toBeLessThanOrEqual(12);
+    };
+    highlightOnSheet(paintOf(grabbed(a.frame), printed(0)), tokens.fill[YELLOW], 'yellow');
+    highlightOnSheet(paintOf(grabbed(a.frame), printed(1)), tokens.fill[GREEN], 'green');
+    // underline
+    // Triage note: the underline and the strike come after the green from the menu, and line styles use the last colour (plan section 7,
+    // 'marks.lastColor'), so on the screen they are green: the print is judged in that colour (the first guess was yellow).
+    const LINE = GREEN;
+    const under = strokesOf(grabbed(a.frame), printed(2)[0], lineColours(tokens.line[LINE]));
+    expect.soft(under.rows.length, `an underline in the line colour ${hex(tokens.line[LINE])} runs along the printed words`).toBeGreaterThan(0);
+    expect.soft(Math.min(...under.rows), 'in the lower part of the line').toBeGreaterThanOrEqual(0.6);
+    // strike
+    const strike = strokesOf(grabbed(a.frame), printed(3)[0], lineColours(tokens.line[LINE]), { above: 0, below: 0, cover: 0.2 });
+    expect.soft(strike.rows.length, `a strike in the line colour runs through the printed words`).toBeGreaterThan(0);
+    expect.soft(strike.rows.every((r) => r >= 0.2 && r <= 0.8), 'through the middle of the line').toBe(true);
+    // bold: heavier ink than the same words printed without marks
+    const boldOn = paintOf(grabbed(a.frame), printed(4));
+    const boldOff = paintOf(grabbed(b.frame), plain(4));
+    expect.soft(boldOn.darkness, `bold prints heavier: ${boldOff.darkness.toFixed(0)} black px without marks, ${boldOn.darkness.toFixed(0)} with`).toBeGreaterThanOrEqual(boldOff.darkness * 1.03);
+    expect.soft(boldOn.darkness, 'but it is still the same words').toBeLessThanOrEqual(boldOff.darkness * 2);
 
-  // without marks, every one of those lines is plain paper and ink
-  for (const [i, m] of made.entries()) {
-    const p = paintOf(grabbed(b.frame), plain(i));
-    expect.soft(isPlain(p), `without marks the ${m.name} line prints plain: ${describe(p)}`).toBe(true);
-  }
-  expect.soft(strokesOf(grabbed(b.frame), plain(2)[0], lineColours(tokens.line[LINE])).rows, 'no underline without marks').toEqual([]);
-  expect.soft(strokesOf(grabbed(b.frame), plain(3)[0], lineColours(tokens.line[LINE]), { above: 0, below: 0, cover: 0.2 }).rows, 'no strike without marks').toEqual([]);
+    // without marks, every one of those lines is plain paper and ink
+    for (const [i, m] of made.entries()) {
+      const p = paintOf(grabbed(b.frame), plain(i));
+      expect.soft(isPlain(p), `without marks the ${m.name} line prints plain: ${describe(p)}`).toBe(true);
+    }
+    expect.soft(strokesOf(grabbed(b.frame), plain(2)[0], lineColours(tokens.line[LINE])).rows, 'no underline without marks').toEqual([]);
+    expect.soft(strokesOf(grabbed(b.frame), plain(3)[0], lineColours(tokens.line[LINE]), { above: 0, below: 0, cover: 0.2 }).rows, 'no strike without marks').toEqual([]);
 
-  // Nothing else changes: outside the five lines the two prints are the same sheet (no card, no margin column, no stray mark).
-  const stray = changedOutside(a.frame, b.frame, a.box, lines.map((l) => toSheet(l, onScreen, a.box)), 8);
-  expect.soft(stray, 'outside the marked lines the sheet with marks and the sheet without are the same').toBeLessThan(0.0005);
+    // Nothing else changes: outside the five lines the two prints are the same sheet (no card, no margin column, no stray mark).
+    const stray = changedOutside(a.frame, b.frame, a.box, lines.map((l) => toSheet(l, onScreen, a.box)), 8);
+    expect.soft(stray, 'outside the marked lines the sheet with marks and the sheet without are the same').toBeLessThan(0.0005);
 
-  // A page with no marks prints the same either way.
-  const a2 = await sheetOf(outWith, 1);
-  const b2 = await sheetOf(outWithout, 1);
-  expect.soft(shareOf(a2.frame, changed(a2.frame, b2.frame), a2.box), 'a page with no marks prints the same with or without marks').toBeLessThan(0.0002);
-});
+    // A page with no marks prints the same either way.
+    const a2 = await sheetOf(outWith, 1);
+    const b2 = await sheetOf(outWithout, 1);
+    expect.soft(shareOf(a2.frame, changed(a2.frame, b2.frame), a2.box), 'a page with no marks prints the same with or without marks').toBeLessThan(0.0002);
+  }, 300_000);
+  await step('an Alt+drag area prints in its own outline; a figure comment does not (notes never print, R78), with or without marks', async ({ context, openViewer, server }) => {
+    await useRecordingPrint(context);
+    const fig = FIG_PICTURE;
+    const page = await openFigurePaper(openViewer, server, fig);
+    const tokens = await outlineTokens(page);
 
-test('an Alt+drag area prints in its own outline; a figure comment does not (notes never print, R78), with or without marks', async ({ context, openViewer, server }, testInfo) => {
-  await useRecordingPrint(context);
-  const fig = FIG_PICTURE;
-  const page = await openFigurePaper(openViewer, server, fig);
-  const tokens = await outlineTokens(page);
+    // An area over the abstract, then a comment on the figure.
+    const from = await clientOfPoint(page, fig.pageIndex, 80, 300);
+    const to = await clientOfPoint(page, fig.pageIndex, 250, 385);
+    const dragBox: Box = { left: from.x, top: from.y, right: to.x, bottom: to.y };
+    await altDrag(page, from, to);
+    await answerSavePrompt(page, 'Yes', 500);
+    const dragNorm = await normOfBox(page, fig.pageIndex, dragBox);
+    await page.mouse.move(8, 420);
+    await settle(page, 500);
+    const fbox = await figureBox(page, fig);
+    const aim = within(fbox, fig.aim.x, fig.aim.y);
+    await page.mouse.move(aim.x, aim.y);
+    await page.waitForTimeout(600);
+    await page.mouse.click(aim.x, aim.y);
+    await startNoteAnswering(page, 'Yes');
+    await page.keyboard.type('Comment on the picture', { delay: 8 });
+    await page.keyboard.press('Enter');
+    await settle(page, 800);
+    await shot(page, testInfo, 'area-and-figure-comment-on-screen');
 
-  // An area over the abstract, then a comment on the figure.
-  const from = await clientOfPoint(page, fig.pageIndex, 80, 300);
-  const to = await clientOfPoint(page, fig.pageIndex, 250, 385);
-  const dragBox: Box = { left: from.x, top: from.y, right: to.x, bottom: to.y };
-  await altDrag(page, from, to);
-  await answerSavePrompt(page, 'Yes', 500);
-  const dragNorm = await normOfBox(page, fig.pageIndex, dragBox);
-  await page.mouse.move(8, 420);
-  await settle(page, 500);
-  const fbox = await figureBox(page, fig);
-  const aim = within(fbox, fig.aim.x, fig.aim.y);
-  await page.mouse.move(aim.x, aim.y);
-  await page.waitForTimeout(600);
-  await page.mouse.click(aim.x, aim.y);
-  await startNoteAnswering(page, 'Yes');
-  await page.keyboard.type('Comment on the picture', { delay: 8 });
-  await page.keyboard.press('Enter');
-  await settle(page, 800);
-  await shot(page, testInfo, 'area-and-figure-comment-on-screen');
+    const withChoice = await printWithMarks(page, true);
+    const withPdf = await printedPdf(page);
+    const withoutChoice = await printWithMarks(page, false);
+    const withoutPdf = await printedPdf(page);
+    expect.soft(withChoice.asked && withoutChoice.asked, `Ctrl+P offers the choice (with: ${withChoice.how}; without: ${withoutChoice.how})`).toBe(true);
 
-  const withChoice = await printWithMarks(page, true);
-  const withPdf = await printedPdf(page);
-  const withoutChoice = await printWithMarks(page, false);
-  const withoutPdf = await printedPdf(page);
-  expect.soft(withChoice.asked && withoutChoice.asked, `Ctrl+P offers the choice (with: ${withChoice.how}; without: ${withoutChoice.how})`).toBe(true);
+    const outWith = await openPrintout(openViewer, server, withPdf, 'figure-with-marks');
+    const outWithout = await openPrintout(openViewer, server, withoutPdf, 'figure-without-marks');
+    const a = await sheetOf(outWith, fig.pageIndex);
+    const b = await sheetOf(outWithout, fig.pageIndex);
+    await shot(outWith, testInfo, 'printed-with-marks');
+    await shot(outWithout, testInfo, 'printed-without-marks');
 
-  const outWith = await openPrintout(openViewer, server, withPdf, 'figure-with-marks');
-  const outWithout = await openPrintout(openViewer, server, withoutPdf, 'figure-without-marks');
-  const a = await sheetOf(outWith, fig.pageIndex);
-  const b = await sheetOf(outWithout, fig.pageIndex);
-  await shot(outWith, testInfo, 'printed-with-marks');
-  await shot(outWithout, testInfo, 'printed-without-marks');
+    // the area, in the area colour, where it was dragged
+    const areaOnSheet = await boxOfNorm(outWith, fig.pageIndex, dragNorm);
+    const areaRing = findRing(a.frame, near(a.frame, tokens.area, 40), areaOnSheet, { band: 8, prefer: tokens.area });
+    expect(areaRing.found, `the area prints as a rectangle in the area colour ${hex(tokens.area)}: ${describeRing(areaRing)}`).toBe(4);
+    const areaBare = findRing(b.frame, near(b.frame, tokens.area, 40), await boxOfNorm(outWithout, fig.pageIndex, dragNorm), { band: 8, prefer: tokens.area });
+    expect(areaBare.found, `and not without marks: ${describeRing(areaBare)}`).toBe(0);
 
-  // the area, in the area colour, where it was dragged
-  const areaOnSheet = await boxOfNorm(outWith, fig.pageIndex, dragNorm);
-  const areaRing = findRing(a.frame, near(a.frame, tokens.area, 40), areaOnSheet, { band: 8, prefer: tokens.area });
-  expect(areaRing.found, `the area prints as a rectangle in the area colour ${hex(tokens.area)}: ${describeRing(areaRing)}`).toBe(4);
-  const areaBare = findRing(b.frame, near(b.frame, tokens.area, 40), await boxOfNorm(outWithout, fig.pageIndex, dragNorm), { band: 8, prefer: tokens.area });
-  expect(areaBare.found, `and not without marks: ${describeRing(areaBare)}`).toBe(0);
-
-  // the figure: bare in both prints
-  const figOnSheet = (await pageMap(outWith, fig.pageIndex)).box(fig.rect);
-  const band = Math.max(20, 0.15 * Math.min(figOnSheet.right - figOnSheet.left, figOnSheet.bottom - figOnSheet.top));
-  const outlined = findRing(a.frame, changed(b.frame, a.frame), figOnSheet, { band });
-  // Ruling R78: "Print with marks" prints marks only; a figure comment's outline is a note's sign and never prints (the first guess was that it does).
-  expect(outlined.found, `the commented figure prints bare, as notes never print (R78): ${describeRing(outlined)}`).toBe(0);
-  const stray = changedOutside(a.frame, b.frame, a.box, [areaOnSheet, grow(figOnSheet, band)], 8);
-  expect(stray, 'outside the area and the figure the two prints are the same (no card, no pin of the margin, no stray mark)').toBeLessThan(0.0005);
+    // the figure: bare in both prints
+    const figOnSheet = (await pageMap(outWith, fig.pageIndex)).box(fig.rect);
+    const band = Math.max(20, 0.15 * Math.min(figOnSheet.right - figOnSheet.left, figOnSheet.bottom - figOnSheet.top));
+    const outlined = findRing(a.frame, changed(b.frame, a.frame), figOnSheet, { band });
+    // Ruling R78: "Print with marks" prints marks only; a figure comment's outline is a note's sign and never prints (the first guess was that it does).
+    expect(outlined.found, `the commented figure prints bare, as notes never print (R78): ${describeRing(outlined)}`).toBe(0);
+    const stray = changedOutside(a.frame, b.frame, a.box, [areaOnSheet, grow(figOnSheet, band)], 8);
+    expect(stray, 'outside the area and the figure the two prints are the same (no card, no pin of the margin, no stray mark)').toBeLessThan(0.0005);
+  }, 300_000);
 });
