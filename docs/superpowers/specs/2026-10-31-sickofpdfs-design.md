@@ -64,7 +64,7 @@ Ten everyday moments, start to finish. Each becomes an end-to-end test; the two 
 7. **You look something up next week.** Press Ctrl+K in any viewer or library tab and type "parallel trends". Results show readings, matching pages and your notes; Enter jumps to the exact passage.
 8. **You ask claude.ai (Release 2).** "What did I note about difference-in-differences this term?" The connector searches your library and Claude answers with sources. "Add a comment on page 3 summarising this" appears in the viewer as a comment from Claude.
 9. **You move, rename or re-download a file.** Same contents, same fingerprint, same notes. Re-downloads that differ only by a download stamp, as JSTOR adds, are recognised by their text. The library records the new location.
-10. **You open a receipt.** It displays normally with the chip "Not saved: looks like a receipt". Nothing is stored, indexed or uploaded. If the filter is wrong, one click on the chip saves it.
+10. **You open a receipt.** It displays normally with the chip "Not saved · receipt" (the hover says "looks like a receipt"). Nothing is stored, indexed or uploaded. If the filter is wrong, one click on the chip saves it.
 
 ## Architecture
 
@@ -389,7 +389,7 @@ The filter runs on your computer, in memory, before anything is stored. It glanc
 3. **Not sure:** a small bundled model (MiniLM, well under a second) nudges the score. If still unsure, the chip asks you.
 4. **Scans with no text** are never saved automatically, and the score is not used for them. From scholarly sites or course pages the chip asks; otherwise they are not saved. They are never OCR'd to decide.
    **R94 (Nov 2, owner): a scan's title counts as a signal.** The title means the file name, the PDF's own title and the link's words.
-   - If the title looks like learning, a no-text scan becomes "Not sure" instead of "Not saved". That means a course code (EC1A1, CS50, 14.01), or words such as lecture, chapter, reading, week, notes, slides, textbook, problem set, syllabus, seminar or tutorial. The quiet banner then offers Save, and a first mark asks as for any "not sure" PDF. The chip says "Not sure: scanned pages · Save to library".
+   - If the title looks like learning, a no-text scan becomes "Not sure" instead of "Not saved". That means a course code (EC1A1, CS50, 14.01), or words such as lecture, chapter, reading, week, notes, slides, textbook, problem set, syllabus, seminar or tutorial. The quiet banner then offers Save, and a first mark asks as for any "not sure" PDF. The chip says "Not sure · scanned pages" (Save is in its menu and the banner).
    - A title that looks private keeps it "Not saved": receipt, invoice, statement, payslip, bank, tax, CV, résumé, passport, or a camera or scanner name such as IMG_1234 or Scan_2023-01-02.
    - A title never auto-saves a scan, and hard blocks still win.
 
@@ -416,7 +416,7 @@ One reference implementation in TypeScript, with its test cases, defines these r
 **Decided while building the filter (Phase 3, 1 Nov 2026).**
 - **Second look for text-poor decks.** If the first and last 5 pages hold fewer than 15 words, up to 10 middle pages are sampled before the no-text rule applies. Slide decks such as the CS50 lectures are judged on their real content. Image-only receipts and scans still never save.
 - **CVs never save by score.** CV evidence counts against saving: CV, résumé or curriculum vitae titles, Education, Experience or Skills headings, and a contact block on page 1. A CV laid out like a paper, with a References heading, is personal, not learning.
-- **The chip names what a file looks like.** The first reason of a not-learning verdict is a plain "looks like …" phrase for the most specific admin group that matched. For example: "looks like a tax form", "an invoice or receipt", "a bank statement". There are 24 admin groups.
+- **The chip names what a file looks like.** The first reason of a not-learning verdict is a plain "looks like …" phrase for the most specific admin group that matched. For example: "looks like a tax form", "an invoice or receipt", "a bank statement". There are 24 admin groups. The chip itself shows the short form in 1–4 words ("Not saved · bank statement", "Not saved · tax form"). Its hover, which also shows on keyboard focus, keeps the whole "looks like …" sentence. The chip is never cut: in a window under 740 px with "Back to page", it shows only its state ("Not saved", "Saved", "Not sure").
 - **Your own choice to save always wins (D9).** This holds even over a card or bank-number block. A warning shows, and the file's text is not indexed.
 
 **What leaves your computer, and when:**
@@ -488,7 +488,7 @@ One reference implementation in TypeScript, with its test cases, defines these r
     - The choice covers the reading's id, every download of it (its aliases) and the opened copy.
     - Only the owner's own explicit Save clears it.
   - **A PDF saved by the owner's click still gets the filter's protections.** A card, bank or ID statement is saved without searchable text, with the warning (D9), however the save starts.
-  - **The hard-block check reads every page at save time,** not only the pages the filter sampled. If an automatic save finds card, bank or ID numbers on any page, it stops before anything is written, and the chip says "Not saved: has card or bank numbers". An owner's click saves the PDF without searchable text, with the warning.
+  - **The hard-block check reads every page at save time,** not only the pages the filter sampled. If an automatic save finds card, bank or ID numbers on any page, it stops before anything is written, and the chip says "Not saved · card or bank numbers". An owner's click saves the PDF without searchable text, with the warning.
   - **Forget always asks,** even with no marks or notes, so "Never save this file" is always offered.
   - **If the owner's choices can't be read,** the PDF is treated as "not learning": nothing saves on its own, and a first mark asks.
   - **Reporting "not for learning" on a saved PDF** says it is still in the library, and offers Forget in the same note.
@@ -638,7 +638,7 @@ The library takes Google Drive's Material 3 look and feel, and the viewer takes 
 | Grid | Drive grid view | 220 × 220 cards, 12 px corners, first-page thumbnail |
 | Home | Drive Home | "Welcome" title, collapsible Continue reading and Recent notes sections |
 | Menus and tooltips | Drive menus | Menu items 32 px, 4 px corners; dark tooltip #303030 |
-| Viewer | Drive PDF viewer | 64 px header with file name and File, View, Tools, Help menus; 48 px pill toolbar; thumbnail and outline rail; white pages with 16 px gaps |
+| Viewer | Drive PDF viewer | 44 px header (a Docs-tight block: 18 px file name over 14 px File, View, Tools, Help menus; owner, Nov 6); 40 px pill toolbar; thumbnail and outline rail; white pages with 16 px gaps |
 | Comment cards | Docs margin cards | 282 px wide, 12 px corners, 10 px apart; active card turns white, lifts, and shifts 12 px left |
 | Notes panel | Docs comments sidebar | 320 px wide, 16 px corners, All and Mine tabs, thread cards with reply box |
 
