@@ -276,11 +276,13 @@ test.describe('upgrade check', () => {
     await b.close();
     // paper C: a note started and left unsent, in a tab that stays open
     const keep = await viewerFor(context, server, C);
+    // The owner reads first: Test build 6 and older drop the note's journal copy if it is begun in the seconds after the save (heldletters-report.md).
+    await keep.waitForTimeout(6000);
     await selectLine(keep, 1);
     await keep.keyboard.press('Control+Alt+m');
     await expect(noteBox(keep)).toBeVisible({ timeout: 5000 });
     await keep.keyboard.type(UNSENT, { delay: 5 });
-    await expect.poll(() => keep.evaluate(() => Object.keys(localStorage).some((k) => k.startsWith('sop-draft:c:')))).toBe(true);
+    await expect.poll(() => keep.evaluate((w) => Object.keys(localStorage).some((k) => k.startsWith('sop-draft:c:') && (localStorage.getItem(k) ?? '').includes(w)), UNSENT)).toBe(true);
     await setSettings(context);
     // what each paper draws when it is opened fresh, with no note box open: the numbers to match after the update
     const marks: number[] = [];
