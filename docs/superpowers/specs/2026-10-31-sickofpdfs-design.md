@@ -441,7 +441,7 @@ One reference implementation in TypeScript, with its test cases, defines these r
   - A crash-journal draft older than the note's last edit never overwrites it; it shows as a recovered draft instead.
   - Tag names are cleaned on restore (no control or direction characters, at most 60 characters).
   - Course tags of forgotten readings are not restored.
-- **R102: private readings stay out of meaning features.** A reading saved without searchable text (D9) is never in Related readings, in either direction, and never gets topics.
+- **R102: private readings stay out of meaning features.** This also covers a reading the owner saved after the filter judged it "not learning" (a receipt, statement, payslip or CV saved on purpose): it stays searchable unless D9 applies, but it never appears in Related readings and never gets topics or auto tags. Restore brings back no settings at all. A reading saved without searchable text (D9) is never in Related readings, in either direction, and never gets topics.
 - **R97: "Never save this file" (from the banner, or ticked in Forget) also keeps a salted text fingerprint** (kept in the never-save list, which is read at open); a plain Forget keeps none, because a later open is judged afresh by the filter.
   Originally: (a hash of the normalised text of the first pages), so a re-download with different bytes is still recognised. It is salted like R88/R89 and never kept as the text itself.
 - **R91 (Nov 2, from the filter's privacy read): the owner's choices can only make the filter more careful, never less.**
