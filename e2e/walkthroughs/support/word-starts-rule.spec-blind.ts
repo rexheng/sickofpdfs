@@ -213,6 +213,7 @@ export function judge(o: { glyphs: Glyph[]; a: number; b: number; map: PageMap; 
   const onGains: number[] = [];
   const fullGains: number[] = [];
   const ratios: number[] = [];
+  const judged: { w: (typeof model.wants)[number]; ratio: number }[] = [];
   for (const w of model.wants) {
     const g = o.glyphs[w.index];
     const full = gainOf(g, o.map, o.off, o.full, o.view);
@@ -231,7 +232,14 @@ export function judge(o: { glyphs: Glyph[]; a: number; b: number; map: PageMap; 
     } else {
       v.worstPlain = Math.max(v.worstPlain, ratio);
     }
-    const drawnBold = ratio >= BOLD_AT;
+    judged.push({ w, ratio });
+  }
+  // Triage (word starts round 3): R90c makes Medium heavier than the owner's bold mark (the yardstick, taken with the
+  // switch off), so a plain letter beside a bold one can hold half the yardstick's weight in spill alone. A letter is
+  // drawn bold when it holds half the weight the bold starts themselves have (their median ratio, if above 1).
+  const boldAt = BOLD_AT * Math.max(1, median(ratios) || 1);
+  for (const { w, ratio } of judged) {
+    const drawnBold = ratio >= boldAt;
     if (drawnBold === (w.want === 'bold')) continue;
     const where = w.kind === 'letter' ? `letter ${w.pos + 1} of "${w.word}" ('${w.ch}')` : w.kind === 'digit' ? `the digit '${w.ch}' of the number ${w.word}` : `a hyphen`;
     const line = `${where}: the rule wants it ${w.want}, the page draws it ${drawnBold ? 'bold' : 'plain'} (${(ratio * 100).toFixed(0)}% of the bold mark's weight; the rule bolds the first ${w.bold} of ${w.word.length})`;

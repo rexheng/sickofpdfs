@@ -22,6 +22,7 @@
 //
 // GUESSES (the spec leaves these open; each is also in the report):
 //  G1  The row is a `menuitemcheckbox` named "Bold word starts" in the View menu (as "Two-page view" is), with `aria-checked`.
+//      Triage (word starts round 3): R90c rules it a radio group named "Bold word starts" of Off, Light, Medium and Strong.
 //  G2  The shortcut is whatever the shortcut sheet prints next to "Bold word starts" in a <kbd> (the spec names none). It is read from the sheet and pressed as printed.
 //      "Clashes with nothing" is judged against the other rows of the sheet and a list of Chrome's own keys (support/word-starts.spec-blind.ts, CHROME_KEYS).
 //  G3  The rule is applied as R90 WRITES it (1 to 3 letters: 1; longer: the first half rounded up). R90's three examples ("Rea·ding", "meth·od") do not all follow it:
@@ -179,7 +180,7 @@ test('View has "Bold word starts" as a row with a check mark, off at first; turn
   const page = await openPaper(openViewer, server, ATTENTION);
   const state = await switchState(page);
   expect(state.present, 'View has a row named "Bold word starts"').toBe(true);
-  expect(state.role, 'a row with a check mark is a check-box menu item (as "Two-page view" is)').toBe('menuitemcheckbox');
+  expect(state.role, 'R90c: View offers Off, Light, Medium and Strong as one radio group').toBe('menuitemradio');
   expect(state.checked, 'it is off until the owner turns it on: the row says it is not ticked').toBe('false');
   await page.getByRole('menubar').getByRole('menuitem', { name: 'View', exact: true }).click();
   await snap(page, testInfo, '19-view-menu-off');

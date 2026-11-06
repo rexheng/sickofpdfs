@@ -30,7 +30,7 @@ import { REPO_ROOT } from '../../support/launch';
 import { decodePng, type Box } from '../../support/tl-paint.spec-blind';
 import { WALKTHROUGH_DIR } from './fixtures.spec-blind';
 import { answerSavePrompt, clearSelection, selectPassage, type Passage, type Shot, type TlFixture } from './marks.spec-blind';
-import { chooseView, openViewMenu, rowIn } from './views.spec-blind';
+import { openViewMenu } from './views.spec-blind';
 import {
   BOLD_AT,
   CHROME_KEYS,
@@ -58,30 +58,40 @@ export type { LetterWant, Model, Verdict, Want };
 // ---------------------------------------------------------------------------------------------------------------
 // The switch, in the View menu
 
-/** The View-menu row: "Bold word starts" (R90, "The switch"). */
+/** The View-menu group: "Bold word starts" (R90, "The switch"; R90c: Off, Light, Medium and Strong, as a radio group). */
 export const WORD_STARTS = /Bold word starts/i;
 
+// Triage (word starts round 3): guess G1 was a check-box row; R90c rules that View offers Off, Light, Medium and Strong
+// directly, as one radio group named "Bold word starts". "On" is a choice other than Off; "the row" is the group's heading.
+/** The radio group in the open View menu, and its choices. */
+const choicesIn = (menu: Locator) => {
+  const group = menu.getByRole('group', { name: WORD_STARTS });
+  return { group, choice: (name: string) => group.getByRole('menuitemradio', { name, exact: true }) };
+};
+
 export interface SwitchState {
-  /** The View menu has a row named for it. */
+  /** The View menu has a group named for it. */
   present: boolean;
-  /** The row's ARIA role: a row with a check mark is a `menuitemcheckbox`. */
+  /** The ARIA role of its choices: `menuitemradio` (R90c). */
   role: string | null;
-  /** `aria-checked` of the row: "true", "false" or null when the row has none. */
+  /** "true" when a choice other than Off is checked, "false" when Off is, null when none is. */
   checked: string | null;
-  /** Everything the row says, whitespace collapsed (its name and, if it shows one, its shortcut). */
+  /** Everything the group's heading says, whitespace collapsed (its name and its shortcut). */
   text: string;
 }
 
-/** Opens View, reads the row and shuts the menu again. */
+/** Opens View, reads the group and shuts the menu again. */
 export async function switchState(page: Page): Promise<SwitchState> {
   const menu = await openViewMenu(page);
-  const row = rowIn(menu, WORD_STARTS);
-  const present = (await row.count()) > 0;
+  const { group, choice } = choicesIn(menu);
+  const present = (await group.count()) > 0;
   const out: SwitchState = { present, role: null, checked: null, text: '' };
   if (present) {
-    out.role = await row.first().getAttribute('role');
-    out.checked = await row.first().getAttribute('aria-checked');
-    out.text = (await row.first().innerText()).replace(/\s+/g, ' ').trim();
+    out.role = await choice('Off').getAttribute('role');
+    const off = await choice('Off').getAttribute('aria-checked');
+    out.checked = off === 'true' ? 'false' : off === 'false' ? 'true' : null;
+    const heading = await group.getAttribute('aria-labelledby');
+    out.text = heading === null ? '' : (await menu.locator(`[id="${heading}"]`).innerText()).replace(/\s+/g, ' ').trim();
   }
   await page.keyboard.press('Escape');
   await expect(page.getByRole('menu'), 'the View menu closes').toBeHidden();
@@ -95,9 +105,11 @@ export async function isOn(page: Page): Promise<boolean> {
   return state.checked === 'true';
 }
 
-/** View → Bold word starts, with the mouse, as the owner does it. Waits a moment for the pages to settle. */
+/** View → Bold word starts → Medium when it is off, Off when it is on, with the mouse. Waits a moment for the pages to settle. */
 export async function toggleFromMenu(page: Page): Promise<void> {
-  await chooseView(page, WORD_STARTS);
+  const target = (await isOn(page)) ? 'Off' : 'Medium';
+  const menu = await openViewMenu(page);
+  await choicesIn(menu).choice(target).click();
   await settle(page, 300);
 }
 
@@ -284,13 +296,14 @@ export async function paintLatency(page: Page, region: Box, trigger: () => Promi
   }
 }
 
-/** Opens View and returns the centre of the Bold word starts row, so one mouse click on it can be timed. */
+/** Opens View and returns the centre of the choice that turns Bold word starts on (Medium) or off (Off), so one mouse click on it can be timed. */
 export async function rowCentre(page: Page): Promise<{ x: number; y: number }> {
+  const target = (await isOn(page)) ? 'Off' : 'Medium';
   const menu = await openViewMenu(page);
-  const row = rowIn(menu, WORD_STARTS).first();
-  await expect(row, 'View has a row named "Bold word starts"').toBeVisible();
+  const row = choicesIn(menu).choice(target);
+  await expect(row, `View offers "Bold word starts: ${target}"`).toBeVisible();
   const b = await row.boundingBox();
-  if (b === null) throw new Error('the Bold word starts row has no box');
+  if (b === null) throw new Error('the Bold word starts choice has no box');
   return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
 }
 
