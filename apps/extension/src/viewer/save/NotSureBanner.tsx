@@ -81,17 +81,30 @@ export interface NotSureBannerProps {
   save: SaveControllerImpl | null;
   /** Its `showNote`: a short note at the bottom of the window, after an action. */
   ui: Pick<ViewerUi, 'showNote'>;
+  /** A presentation is showing the pages full screen: the 20-second count pauses (R95). */
+  presenting?: boolean;
 }
 
-/** Counts time on screen only: a tab in the background is not being read. */
-function useVisibleFor(ms: number, running: boolean): boolean {
+/**
+ * Counts time on screen only (R95): the tab visible, its window focused, and not presenting. A tab in the background, a
+ * window behind another one, or pages shown full screen in a presentation (where the bar would be hidden, then pop up as
+ * it ends) are not being read here. The count pauses and goes on from where it was; a new "not sure" spell starts afresh.
+ */
+function useVisibleFor(ms: number, running: boolean, presenting: boolean): boolean {
   const [done, setDone] = useState(false);
+  const presentingNow = useRef(presenting);
+  const recheck = useRef<() => void>(() => {});
+  useEffect(() => {
+    presentingNow.current = presenting;
+    recheck.current();
+  }, [presenting]);
   useEffect(() => {
     setDone(false);
     if (!running) return;
     let left = ms;
     let since: number | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    const onScreen = (): boolean => document.visibilityState === 'visible' && document.hasFocus() && !presentingNow.current;
     const pause = (): void => {
       if (timer !== null) clearTimeout(timer);
       timer = null;
@@ -99,15 +112,21 @@ function useVisibleFor(ms: number, running: boolean): boolean {
       since = null;
     };
     const resume = (): void => {
-      if (timer !== null || document.visibilityState !== 'visible') return;
+      if (timer !== null) return;
       since = performance.now();
       timer = setTimeout(() => setDone(true), Math.max(0, left));
     };
-    const onVisibility = (): void => (document.visibilityState === 'visible' ? resume() : pause());
-    document.addEventListener('visibilitychange', onVisibility);
-    resume();
+    const check = (): void => (onScreen() ? resume() : pause());
+    recheck.current = check;
+    document.addEventListener('visibilitychange', check);
+    window.addEventListener('focus', check);
+    window.addEventListener('blur', check);
+    check();
     return () => {
-      document.removeEventListener('visibilitychange', onVisibility);
+      document.removeEventListener('visibilitychange', check);
+      window.removeEventListener('focus', check);
+      window.removeEventListener('blur', check);
+      recheck.current = () => {};
       pause();
     };
   }, [ms, running]);
@@ -138,11 +157,11 @@ function useReadingArea(on: boolean): { left: number; width: number } | null {
   return on ? area : null;
 }
 
-export function NotSureBanner({ save, ui }: NotSureBannerProps) {
+export function NotSureBanner({ save, ui, presenting = false }: NotSureBannerProps) {
   const { state, busy } = useSaveView(save);
   const [closed, setClosed] = useState<SaveControllerImpl | null>(null);
   const unsure = save !== null && state?.kind === 'unsure' && busy === null && save.hasRules;
-  const due = useVisibleFor(NOT_SURE_BANNER_MS, unsure);
+  const due = useVisibleFor(NOT_SURE_BANNER_MS, unsure, presenting);
   const shown = unsure && due && closed !== save;
   const area = useReadingArea(shown);
   const bar = useRef<HTMLDivElement>(null);

@@ -342,6 +342,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
   const saveKind = useSaveView(save).state?.kind; // File → Save to library follows the save state
   const caretOn = useCaretBrowsing(); // View → Caret browsing shows its check
   const wordStartsOn = useWordStarts(); // View → Bold word starts shows its check
+  const presenting = useViewerState(live?.store ?? IDLE_STORE, (s) => s.presenting !== null); // R95: the not-sure count pauses
   const menus = useMemo(() => buildMenus(commands), [commands, viewVersion, saveKind, caretOn, wordStartsOn]); // eslint-disable-line react-hooks/exhaustive-deps -- viewVersion, saveKind, caretOn and wordStartsOn are the triggers
 
   return (
@@ -359,7 +360,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
             <>
               <StatusChip save={save} returnFocus={focusPages} ui={ui} />
               {/* R95: right after the chip in the Tab order; drawn under the toolbar, above the pages it pushes down. */}
-              {view.kind === 'ready' && form.notice === null && <NotSureBanner save={save} ui={ui} />}
+              {view.kind === 'ready' && form.notice === null && <NotSureBanner save={save} ui={ui} presenting={presenting} />}
             </>
           )
         }
