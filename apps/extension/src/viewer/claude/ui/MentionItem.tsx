@@ -249,8 +249,10 @@ export function ClaudeMentions({ placeOfBox }: { placeOfBox(this: void, box: HTM
       const text = document.activeElement === box ? boxHint(box.value, variant, host?.privateHint?.() ?? null) : null;
       if (text === null) return setHint(null);
       const field = (box.closest(BOX) ?? box).getBoundingClientRect();
+      // Under the card the box is in (its buttons stay clear), lined up with the box.
+      const card = box.closest('[id^="note-card-"], [id^="sop-panel-note-"]')?.getBoundingClientRect() ?? field;
       const light = (box.closest('[data-theme]')?.getAttribute('data-theme') ?? 'light') === 'light';
-      setHint({ box, text, at: { x: field.left + EDGE, width: field.width, bottom: field.bottom }, light, nudged });
+      setHint({ box, text, at: { x: field.left, width: field.width, bottom: Math.max(field.bottom, card.bottom) }, light, nudged });
     },
     [host],
   );
@@ -400,7 +402,7 @@ export function ClaudeMentions({ placeOfBox }: { placeOfBox(this: void, box: HTM
         data-claude-hint=""
         data-nudged={hint.nudged ? 'true' : 'false'}
         role={hint.nudged ? 'status' : undefined}
-        style={{ left: hint.at.x, top: hint.at.bottom + GAP, maxInlineSize: Math.max(hint.at.width - 2 * EDGE, 160) }}
+        style={{ left: hint.at.x, top: hint.at.bottom + GAP, maxInlineSize: Math.max(hint.at.width, 160) }}
       >
         {hint.text}
       </div>,
