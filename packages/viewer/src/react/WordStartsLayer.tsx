@@ -16,6 +16,10 @@
 //   pages go first, then the pages mounted around them, then, at idle, the next pages either side, so scrolling on
 //   finds them ready. The last PAGES_KEPT pages are kept, and a page met again is drawn in the same frame as its
 //   picture; bold that comes after its page's picture (a page jumped to for the first time) fades in.
+// - It draws only what the page shows (R90: a reading aid never adds marks). The engine leaves out text the PDF keeps
+//   hidden (invisible render modes, clip paths, the page box, an opaque image drawn over it: a scan's own words), and a
+//   word start whose glyphs the page's picture barely shows (getGlyphShapes' ink: text in the colour behind it, under a
+//   white box) is skipped here.
 // - A page with no outline to draw (a scan, whose OCR text is invisible; a page with no text) is left as it is, and the
 //   controller says so (onNothingToDraw) when such a page is in view, for R90's quiet note.
 import { memo, useLayoutEffect, useRef, useSyncExternalStore, type JSX } from 'react';
@@ -47,6 +51,12 @@ const PAGES_KEPT = 24;
 const TURN_ON_MS = 1000;
 /** At idle, the pages this far after (and one before) each visible page are made ready too. */
 const PREFETCH_AHEAD = 2;
+/**
+ * A word start is drawn only when its glyphs' mean ink (GlyphPlacement.ink, 0 to 1) is at least this. Text the page
+ * hides reads 0 to 0.05; the faintest visible words measured (5 pt figure labels at the engine's ink scale) read 0.25,
+ * and body text 0.5 to 0.9.
+ */
+const MIN_WORD_INK = 0.2;
 /** The perf mark made when a page's word starts are on screen. */
 export const WORD_STARTS_PERF_MARK = 'sop:word-starts-drawn';
 
@@ -109,6 +119,41 @@ function italicAround(all: readonly GlyphPlacement[], i: number): boolean {
   const before = all[i - 1];
   const after = all[i + 1];
   return (before === undefined || before.italic === true) && (after === undefined || after.italic === true);
+}
+
+/**
+ * The word starts of `ranges` (sorted, not overlapping) the page does not show: those whose glyphs' mean ink (where
+ * measured) is under MIN_WORD_INK, by where they start. A start with no glyph measured is kept.
+ */
+function hiddenStarts(glyphs: readonly GlyphPlacement[], ranges: readonly BoldRange[]): Set<number> {
+  const sums = new Map<number, { ink: number; n: number }>();
+  let r = 0;
+  for (const g of glyphs) {
+    while (r < ranges.length && ranges[r].end <= g.charIndex) r++;
+    const range = ranges[r];
+    if (range === undefined) break;
+    if (g.charIndex < range.start || g.ink === undefined) continue;
+    const sum = sums.get(range.start) ?? { ink: 0, n: 0 };
+    sum.ink += g.ink;
+    sum.n++;
+    sums.set(range.start, sum);
+  }
+  const hidden = new Set<number>();
+  for (const [start, { ink, n }] of sums) if (ink / n < MIN_WORD_INK) hidden.add(start);
+  return hidden;
+}
+
+/** The start of the range of `ranges` (sorted, not overlapping) that holds char `i`, or -1. */
+function startOf(ranges: readonly BoldRange[], i: number): number {
+  let lo = 0;
+  let hi = ranges.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (ranges[mid].end <= i) lo = mid + 1;
+    else if (ranges[mid].start > i) hi = mid - 1;
+    else return ranges[mid].start;
+  }
+  return -1;
 }
 
 /** A keep(charIndex) for glyphs met in char order: true inside one of `ranges` (sorted, not overlapping). */
@@ -337,12 +382,15 @@ export class WordStartsController {
       const chunk = { start: first.start, end: w.chunks[last].end, ranges: w.chunks.slice(w.next, last + 1).flatMap((c) => c.ranges) };
       // A char or two either side too, so the glyphs at the ends know their neighbours (R90c: no gap is closed).
       const from = Math.max(0, chunk.start - NEIGHBOUR_CHARS);
-      const set = await this.o.backend.getGlyphShapes(this.o.doc, index, from, Math.min(w.chars, chunk.end + NEIGHBOUR_CHARS) - from);
+      const set = await this.o.backend.getGlyphShapes(this.o.doc, index, from, Math.min(w.chars, chunk.end + NEIGHBOUR_CHARS) - from, { ink: true });
       if (this.disposed || this.work.get(index) !== w) return;
       const inside = inRanges(chunk.ranges);
       const singles = w.singles;
+      // R90: only words the page shows.
+      const hidden = hiddenStarts(set.glyphs, chunk.ranges);
+      const shown = (i: number) => hidden.size === 0 || !hidden.has(startOf(chunk.ranges, i));
       // R90c: maths glyphs, and a word of one italic letter in upright text (a maths letter in a text font), stay as they are.
-      const glyphs = boldGlyphs(set, (g, i, all) => inside(g.charIndex) && g.maths !== true && !(g.italic === true && singles.has(g.charIndex) && !italicAround(all, i)));
+      const glyphs = boldGlyphs(set, (g, i, all) => inside(g.charIndex) && shown(g.charIndex) && g.maths !== true && !(g.italic === true && singles.has(g.charIndex) && !italicAround(all, i)));
       // Their emboldened outlines are worked out now, a chunk at a time, at the page's scale, so drawing the page is only placing them.
       await prepareGlyphs(glyphs, this.heavy.gain, slot?.page ? devicePxPerPt(slot.ctx, slot.page) : undefined);
       if (this.disposed || this.work.get(index) !== w) return;
