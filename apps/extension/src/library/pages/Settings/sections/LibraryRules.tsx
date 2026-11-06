@@ -34,7 +34,7 @@ function storeProblem(e: unknown): string | null {
 
 /** The site name inside an entry: "https://*.co.uk/x" → "co.uk". */
 function hostOf(entry: string): string {
-  return entry.trim().toLowerCase().replace(/^[a-z][a-z0-9+.-]*:\/\//, '').replace(/^\*\./, '').split('/')[0]!.replace(/:\d+$/, '').replace(/^\.+|\.+$/g, '');
+  return entry.trim().toLowerCase().replace(/^[a-z][a-z0-9+.-]*:\/\//, '').replace(/^\*\./, '').split('/')[0].replace(/:\d+$/, '').replace(/^\.+|\.+$/g, '');
 }
 
 /**
@@ -112,7 +112,7 @@ export function LibraryRulesSection() {
       const current = lists?.[list] ?? [];
       if (current.some((e) => e.trim().toLowerCase() === entry.toLowerCase())) return `“${entry}” is already on this list.`;
       const problem = listEntryProblem(entry, list);
-      if (problem !== null) return `Can’t add “${entry}”. ${plainProblem(problem, entry)}${list === 'allow' && listEntryProblem(entry, 'deny') === null ? ' Add the site or folder of one course instead.' : ''}`;
+      if (problem !== null) return `Can’t add “${entry}”. ${plainProblem(problem, entry)}${list === 'allow' && !problem.startsWith('less than') && listEntryProblem(entry, 'deny') === null ? ' Add the site or folder of one course instead.' : ''}`;
       try {
         const now = await data.addToSettingList(KEYS[list], entry);
         setLists((l) => (l === null ? l : { ...l, [list]: now }));
