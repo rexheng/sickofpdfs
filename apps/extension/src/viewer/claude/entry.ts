@@ -343,9 +343,39 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
     return save.busy === 'save' || save.state.kind === 'asking' || (save.state.kind === 'saved' && session.state().mode !== 'stored');
   };
 
-  /** Keeps the owner's Send for this reading, on this computer (R105b). A failure only means the next tab or reload asks again. */
-  const keepAgreement = (id: DocumentId, f: ReadingFlags): Promise<void> =>
-    !f.indexText || f.notLearning ? Promise.resolve() : claudeAgreements.add(id, f.createdAt).catch((e: unknown) => log(e, 'agreed'));
+  /** The Sends of readings gone from the library are dropped once per tab, after the first Send kept here. */
+  let pruned = false;
+  /**
+   * Keeps the owner's Send for this reading, on this computer (R105b). A failure only means the next tab or reload asks again. Once
+   * per tab it also drops the Sends of readings the library no longer holds (the Trash purge cannot reach the local-only store).
+   */
+  const keepAgreement = async (id: DocumentId, f: ReadingFlags): Promise<void> => {
+    if (!f.indexText || f.notLearning) return;
+    try {
+      await claudeAgreements.add(id, f.createdAt);
+    } catch (e) {
+      log(e, 'agreed');
+      return;
+    }
+    if (pruned) return;
+    pruned = true;
+    void pruneAgreements().catch((e: unknown) => log(e, 'agreed-prune'));
+  };
+  /** Every reading the library holds, Trash included (all pages read, or nothing is dropped), keeps its Send; the others go. */
+  async function pruneAgreements(): Promise<void> {
+    await storeReady;
+    if (!store) return;
+    const ids: DocumentId[] = [];
+    for (const view of ['all', 'trash'] as const) {
+      let cursor: string | null = null;
+      do {
+        const page: { items: { doc: { id: DocumentId } }[]; nextCursor: string | null } = await store.listDocuments({ view, sort: { by: 'added', dir: 'asc' }, limit: 200, ...(cursor !== null ? { cursor } : {}) });
+        for (const item of page.items) ids.push(item.doc.id);
+        cursor = page.nextCursor;
+      } while (cursor !== null);
+    }
+    await claudeAgreements.keepOnly(ids);
+  }
 
   /**
    * R105b: the owner chose this reading for Claude: they chose to save it, or said Send for it once, in any tab, before or after a

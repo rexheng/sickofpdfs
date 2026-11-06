@@ -73,6 +73,11 @@ export interface LocalOnlyStore {
   addClaudeAgreed(sha: string, since: number): Promise<void>;
   /** Forget or Undo: the Send goes with the reading. */
   removeClaudeAgreed(sha: string): Promise<void>;
+  /**
+   * Keeps the Sends of these readings only (every reading the library still holds, Trash included); the others go. The Trash purge
+   * runs in the store worker, which cannot reach this store, so a purged reading's Send is removed here. Answers how many went.
+   */
+  keepClaudeAgreedOnly(shas: readonly string[]): Promise<number>;
 }
 
 type FingerprintList = 'never-save' | 'claude-agreed';
@@ -283,6 +288,32 @@ export async function openLocalOnlyStore(): Promise<LocalOnlyStore> {
     },
 
     removeClaudeAgreed: (sha) => removeFromList('claude-agreed', sha),
+
+    async keepClaudeAgreedOnly(shas) {
+      for (const sha of shas) assertFingerprint(sha);
+      const s = await salt(false);
+      if (s === null) return 0; // no salt: nothing was ever kept
+      const key = await crypto.subtle.importKey('raw', hexToBytes(s), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+      const keep = new Set<string>();
+      for (const sha of new Set(shas)) {
+        const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`claude-agreed:${sha}`));
+        keep.add(Array.from(new Uint8Array(mac), (b) => b.toString(16).padStart(2, '0')).join(''));
+      }
+      return await transact<number>('never_save', 'readwrite', (objects, answer) => {
+        let removed = 0;
+        const cursor = objects.openCursor();
+        cursor.onsuccess = () => {
+          const c = cursor.result;
+          if (c === null) return answer(removed);
+          const r = c.value as { hash?: unknown; list?: unknown };
+          if (r.list === 'claude-agreed' && (typeof r.hash !== 'string' || !keep.has(r.hash))) {
+            c.delete();
+            removed++;
+          }
+          c.continue();
+        };
+      });
+    },
 
     async addFilterReport(sha, label) {
       assertFingerprint(sha);

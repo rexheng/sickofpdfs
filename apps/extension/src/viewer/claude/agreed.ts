@@ -4,8 +4,9 @@
 // after every reload, until the owner presses Send once for it. That Send is kept here, in the local-only store (`sop-local`): a
 // salted fingerprint of the reading's id with the reading's `createdAt`, nothing else. The backup, restore, export and sync cannot
 // reach that store (eslint.config.mjs, ruling R14), so the Send never leaves this computer. Undo and Forget remove it
-// (`forgetLocalTraces`); a reading that went some other way (the Trash purge) and is saved again has a new `createdAt`, so the old
-// Send does not count for it.
+// (`forgetLocalTraces`). The Trash purge runs in the store worker, which cannot reach the store: a purged reading saved again has a
+// new `createdAt`, so the old Send does not count for it, and the next Send the owner gives drops the Sends of readings the library
+// no longer holds (`keepOnly`).
 //
 // Reads never create the database: until the owner has said Send (or kept a key), there is nothing to read.
 import type { DocumentId } from '@sop/core';
@@ -19,6 +20,8 @@ export interface ClaudeAgreements {
   add(documentId: DocumentId, createdAt: number): Promise<void>;
   /** The reading was undone or forgotten: its Send goes too. */
   clear(documentId: DocumentId): Promise<void>;
+  /** Keeps the Sends of these readings only (all the library holds, Trash included): a reading the Trash purge removed loses its. */
+  keepOnly(documentIds: readonly DocumentId[]): Promise<void>;
 }
 
 let opened: Promise<LocalOnlyStore> | null = null;
@@ -58,5 +61,9 @@ export const claudeAgreements: ClaudeAgreements = {
   async clear(documentId) {
     if (isIncognito() || !HEX64.test(documentId) || !(await exists())) return;
     await (await open()).removeClaudeAgreed(documentId);
+  },
+  async keepOnly(documentIds) {
+    if (isIncognito() || !(await exists())) return;
+    await (await open()).keepClaudeAgreedOnly(documentIds.filter((id) => HEX64.test(id)));
   },
 };
