@@ -17,6 +17,7 @@ export {
   type PageAnalysis,
 } from './figures/find-figures';
 export { createFigureService, isOutlined, OUTLINE_RULE, TEXT_RUNS_BUDGET_MS, type FigureService, type FigureServiceOptions, type PageFigureStore } from './figures/figure-service';
+export { renderRegion, type RenderRegionOptions } from './figures/render-region';
 export { DHASH_COLUMNS, DHASH_ROWS, normToPdfRect, regionGrey9x8 } from './figures/region-dhash';
 export { ENGINE_WORKERS, type EngineAssets } from './backend/engine-config';
 export { engineAssets } from './backend/embedpdf/assets';

@@ -100,7 +100,7 @@ export function estimate(pack: ContextPack, role: ModelRole, model: ModelChoice,
   const price = priceFor(model);
   const factor = calibrationFor(price.line);
   const text = Math.ceil((FIXED_PROMPT_TOKENS + packTextTokens(pack) + (o.questionTokens ?? QUESTION_TOKENS)) * factor);
-  const images = model.imageInput ? pack.figures.reduce((sum, f) => sum + f.image.visualTokens, 0) : 0;
+  const images = model.imageInput ? pack.figures.reduce((sum, f) => sum + f.image.visualTokens + (f.more ?? []).reduce((n, m) => n + m.visualTokens, 0), 0) : 0;
   const inputTokens = text + images;
   const usd = usdFromUsage(
     { inputTokens: 0, cacheWriteTokens: inputTokens, cacheReadTokens: 0, outputTokens: EXPECTED_OUTPUT_TOKENS[role], webSearches: o.webSearch ? 1 : 0 },

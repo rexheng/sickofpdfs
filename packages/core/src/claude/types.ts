@@ -49,7 +49,9 @@ export interface CitableBlock {
 export interface Passage { documentId: DocumentId; pageIndex: number; start: number; end: number; textSource: string; text: string; rank: number; tokens: number /* ceil(chars / 4) */ }
 export interface DocumentMap { title: string | null; abstract: Passage | null; headings: { text: string; pageIndex: number }[]; figures: { label: string; pageIndex: number; caption: string }[] }
 export interface RegionImage { blob: Blob; mediaType: 'image/png' | 'image/jpeg'; width: number; height: number; scale: number /* px per pt = dpi / 72 */; visualTokens: number }
-export interface FigurePack { label: string | null; pageIndex: number; image: RegionImage; caption: Passage | null; insideText: string; mentions: Passage[] /* <= 3 */ }
+export interface FigurePack { label: string | null; pageIndex: number; image: RegionImage; caption: Passage | null; insideText: string; mentions: Passage[] /* <= 3 */;
+  /** Slice C: further pictures sent after `image`: the enlarged crop of a small mark, or a scan's page for context. */
+  more?: RegionImage[] }
 
 export interface ClaudeTurnRequest { documentId: DocumentId; threadId: ThreadId; questionId: CommentId; replyId: CommentId; role: ModelRole;
   scope: 'passages' | 'whole-document'; webSearch: boolean; focus: Anchor | null /* the thread's anchor */ }

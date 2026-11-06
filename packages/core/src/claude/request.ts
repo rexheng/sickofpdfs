@@ -209,6 +209,10 @@ export async function buildRequest(
     if (sees) {
       const data = await encodeRegionImage(f.image);
       content.push({ type: 'image', source: { type: 'base64', media_type: f.image.mediaType, data }, transformations: { oversized_image: 'error' } });
+      for (const extra of f.more ?? []) {
+        const more = await encodeRegionImage(extra);
+        content.push({ type: 'image', source: { type: 'base64', media_type: extra.mediaType, data: more }, transformations: { oversized_image: 'error' } });
+      }
     }
     addDocument(figureDocTitle(f.label, f.pageIndex), figureItems(f), { context: figureContext(f, sees) });
   }

@@ -23,6 +23,11 @@ export type { MapperOptions, ReplyResult, StreamMapper } from './claude/stream-m
 export { createCitationBook, replyBodyToPlainText } from './claude/citations';
 export { KNOWN_LINES, LONG_PROMPT_TOKENS, USD_PER_WEB_SEARCH, priceFor, versionOf } from './claude/pricing';
 export type { ModelPrice } from './claude/pricing';
+export {
+  DETAIL_BUDGET, FIGURE_LIMITS, FIGURE_PADDING_PT, IMAGE_BUDGET, MAX_IMAGE_BYTES, MAX_MENTIONS, MIN_FONT_PT, chooseFormat, cleanRuns, figureLabelsIn, fitScale, insideTextOf,
+  intersect, isSmallMark, mentionPattern, mentionsInPage, padAndClip, runsInside, smallestFont, toPassage, visualTokens, wantedScale,
+} from './claude/figure-text';
+export type { Box, FittedScale, MentionWindow, RunLike } from './claude/figure-text';
 export { CALIBRATION, EXPECTED_OUTPUT_TOKENS, FIXED_PROMPT_TOKENS, calibrationFor, decide, estimate, packTextTokens, typicalQuestionUsd, usdFromUsage } from './claude/cost';
 export type { Ask, Decision, DecideInput, Estimate, UsageTokens } from './claude/cost';
 export { createSha256, sha256Hex } from './identity/fingerprint';
