@@ -333,6 +333,8 @@ The "+ New" button offers Upload PDF, Open file and Paste link. In an Incognito 
 - A question waiting on a confirm dialog shows "Waiting for you to confirm…", never "Reading…". Cancel leaves "Not sent. Nothing was charged." with "Ask again".
 - An answer cut short by the length limit says so in one line, with one click to ask again with more room.
 - Claude reads the earlier notes in the thread (they are context). The reply box says so when a reply starts with @Claude.
+- **R105b (Nov 6, Phase 4 security read): judged per reading, not per tab.** A reading that the owner never chose to save keeps asking in every tab and after every reload, until the owner presses Send once for it. A note that saved it, or a save in another tab, doesn't count. The owner's Send is remembered per reading, on this computer only. It is kept out of backups, restore, export and sync, and Forget clears it. After that Send, the reading behaves like any saved reading: Claude may look up its pages and the web. The page lookups are safe because the save already ran the every-page R91 check. The dialog's words stay true: "Your earlier notes in this thread go too."
+- **Saved web pages drop every sign-in or gift key from their link** (R103 and the Phase 4 security read), in the PDF and in the library. Examples are `access_token`, `accessToken`, `token`, `code`, `auth`, `sig`, `signature`, `session` and Medium's `sk`. A gift link may then open the paywalled page; the saved copy still has the full text.
 
 **R92: Tags, the auto categoriser and smart sorting (Nov 2, owner request).** The owner chose two things: auto tags are applied, marked "auto"; and everything runs on the laptop only, with no network.
 - **Tags.** Any reading can carry tags.
