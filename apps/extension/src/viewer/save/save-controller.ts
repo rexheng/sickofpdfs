@@ -53,7 +53,7 @@ import type { BlobStore } from '../../store/blob-store';
 import type { StoreChange } from '../../store/change-bus';
 import { SAVED_THOUGH_NOT_LEARNING } from '../../store/reading-flags';
 import { localDraftJournal } from '../annotations/draft-journal';
-import { localPendingSaves } from '../annotations/save-pending';
+import { localPendingSaves, type PendingCause } from '../annotations/save-pending';
 import { tabIdentity } from '../annotations/tab-presence';
 import { rememberNotes } from '../notes/margin-at-open';
 import { forgetLocalTraces } from './local-traces';
@@ -78,6 +78,11 @@ export const PAGE_TEXT_BATCH = 50;
 export const SAVED_BY_OWNER = 'You saved it';
 export const SAVED_BY_FIRST_MARK = 'Your first mark saved it';
 export const SAVED_BY_FIRST_NOTE = 'Your first note saved it';
+/**
+ * R105b: a save that a tab which closed or crashed had started, finished on the next open, whose record does not say what started
+ * it (or says the filter did, which saves on its own if it still judges the PDF learning). Never the owner's own choice.
+ */
+export const SAVED_WHEN_REOPENED = 'Your notes saved it';
 
 /** R67 (c): the channel on which a tab tells the others that a PDF has more than its first mark now. */
 export const SAVE_CHANNEL = 'sop-save';
@@ -227,6 +232,15 @@ export const SCRUB_WAIT_MS = 60_000;
 /** Why a save runs. Only 'owner' is the owner's own explicit Save (the chip, Ctrl+Alt+S, the banner, Save in the question). */
 type SaveCause = 'filter' | 'owner' | 'first-mark' | 'first-note' | 'resume';
 
+/**
+ * The save reason a save stores. R105b: a resumed save keeps the reason of the save its tab started (`resumed`, from its record), so
+ * a first note's save finished after a crash is still a first note's save; when the record does not say, it is not the owner's.
+ */
+function reasonOf(cause: Exclude<SaveCause, 'filter'>, resumed: PendingCause | null): string {
+  const c = cause === 'resume' ? resumed : cause;
+  return c === 'owner' ? SAVED_BY_OWNER : c === 'first-note' ? SAVED_BY_FIRST_NOTE : c === 'first-mark' ? SAVED_BY_FIRST_MARK : SAVED_WHEN_REOPENED;
+}
+
 /** The saved chip's hover lists this many reasons at most, strongest first. */
 export const SAVED_REASONS = 4;
 
@@ -286,6 +300,10 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
   let failed = false;
   /** R67 tightened (4): a save the owner started in a tab that went is being finished: "Saving your notes…". */
   let resuming = false;
+  /** R105b: what started the save being resumed, as its tab's record says; null when it does not say. */
+  let resumedCause: PendingCause | null = null;
+  /** R105b: what started the save running now, for the session's save-pending record. */
+  let savingCause: PendingCause | null = null;
   /** N1: a note box opened (here or in another tab) while the save that is running now was on its way: it lands with no Undo. */
   let boxDuringSave = false;
   /** R67 tightened (3): a note started a save here since the PDF was last forgotten; no later save gets an Undo. */
@@ -459,10 +477,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       owner = found?.ownerSave ?? null;
     }
     const put = blobs === null ? null : await blobs.put(loaded.blob, id);
-    const reasons =
-      cause === 'filter'
-        ? filterReasons(decision)
-        : [cause === 'owner' || cause === 'resume' ? SAVED_BY_OWNER : cause === 'first-note' ? SAVED_BY_FIRST_NOTE : SAVED_BY_FIRST_MARK];
+    const reasons = cause === 'filter' ? filterReasons(decision) : [reasonOf(cause, resumedCause)];
     // Page 1 names a reading; paperwork saved by choice (a receipt, a never-save file) keeps its own name instead, which is
     // both the better name for it and keeps the words of a private page out of the library's title.
     const read = metadataToSave(pages, owner !== null || decision?.verdict === 'not-learning');
@@ -827,6 +842,7 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     if (kind === 'save') {
       failed = false;
       boxDuringSave = false;
+      savingCause = cause === 'resume' ? resumedCause : cause;
     }
     const done = (kind === 'save' ? saveEffect(effect.undoable, cause) : forgetEffect(owner)).then(
       () => {
@@ -1004,6 +1020,9 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
     get resuming() {
       return resuming && state.kind !== 'saved';
     },
+    get savingCause() {
+      return busy?.kind === 'save' ? savingCause : null;
+    },
     documentId: () => (state.kind === 'saved' ? state.documentId : null),
     get trashed() {
       return state.kind === 'saved' && trashed;
@@ -1121,8 +1140,10 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       byNote = false;
       await run({ kind: 'forget' }, 'owner', null);
     },
-    async resumeSave() {
-      // R67 tightened (3, 4): never with an Undo; the chip says "Saving your notes…" until the save lands.
+    async resumeSave(o) {
+      // R67 tightened (3, 4): never with an Undo; the chip says "Saving your notes…" until the save lands. R105b: it keeps the reason
+      // of the save its tab started.
+      resumedCause = o?.cause ?? null;
       resuming = true;
       byNote = false;
       noteSeen = true;

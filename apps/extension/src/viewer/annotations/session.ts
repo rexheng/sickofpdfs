@@ -74,7 +74,7 @@ import {
   type ThreadId,
   type ThreadRow,
 } from './boundary';
-import type { PendingSave, PendingSaves } from './save-pending';
+import type { PendingCause, PendingSave, PendingSaves } from './save-pending';
 import {
   anchorKey,
   createUndoStack,
@@ -386,6 +386,10 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
   let ownerSave = false;
   /** R67 (a): the save-pending record of this tab exists. */
   let pendingKept = false;
+  /** R105b: what started the save on its way, for the save-pending record; null when this tab does not know. */
+  let pendingCause: PendingCause | null = null;
+  /** R105b: what started the save of the records this tab took, which it finishes; null when one of them does not say. */
+  let resumedCause: PendingCause | null = null;
   /** R67 (a): the records of tabs that went have been looked for (once, when the save state is first known). */
   let pendingLooked = false;
   /** R67 (a): this page life, for its save-pending record (a tab keeps its id across reloads, R65). */
@@ -581,6 +585,9 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     // R67 (f), tightened: a save that carries any note text has no Undo: a note started it, or a sent note or a typed
     // draft is already here (a save that failed earlier and is started again by a mark or by Enter, for one).
     kickNoUndo = o.note === true || holdsNoteText();
+    // R105b: the record says a first note or a first mark started the save (as the save controller will store it), unless the
+    // controller is already saving for another reason (the owner's Save, say).
+    pendingCause = causeNow(kickNoUndo ? 'first-note' : 'first-mark');
     // R67 tightened (2): what started the save is save-pending at once, before the wait for "checking" to end. A PDF
     // judged not learning asks first, so nothing is kept for it until the owner says Yes.
     if (s.kind === 'checking' || s.kind === 'unsure') markOwnerSave();
@@ -598,6 +605,11 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
         const now = save.state;
         if (!disposed && (now.kind === 'unsure' || now.kind === 'not-learning')) {
           // A "not sure" PDF saves now: what is made from here on is save-pending (R67 a). A "not learning" one asks first.
+          const cause = causeNow(kickNoUndo ? 'first-note' : 'first-mark');
+          if (cause !== pendingCause) {
+            pendingCause = cause;
+            keepPending();
+          }
           if (now.kind === 'unsure') markOwnerSave();
           await save.firstMark({ ...(kickNoUndo ? { undoable: false } : {}), rows, content: o.content !== false });
         } else if (!disposed && now.kind === 'saved') {
@@ -660,7 +672,14 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     mode = computeMode();
     // The reason can change without the kind ("never" news from another tab after its Forget): the held copies follow it.
     if (heldAfterForget && mode === 'pending-save') for (const c of drafts.values()) keepUnsavedDraft(c);
-    if (mode === 'pending-save' && d.save?.busy === 'save') markOwnerSave(); // Save, Yes, or a learning PDF's own save
+    if (mode === 'pending-save' && d.save?.busy === 'save') {
+      // Save, Yes, or a learning PDF's own save. R105b: the record says which, as the save controller knows it.
+      const cause = causeNow(pendingCause);
+      const changed = cause !== pendingCause;
+      pendingCause = cause;
+      markOwnerSave();
+      if (changed) keepPending();
+    }
     // N2 (re-check of R67): a save finished for a tab that crashed may ask first (not learning). Its notes were already kept,
     // so the record stays while the question is open, and goes only on No (memory-only).
     if (mode === 'memory-only' || mode === 'view-only' || (s.kind === 'asking' && d.save?.busy !== 'save' && d.save?.resuming !== true)) {
@@ -693,6 +712,13 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
 
   // ------------------------------------------------------------ R67 (a): save-pending
 
+  /** R105b: what started the save the controller runs now, when it runs one and says; otherwise `guess`. */
+  function causeNow(guess: PendingCause | null): PendingCause | null {
+    const save = d.save;
+    if (save?.busy === 'save' && save.savingCause !== undefined && save.savingCause !== null) return save.savingCause;
+    return guess;
+  }
+
   /** A save is on its way: from now on, and for what is already here, the session keeps a save-pending record. */
   function markOwnerSave(): void {
     if (ownerSave || mode !== 'pending-save') return;
@@ -719,7 +745,10 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       dropPending();
       return;
     }
-    const rec: PendingSave = { v: 1, fingerprint: fp, tab: tabId, life, at: d.now(), undoable: !kickNoUndo, ops, drafts: draftRows, edits: editRows };
+    const rec: PendingSave = {
+      v: 1, fingerprint: fp, tab: tabId, life, at: d.now(), undoable: !kickNoUndo, ops, drafts: draftRows, edits: editRows,
+      ...(pendingCause !== null ? { cause: pendingCause } : {}),
+    };
     pendingKept = pj.put(rec);
   }
 
@@ -769,6 +798,9 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
           pendingKept = true;
           onBecameStoredAgain(); // the notes go to the keeper (its journal), the writes to this page's record
         } else {
+          // R105b: the save finished here keeps the reason of the one those tabs started, and so does this page's record.
+          resumedCause = causeOfRecords(taken);
+          pendingCause = resumedCause;
           ownerSave = true;
           keepPending();
         }
@@ -779,6 +811,18 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     if (taken.length === 0 || disposed) return;
     if (mode !== 'stored') resumeSave();
     emit();
+  }
+
+  /**
+   * R105b: what started the save of these records. The owner's Save in any of them makes it theirs. Otherwise a record that does not
+   * say, or the filter's save (which saves by itself on this open if it still judges the PDF learning), is unknown: null, never the
+   * owner's choice. Else a first note, or a first mark.
+   */
+  function causeOfRecords(recs: readonly PendingSave[]): PendingCause | null {
+    const causes = recs.map((r) => r.cause ?? null);
+    if (causes.includes('owner')) return 'owner';
+    if (causes.includes(null) || causes.includes('filter')) return null;
+    return causes.includes('first-note') ? 'first-note' : 'first-mark';
   }
 
   /** Puts a record's rows and notes into the model. What is already here (newer) is left as it is. */
@@ -818,7 +862,7 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     kick = (async () => {
       try {
         if (save.resumeSave) {
-          await save.resumeSave();
+          await save.resumeSave({ cause: resumedCause });
           syncSaveState();
           return;
         }
@@ -846,6 +890,8 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     savedTriggerKeys.clear();
     // R67: the next mark or keystroke is a first one again; nothing of this PDF is kept outside this tab until then.
     ownerSave = false;
+    pendingCause = null;
+    resumedCause = null;
     typingSaved = false;
     typedTrigger = null;
     kickNoUndo = false;

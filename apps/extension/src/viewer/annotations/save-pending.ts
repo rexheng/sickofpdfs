@@ -15,12 +15,19 @@
 //   finds the record, completes the save (the owner's own action started it), and puts the notes back.
 // - If the save fails, the record stays, and the chip says "Couldn't save. Try again".
 // - Undo and Forget remove it (forgetLocalTraces). Nothing here syncs or is searched. Incognito keeps none.
+// - R105b: it says what started the save (`cause`), so a save finished on the next open keeps that reason. "Your first note saved
+//   it" stays a first note's save, and Claude still asks first on it. A record that does not say (one written before this field)
+//   is never taken as the owner's own Save.
 import type { CommentRow, TabId } from '@sop/core';
 import type { AnnotationOp } from './boundary';
 import type { KeyValueStorage } from './draft-journal';
 import type { SessionEditDraft } from './session';
 
 export const PENDING_PREFIX = 'sop-pending:';
+
+/** What started a save that is on its way: the owner's own Save (the chip, the banner, Yes), the filter's own save, or a first note or mark. */
+export type PendingCause = 'owner' | 'filter' | 'first-note' | 'first-mark';
+const CAUSES: readonly PendingCause[] = ['owner', 'filter', 'first-note', 'first-mark'];
 
 export interface PendingSave {
   v: 1;
@@ -37,6 +44,8 @@ export interface PendingSave {
   at: number;
   /** The save keeps its Undo when it completes: only a mark started it, and nothing else was made (R67 c, f). */
   undoable: boolean;
+  /** R105b: what started the save. Left out when this tab does not know: then the save it finishes is not the owner's choice. */
+  cause?: PendingCause;
   /** Writes not made yet, oldest first, as the session's write queue holds them. */
   ops: AnnotationOp[];
   /** Unsent notes, as the draft keeper would save them (a new note's thread rides in `meta.sopDraft`). */
@@ -66,7 +75,9 @@ function parse(raw: string | null): PendingSave | null {
     const v = JSON.parse(raw) as Partial<PendingSave> | null;
     if (!v || v.v !== 1 || !isId(v.fingerprint) || !isId(v.tab) || !isId(v.life) || typeof v.at !== 'number' || typeof v.undoable !== 'boolean') return null;
     if (!Array.isArray(v.ops) || !Array.isArray(v.drafts) || !Array.isArray(v.edits)) return null;
-    return v as PendingSave;
+    const rec = v as PendingSave;
+    if (rec.cause !== undefined && !CAUSES.includes(rec.cause)) delete rec.cause; // a cause it does not know is no cause
+    return rec;
   } catch {
     return null;
   }

@@ -34,6 +34,7 @@ import type {
   ThreadRow,
 } from '../../../../../packages/core/src/index';
 import type { PageGlyphs, PdfRect, SearchHit } from '../../../../../packages/viewer/src/backend/types';
+import type { PendingCause } from './save-pending';
 
 export type {
   Anchor,
@@ -99,8 +100,13 @@ export interface SaveController {
   readonly resuming?: boolean;
   /** R67 (b): the note that started this tab's save was emptied and closed before anything else was made: forget the save. */
   withdraw?(): Promise<void>;
-  /** R67 (a): completes a save the owner started in a tab that closed or crashed before it finished. Never with an Undo. */
-  resumeSave?(): Promise<void>;
+  /**
+   * R67 (a): completes a save the owner started in a tab that closed or crashed before it finished. Never with an Undo. R105b: `cause`
+   * is what started it, from the tab's record; null when the record does not say, and then the save is not the owner's own choice.
+   */
+  resumeSave?(o?: { cause: PendingCause | null }): Promise<void>;
+  /** R105b: what started the save running now (`busy === 'save'`), for the save-pending record; null when it is not known. */
+  readonly savingCause?: PendingCause | null;
   /**
    * The PDF is not saved because the owner chose "Never save this file" (here, in another tab's Forget, or before). Notes held then
    * are kept privately (TB5 ruling: no file fingerprint and no quote in any copy on this computer).

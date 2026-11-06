@@ -24,7 +24,7 @@ import { useCallback, useState, useSyncExternalStore } from 'react';
 import type { ViewerUi } from '../commands';
 import cards from '../ui/cards.module.css';
 import { FAILED_NOTE, notSureChoices } from './NotSureBanner';
-import { SAVED_BY_FIRST_MARK, SAVED_BY_FIRST_NOTE, SAVED_BY_OWNER, type SaveControllerImpl } from './save-controller';
+import { SAVED_BY_FIRST_MARK, SAVED_BY_FIRST_NOTE, SAVED_BY_OWNER, SAVED_WHEN_REOPENED, type SaveControllerImpl } from './save-controller';
 import { openSaveDialog } from './save-dialogs';
 import styles from './StatusChip.module.css';
 
@@ -235,6 +235,7 @@ const BY_OWNER: Readonly<Record<string, string>> = {
   [SAVED_BY_OWNER]: 'You saved it to your library.',
   [SAVED_BY_FIRST_MARK]: 'Your first mark saved it to your library.',
   [SAVED_BY_FIRST_NOTE]: 'Your first note saved it to your library.',
+  [SAVED_WHEN_REOPENED]: 'Your notes saved it to your library.',
   'matches your allow list': 'Saved because you chose to always save PDFs from this place.',
   'you chose to save this file': 'Saved because you chose to save this file.',
 };

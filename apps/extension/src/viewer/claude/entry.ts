@@ -33,7 +33,7 @@ import type { NotesHost, ViewerFeature } from '../annotations/wire';
 import { isIncognito } from '../incognito';
 import { publishRuntime } from '../runtime';
 import { claudeNoteWaiting } from '../save/claude-note';
-import { SAVED_BY_FIRST_MARK, SAVED_BY_FIRST_NOTE } from '../save/save-controller';
+import { SAVED_BY_FIRST_MARK, SAVED_BY_FIRST_NOTE, SAVED_WHEN_REOPENED } from '../save/save-controller';
 import { libraryStore } from '../use-store';
 import { claudeAgreements } from './agreed';
 import { createClaudeClient, hasKey } from './client';
@@ -85,15 +85,19 @@ interface ReadingFlags {
   createdAt: number;
 }
 
-/** The save reasons of a save the owner did not choose (R105): the first note or the first mark saved the PDF. */
-const NOT_CHOSEN = new Set<string>([SAVED_BY_FIRST_NOTE, SAVED_BY_FIRST_MARK]);
+/**
+ * The save reasons of a save the owner did not choose (R105): the first note or the first mark saved the PDF, or a save a closed or
+ * crashed tab started was finished on the next open and its record did not say what started it (R105b).
+ */
+const NOT_CHOSEN = new Set<string>([SAVED_BY_FIRST_NOTE, SAVED_BY_FIRST_MARK, SAVED_WHEN_REOPENED]);
 /** Save reasons that are flags on a reading (R102, R103), not why it was saved. */
 const isFlag = (r: string): boolean => r === SAVED_THOUGH_NOT_LEARNING || r === WEB_PAGE || r.startsWith(`${WEB_PAGE}:`);
 
 /**
  * R105b: whether the owner chose to save this reading, from its stored save reasons. Their own Save counts (the chip, the banner,
  * the save question, Ctrl+Alt+S, "Save this page"), and so does the filter's own save of a learning PDF (an "Always save from"
- * rule, the score). "Your first note saved it" and "Your first mark saved it" do not. A reading a note saved and the filter saved
+ * rule, the score). "Your first note saved it", "Your first mark saved it" and "Your notes saved it" do not. A save finished after a
+ * crash keeps the reason of the save its tab started (save-pending.ts), so a first note's save stays one. A reading a note saved and the filter saved
  * again later (the store merges the reasons) was chosen.
  */
 export function ownerChoseToSave(reasons: readonly string[]): boolean {

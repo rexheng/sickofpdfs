@@ -72,6 +72,12 @@ export interface SaveController {
   readonly resuming?: boolean;
   /** R67 (b): the note that started this tab's save was emptied and closed before anything else was made: forget the save. */
   withdraw?(): Promise<void>;
-  /** R67 (a): completes a save the owner started in a tab that closed or crashed before it finished. Never with an Undo. */
-  resumeSave?(): Promise<void>;
+  /**
+   * R67 (a): completes a save the owner started in a tab that closed or crashed before it finished. Never with an Undo. R105b: `cause`
+   * is what started it, from the tab's save-pending record; null when the record does not say, and then the save is not the owner's own
+   * choice.
+   */
+  resumeSave?(o?: { cause: 'owner' | 'filter' | 'first-note' | 'first-mark' | null }): Promise<void>;
+  /** R105b: what started the save running now (`busy === 'save'`), for the save-pending record; null when it is not known. */
+  readonly savingCause?: 'owner' | 'filter' | 'first-note' | 'first-mark' | null;
 }

@@ -14,9 +14,12 @@
 //   (d) every open tab follows an Undo back to "Not sure" and drops the undone mark;
 //   (e) Undo clears the PDF's localStorage too;
 //   (f) a save a note started has no Undo chip at all.
+// R105b (Phase 4 security read, C9): a save a first note started and a crash cut short is finished on the next open as a first
+// note's save, never as "You saved it", so Claude still asks before it reads the PDF.
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
+import { claudeReplay } from '../support/claude-replay';
 import { dragSelect } from '../support/drag-select';
 import { forceVerdict, realVerdict } from '../support/filter-verdict';
 import { TEST_ASSETS } from '../support/server';
@@ -43,6 +46,7 @@ import {
 } from './support/marks.spec-blind';
 import { chipText, forgetThisPdf, saveFromChip } from './support/library-p3.spec-blind';
 import { shot } from './support/takeover';
+import { claudeLine, messages, repliesSettle, sendDialog, setUpClaude } from './support/claude';
 
 test.setTimeout(180_000);
 
@@ -171,6 +175,61 @@ test.describe('a note typed while the chip says "Saving…" (finding 2, R67 a)',
       await shot(again, testInfo, 'saved-and-note-back');
     });
   }
+});
+
+test.describe('R105b: a first note\'s save finished after a crash is still a first note\'s save', () => {
+  test.use({ networkGate: 'claude' });
+
+  test('the renderer crashes mid-save of a first note: the next open saves it as the note\'s save, and Claude asks first; nothing goes before Send', async ({ openViewer, server }, testInfo) => {
+    const NOTE = 'An important thought I must not lose';
+    const page = await openNotSure(openViewer, server, BOOK);
+    await selectAWord(page, BOOK);
+    await startNote(page);
+    await page.keyboard.type(NOTE, { delay: 10 });
+    await expect(savingChip(page), 'the save is still on its way').toBeVisible({ timeout: 2000 });
+    expect(await libraryId(page), 'nothing is in the library yet').toBeNull();
+    await crashRenderer(page);
+
+    const again = await openViewer(address(server, BOOK));
+    await expect.poll(() => noteText(again).catch(() => ''), { timeout: 60_000, message: 'the note is back in its box' }).toBe(NOTE);
+    const id = await waitSaved(again, 60_000);
+    await expect(savedChip(again), 'the save the note started has completed').toBeVisible({ timeout: 30_000 });
+    const reasons = await hooks(again).eval(async (h, doc) => (await h.store!.getDocument(doc as never))?.saveReasons ?? null, id);
+    expect(reasons, 'it keeps its reason: the first note saved it, not the owner').toEqual(['Your first note saved it']);
+    await shot(again, testInfo, 'resumed-as-first-note');
+
+    // The owner finishes the note with a question for Claude. The reading is not the owner's choice: it asks first.
+    const replay = claudeReplay(server);
+    await replay.attach(again);
+    await setUpClaude(again);
+    replay.use('ask-passage');
+    const box = noteBox(again);
+    await box.click();
+    await again.keyboard.press('End');
+    await again.keyboard.type(' @Claude what does this mean?', { delay: 15 });
+    await again.keyboard.press('Enter');
+    const dialog = sendDialog(again);
+    await expect(dialog, 'Claude asks before it reads this PDF').toBeVisible({ timeout: 90_000 });
+    await expect(dialog.getByRole('button', { name: 'Cancel' }), 'Cancel is the default').toBeFocused();
+    await expect(dialog).toContainText(/you haven.t chosen to save this pdf yourself/i);
+    expect(messages(replay.requests()), 'nothing is sent before Send').toHaveLength(0);
+    await shot(again, testInfo, 'resumed-asks-first');
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    const notSent = claudeLine(again, /not sent\. nothing was charged/i);
+    await expect(notSent, 'Cancel leaves "Not sent"').toBeVisible();
+    expect(messages(replay.requests()), 'Cancel sent nothing').toHaveLength(0);
+
+    // Send: only the passages go, as for any reading a note saved.
+    await notSent.getByRole('button', { name: /^ask again$/i }).click();
+    await expect(dialog).toBeVisible({ timeout: 60_000 });
+    expect(messages(replay.requests()), 'still nothing before Send').toHaveLength(0);
+    await dialog.getByRole('button', { name: 'Send' }).click();
+    await repliesSettle(again, 90_000);
+    const sent = messages(replay.requests());
+    expect(sent, 'one request, after Send').toHaveLength(1);
+    expect(sent[0].toolNames, 'with no tools').toEqual([]);
+    expect(sent[0].webSearch, 'and no web search').toBeNull();
+  });
 });
 
 test.describe('only real content saves (finding 3, R67 b)', () => {
