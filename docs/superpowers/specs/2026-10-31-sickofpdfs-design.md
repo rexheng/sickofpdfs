@@ -426,7 +426,7 @@ One reference implementation in TypeScript, with its test cases, defines these r
 
 - The chip in the top bar always shows the decision; click it, or press Ctrl+Alt+S, to save. Saving back-fills the history.
 - "Not sure" PDFs show a quiet banner after 20 seconds: Save, Not now, Never for this file, or Always for this site.
-- **R95 (Nov 2, TB4 critics): the not-sure banner never covers the page.** It is an inline bar directly under the toolbar that pushes the pages down, centred on the reading area. Esc means "Not now". In the Tab order it comes right after the chip. Its choices are also in the chip's menu.
+- **R95 (Nov 2, TB4 critics): the not-sure banner never covers the page.** Its 20-second count pauses during presentation mode (Phase 3 gate). It is an inline bar directly under the toolbar that pushes the pages down, centred on the reading area. Esc means "Not now". In the Tab order it comes right after the chip. Its choices are also in the chip's menu.
 - **R96: the save question never eats typing.**
   - Letters typed while it is open go into the note box, in order. Only Enter (Save) or Esc (No) answers it; Space and letters never press a button.
   - Closing a tab whose notes are only in memory brings up the browser's "Leave site?" prompt.

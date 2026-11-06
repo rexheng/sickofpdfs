@@ -3609,7 +3609,7 @@ test('Review Focus 5: closing the offscreen document mid-save still saves', asyn
     | `unsure` | "Not sure: Save?" | icon `library_add`, tone `attention`; tooltip = the reasons |
     | `not-learning` | `Not saved: ${reasons[0]}` | |
     | `memory-only` | "Not saved: notes kept until you close this tab" | |
-    | `incognito` | "Incognito: view only" | disabled |
+    | `incognito` | "Incognito: view only" | enabled for its tooltip; no click action (TB4 fix B1) |
     | `checking` | (no chip) | |
 
     `SaveAskDialog` reads "Save this PDF to keep your notes?" with buttons "Save" and "No".
