@@ -77,7 +77,9 @@ test('select a sentence, right-click, pick green: the sentence is highlighted gr
     await expect(menuRow(page, name).first(), `the menu has ${label}`).toBeVisible();
   }
   for (const colour of SLOT_NAMES) await expect(swatch(page, colour), `the menu has the colour ${colour}`).toBeVisible();
-  await expect(menuRow(page, /ask claude/i), 'Ask Claude stays hidden until Phase 4').toHaveCount(0);
+  // Adjusted at the Phase 4 gate (TB6): Phase 4 is here, so the menu has Ask Claude; on this learning paper it can be used.
+  await expect(menuRow(page, /ask claude/i), 'the menu has Ask Claude (Phase 4)').toHaveCount(1);
+  await expect(menuRow(page, /ask claude/i), 'Ask Claude is not greyed out on a learning paper').toBeEnabled();
   await shot(page, testInfo, 'menu-open');
 
   await swatch(page, 'green').click();
