@@ -18,7 +18,8 @@ export interface TableColumn<T> {
   sortKey?: string;
   /** The name column: Google Sans Text 500 in on-surface; the others are 400 in on-surface-variant. */
   primary?: boolean;
-  render(item: T): ReactNode;
+  /** `key` is the line's key: a grouped list can hold one item on several lines (one per group). */
+  render(item: T, key: string): ReactNode;
 }
 
 export interface TableSort {
@@ -159,7 +160,7 @@ export function ItemTable<T>(props: ItemTableProps<T>) {
               >
                 {shown.map((c) => (
                   <div key={c.id} role="gridcell" className={cx(styles.cell, c.primary === true && styles.primaryCell)}>
-                    {c.render(item)}
+                    {c.render(item, key)}
                   </div>
                 ))}
                 <div role="gridcell" className={cx(styles.cell, styles.actionsCell)} onDoubleClick={(e) => e.stopPropagation()}>

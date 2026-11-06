@@ -32,7 +32,7 @@ import { SortMenu } from './SortMenu';
 import { useLayoutPreference } from './use-layout';
 // S18 (R92): tags on rows and cards, several readings at once, Group by, a tag's own list, and About this PDF.
 import { AboutPanel } from '../about/AboutPanel';
-import { groupEntries, useGrouping, useGroups } from '../tags/grouping';
+import { groupEntries, groupOfKey, useGrouping, useGroups } from '../tags/grouping';
 import { GroupByMenu } from '../tags/GroupByMenu';
 import { RowTags } from '../tags/RowTags';
 import { sayWith } from '../tags/say';
@@ -285,19 +285,24 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
           sortKey: 'lastOpened',
           render: (i) => <CellText title={formatDateLong(i.lastOpened)}>{formatDate(i.lastOpened)}</CellText>,
         };
+  /**
+   * The tag a line need not show, because the page or the heading above it says it already: the tag's own page, or the
+   * course, topic or tag group the line is in (TB5: no "Course: 14.01" on every row under "Course: 14.01").
+   */
+  const saidAbove = (key: string): string | null => (grouping !== 'none' ? groupOfKey(key) : null) ?? tagFilter;
   const columns: TableColumn<LibraryItem>[] = [
     {
       id: 'name',
       label: SORT_LABELS.title,
       primary: true,
       sortKey: 'title',
-      render: (i) => (
+      render: (i, key) => (
         <>
           <FileTypeIcon kind="pdf" size={24} />
           <CellText title={readingTitle(i)}>{readingTitle(i)}</CellText>
           <Badges item={i} />
           {tags !== null && (
-            <RowTags documentId={i.doc.id} list={readingTags.get(i.doc.id) ?? []} tags={tags} say={say} max={1} tabbable={false} except={tagFilter} onMore={() => tagsFor(i)} />
+            <RowTags documentId={i.doc.id} list={readingTags.get(i.doc.id) ?? []} tags={tags} say={say} max={1} tabbable={false} except={saidAbove(key)} onMore={() => tagsFor(i)} />
           )}
         </>
       ),
@@ -404,14 +409,14 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
             label={title}
             entries={entries}
             selection={selection}
-            renderCard={(item, { active }) => ({
+            renderCard={(item, { active, key }) => ({
               icon: <FileTypeIcon kind="pdf" size={24} />,
               title: readingTitle(item),
               badges: <Badges item={item} compact />,
               more: more(item, active),
               thumbnail: <CardThumbnail id={item.doc.id} stored={item.doc.blobStored} />,
               ...(cardTags
-                ? { footer: tags !== null && <RowTags documentId={item.doc.id} list={readingTags.get(item.doc.id) ?? []} tags={tags} say={say} max={1} tabbable={false} except={tagFilter} onMore={() => tagsFor(item)} /> }
+                ? { footer: tags !== null && <RowTags documentId={item.doc.id} list={readingTags.get(item.doc.id) ?? []} tags={tags} say={say} max={1} tabbable={false} except={saidAbove(key)} onMore={() => tagsFor(item)} /> }
                 : {}),
             })}
             onOpen={open}

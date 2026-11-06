@@ -77,6 +77,12 @@ export function useGroups(tags: TagsData | null, grouping: Grouping, readingsVer
 /** A grouped entry's key: the group and the reading, since a reading can be in several groups. */
 export const groupedKey = (group: string, id: DocumentId): string => `${group}|${id}`;
 
+/** The group of a grouped entry's key (for a tag, a course or a topic group: its tag id); null for a key with no group. */
+export function groupOfKey(key: string): string | null {
+  const at = key.lastIndexOf('|');
+  return at < 0 ? null : key.slice(0, at);
+}
+
 /**
  * The list's lines for these groups: a heading with its count, then its readings (none while it is folded). Only readings
  * that are shown (`byId`: loaded, and through the search and filters) are listed; a group left with none is not shown.

@@ -24,8 +24,11 @@ export interface ItemGridProps<T> {
   label: string;
   entries: readonly CollectionEntry<T>[];
   selection: CollectionSelection;
-  /** `active` is the card that holds the tab stop; only its ⋮ button should be a tab stop too. */
-  renderCard(this: void, item: T, state: { active: boolean }): GridCardParts;
+  /**
+   * `active` is the card that holds the tab stop; only its ⋮ button should be a tab stop too. `key` is the card's key: a
+   * grouped grid can hold one item in several groups.
+   */
+  renderCard(this: void, item: T, state: { active: boolean; key: string }): GridCardParts;
   onOpen(this: void, item: T): void;
   /** As ItemTable's: `keyboard` means the point is under the ⋮ button's right edge. */
   onMenu(this: void, item: T, at: { x: number; y: number }, from: 'pointer' | 'keyboard'): void;
@@ -94,7 +97,7 @@ export function ItemGrid<T>({ label, entries, selection, renderCard, onOpen, onM
             <div key={row[0]?.key} role="row" className={styles.row} style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
               {row.map(({ key, item }) => {
                 const selected = selection.isSelected(key);
-                const card = renderCard(item, { active: selection.active === key });
+                const card = renderCard(item, { active: selection.active === key, key });
                 return (
                   <div
                     key={key}

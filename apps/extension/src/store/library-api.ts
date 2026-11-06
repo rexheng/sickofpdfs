@@ -81,8 +81,20 @@ export interface NoteItem {
   title: string;
 }
 
+/**
+ * Where the reader stopped: the page under the top edge of the view, how far down it (0–1), and the zoom. `shown` (TB5) is
+ * the page the page box showed then, the page with the most of it in view, which is what reopening shows too: Home says
+ * that page. Rows written before it have none.
+ */
+export interface ReadingPosition {
+  page: number;
+  offset: number;
+  zoom: number;
+  shown?: number;
+}
+
 export interface ReadingState {
-  lastPosition: { page: number; offset: number; zoom: number } | null;
+  lastPosition: ReadingPosition | null;
   readingMs: number;
   /** Page indexes, ascending. */
   pagesVisited: number[];
@@ -97,7 +109,7 @@ export interface ReadingReport {
   at: number;
   /** Reading time since the last report, in ms. */
   msDelta: number;
-  position: { page: number; offset: number; zoom: number };
+  position: ReadingPosition;
   pagesVisited: number[];
 }
 
@@ -779,6 +791,7 @@ export function createLibraryApi(db: SqlDb, deps: LibraryDeps, readers: RowReade
       if (typeof p !== 'object' || p === null || !isInt(p.page) || p.page < 0) fail('bad-input', 'the position needs a page');
       if (typeof p.offset !== 'number' || !Number.isFinite(p.offset)) fail('bad-input', 'the position needs an offset');
       if (typeof p.zoom !== 'number' || !Number.isFinite(p.zoom) || p.zoom <= 0) fail('bad-input', 'the position needs a zoom');
+      if (p.shown !== undefined && (!isInt(p.shown) || p.shown < 0)) fail('bad-input', 'the page shown is a page index');
       if (!Array.isArray(o.pagesVisited) || !o.pagesVisited.every((n) => isInt(n) && n >= 0)) fail('bad-input', 'pagesVisited is a list of page indexes');
       const msDelta = Math.min(Math.round(o.msDelta), MAX_MS_DELTA);
 
@@ -787,10 +800,12 @@ export function createLibraryApi(db: SqlDb, deps: LibraryDeps, readers: RowReade
         if (!doc) fail('document-missing', 'history is only kept for saved documents');
         const pageCount = num(doc, 'page_count');
         const visited = new Set<number>(o.pagesVisited.filter((n) => n < pageCount));
+        const last = Math.max(pageCount - 1, 0);
         const position = JSON.stringify({
-          page: Math.min(p.page, Math.max(pageCount - 1, 0)),
+          page: Math.min(p.page, last),
           offset: Math.min(Math.max(p.offset, 0), 1),
           zoom: p.zoom,
+          ...(p.shown !== undefined ? { shown: Math.min(p.shown, last) } : {}),
         });
         const cur = one('SELECT last_opened, reading_ms, pages_visited FROM history WHERE document_id = ?', [documentId]);
         if (!cur) {
@@ -829,7 +844,9 @@ export function createLibraryApi(db: SqlDb, deps: LibraryDeps, readers: RowReade
       if (raw !== null) {
         try {
           const v = JSON.parse(raw) as Record<string, unknown>;
-          if (isInt(v.page) && typeof v.offset === 'number' && typeof v.zoom === 'number') lastPosition = { page: v.page, offset: v.offset, zoom: v.zoom };
+          if (isInt(v.page) && typeof v.offset === 'number' && typeof v.zoom === 'number') {
+            lastPosition = { page: v.page, offset: v.offset, zoom: v.zoom, ...(isInt(v.shown) && v.shown >= 0 ? { shown: v.shown } : {}) };
+          }
         } catch {
           // An unreadable spot reads as none: the reading opens at the start.
         }

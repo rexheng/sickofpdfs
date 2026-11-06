@@ -56,8 +56,8 @@ export interface HistoryRow extends Stamped {
   lastOpened: number;
   openCount: number;
   readingMs: number;
-  /** Where the reader stopped. `offset` and `zoom` are the viewer's numbers. */
-  lastPosition: { page: number; offset: number; zoom: number } | null;
+  /** Where the reader stopped. `offset` and `zoom` are the viewer's numbers; `shown` is the page the page box showed (TB5). */
+  lastPosition: { page: number; offset: number; zoom: number; shown?: number } | null;
   /** The pages visited, as a bitset in base64 (the same form the sync wire uses). */
   pagesVisited: string;
 }

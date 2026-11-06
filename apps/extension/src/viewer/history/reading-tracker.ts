@@ -140,6 +140,8 @@ export function createReadingTracker(d: ReadingTrackerDeps): ReadingTracker {
   let page = d.view.get().currentPage;
   const visited = new Set<number>();
   let lastKnown: ViewPosition | null = null;
+  /** The page the page box showed with `lastKnown` (TB5: Home says that page). */
+  let lastShown: number | null = null;
 
   // ---- what is written ----
   let writtenVisited = 0;
@@ -164,7 +166,10 @@ export function createReadingTracker(d: ReadingTrackerDeps): ReadingTracker {
 
   const position = (): ViewPosition | null => {
     const p = d.position();
-    if (p !== null) lastKnown = p;
+    if (p !== null) {
+      lastKnown = p;
+      lastShown = d.view.get().currentPage;
+    }
     return p ?? lastKnown;
   };
 
@@ -208,7 +213,7 @@ export function createReadingTracker(d: ReadingTrackerDeps): ReadingTracker {
       await store.recordReading(id, {
         at: now(),
         msDelta: ms,
-        position: { page: here.pageIndex, offset: here.offset, zoom: here.scale },
+        position: { page: here.pageIndex, offset: here.offset, zoom: here.scale, ...(lastShown !== null ? { shown: lastShown } : {}) },
         pagesVisited: pages,
       });
     } catch (error) {

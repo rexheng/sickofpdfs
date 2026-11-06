@@ -10,7 +10,9 @@ export function ResumeCard({ entry, now, onOpen }: { entry: ContinueItem; now: n
   const { item, reading } = entry;
   const title = readingTitle(item);
   const pages = item.doc.pageCount;
-  const page = reading?.lastPosition?.page ?? null;
+  // The page the viewer opens on: the one its page box showed when the reader stopped (TB5), else the top of the view's page.
+  const at = reading?.lastPosition ?? null;
+  const page = at === null ? null : (at.shown ?? at.page);
   const share = page === null || pages <= 0 ? null : Math.min(1, (page + 1) / pages);
   const time = reading !== null && reading.readingMs > 0 ? reading.readingMs : item.readingMs;
   return (
