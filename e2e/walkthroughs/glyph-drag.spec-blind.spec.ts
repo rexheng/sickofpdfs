@@ -55,87 +55,89 @@ function aim(glyphs: Glyph[], g: Glyph, fraction: number): number {
   return lo + 0.04 < hi - 0.04 ? Math.min(Math.max(fraction, lo + 0.04), hi - 0.04) : fraction;
 }
 
-test('a drag that starts or ends part-way across a glyph includes that glyph', async ({ openViewer, server }, testInfo) => {
-  const failures: string[] = [];
-  let tried = 0;
-  for (const name of ['two-column', 'resnet-p1', 'attention-p1']) {
-    const o = await openFixture(openViewer, server, fixture(name));
-    const glyphs = await glyphsOf(o.page, o.pageIndex);
-    const pool = glyphs.filter(isVisible).map((g) => g.index);
-    const map = await pageMap(o.page, o.pageIndex);
-    const pairs = seededPairs(pool, 12, `r27-${name}`);
-    for (const [i, [a, b]] of pairs.entries()) {
-      const mode = MODES[i % MODES.length];
-      // Forward (a before b) and backward (press on the later glyph), same pair.
-      for (const [from, to] of [[Math.min(a, b), Math.max(a, b)], [Math.max(a, b), Math.min(a, b)]] as const) {
+test('Dragging over glyphs: part-way glyphs, glyph centres at 100% and 200%, upright and turned', async ({ step }, testInfo) => {
+  test.setTimeout(540_000);
+  await step('a drag that starts or ends part-way across a glyph includes that glyph', async ({ openViewer, server }) => {
+    const failures: string[] = [];
+    let tried = 0;
+    // thinned: a two-column paper and a one-column abstract (ResNet's); the Attention abstract was a second one-column abstract
+    for (const name of ['two-column', 'resnet-p1']) {
+      const o = await openFixture(openViewer, server, fixture(name));
+      const glyphs = await glyphsOf(o.page, o.pageIndex);
+      const pool = glyphs.filter(isVisible).map((g) => g.index);
+      const map = await pageMap(o.page, o.pageIndex);
+      const pairs = seededPairs(pool, 12, `r27-${name}`);
+      for (const [i, [a, b]] of pairs.entries()) {
+        const mode = MODES[i % MODES.length];
+        // Forward (a before b) and backward (press on the later glyph), same pair.
+        for (const [from, to] of [[Math.min(a, b), Math.max(a, b)], [Math.max(a, b), Math.min(a, b)]] as const) {
+          await clearSelection(o.page);
+          // Forwards, the press is on the right of the earlier glyph and the release on the left of the later one. Backwards,
+          // the press is on the left of the later glyph and the release on the right of the earlier one: the same stress, mirrored.
+          const forward = from < to;
+          const [fa, fb] = forward ? [mode.pa, mode.pb] : [mode.pb, mode.pa];
+          await dragClient(o.page, pointIn(map, glyphs[from], aim(glyphs, glyphs[from], fa)), pointIn(map, glyphs[to], aim(glyphs, glyphs[to], fb)));
+          const { ranges } = await readSelection(o.page);
+          tried++;
+          if (!same(ranges, inclusive(o.pageIndex, a, b))) failures.push(`${name}: ${describeFail(from, to, mode.name, ranges, glyphs)}`);
+        }
+      }
+      if (name === 'resnet-p1') await o.page.screenshot({ path: testInfo.outputPath('t22-r27-last-drag.png') });
+      await o.page.close();
+    }
+    expect(tried).toBe(2 * 12 * 2);
+    expect(failures, `${failures.length} of ${tried} part-glyph drags missed a glyph or added one`).toEqual([]);
+  }, 180_000);
+  await step('drags between glyph centres select the glyphs and read as the engine reads them, at 100% and 200%, on an upright and a turned page', async ({ openViewer, server }) => {
+    const failures: string[] = [];
+    let tried = 0;
+    for (const [name, zoom] of [['two-column', 1], ['two-column', 2], ['ligatures', 1], ['rtl', 1], ['rotated-page', 1], ['rotated-page', 2], ['maths', 1]] as const) {
+      const o = await openFixture(openViewer, server, fixture(name));
+      if (zoom !== 1) {
+        await o.page.setViewportSize(name === 'rotated-page' ? VIEW_200_WIDE : VIEW_200);
+        await setZoom(o.page, zoom);
+        await th(o.page).eval((h, i) => h.viewer.scrollTo(i), o.pageIndex);
+      }
+      const glyphs = await glyphsOf(o.page, o.pageIndex);
+      const pool = glyphs.filter(isVisible).map((g) => g.index);
+      for (const [a, b] of seededPairs(pool, 10, `centres-${name}-${zoom}`)) {
         await clearSelection(o.page);
-        // Forwards, the press is on the right of the earlier glyph and the release on the left of the later one. Backwards,
-        // the press is on the left of the later glyph and the release on the right of the earlier one: the same stress, mirrored.
-        const forward = from < to;
-        const [fa, fb] = forward ? [mode.pa, mode.pb] : [mode.pb, mode.pa];
-        await dragClient(o.page, pointIn(map, glyphs[from], aim(glyphs, glyphs[from], fa)), pointIn(map, glyphs[to], aim(glyphs, glyphs[to], fb)));
-        const { ranges } = await readSelection(o.page);
+        const { ranges, domText } = await dragGlyphs(o.page, o.pageIndex, a, b);
         tried++;
-        if (!same(ranges, inclusive(o.pageIndex, a, b))) failures.push(`${name}: ${describeFail(from, to, mode.name, ranges, glyphs)}`);
+        const want = inclusive(o.pageIndex, a, b, glyphs);
+        if (!same(ranges, want)) {
+          failures.push(`${name}@${zoom * 100}%: ${describeFail(a, b, 'centre to centre', ranges, glyphs)} (want [${want.start}, ${want.end}))`);
+          continue;
+        }
+        // The browser's own selection holds the same letters (find and screen readers read it).
+        const engine = collapse(await rangeText(o.page, o.pageIndex, want.start, want.end)).replace(/\s/gu, '');
+        if (collapse(domText).replace(/\s/gu, '') !== engine) {
+          failures.push(`${name}@${zoom * 100}%: the DOM selection text differs from the engine's for [${want.start}, ${want.end})`);
+        }
       }
+      await o.page.screenshot({ path: testInfo.outputPath(`t22-drag-${name}-${zoom * 100}.png`) });
+      await o.page.close();
     }
-    if (name === 'resnet-p1') await o.page.screenshot({ path: testInfo.outputPath('t22-r27-last-drag.png') });
-    await o.page.close();
-  }
-  expect(tried).toBe(3 * 12 * 2);
-  expect(failures, `${failures.length} of ${tried} part-glyph drags missed a glyph or added one`).toEqual([]);
-});
-
-test('drags between glyph centres select the glyphs and read as the engine reads them, at 100% and 200%, on an upright and a turned page', async ({ openViewer, server }, testInfo) => {
-  const failures: string[] = [];
-  let tried = 0;
-  for (const [name, zoom] of [['two-column', 1], ['two-column', 2], ['ligatures', 1], ['rtl', 1], ['rotated-page', 1], ['rotated-page', 2], ['maths', 1]] as const) {
-    const o = await openFixture(openViewer, server, fixture(name));
-    if (zoom !== 1) {
-      await o.page.setViewportSize(name === 'rotated-page' ? VIEW_200_WIDE : VIEW_200);
-      await setZoom(o.page, zoom);
-      await th(o.page).eval((h, i) => h.viewer.scrollTo(i), o.pageIndex);
-    }
-    const glyphs = await glyphsOf(o.page, o.pageIndex);
-    const pool = glyphs.filter(isVisible).map((g) => g.index);
-    for (const [a, b] of seededPairs(pool, 10, `centres-${name}-${zoom}`)) {
-      await clearSelection(o.page);
-      const { ranges, domText } = await dragGlyphs(o.page, o.pageIndex, a, b);
-      tried++;
-      const want = inclusive(o.pageIndex, a, b, glyphs);
-      if (!same(ranges, want)) {
-        failures.push(`${name}@${zoom * 100}%: ${describeFail(a, b, 'centre to centre', ranges, glyphs)} (want [${want.start}, ${want.end}))`);
-        continue;
+    expect(failures, `${failures.length} of ${tried} drags`).toEqual([]);
+  }, 180_000);
+  await step('glyphCenter(page, char) is where the glyph is drawn, at 100% and 200%, upright and turned', async ({ openViewer, server }) => {
+    const off: string[] = [];
+    for (const [name, zoom] of [['two-column', 1], ['two-column', 2], ['rotated-page', 1], ['rotated-page', 2], ['rtl', 1]] as const) {
+      const o = await openFixture(openViewer, server, fixture(name));
+      if (zoom !== 1) {
+        await o.page.setViewportSize(name === 'rotated-page' ? VIEW_200_WIDE : VIEW_200);
+        await setZoom(o.page, zoom);
+        await th(o.page).eval((h, i) => h.viewer.scrollTo(i), o.pageIndex);
       }
-      // The browser's own selection holds the same letters (find and screen readers read it).
-      const engine = collapse(await rangeText(o.page, o.pageIndex, want.start, want.end)).replace(/\s/gu, '');
-      if (collapse(domText).replace(/\s/gu, '') !== engine) {
-        failures.push(`${name}@${zoom * 100}%: the DOM selection text differs from the engine's for [${want.start}, ${want.end})`);
+      const glyphs = await glyphsOf(o.page, o.pageIndex);
+      const map = await pageMap(o.page, o.pageIndex);
+      for (const g of glyphs.filter(isVisible).filter((_, i) => i % 37 === 0)) {
+        const hook = await th(o.page).eval((h, a) => h.glyphCenter(a.i, a.c), { i: o.pageIndex, c: g.index });
+        const mine = centreOf(map, g);
+        if (Math.hypot(hook.x - mine.x, hook.y - mine.y) > 1.5) off.push(`${name}@${zoom * 100}% glyph ${g.index} "${g.text}": hook ${hook.x.toFixed(1)},${hook.y.toFixed(1)} vs box centre ${mine.x.toFixed(1)},${mine.y.toFixed(1)}`);
       }
+      await o.page.close();
     }
-    await o.page.screenshot({ path: testInfo.outputPath(`t22-drag-${name}-${zoom * 100}.png`) });
-    await o.page.close();
-  }
-  expect(failures, `${failures.length} of ${tried} drags`).toEqual([]);
-});
-
-test('glyphCenter(page, char) is where the glyph is drawn, at 100% and 200%, upright and turned', async ({ openViewer, server }) => {
-  const off: string[] = [];
-  for (const [name, zoom] of [['two-column', 1], ['two-column', 2], ['rotated-page', 1], ['rotated-page', 2], ['rtl', 1]] as const) {
-    const o = await openFixture(openViewer, server, fixture(name));
-    if (zoom !== 1) {
-      await o.page.setViewportSize(name === 'rotated-page' ? VIEW_200_WIDE : VIEW_200);
-      await setZoom(o.page, zoom);
-      await th(o.page).eval((h, i) => h.viewer.scrollTo(i), o.pageIndex);
-    }
-    const glyphs = await glyphsOf(o.page, o.pageIndex);
-    const map = await pageMap(o.page, o.pageIndex);
-    for (const g of glyphs.filter(isVisible).filter((_, i) => i % 37 === 0)) {
-      const hook = await th(o.page).eval((h, a) => h.glyphCenter(a.i, a.c), { i: o.pageIndex, c: g.index });
-      const mine = centreOf(map, g);
-      if (Math.hypot(hook.x - mine.x, hook.y - mine.y) > 1.5) off.push(`${name}@${zoom * 100}% glyph ${g.index} "${g.text}": hook ${hook.x.toFixed(1)},${hook.y.toFixed(1)} vs box centre ${mine.x.toFixed(1)},${mine.y.toFixed(1)}`);
-    }
-    await o.page.close();
-  }
-  expect(off).toEqual([]);
+    expect(off).toEqual([]);
+  }, 180_000);
 });

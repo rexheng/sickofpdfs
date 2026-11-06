@@ -25,50 +25,51 @@ const CASES: { name: string; title: RegExp; source: (server: { url(p: string): s
   { name: 'an empty file', title: /Couldn[’']t load this PDF|This link didn[’']t return a PDF/, source: (s) => s.url(served(FIXTURES.empty)) },
 ];
 
-for (const c of CASES) {
-  test(`${c.name} shows a plain error card with two ways out`, async ({ openViewer, server }, testInfo) => {
-    const page = await openViewer(c.source(server));
-    const card = page.getByText(c.title).first();
-    await expect(card, 'the error card title').toBeVisible({ timeout: 15_000 });
-    expect(await rt(page).state()).toBe('error');
-    await expect(page.getByRole('button', { name: /Open in Chrome.s viewer/ }).or(page.getByRole('link', { name: /Open in Chrome.s viewer/ }))).toBeVisible();
-    await expect(page.getByRole('button', { name: CHOOSE_FILE })).toBeVisible();
-    // Plain words: no codes, class names or stack traces on a card an ordinary person reads.
-    const text = await page.locator('body').innerText();
-    expect(text, 'no raw error text on the card').not.toMatch(/PdfFormatError|PdfLoadError|PdfPasswordError|TypeError|undefined|\bnull\b|\bat \w+ \(|\.tsx?:\d+|stack/i);
-    // Nothing is half-drawn behind the card.
-    expect(await page.locator('[role="document"] canvas').count(), 'no page canvases behind an error card').toBe(0);
-    await snap(page, testInfo, '07-error-card');
-  });
-}
+test('A PDF that cannot be shown gets a plain error card with two ways out, and both ways work', async ({ step }, testInfo) => {
+  test.setTimeout(360_000);
+  for (const c of CASES) {
+    await step(`${c.name} shows a plain error card with two ways out`, async ({ openViewer, server }) => {
+      const page = await openViewer(c.source(server));
+      const card = page.getByText(c.title).first();
+      await expect(card, 'the error card title').toBeVisible({ timeout: 15_000 });
+      expect(await rt(page).state()).toBe('error');
+      await expect(page.getByRole('button', { name: /Open in Chrome.s viewer/ }).or(page.getByRole('link', { name: /Open in Chrome.s viewer/ }))).toBeVisible();
+      await expect(page.getByRole('button', { name: CHOOSE_FILE })).toBeVisible();
+      // Plain words: no codes, class names or stack traces on a card an ordinary person reads.
+      const text = await page.locator('body').innerText();
+      expect(text, 'no raw error text on the card').not.toMatch(/PdfFormatError|PdfLoadError|PdfPasswordError|TypeError|undefined|\bnull\b|\bat \w+ \(|\.tsx?:\d+|stack/i);
+      // Nothing is half-drawn behind the card.
+      expect(await page.locator('[role="document"] canvas').count(), 'no page canvases behind an error card').toBe(0);
+      await snap(page, testInfo, '07-error-card');
+    }, 60_000);
+  }
+  await step('"Open in Chrome\'s viewer" takes the tab out of our viewer to the PDF itself', async ({ openViewer, server }) => {
+    const url = server.url(served(FIXTURES.corrupt));
+    const page = await openViewer(url);
+    await page.getByRole('button', { name: /Open in Chrome.s viewer/ }).or(page.getByRole('link', { name: /Open in Chrome.s viewer/ })).click({ timeout: 15_000 });
+    await expect.poll(() => page.url(), { message: 'the tab left our viewer', timeout: 15_000 }).not.toContain('viewer.html');
+    expect(new URL(page.url()).origin, "the tab is at the PDF's own address").toBe(server.origin);
+    await page.waitForTimeout(1_500);
+    expect(page.url(), 'and stays there (our takeover does not pull it straight back)').not.toContain('chrome-extension://');
+    await testInfo.attach('after-open-in-chrome-url.txt', { body: page.url(), contentType: 'text/plain' });
+  }, 60_000);
+  await step('"Import this PDF" lets the owner pick another file, which opens in place of the card', async ({ openViewer, server }) => {
+    const page = await openViewer(server.url(served(FIXTURES.corrupt)));
+    const importButton = page.getByRole('button', { name: CHOOSE_FILE });
+    await expect(importButton).toBeVisible({ timeout: 15_000 });
+    const [chooser] = await Promise.all([page.waitForEvent('filechooser', { timeout: 10_000 }), importButton.click()]);
+    expect(chooser.isMultiple(), 'one file at a time').toBe(false);
+    await chooser.setFiles(REAL.paper50.file);
 
-test('"Open in Chrome\'s viewer" takes the tab out of our viewer to the PDF itself', async ({ openViewer, server }, testInfo) => {
-  const url = server.url(served(FIXTURES.corrupt));
-  const page = await openViewer(url);
-  await page.getByRole('button', { name: /Open in Chrome.s viewer/ }).or(page.getByRole('link', { name: /Open in Chrome.s viewer/ })).click({ timeout: 15_000 });
-  await expect.poll(() => page.url(), { message: 'the tab left our viewer', timeout: 15_000 }).not.toContain('viewer.html');
-  expect(new URL(page.url()).origin, "the tab is at the PDF's own address").toBe(server.origin);
-  await page.waitForTimeout(1_500);
-  expect(page.url(), 'and stays there (our takeover does not pull it straight back)').not.toContain('chrome-extension://');
-  await testInfo.attach('after-open-in-chrome-url.txt', { body: page.url(), contentType: 'text/plain' });
-});
-
-test('"Import this PDF" lets the owner pick another file, which opens in place of the card', async ({ openViewer, server }, testInfo) => {
-  const page = await openViewer(server.url(served(FIXTURES.corrupt)));
-  const importButton = page.getByRole('button', { name: CHOOSE_FILE });
-  await expect(importButton).toBeVisible({ timeout: 15_000 });
-  const [chooser] = await Promise.all([page.waitForEvent('filechooser', { timeout: 10_000 }), importButton.click()]);
-  expect(chooser.isMultiple(), 'one file at a time').toBe(false);
-  await chooser.setFiles(REAL.paper50.file);
-
-  await waitForFirstPage(page);
-  await expect(page.getByText(COULDNT), 'the card is gone').toBeHidden();
-  const doc = await rt(page).doc();
-  const bytes = await readFile(REAL.paper50.file);
-  expect(doc!.displayName).toMatch(/paper-50/);
-  expect(doc!.sourceUrl, 'an imported file has no web address').toBeNull();
-  expect(doc!.size).toBe(bytes.length);
-  expect(doc!.sha256).toBe(createHash('sha256').update(bytes).digest('hex'));
-  expect(doc!.pageCount).toBe(REAL.paper50.pages);
-  await snap(page, testInfo, '07-imported-after-error');
+    await waitForFirstPage(page);
+    await expect(page.getByText(COULDNT), 'the card is gone').toBeHidden();
+    const doc = await rt(page).doc();
+    const bytes = await readFile(REAL.paper50.file);
+    expect(doc!.displayName).toMatch(/paper-50/);
+    expect(doc!.sourceUrl, 'an imported file has no web address').toBeNull();
+    expect(doc!.size).toBe(bytes.length);
+    expect(doc!.sha256).toBe(createHash('sha256').update(bytes).digest('hex'));
+    expect(doc!.pageCount).toBe(REAL.paper50.pages);
+    await snap(page, testInfo, '07-imported-after-error');
+  }, 60_000);
 });

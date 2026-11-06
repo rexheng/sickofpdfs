@@ -56,49 +56,51 @@ async function snapshotText(page: Page): Promise<string> {
 
 const SINGLE_PAGE = ['two-column', 'ligatures', 'maths', 'rotated-table', 'rtl', 'rotated-page'];
 
-test('the accessibility tree holds the page text once, in PDFium reading order', async ({ openViewer, server }, testInfo) => {
-  const problems: string[] = [];
-  for (const name of SINGLE_PAGE) {
-    const o = await openFixture(openViewer, server, fixture(name));
-    const engine = squash(await pageText(o.page, o.pageIndex));
-    const tree = await readAloud(o.page);
-    const read = squash(tree.text);
-    if (read !== engine) {
-      let i = 0;
-      while (i < read.length && i < engine.length && read[i] === engine[i]) i++;
-      problems.push(`${name}: the accessibility tree reads ${read.length} letters, the engine's page text is ${engine.length}; first difference at ${i}: tree "${read.slice(Math.max(0, i - 20), i + 20)}" vs engine "${engine.slice(Math.max(0, i - 20), i + 20)}"`);
+test('A screen reader gets the page text once, in reading order', async ({ step }, testInfo) => {
+  test.setTimeout(240_000);
+  await step('the accessibility tree holds the page text once, in PDFium reading order', async ({ openViewer, server }) => {
+    const problems: string[] = [];
+    for (const name of SINGLE_PAGE) {
+      const o = await openFixture(openViewer, server, fixture(name));
+      const engine = squash(await pageText(o.page, o.pageIndex));
+      const tree = await readAloud(o.page);
+      const read = squash(tree.text);
+      if (read !== engine) {
+        let i = 0;
+        while (i < read.length && i < engine.length && read[i] === engine[i]) i++;
+        problems.push(`${name}: the accessibility tree reads ${read.length} letters, the engine's page text is ${engine.length}; first difference at ${i}: tree "${read.slice(Math.max(0, i - 20), i + 20)}" vs engine "${engine.slice(Math.max(0, i - 20), i + 20)}"`);
+      }
+      if (name === 'two-column') {
+        await testInfo.attach('two-column-accessibility-tree.txt', { body: tree.text, contentType: 'text/plain' });
+        // Reading order of the two columns: the first words of the right column come after the last words of the left.
+        const truth = truthOf(fixture(name))!;
+        expect(squash(tree.text), 'a screen reader reads the paragraphs in the order they are written').toBe(squash(truth));
+      }
+      expect(tree.roles, `${name}: the page render (a canvas) is not read as an image`).not.toContain('image');
+      if (name === 'two-column') {
+        // Not hidden by attribute or style: no text span sits in aria-hidden / hidden / inert, or is display:none / visibility:hidden.
+        const hidden = await o.page.evaluate(() => {
+          const spans = [...document.querySelectorAll('[data-page-index="0"] [data-start]')];
+          // Triage (TB1): the layer may hide its per-fragment spans and give screen readers whole lines instead (the tree
+          // check above reads the text); what must not be hidden is the layer itself, so look from the spans' parent up.
+          const bad = spans.filter((s) => s.parentElement?.closest('[aria-hidden="true"], [hidden], [inert]') != null);
+          const invisible = spans.filter((s) => getComputedStyle(s).display === 'none' || getComputedStyle(s).visibility !== 'visible');
+          return { spans: spans.length, hiddenByAttribute: bad.length, invisible: invisible.length };
+        });
+        if (hidden.spans < 20) problems.push(`two-column: only ${hidden.spans} text spans have data-start`);
+        if (hidden.hiddenByAttribute > 0) problems.push(`two-column: ${hidden.hiddenByAttribute} text spans sit inside aria-hidden, hidden or inert`);
+        if (hidden.invisible > 0) problems.push(`two-column: ${hidden.invisible} text spans are display:none or visibility:hidden`);
+      }
+      await o.page.close();
     }
-    if (name === 'two-column') {
-      await testInfo.attach('two-column-accessibility-tree.txt', { body: tree.text, contentType: 'text/plain' });
-      // Reading order of the two columns: the first words of the right column come after the last words of the left.
-      const truth = truthOf(fixture(name))!;
-      expect(squash(tree.text), 'a screen reader reads the paragraphs in the order they are written').toBe(squash(truth));
-    }
-    expect(tree.roles, `${name}: the page render (a canvas) is not read as an image`).not.toContain('image');
-    if (name === 'two-column') {
-      // Not hidden by attribute or style: no text span sits in aria-hidden / hidden / inert, or is display:none / visibility:hidden.
-      const hidden = await o.page.evaluate(() => {
-        const spans = [...document.querySelectorAll('[data-page-index="0"] [data-start]')];
-        // Triage (TB1): the layer may hide its per-fragment spans and give screen readers whole lines instead (the tree
-        // check above reads the text); what must not be hidden is the layer itself, so look from the spans' parent up.
-        const bad = spans.filter((s) => s.parentElement?.closest('[aria-hidden="true"], [hidden], [inert]') != null);
-        const invisible = spans.filter((s) => getComputedStyle(s).display === 'none' || getComputedStyle(s).visibility !== 'visible');
-        return { spans: spans.length, hiddenByAttribute: bad.length, invisible: invisible.length };
-      });
-      if (hidden.spans < 20) problems.push(`two-column: only ${hidden.spans} text spans have data-start`);
-      if (hidden.hiddenByAttribute > 0) problems.push(`two-column: ${hidden.hiddenByAttribute} text spans sit inside aria-hidden, hidden or inert`);
-      if (hidden.invisible > 0) problems.push(`two-column: ${hidden.invisible} text spans are display:none or visibility:hidden`);
-    }
-    await o.page.close();
-  }
-  expect(problems).toEqual([]);
-});
-
-test("Playwright's accessibility snapshot of the page list holds the page text in order", async ({ openViewer, server }, testInfo) => {
-  const o = await openFixture(openViewer, server, fixture('two-column'));
-  const snapshot = await snapshotText(o.page);
-  await testInfo.attach('two-column-aria-snapshot.txt', { body: await o.page.locator('[role=document]').ariaSnapshot(), contentType: 'text/plain' });
-  expect(snapshot.length, 'the snapshot has text entries').toBeGreaterThan(0);
-  expect(squash(snapshot)).toBe(squash(await pageText(o.page, o.pageIndex)));
-  expect(o.errors).toEqual([]);
+    expect(problems).toEqual([]);
+  }, 120_000);
+  await step("Playwright's accessibility snapshot of the page list holds the page text in order", async ({ openViewer, server }) => {
+    const o = await openFixture(openViewer, server, fixture('two-column'));
+    const snapshot = await snapshotText(o.page);
+    await testInfo.attach('two-column-aria-snapshot.txt', { body: await o.page.locator('[role=document]').ariaSnapshot(), contentType: 'text/plain' });
+    expect(snapshot.length, 'the snapshot has text entries').toBeGreaterThan(0);
+    expect(squash(snapshot)).toBe(squash(await pageText(o.page, o.pageIndex)));
+    expect(o.errors).toEqual([]);
+  }, 120_000);
 });

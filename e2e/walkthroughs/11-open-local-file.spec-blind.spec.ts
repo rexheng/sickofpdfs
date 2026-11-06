@@ -45,32 +45,34 @@ test.describe('file access allowed', () => {
 test.describe('file access not allowed (a fresh Chrome profile)', () => {
   test.use({ profile: 'bare' });
 
-  test('the viewer explains it, and "Choose file" opens the PDF anyway', async ({ context }, testInfo) => {
-    const page = await openLocalFile(context, pathToFileURL(REAL.paper50.file).href);
-    const dialog = page.getByRole('dialog');
-    await expect(dialog).toBeVisible({ timeout: 15_000 });
-    // TB1 wording ruling (chrome polish): the title says it plainly; the body still names Chrome's switch, "Allow access to file URLs".
-    await expect(dialog.getByRole('heading', { name: 'Let this viewer open files from your computer' })).toBeVisible();
-    await expect(dialog.getByRole('button', { name: 'Open extension settings' })).toBeVisible();
-    await snap(page, testInfo, '11-file-access-dialog');
+  test('Without file access: the viewer explains it, Choose file opens the PDF anyway, and the settings link works', async ({ step }, testInfo) => {
+    test.setTimeout(120_000);
+    await step('the viewer explains it, and "Choose file" opens the PDF anyway', async ({ context }) => {
+      const page = await openLocalFile(context, pathToFileURL(REAL.paper50.file).href);
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toBeVisible({ timeout: 15_000 });
+      // TB1 wording ruling (chrome polish): the title says it plainly; the body still names Chrome's switch, "Allow access to file URLs".
+      await expect(dialog.getByRole('heading', { name: 'Let this viewer open files from your computer' })).toBeVisible();
+      await expect(dialog.getByRole('button', { name: 'Open extension settings' })).toBeVisible();
+      await snap(page, testInfo, '11-file-access-dialog');
 
-    const [chooser] = await Promise.all([page.waitForEvent('filechooser', { timeout: 10_000 }), dialog.getByRole('button', { name: 'Choose file' }).click()]);
-    await chooser.setFiles(REAL.paper50.file);
-    await waitForFirstPage(page);
-    await expect(page.getByRole('dialog')).toBeHidden();
-    const doc = await rt(page).doc();
-    expect(doc!.sourceUrl, 'a chosen file has no address').toBeNull();
-    expect(doc!.pageCount).toBe(REAL.paper50.pages);
-    await snap(page, testInfo, '11-chosen-file-opened');
-  });
-
-  test('"Open extension settings" opens this extension\'s page in chrome://extensions', async ({ context }) => {
-    const page = await openLocalFile(context, pathToFileURL(REAL.paper50.file).href);
-    const dialog = page.getByRole('dialog');
-    await expect(dialog).toBeVisible({ timeout: 15_000 });
-    const opened = context.waitForEvent('page', { timeout: 10_000 });
-    await dialog.getByRole('button', { name: 'Open extension settings' }).click();
-    const settings = await opened;
-    await expect.poll(() => settings.url(), { timeout: 10_000 }).toContain(`chrome://extensions/?id=${EXTENSION_ID}`);
+      const [chooser] = await Promise.all([page.waitForEvent('filechooser', { timeout: 10_000 }), dialog.getByRole('button', { name: 'Choose file' }).click()]);
+      await chooser.setFiles(REAL.paper50.file);
+      await waitForFirstPage(page);
+      await expect(page.getByRole('dialog')).toBeHidden();
+      const doc = await rt(page).doc();
+      expect(doc!.sourceUrl, 'a chosen file has no address').toBeNull();
+      expect(doc!.pageCount).toBe(REAL.paper50.pages);
+      await snap(page, testInfo, '11-chosen-file-opened');
+    }, 60_000);
+    await step('"Open extension settings" opens this extension\'s page in chrome://extensions', async ({ context }) => {
+      const page = await openLocalFile(context, pathToFileURL(REAL.paper50.file).href);
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toBeVisible({ timeout: 15_000 });
+      const opened = context.waitForEvent('page', { timeout: 10_000 });
+      await dialog.getByRole('button', { name: 'Open extension settings' }).click();
+      const settings = await opened;
+      await expect.poll(() => settings.url(), { timeout: 10_000 }).toContain(`chrome://extensions/?id=${EXTENSION_ID}`);
+    }, 60_000);
   });
 });

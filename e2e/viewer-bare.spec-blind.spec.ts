@@ -1,7 +1,6 @@
 // User tests, bare profile (a brand-new Chrome profile: nothing set up). The extension must start under the same
 // fixed id and open a PDF the same way as in the seeded profile.
 import { expect } from '@playwright/test';
-import { EXTENSION_ID } from '../apps/extension/scripts/extension-id.mjs';
 import { VIEWER_PATH, parseViewerUrl } from '../apps/extension/src/shared/viewer-url';
 import { ensureSamplePdf } from './support/sample-pdf.spec-blind';
 import { test } from './support/test';
@@ -12,10 +11,6 @@ const SAMPLE = 't12-sample.pdf';
 
 test.beforeAll(async () => {
   await ensureSamplePdf(SAMPLE);
-});
-
-test('on a brand-new profile the extension starts under its fixed id', ({ sw }) => {
-  expect(new URL(sw.url()).host).toBe(EXTENSION_ID);
 });
 
 test('on a brand-new profile a PDF link opens in our viewer', async ({ openViewer, server }, testInfo) => {

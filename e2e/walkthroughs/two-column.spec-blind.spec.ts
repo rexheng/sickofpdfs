@@ -73,75 +73,77 @@ async function setup(openViewer: Parameters<typeof openFixture>[0], server: Para
 
 const selectedGlyphs = (glyphs: Glyph[], ranges: CharRange[]) => ranges.flatMap((r) => glyphs.slice(r.start, r.end)).filter(isVisible);
 
-test('dragging down the left column selects only left-column text', async ({ openViewer, server }, testInfo) => {
-  const { o, glyphs, left, right, gutter } = await setup(openViewer, server);
-  expect(left.length).toBeGreaterThan(15);
-  const first = left[0][0];
-  const target = left[12];
+test('Two columns: a drag down one column stays in it, and a drag across follows reading order', async ({ step }, testInfo) => {
+  test.setTimeout(240_000);
+  await step('dragging down the left column selects only left-column text', async ({ openViewer, server }) => {
+    const { o, glyphs, left, right, gutter } = await setup(openViewer, server);
+    expect(left.length).toBeGreaterThan(15);
+    const first = left[0][0];
+    const target = left[12];
 
-  // 1. Straight down, ending on a glyph of the 13th line.
-  let drag = await dragGlyphs(o.page, o.pageIndex, first.index, mid(target).index);
-  expect(drag.ranges).toEqual([inclusive(o.pageIndex, first.index, mid(target).index)]);
-  expect(selectedGlyphs(glyphs, drag.ranges).every((g) => inColumn(g, left)), 'every selected glyph is in the left column').toBe(true);
-  expect(squash(drag.domText)).toBe(squash(await rangeText(o.page, o.pageIndex, first.index, mid(target).index + 1)));
+    // 1. Straight down, ending on a glyph of the 13th line.
+    let drag = await dragGlyphs(o.page, o.pageIndex, first.index, mid(target).index);
+    expect(drag.ranges).toEqual([inclusive(o.pageIndex, first.index, mid(target).index)]);
+    expect(selectedGlyphs(glyphs, drag.ranges).every((g) => inColumn(g, left)), 'every selected glyph is in the left column').toBe(true);
+    expect(squash(drag.domText)).toBe(squash(await rangeText(o.page, o.pageIndex, first.index, mid(target).index + 1)));
 
-  // 2. The hand drifts right of the end of the line, into the gutter, while going down. Still the left column.
-  await clearSelection(o.page);
-  const map = await pageMap(o.page, o.pageIndex);
-  const lineY = centreOf(map, mid(target)).y;
-  const gutterX = map.toClient(gutter.from + 0.2 * (gutter.to - gutter.from), 0).x;
-  await dragClient(o.page, centreOf(map, first), { x: gutterX, y: lineY });
-  drag = await readSelection(o.page);
-  await o.page.screenshot({ path: testInfo.outputPath('t22-left-column-drag-into-gutter.png') });
-  expect(drag.ranges.length).toBe(1);
-  const picked = selectedGlyphs(glyphs, drag.ranges);
-  expect(picked.length).toBeGreaterThan(0);
-  expect(picked.some((g) => inColumn(g, right)), 'nothing from the right column was swallowed').toBe(false);
-  const endLine = left.findIndex((l) => l.includes(picked[picked.length - 1]));
-  expect(Math.abs(endLine - 12), 'the selection ends on the line the pointer was level with (give or take one)').toBeLessThanOrEqual(1);
-  expect(drag.ranges[0].start).toBe(first.index);
+    // 2. The hand drifts right of the end of the line, into the gutter, while going down. Still the left column.
+    await clearSelection(o.page);
+    const map = await pageMap(o.page, o.pageIndex);
+    const lineY = centreOf(map, mid(target)).y;
+    const gutterX = map.toClient(gutter.from + 0.2 * (gutter.to - gutter.from), 0).x;
+    await dragClient(o.page, centreOf(map, first), { x: gutterX, y: lineY });
+    drag = await readSelection(o.page);
+    await o.page.screenshot({ path: testInfo.outputPath('t22-left-column-drag-into-gutter.png') });
+    expect(drag.ranges.length).toBe(1);
+    const picked = selectedGlyphs(glyphs, drag.ranges);
+    expect(picked.length).toBeGreaterThan(0);
+    expect(picked.some((g) => inColumn(g, right)), 'nothing from the right column was swallowed').toBe(false);
+    const endLine = left.findIndex((l) => l.includes(picked[picked.length - 1]));
+    expect(Math.abs(endLine - 12), 'the selection ends on the line the pointer was level with (give or take one)').toBeLessThanOrEqual(1);
+    expect(drag.ranges[0].start).toBe(first.index);
 
-  // 3. The same in the right column.
-  await clearSelection(o.page);
-  const rFirst = right[0][0];
-  const rTarget = mid(right[5]);
-  drag = await dragGlyphs(o.page, o.pageIndex, rFirst.index, rTarget.index);
-  expect(drag.ranges).toEqual([inclusive(o.pageIndex, rFirst.index, rTarget.index)]);
-  expect(selectedGlyphs(glyphs, drag.ranges).some((g) => inColumn(g, left))).toBe(false);
-  expect(o.errors).toEqual([]);
-});
+    // 3. The same in the right column.
+    await clearSelection(o.page);
+    const rFirst = right[0][0];
+    const rTarget = mid(right[5]);
+    drag = await dragGlyphs(o.page, o.pageIndex, rFirst.index, rTarget.index);
+    expect(drag.ranges).toEqual([inclusive(o.pageIndex, rFirst.index, rTarget.index)]);
+    expect(selectedGlyphs(glyphs, drag.ranges).some((g) => inColumn(g, left))).toBe(false);
+    expect(o.errors).toEqual([]);
+  }, 120_000);
+  await step('dragging across the column break follows reading order', async ({ openViewer, server, context }) => {
+    const reader = await openClipboardReader(context, server);
+    const { o, glyphs, left, right } = await setup(openViewer, server);
 
-test('dragging across the column break follows reading order', async ({ openViewer, server, context }, testInfo) => {
-  const reader = await openClipboardReader(context, server);
-  const { o, glyphs, left, right } = await setup(openViewer, server);
+    // Sideways: from the 4th line of the left column to the 4th line of the right. Reading order says: the rest of the
+    // left column, then the right column down to its 4th line. Nothing above the start, nothing below the end.
+    const a = mid(left[3]);
+    const b = mid(right[3]);
+    let drag = await dragGlyphs(o.page, o.pageIndex, a.index, b.index);
+    await o.page.screenshot({ path: testInfo.outputPath('t22-across-columns.png') });
+    expect(drag.ranges, 'one range, from the left-column glyph to the right-column glyph').toEqual([inclusive(o.pageIndex, a.index, b.index)]);
+    const picked = selectedGlyphs(glyphs, drag.ranges);
+    expect(picked.some((g) => g.index < a.index)).toBe(false);
+    expect(picked.some((g) => inColumn(g, left) && left.findIndex((l) => l.includes(g)) < 3), 'no left-column line above the start').toBe(false);
+    expect(picked.some((g) => inColumn(g, right) && right.findIndex((l) => l.includes(g)) > 3), 'no right-column line below the end').toBe(false);
+    const copied = await copySelection(o.page, reader);
+    expect(copyProblems(glyphs, a.index, b.index + 1, copied), copied).toEqual([]);
+    expect(squash(copied)).toBe(squash(await rangeText(o.page, o.pageIndex, a.index, b.index + 1)));
 
-  // Sideways: from the 4th line of the left column to the 4th line of the right. Reading order says: the rest of the
-  // left column, then the right column down to its 4th line. Nothing above the start, nothing below the end.
-  const a = mid(left[3]);
-  const b = mid(right[3]);
-  let drag = await dragGlyphs(o.page, o.pageIndex, a.index, b.index);
-  await o.page.screenshot({ path: testInfo.outputPath('t22-across-columns.png') });
-  expect(drag.ranges, 'one range, from the left-column glyph to the right-column glyph').toEqual([inclusive(o.pageIndex, a.index, b.index)]);
-  const picked = selectedGlyphs(glyphs, drag.ranges);
-  expect(picked.some((g) => g.index < a.index)).toBe(false);
-  expect(picked.some((g) => inColumn(g, left) && left.findIndex((l) => l.includes(g)) < 3), 'no left-column line above the start').toBe(false);
-  expect(picked.some((g) => inColumn(g, right) && right.findIndex((l) => l.includes(g)) > 3), 'no right-column line below the end').toBe(false);
-  const copied = await copySelection(o.page, reader);
-  expect(copyProblems(glyphs, a.index, b.index + 1, copied), copied).toEqual([]);
-  expect(squash(copied)).toBe(squash(await rangeText(o.page, o.pageIndex, a.index, b.index + 1)));
+    // At the break itself: the middle of the last left line to the middle of the first right line.
+    await clearSelection(o.page);
+    const lastLeft = mid(left[left.length - 1]);
+    const firstRight = mid(right[0]);
+    drag = await dragGlyphs(o.page, o.pageIndex, lastLeft.index, firstRight.index);
+    expect(drag.ranges).toEqual([inclusive(o.pageIndex, lastLeft.index, firstRight.index)]);
+    const selected = selectedGlyphs(glyphs, drag.ranges);
+    expect(selected.every((g) => (inColumn(g, left) && left.length - 1 === left.findIndex((l) => l.includes(g))) || (inColumn(g, right) && right[0].includes(g))), 'only the two lines either side of the break').toBe(true);
 
-  // At the break itself: the middle of the last left line to the middle of the first right line.
-  await clearSelection(o.page);
-  const lastLeft = mid(left[left.length - 1]);
-  const firstRight = mid(right[0]);
-  drag = await dragGlyphs(o.page, o.pageIndex, lastLeft.index, firstRight.index);
-  expect(drag.ranges).toEqual([inclusive(o.pageIndex, lastLeft.index, firstRight.index)]);
-  const selected = selectedGlyphs(glyphs, drag.ranges);
-  expect(selected.every((g) => (inColumn(g, left) && left.length - 1 === left.findIndex((l) => l.includes(g))) || (inColumn(g, right) && right[0].includes(g))), 'only the two lines either side of the break').toBe(true);
-
-  // The same drag the other way round (from the right column back to the left) selects the same range.
-  await clearSelection(o.page);
-  drag = await dragGlyphs(o.page, o.pageIndex, b.index, a.index);
-  expect(drag.ranges).toEqual([inclusive(o.pageIndex, a.index, b.index)]);
-  await reader.close();
+    // The same drag the other way round (from the right column back to the left) selects the same range.
+    await clearSelection(o.page);
+    drag = await dragGlyphs(o.page, o.pageIndex, b.index, a.index);
+    expect(drag.ranges).toEqual([inclusive(o.pageIndex, a.index, b.index)]);
+    await reader.close();
+  }, 120_000);
 });
