@@ -280,3 +280,27 @@ export function findCourseCodes(src: CourseCodeSource): string[] {
   }
   return unique(found).slice(0, 10);
 }
+
+/**
+ * The codes of `findCourseCodes`, written the way the source writes them when the last letter is lower case ("CS231n", not "CS231N"; R92d).
+ * The upper-case code stays the internal key; this is only for what the owner reads. Same order, same codes.
+ */
+export function findCourseCodeLabels(src: CourseCodeSource): string[] {
+  const texts = [src.url, src.path, src.pageTitle, src.firstPageText].filter((t): t is string => typeof t === 'string');
+  return findCourseCodes(src).map((code) => {
+    const m = /^([A-Z]{2,5})(\d{2,4})([A-Z])$/.exec(code);
+    if (m === null) return code;
+    const written = new RegExp(`(?<![A-Za-z0-9])${m[1]}[ \\-_\\u00a0]*${m[2]}([A-Za-z])(?![A-Za-z0-9])`, 'i');
+    for (const text of texts) {
+      let decoded = text;
+      try {
+        decoded = decodeURIComponent(text);
+      } catch {
+        // as it is
+      }
+      const found = written.exec(decoded.slice(0, 20_000));
+      if (found?.[1] !== undefined) return `${code.slice(0, -1)}${found[1]}`;
+    }
+    return code;
+  });
+}

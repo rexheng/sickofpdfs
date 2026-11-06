@@ -913,7 +913,8 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
           // Which tag each topic is: the one with its key; else the one with the most readings in common (at least half the union).
           const claimed = new Set<string>();
           const tagOf = new Array<string | null>(topics.length).fill(null);
-          const subjectKeyed = (k: Row): boolean => (maybeStr(k, 'topic_key') ?? '').startsWith('subject:');
+          const fixedKey = (key: string): boolean => key.startsWith('subject:') || key.startsWith('field:'); // R92c, R92d: named by a subject or a field
+          const subjectKeyed = (k: Row): boolean => fixedKey(maybeStr(k, 'topic_key') ?? '');
           topics.forEach((topic, i) => {
             for (const [id, k] of known) {
               if (!claimed.has(id) && maybeStr(k.row, 'topic_key') === topic.key) {
@@ -926,7 +927,7 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
           topics.forEach((topic, i) => {
             if (tagOf[i] !== null) return;
             // A topic made from a subject (R92c) is its subject's tag for good, whoever is in it: another tag takes it over only by its key.
-            if (topic.key.startsWith('subject:')) {
+            if (fixedKey(topic.key)) {
               for (const [id, k] of known) {
                 if (!claimed.has(id) && !subjectKeyed(k.row) && k.row.deleted_at == null && str(k.row, 'name').toLowerCase() === topic.name.toLowerCase()) {
                   tagOf[i] = id;
@@ -983,7 +984,7 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
                 binds.push(topic.key);
               }
               // A name follows its subject; a name made from words stays as it was first seen, so it does not drift as the library grows.
-              const subjectName = topic.key.startsWith('subject:') || subjectKeyed(row);
+              const subjectName = fixedKey(topic.key) || subjectKeyed(row);
               if (!retired && num(row, 'renamed') === 0 && str(row, 'name') !== topic.name && subjectName) {
                 sets.push('name = ?');
                 binds.push(freeName(cleanTagName(topic.name), tagId));

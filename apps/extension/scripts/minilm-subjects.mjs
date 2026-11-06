@@ -20,6 +20,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const modelDir = join(root, 'public/models/minilm');
 const vectorsFile = join(root, 'src/categorise/subject-vectors.ts');
 const listFile = join(root, '../../packages/core/src/categorise/subjects.json');
+const fieldsFile = join(root, '../../packages/core/src/categorise/subject-fields.json');
 const write = process.argv.includes('--write');
 /** A stored vector (a byte a number) and the model's must be this close (cosine). Rounding to a byte costs about 0.00007; a vector of another subject, text or model is far below this, a single changed byte is within the rounding. */
 const SAME = 0.9995;
@@ -47,6 +48,11 @@ if (!Array.isArray(names) || names.length === 0 || names.some((n) => typeof n !=
   fail('subjects.json must be a list of distinct, non-empty names.');
 }
 const listSha = createHash('sha256').update(JSON.stringify(names)).digest('hex');
+// R92d: every subject has a broad field; the fields' vectors are made the same way, from the bare names, sorted.
+const fieldMap = JSON.parse(await readFile(fieldsFile, 'utf8'));
+if (names.some((n) => typeof fieldMap[n] !== 'string' || fieldMap[n].trim() === '') || Object.keys(fieldMap).length !== names.length) fail('subject-fields.json must give every subject in subjects.json one field, and nothing else.');
+const fieldNames = [...new Set(Object.values(fieldMap))].sort();
+const fieldSha = createHash('sha256').update(JSON.stringify(fieldMap)).digest('hex');
 
 // A passing check is remembered (in node_modules, so a reinstall forgets it) until the list, the model or the code that makes the vectors
 // change, so the many builds of an e2e loop do not each pay for loading the model.
@@ -55,6 +61,7 @@ const sources = await Promise.all(['wordpiece.ts', 'embedder.ts'].map((f) => rea
 const stamp = createHash('sha256')
   .update(modelSha)
   .update(listSha)
+  .update(fieldSha)
   .update(ort.env.versions.common ?? '')
   .update(sources.join('\0'))
   .update(await readFile(vectorsFile, 'utf8'))
@@ -82,6 +89,8 @@ try {
   embedder = await createEmbedder(ort, new Uint8Array(modelBytes), vocabText);
   const fresh = [];
   for (const name of names) fresh.push(await embedder.embed(name));
+  const freshFields = [];
+  for (const name of fieldNames) freshFields.push(await embedder.embed(name));
 
   if (write) {
     const block = [
@@ -90,6 +99,10 @@ try {
       `export const SUBJECT_LIST_SHA256 = '${listSha}';`,
       'export const SUBJECT_VECTORS: readonly string[] = [',
       ...fresh.map((vec) => `  '${v.encodeSubjectVector(vec)}',`),
+      '];',
+      `export const FIELD_LIST_SHA256 = '${fieldSha}';`,
+      'export const FIELD_VECTORS: readonly string[] = [',
+      ...freshFields.map((vec) => `  '${v.encodeSubjectVector(vec)}',`),
       '];',
       '// </generated>',
     ].join('\n');
@@ -103,7 +116,17 @@ try {
     if (v.SUBJECT_MODEL_SHA256 !== modelSha) fail(`subject-vectors.ts was made from model ${v.SUBJECT_MODEL_SHA256 || '(none)'}, not ${modelSha}. ${hint}`);
     if (v.SUBJECT_LIST_SHA256 !== listSha) fail(`subject-vectors.ts was made from another list of subjects than subjects.json. ${hint}`);
     if (v.SUBJECT_VECTORS.length !== names.length) fail(`${names.length} subjects but ${v.SUBJECT_VECTORS.length} stored vectors. ${hint}`);
+    if (v.FIELD_LIST_SHA256 !== fieldSha) fail(`subject-vectors.ts was made from other fields than subject-fields.json. ${hint}`);
+    if (v.FIELD_VECTORS.length !== fieldNames.length) fail(`${fieldNames.length} fields but ${v.FIELD_VECTORS.length} stored vectors. ${hint}`);
     let lowest = 1;
+    v.FIELD_VECTORS.forEach((b64, i) => {
+      const a = v.decodeSubjectVector(b64);
+      const b = freshFields[i];
+      let dot = 0;
+      for (let k = 0; k < a.length; k++) dot += a[k] * b[k];
+      lowest = Math.min(lowest, dot);
+      if (!(dot >= SAME)) fail(`field "${fieldNames[i]}": the stored vector differs from the model's (cosine ${dot.toFixed(6)}). ${hint}`);
+    });
     v.SUBJECT_VECTORS.forEach((b64, i) => {
       const a = v.decodeSubjectVector(b64);
       const b = fresh[i];

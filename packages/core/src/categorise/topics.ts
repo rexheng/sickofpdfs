@@ -364,34 +364,48 @@ function phraseName(terms: readonly string[], count: number, stats: WordStats): 
 export interface Subject {
   name: string;
   vector: Float32Array;
+  /** The broad field the subject is in (R92d). */
+  field?: string;
+}
+
+/** A broad field and its meaning vector (R92d). */
+export interface Field {
+  name: string;
+  vector: Float32Array;
 }
 
 // ---- topics -----------------------------------------------------------------------------------------------------------------------
 
 /** A reading takes a subject of the bundled list when its own closeness to the subject's name is at least this (R92c, measured). */
 export const READING_SUBJECT_SIMILARITY = 0.34;
-/** A reading's second subject must be within this of its first (R92c). */
-export const READING_SUBJECT_MARGIN = 0.10;
+/** A reading's second subject must be within this of its first when it is in the same field (R92c). */
+export const READING_SUBJECT_MARGIN = 0.1;
+/** A second subject in another field must be this close to the first: a near tie (R92d's field prior, so one reading is not split across fields). */
+export const READING_SUBJECT_TIE = 0.015;
+/** A reading joins a field by its vector when its closeness to the field's name is at least this (R92d, measured). */
+export const READING_FIELD_SIMILARITY = 0.34;
 /** The most subjects one reading takes (R92c). */
 export const MAX_SUBJECTS_PER_DOC = 2;
 /** The key of a topic made from a subject: it never changes, whoever else is in the library. */
 export const subjectTopicKey = (name: string): string => `subject:${name}`;
+/** The key of a topic made from a broad field (R92d). */
+export const fieldTopicKey = (name: string): string => `field:${name}`;
 
 /** The subjects a reading takes by itself: its closest one(s) above the threshold, at most MAX_SUBJECTS_PER_DOC. Depends on this reading alone. */
-export function subjectsOfReading(vector: Float32Array, subjects: readonly Subject[]): { name: string; score: number }[] {
+export function subjectsOfReading(vector: Float32Array, subjects: readonly Subject[]): { name: string; score: number; field?: string }[] {
   const v = unitOf(vector);
   if (v === null) return [];
-  const scored: { name: string; score: number }[] = [];
+  const scored: { name: string; score: number; field?: string }[] = [];
   for (const s of subjects) {
     const u = unitOf(s.vector);
     if (u === null || typeof s.name !== 'string' || s.name === '') continue;
     const score = dot(v, u);
-    if (score >= READING_SUBJECT_SIMILARITY) scored.push({ name: s.name, score });
+    if (score >= READING_SUBJECT_SIMILARITY) scored.push({ name: s.name, score, ...(s.field === undefined ? {} : { field: s.field }) });
   }
   scored.sort((a, b) => b.score - a.score || byCode(a.name, b.name));
   const best = scored[0];
   if (best === undefined) return [];
-  return scored.filter((x, i) => i < MAX_SUBJECTS_PER_DOC && x.score >= best.score - READING_SUBJECT_MARGIN);
+  return scored.filter((x, i) => i === 0 || (i < MAX_SUBJECTS_PER_DOC && x.score >= best.score - (x.field !== undefined && x.field === best.field ? READING_SUBJECT_MARGIN : READING_SUBJECT_TIE)));
 }
 
 /**
@@ -403,7 +417,7 @@ export function subjectsOfReading(vector: Float32Array, subjects: readonly Subje
  * grows. Only the readings that match no subject are grouped by closeness and named by their most telling terms. Without subjects every
  * reading is grouped by closeness (what the unit tests run).
  */
-export function clusterTopics(docs: Doc[], opts?: { minDocs?: number; subjects?: readonly Subject[] }): Topic[] {
+export function clusterTopics(docs: Doc[], opts?: { minDocs?: number; subjects?: readonly Subject[]; fields?: readonly Field[] }): Topic[] {
   const minDocs = opts?.minDocs ?? TOPIC_MIN_DOCS;
   const units = prepare(docs);
   if (units.length < Math.max(minDocs, MIN_TOPIC_SIZE)) return [];
@@ -411,7 +425,7 @@ export function clusterTopics(docs: Doc[], opts?: { minDocs?: number; subjects?:
 
   const subjects = (opts?.subjects ?? []).flatMap((s) => {
     const v = unitOf(s.vector);
-    return v === null || typeof s.name !== 'string' || s.name === '' ? [] : [{ name: s.name, vector: v }];
+    return v === null || typeof s.name !== 'string' || s.name === '' ? [] : [{ name: s.name, vector: v, ...(s.field === undefined ? {} : { field: s.field }) }];
   });
   const bySubject = new Map<string, string[]>();
   const matched = new Set<string>();
@@ -431,8 +445,42 @@ export function clusterTopics(docs: Doc[], opts?: { minDocs?: number; subjects?:
     out.push({ key: subjectTopicKey(name), docIds: [...ids].sort(byCode), name });
   }
 
-  // The readings that match no subject are grouped by closeness, as before.
-  const rest = units.filter((u) => !matched.has(u.id));
+  // R92d: a reading that shares no exact subject joins its broad field (that of its best subject, or the field vector when that is closer)
+  // once two or more readings share the field. A reading in a subject topic leaves the field topic but still counts toward it.
+  const inSubjectTopic = new Set(bySize.flatMap(([, ids]) => ids));
+  const fieldVectors = (opts?.fields ?? []).flatMap((f) => {
+    const fv = unitOf(f.vector);
+    return fv === null || f.name === '' ? [] : [{ name: f.name, vector: fv }];
+  });
+  const fieldReaders = new Map<string, string[]>();
+  const placed = new Set<string>();
+  if (subjects.length > 0 || fieldVectors.length > 0) {
+    for (const u of units) {
+      const bestSubject = subjectsOfReading(u.v, subjects)[0];
+      let chosen = bestSubject?.field;
+      let score = bestSubject?.score ?? -1;
+      for (const f of fieldVectors) {
+        const sc = dot(u.v, f.vector);
+        if (sc >= READING_FIELD_SIMILARITY && (sc > score || (sc === score && chosen !== undefined && byCode(f.name, chosen) < 0))) {
+          chosen = f.name;
+          score = sc;
+        }
+      }
+      if (chosen === undefined) continue;
+      placed.add(u.id);
+      fieldReaders.set(chosen, [...(fieldReaders.get(chosen) ?? []), u.id]);
+    }
+    const fields = [...fieldReaders].filter(([, ids]) => ids.length >= MIN_TOPIC_SIZE).sort((a, b) => b[1].length - a[1].length || byCode(a[0], b[0]));
+    for (const [name, ids] of fields) {
+      const members = ids.filter((id) => !inSubjectTopic.has(id));
+      if (members.length === 0 || used.has(name)) continue;
+      used.add(name);
+      out.push({ key: fieldTopicKey(name), docIds: members.sort(byCode), name });
+    }
+  }
+
+  // The readings that match no subject and no field are grouped by closeness, as before.
+  const rest = units.filter((u) => !matched.has(u.id) && !placed.has(u.id));
   const groups = rest.length < MIN_TOPIC_SIZE ? [] : groupBySimilarity(rest, MERGE_SIMILARITY).filter((g) => g.length >= MIN_TOPIC_SIZE);
   const hard = groups.map((g) => g.map((i) => i));
   const joined = new Map<number, number[]>(); // reading index (in rest) -> groups it is in

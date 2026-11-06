@@ -15,7 +15,7 @@ import {
   clusterTopics,
   EMBEDDING_MODEL,
   embeddingInput,
-  findCourseCodes,
+  findCourseCodeLabels,
   suggestTags,
   titleFromFileName,
   withoutNames,
@@ -26,7 +26,7 @@ import {
 import { CATEGORISER_TAB } from '../store/change-bus';
 import { createStoreClient, type StoreClient } from '../store/client';
 import type { CategoriseInput } from '../store/tags-api';
-import { loadSubjects } from './load-subjects';
+import { loadFields, loadSubjects } from './load-subjects';
 import type { Embedder } from '../viewer/filter/embedder';
 import { loadEmbedder } from '../viewer/filter/load-embedder';
 
@@ -103,13 +103,15 @@ function fallbackTitle(input: CategoriseInput): string | null {
 /** The course codes of a reading: its links first, then its folders, then its first page. */
 function courseCodesOf(input: CategoriseInput): string[] {
   const codes: string[] = [];
-  for (const url of input.urls) codes.push(...findCourseCodes({ url }));
-  for (const path of input.paths) codes.push(...findCourseCodes({ path }));
+  for (const url of input.urls) codes.push(...findCourseCodeLabels({ url }));
+  for (const path of input.paths) codes.push(...findCourseCodeLabels({ path }));
   // A reading whose text the owner keeps out of the library has no page text to read here.
   // R92c: the title of the page the PDF was opened from counts too (kept on this computer, never sent anywhere).
-  if (input.pageTitle !== null) codes.push(...findCourseCodes({ pageTitle: input.pageTitle }));
-  if (input.indexText) codes.push(...findCourseCodes({ firstPageText: input.pageTexts[0] ?? '' }));
-  return [...new Set(codes)];
+  if (input.pageTitle !== null) codes.push(...findCourseCodeLabels({ pageTitle: input.pageTitle }));
+  if (input.indexText) codes.push(...findCourseCodeLabels({ firstPageText: input.pageTexts[0] ?? '' }));
+  // One per code, whatever the case: the first (most specific) source's spelling wins.
+  const seen = new Set<string>();
+  return codes.filter((c) => !seen.has(c.toUpperCase()) && seen.add(c.toUpperCase()));
 }
 
 export function startCategoriseController(o: ControllerOptions): CategoriseController {
@@ -244,7 +246,7 @@ export function startCategoriseController(o: ControllerOptions): CategoriseContr
     const docs: Doc[] = corpus.map((d) => ({ id: d.id, vector: d.vector, text: { title: withoutNames(d.title, d.authors), abstract: d.abstract } }));
     await sleep(0); // the clustering is one burst on this thread; let a waiting message through first
     subjects ??= loadSubjects();
-    const topics = clusterTopics(docs, { subjects });
+    const topics = clusterTopics(docs, { subjects, fields: loadFields() });
     const clustered = performance.now();
     await store.applyTopics(topics.map((t) => ({ key: t.key, docIds: t.docIds, name: t.name })));
     report('topics', { docs: docs.length, topics: topics.length, clusterMs: Math.round(clustered - began), totalMs: Math.round(performance.now() - began) });

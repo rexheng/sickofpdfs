@@ -64,12 +64,13 @@ export { ANNOT_FLAG, NOTE_ICON_SIZE, normToUser, planPdfExport, pointToUser, qua
 export type { NormRectsByPage, PageGeometry, PdfAnnotationPlan, PdfExportInput, PdfExportOptions, PdfExportPlan, PdfSubtype, PdfUserRect, Rgb } from './export/pdf-mapping';
 export { nearestMarkColor, planPdfImport } from './export/pdf-import';
 export type { ImportedMeta, ImportRef, PdfAnnotation, PdfImportOptions, PdfImportPlan } from './export/pdf-import';
-export { findCourseCodes } from './categorise/course-codes';
+export { findCourseCodeLabels, findCourseCodes } from './categorise/course-codes';
 export type { CourseCodeSource } from './categorise/course-codes';
 export {
-  ATTACH_SIMILARITY, MAX_SUGGESTIONS, READING_SUBJECT_SIMILARITY, READING_SUBJECT_MARGIN, MAX_SUBJECTS_PER_DOC, subjectTopicKey, subjectsOfReading, MAX_TOPICS_PER_DOC, MERGE_SIMILARITY, MIN_TOPIC_SIZE, SUGGEST_SIMILARITY, TAG_MIN_DOCS, TOPIC_MIN_DOCS, clusterTopics, related, suggestTags, topicKey,
+  ATTACH_SIMILARITY, MAX_SUGGESTIONS, READING_SUBJECT_SIMILARITY, READING_SUBJECT_MARGIN, MAX_SUBJECTS_PER_DOC, READING_FIELD_SIMILARITY, READING_SUBJECT_TIE, fieldTopicKey, subjectTopicKey, subjectsOfReading, MAX_TOPICS_PER_DOC, MERGE_SIMILARITY, MIN_TOPIC_SIZE, SUGGEST_SIMILARITY, TAG_MIN_DOCS, TOPIC_MIN_DOCS, clusterTopics, related, suggestTags, topicKey,
 } from './categorise/topics';
-export type { Doc, Subject, Topic } from './categorise/topics';
+export type { Doc, Field, Subject, Topic } from './categorise/topics';
 export { SUBJECT_NAMES } from './categorise/subjects';
+export { FIELD_NAMES, SUBJECT_FIELD } from './categorise/subject-fields';
 export { EMBEDDING_DIM, EMBEDDING_MODEL, MAX_ABSTRACT_CHARS, OPENING_PAGES, embeddingInput, withoutNames } from './categorise/text';
 export type { EmbeddingInput, InputKind } from './categorise/text';
