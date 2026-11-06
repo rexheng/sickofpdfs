@@ -1,0 +1,41 @@
+/*
+ * The figure toolbar: the viewer's toolbar pill in small (surface-container-highest #333537, fully round, 4 px padding,
+ * Drive's menu shadow), sitting 8 px above the selected figure's top-right corner. Its buttons are the pill's own text
+ * buttons ("Comment" in the toolbar): 32 px, 14/20 500 in on-surface-variant (#c4c7c5), with the 8% hover layer.
+ */
+.bar {
+  position: absolute;
+  z-index: var(--z-viewer-float);
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  padding: var(--space-1);
+  border-radius: var(--shape-full);
+  background-color: var(--gm3-sys-color-surface-container-highest);
+  box-shadow: var(--elev-2);
+  transform: translate(-100%, calc(-100% - var(--space-2)));
+  animation: appear 120ms ease-out;
+  /* The page list's overlay lets clicks through; its children take their own. */
+  pointer-events: auto;
+}
+
+.button {
+  block-size: var(--icon-btn);
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.button:hover:not(:disabled) {
+  background-color: var(--icon-btn-hover);
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    animation: none;
+  }
+}

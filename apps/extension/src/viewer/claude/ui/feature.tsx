@@ -5,7 +5,7 @@
 // - the @Claude suggestion in every note and reply box, and the watch that asks Claude when such a note is sent;
 // - the confirm dialog the runner waits on (ClaudeConfirmDialog.tsx);
 // - the commands "Ask Claude", "Explain this figure" and "Ask Claude about the whole document", and the menu rows that
-//   run them (the mark-up menu, the figure menu, the Tools menu).
+//   run them (the mark-up menu, the figure menu, the Tools menu), and the figure toolbar on a selected figure.
 //
 // Everything here waits for the turn runner (slice D) to set the host (host.ts). Until then no Claude item shows, no
 // command is built, and a note with "@Claude" in it is only a note.
@@ -19,6 +19,7 @@ import { controllerOf } from '../../figures/registry';
 import { noteCommands } from '../../notes/notes-host';
 import { ClaudeConfirmHost } from './ClaudeConfirmDialog';
 import { ClaudeReplyView } from './ClaudeReplyView';
+import { FigureToolbar } from './FigureToolbar';
 import { claudeUi, useClaudeUi } from './host';
 import { claudeJump, createClaudeJumper } from './jump';
 import { CLAUDE_MENTION, ClaudeMentions, type MentionPlace, placeOf, prefillNoteBox, presetFor, watchClaudeMentions } from './MentionItem';
@@ -55,10 +56,26 @@ function ClaudeUiView({ host }: { host: NotesHost }) {
 
   const placeOfBox = useCallback((box: HTMLTextAreaElement): MentionPlace => placeOf(threadOfBox(box, host)?.anchor), [host]);
   if (ui === null) return null;
+  const figures = controllerOf(host);
+  const selected = (): Region | null => {
+    const f = figures.state().selected;
+    return f === null ? null : { kind: 'figure', found: f };
+  };
   return (
     <>
       <ClaudeMentions placeOfBox={placeOfBox} />
       <ClaudeConfirmHost />
+      <FigureToolbar
+        controller={figures}
+        onAsk={() => {
+          const r = selected();
+          if (r !== null) askOnRegion(figures, r);
+        }}
+        onExplain={() => {
+          const r = selected();
+          if (r !== null) explainRegion(host, figures, r);
+        }}
+      />
     </>
   );
 }
@@ -129,6 +146,13 @@ export function claudeFigureItems(c: FigureController, region: Extract<Region, {
     { kind: 'item', id: 'claude.ask', label: 'Ask Claude', icon: 'asterisk', disabled: off, onSelect: () => askOnRegion(c, region) },
     { kind: 'item', id: 'claude.explainFigure', label: 'Explain this figure', icon: 'insert_chart', disabled: off, onSelect: () => explainRegion(c.host, c, region) },
   ];
+}
+
+/** The note and reply boxes say @Claude can be asked, as Docs' box says "Reply or add others with @". */
+export function claudePlaceholders(): { notePlaceholder?: string; replyPlaceholder?: string } {
+  const host = claudeUi.get();
+  if (host === null || host.status() === 'incognito') return {};
+  return { notePlaceholder: 'Add a note, or ask @Claude', replyPlaceholder: 'Reply, or ask @Claude' };
 }
 
 /** Draws each reply from Claude in a card (ThreadCard's `renderClaudeReply`, plan §8 A4). */

@@ -51,7 +51,7 @@ import { hadNotes, rememberNotes } from './margin-at-open';
 import { publishNoteCommands, type NoteCommands } from './notes-host';
 import { listNotes } from '../notes-panel/model';
 import { notesPanel, openEdit, type OpenEdit, setCardsFolded, setPanelOverPages, useNotesPanelOpen, useOpenEdit } from '../notes-panel/panel-state';
-import { claudeReplyRenderer } from '../claude/ui/feature';
+import { claudePlaceholders, claudeReplyRenderer } from '../claude/ui/feature';
 import { useFigureCards } from '../figures/cards';
 import { openSpecialNote } from '../figures/notes-bridge';
 import styles from './NotesLayer.module.css';
@@ -627,6 +627,7 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
       autoFocus: focusThread === t.id,
       now,
       renderClaudeReply: claudeReplyRenderer(t, list), // Phase 4 (A4): Claude's replies, with their chips and actions
+      ...claudePlaceholders(), // Phase 4: "Reply, or ask @Claude"
     };
   }
 

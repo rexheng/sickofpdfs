@@ -109,7 +109,7 @@ function ErrorBlock({ error, host, replyId }: { error: ReplyError | null; host: 
       <p className={code !== null && CALM.has(code) ? `${styles.errorText} ${styles.calm}` : styles.errorText}>{error?.message ?? GENERIC_ERROR}</p>
       {(settings || retry) && (
         <div className={styles.errorActions}>
-          {settings && <TextButton label="Open Settings" icon="settings" variant="tonal" onClick={openClaudeSettings} />}
+          {settings && <TextButton label="Open Settings" variant="tonal" onClick={openClaudeSettings} />}
           {retry && <TextButton label="Try again" icon="refresh" className={settings ? undefined : styles.flush} onClick={() => host?.retry?.(replyId)} />}
         </div>
       )}
@@ -122,19 +122,21 @@ function Footer({ meta, host, thread, comment, comments }: { meta: Meta; host: C
   const offer = host?.thinkHarder !== undefined && role === 'default' && !answeredHarder(comment, comments);
   const busy = (comments ?? []).some((c) => c.author === 'claude' && isRunning(c.meta as Meta));
   const cost = costLine(meta, host, role);
-  if (!offer && cost === null) return null;
-  // Without the button the cost line takes no room: it shows in the gap under the reply, so replies keep Docs' spacing.
-  if (!offer) return <span className={`${styles.cost} ${styles.costAlone}`}>{cost}</span>;
+  // The cost line takes no room: it shows on hover in the gap under the reply, so replies keep Docs' spacing.
   return (
-    <div className={styles.footer}>
-      <ThinkHarderButton
-        model={host?.model?.('think-harder')?.displayName ?? null}
-        usd={host?.thinkHarderUsd?.(thread.id) ?? null}
-        disabled={busy}
-        onClick={() => host?.thinkHarder?.(thread.id, comment.id)}
-      />
+    <>
+      {offer && (
+        <div className={styles.footer}>
+          <ThinkHarderButton
+            model={host?.model?.('think-harder')?.displayName ?? null}
+            usd={host?.thinkHarderUsd?.(thread.id) ?? null}
+            disabled={busy}
+            onClick={() => host?.thinkHarder?.(thread.id, comment.id)}
+          />
+        </div>
+      )}
       {cost !== null && <span className={styles.cost}>{cost}</span>}
-    </div>
+    </>
   );
 }
 

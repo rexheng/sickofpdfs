@@ -55,6 +55,9 @@ export interface ThreadCardProps {
   renderChip?: (link: ChipLink) => ReactNode;
   /** Phase 4 (A4): the content of each reply from Claude (ClaudeReplyView). Passed to every CommentItem of the thread. */
   renderClaudeReply?: (comment: CommentView) => ReactNode;
+  /** Phase 4: the empty note and reply boxes' words, as Docs' "Reply or add others with @" ("Reply, or ask @Claude"). */
+  notePlaceholder?: string;
+  replyPlaceholder?: string;
 
   /** How the note sits on this copy of the PDF: 'moved' shows the quiet "Moved" label (D7). */
   placement?: CardPlacement;
@@ -149,7 +152,7 @@ export function ThreadCard(props: ThreadCardProps) {
 }
 
 /** A new note: the owner's name, "Not sent yet", and the note box (active) or the unsent text (inactive). */
-function NewNote({ draft, active, autoFocus, onDraftChange, onDraftSend, onDraftEscape, onDraftFlush, onDraftCancel }: ThreadCardProps) {
+function NewNote({ draft, active, autoFocus, onDraftChange, onDraftSend, onDraftEscape, onDraftFlush, onDraftCancel, notePlaceholder }: ThreadCardProps) {
   if (!active) {
     return (
       <>
@@ -164,6 +167,7 @@ function NewNote({ draft, active, autoFocus, onDraftChange, onDraftSend, onDraft
       <NoteBox
         className={styles.noteBox}
         variant="note"
+        placeholder={notePlaceholder}
         value={draft ?? ''}
         autoFocus={autoFocus}
         onChange={(body) => onDraftChange?.(body)}
@@ -219,6 +223,7 @@ function Thread(props: ThreadCardProps & { root: CommentView; replies: CommentVi
       {editing == null && (
         <ReplyBox
           className={styles.replyBox}
+          placeholder={props.replyPlaceholder}
           value={draft ?? ''}
           autoFocus={autoFocus}
           onChange={(body) => props.onDraftChange?.(body)}

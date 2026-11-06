@@ -135,28 +135,28 @@
 .footer {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
+  gap: var(--space-2);
   align-items: center;
   margin-block-start: var(--space-3);
 }
 
-/* Beside Think harder when it fits; on a line of its own, at the right, when it does not. */
+/*
+ * "Haiku 5.5 · 0.07¢ · 1 web search": in the 16–20 px gap under the reply, at the right, taking no room, so replies keep
+ * Docs' spacing. 12/16, the size of the time under a name.
+ */
 .cost {
-  flex: 1 0 auto;
+  position: absolute;
+  inset-block-start: 100%;
+  inset-inline: 0;
+  overflow: hidden;
   color: var(--gm3-sys-color-on-surface-variant);
   font: var(--type-docs-comment-time);
   letter-spacing: var(--tracking-tight);
   text-align: end;
   white-space: nowrap;
+  text-overflow: ellipsis;
   opacity: 0;
   transition: opacity 120ms ease-out;
-}
-
-/* The cost line of a reply with no button under it: in the 16–20 px gap below the reply, at the right, taking no room. */
-.costAlone {
-  position: absolute;
-  inset-block-start: 100%;
-  inset-inline: 0;
 }
 
 /* The cost line shows while the pointer is on the reply, or the keyboard is in it. Screen readers always read it. */
