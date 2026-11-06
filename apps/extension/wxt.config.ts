@@ -6,7 +6,7 @@ const key = readFileSync(new URL('./extension-key.pub.txt', import.meta.url), 'u
 
 /**
  * Test builds only: adds the test hooks to the viewer entry, and the Claude base-URL hook (contract addition A7) to the
- * entries that may call Anthropic: the viewer, and the Settings page once it exists. These are the only ways
+ * entries that may call Anthropic: the viewer, and the library page, which holds Settings → Claude. These are the only ways
  * `src/testing/*.ts` enters a build, so production modules never reference them and a production build never contains them.
  */
 function sopTestHooks() {
@@ -17,7 +17,7 @@ function sopTestHooks() {
     transform(code: string, id: string) {
       const imports: string[] = [];
       if (entry(id, 'viewer')) imports.push("import '@/testing/test-hooks';");
-      if (entry(id, 'viewer') || entry(id, 'settings')) imports.push("import '@/testing/claude-base-url';");
+      if (entry(id, 'viewer') || entry(id, 'library')) imports.push("import '@/testing/claude-base-url';");
       if (imports.length === 0) return null;
       return { code: `${imports.join('\n')}\n${code}`, map: null };
     },

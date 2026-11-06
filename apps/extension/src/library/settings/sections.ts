@@ -3,6 +3,7 @@
 // own and one line here (Phase 4: Claude, its key and model).
 import type { IconName } from '@sop/ui';
 import type { ComponentType } from 'react';
+import { ClaudeSettingsSection } from '../../claude-settings/ClaudeSettingsSection';
 import { LibraryRulesSection } from '../pages/Settings/sections/LibraryRules';
 import { OnlineLookupsSection } from '../pages/Settings/sections/OnlineLookups';
 import { ReadingSection } from '../pages/Settings/sections/Reading';
@@ -25,6 +26,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: 'shortcuts', label: 'Shortcuts', icon: 'keyboard', Component: ShortcutsSection },
   { id: 'reading', label: 'Reading', icon: 'menu_book', Component: ReadingSection },
   { id: 'lookups', label: 'Online lookups', icon: 'public', Component: OnlineLookupsSection },
+  { id: 'claude', label: 'Claude', icon: 'auto_awesome', Component: ClaudeSettingsSection },
   { id: 'backup', label: 'Backup', icon: 'backup', Component: BackupSection },
   { id: 'restore', label: 'Restore', icon: 'settings_backup_restore', Component: RestoreSection },
 ];

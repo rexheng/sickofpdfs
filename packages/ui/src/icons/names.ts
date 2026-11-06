@@ -114,6 +114,9 @@ export const ICON_NAMES = [
   'first_page',
   'do_not_disturb_on',
   'label_off',
+  // Phase 4 (slice G): Settings → Claude and its saved key
+  'auto_awesome',
+  'key',
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

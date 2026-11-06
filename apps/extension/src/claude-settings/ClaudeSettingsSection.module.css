@@ -1,0 +1,203 @@
+/* Settings → Claude: the Settings rows (SettingsSection.module.css), plus the key field and what it says, the model pickers drawn as
+   Drive's outlined dropdown fields, the dollar fields, and this month's spend meter (Drive's storage meter). */
+.loading {
+  min-block-size: var(--row-h);
+}
+
+/* The key field and its button, then one line under them: a hint, the check under way, or why it did not work. */
+.entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-block: var(--space-3);
+  border-block-end: 1px solid var(--drive-row-divider);
+}
+
+.entryLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.keyField {
+  flex: 1 1 calc(var(--space-16) * 4);
+  max-inline-size: calc(var(--space-16) * 7);
+  letter-spacing: var(--tracking-tight);
+}
+
+.status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-block-size: var(--space-5);
+}
+
+.status:empty {
+  display: none;
+}
+
+.hint {
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-row);
+  font-variation-settings: "opsz" 17;
+}
+
+.error {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  color: var(--gm3-sys-color-error);
+  font: var(--type-row);
+  font-variation-settings: "opsz" 17;
+}
+
+/* While the key is checked: a thin bar with a short piece moving along it (as Restore draws one). Without motion it is quiet. */
+.track {
+  display: block;
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: calc(var(--space-16) * 7);
+  block-size: var(--sop-progress-h);
+  overflow: hidden;
+  border-radius: var(--shape-full);
+  background-color: var(--gm3-sys-color-outline-variant);
+}
+
+.moving {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: var(--shape-full);
+  background-color: var(--gm3-sys-color-primary);
+  opacity: var(--gm3-state-disabled-content);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .moving {
+    inline-size: 30%;
+    opacity: 1;
+    animation: moving 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes moving {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(340%);
+  }
+}
+
+/* A model picker: an outlined field with the chosen model and a drop-down arrow, as Drive's dropdown fields are. */
+.picker {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+  box-sizing: border-box;
+  inline-size: calc(var(--space-16) * 3);
+  block-size: var(--field-h);
+  margin: 0;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border: 1px solid var(--gm3-sys-color-outline);
+  border-radius: var(--shape-field);
+  background-color: transparent;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+  cursor: pointer;
+}
+
+.picker:hover:not(:disabled) {
+  border-color: var(--gm3-sys-color-on-surface);
+}
+
+.picker:focus-visible,
+.picker[aria-expanded='true'] {
+  border-color: var(--gm3-sys-color-primary);
+  outline: var(--focus-ring-width) solid var(--gm3-sys-color-primary);
+  outline-offset: calc(var(--focus-ring-width) / -2);
+}
+
+.picker:disabled {
+  opacity: var(--sop-disabled-content);
+  cursor: default;
+}
+
+.picker > :last-child {
+  flex: none;
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.pickerText {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A dollar amount: "$" then a short field, its digits on the right as amounts are. */
+.money {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.dollar {
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+.moneyField {
+  inline-size: calc(var(--space-16) + var(--space-8));
+  text-align: end;
+}
+
+.moneyField::placeholder {
+  text-align: end;
+}
+
+/* This month's spend against the limit. */
+.spendWords {
+  display: block;
+}
+
+.meter {
+  display: block;
+  inline-size: 100%;
+  max-inline-size: calc(var(--space-16) * 5);
+  block-size: var(--sop-progress-h);
+  margin-block: var(--space-2) var(--space-1);
+  overflow: hidden;
+  border-radius: var(--shape-full);
+  background-color: var(--gm3-sys-color-outline-variant);
+}
+
+.meterFill {
+  display: block;
+  max-inline-size: 100%;
+  block-size: 100%;
+  border-radius: var(--shape-full);
+  background-color: var(--gm3-sys-color-primary);
+}
+
+.meterFull .meterFill {
+  background-color: var(--gm3-sys-color-error);
+}
+
+.link {
+  color: var(--gm3-sys-color-primary);
+  text-decoration: underline;
+  text-underline-offset: var(--space-1);
+}
+
+.link:focus-visible {
+  border-radius: var(--shape-field);
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
