@@ -58,6 +58,7 @@ import { Toolbar } from './chrome/Toolbar';
 import { commandShortcuts, createCommands, createIdleCommands, type ViewerCommands, type ViewerContext, type ViewerUi } from './commands';
 import { useReaderFind } from './find';
 import { FormBanner, useFormBounce } from './forms/FormBanner';
+import { NotesMovedBanner, useNotesMoved } from './about/NotesMovedBanner';
 import { maybeLeaveFrame, mayOfferNewTab, openInNewTab, wantsFullTab } from './frame-escape';
 import { railStartsOpen, useOutline, useRailFitsWindow, useReaderNavigation } from './navigation';
 import {
@@ -329,6 +330,8 @@ function TabViewer({ params }: { params: ViewerParams }) {
   }, [name]);
   useUndoneNote(save, ui);
   const form = useFormBounce({ opened, save, source, backend });
+  // R103: an earlier version of a saved web page whose notes moved to the newer one says so.
+  const notesMoved = useNotesMoved(save);
   const [reader, setReader] = useState<ReaderChrome | null>(null);
   // Not for a local file the tab was not seen opening: one click must not show it in Chrome's viewer either.
   const canEscape = source !== null && view.kind !== 'refused';
@@ -392,6 +395,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
         {/* The pill is there from the start, in its place, so it does not pop in when the PDF arrives. */}
         {view.kind === 'loading' && <Toolbar commands={idleCommands} view={null} />}
         {view.kind === 'ready' && form.notice !== null && <FormBanner kind={form.notice} onDismiss={form.dismiss} />}
+        {view.kind === 'ready' && form.notice === null && notesMoved.newer !== null && <NotesMovedBanner newer={notesMoved.newer} onDismiss={notesMoved.dismiss} />}
         {view.kind === 'loading' && prompt === null && (
           <div role="progressbar" aria-label="Loading the PDF" className={styles.progress} />
         )}

@@ -35,11 +35,15 @@ export const MAY_GO_ONLINE = understood((name) => name);
 // - `web-page:text:<sha256>`: a fingerprint of the article's words. Saving the same link again compares it: the same words open
 //   this reading; changed words make a new version.
 // - `web-page:earlier:<document id>`: the earlier version of the same page, which About this PDF links to.
+// - `web-page:notes-moved:<document id>`, on an earlier version: the owner's marks and notes moved to that newer version when it
+//   was saved (R103). The viewer and About this PDF say "Your notes moved to the newer version". The store writes it, in the
+//   same transaction as the move (`moveNotes`).
 
 /** The save reason of every reading made from a web page. */
 export const WEB_PAGE = 'web-page';
 const WEB_TEXT = 'web-page:text:';
 const WEB_EARLIER = 'web-page:earlier:';
+const WEB_NOTES_MOVED = 'web-page:notes-moved:';
 const HEX64 = /^[0-9a-f]{64}$/u;
 
 /** The save reasons a web page's reading is saved with. */
@@ -47,8 +51,22 @@ export function webPageReasons(o: { textHash: string; earlier: string | null }):
   return [WEB_PAGE, `${WEB_TEXT}${o.textHash}`, ...(o.earlier !== null ? [`${WEB_EARLIER}${o.earlier}`] : [])];
 }
 
+/** The save reason of an earlier version whose notes moved to the newer version `to`. */
+export const notesMovedReason = (to: string): string => `${WEB_NOTES_MOVED}${to}`;
+
+/** The save reason that says this reading is the newer version of `earlier`. */
+export const earlierReason = (earlier: string): string => `${WEB_EARLIER}${earlier}`;
+
+export interface WebPageFlags {
+  textHash: string | null;
+  /** The earlier version of the same page. */
+  earlier: string | null;
+  /** The newer version the owner's notes moved to (on an earlier version). */
+  notesMovedTo: string | null;
+}
+
 /** What a reading's save reasons say about the web page it was made from; null when it was not made from one. */
-export function webPageOf(saveReasons: readonly string[] | null | undefined): { textHash: string | null; earlier: string | null } | null {
+export function webPageOf(saveReasons: readonly string[] | null | undefined): WebPageFlags | null {
   if (!Array.isArray(saveReasons) || !saveReasons.includes(WEB_PAGE)) return null;
   const reasons: readonly unknown[] = saveReasons;
   const pick = (prefix: string): string | null => {
@@ -56,5 +74,5 @@ export function webPageOf(saveReasons: readonly string[] | null | undefined): { 
     const value = found === undefined ? null : found.slice(prefix.length);
     return value !== null && HEX64.test(value) ? value : null;
   };
-  return { textHash: pick(WEB_TEXT), earlier: pick(WEB_EARLIER) };
+  return { textHash: pick(WEB_TEXT), earlier: pick(WEB_EARLIER), notesMovedTo: pick(WEB_NOTES_MOVED) };
 }

@@ -10,6 +10,9 @@
 // - Errors are rejections whose message starts with a code (`bad-input: …`), so the code survives a message port.
 
 import {
+  type Anchor,
+  type MarkId,
+  type ThreadId,
   ALIAS_THRESHOLD,
   canonicalLink,
   canonicalLocation,
@@ -41,6 +44,7 @@ import { createPageFiguresApi, type PageFiguresApi } from './page-figures';
 import { forgottenHashes, recordForgotten } from './forgotten';
 import { FTS_TABLES } from './schema';
 import { isReadOnly, type SqlValue, userVersion } from './schema-v2';
+import { earlierReason, notesMovedReason, WEB_PAGE } from './reading-flags';
 
 export { migrate } from './migrate';
 export { ftsQuery } from './fts-query';
@@ -82,6 +86,22 @@ export interface SaveDocumentInput {
   indexText?: boolean;
 }
 
+/** R103: what `moveNotes` moves, re-anchored by the caller on the newer version's text. */
+export interface MoveNotesInput {
+  from: DocumentId;
+  to: DocumentId;
+  marks: { id: MarkId; anchor: Anchor; pageIndex: number; sortKey: number }[];
+  threads: { id: ThreadId; anchor: Anchor; pageIndex: number | null; sortKey: number | null; placement: 'placed' | 'unplaced' }[];
+}
+
+export interface MoveNotesResult {
+  marks: number;
+  threads: number;
+  comments: number;
+  /** Notes still being typed in a tab, which stayed on the earlier version. */
+  kept: number;
+}
+
 export interface TouchLocationInput {
   documentId: DocumentId;
   kind: LocationKind;
@@ -115,6 +135,16 @@ export interface StoreApi extends AnnotationsApi, PageFiguresApi, LibraryApi, Ba
    */
   documentAtLink(raw: string): Promise<DocumentId | null>;
   recordOpen(documentId: DocumentId, at: number): Promise<void>;
+  /**
+   * R103: a saved web page changed and was saved as a newer version (`to`, whose save reasons name `from` as its earlier version).
+   * The owner's marks and notes move from `from` to `to`, in one transaction: each is written again on `to` (new ids, the same
+   * words, authors and times) with the anchor the caller re-anchored it to, and then removed from `from`. A note whose words are
+   * not in the new version moves with its old anchor and `placement: 'unplaced'`, so it shows under "Couldn't place" with its quote.
+   * It is never deleted. `from` gets the "notes moved" flag in the same transaction.
+   * Only what is named moves. A note still being typed in a tab (a draft, or an open edit) stays on `from`, and is counted in `kept`.
+   * Refused unless both are web pages and `to` is the newer version of `from`.
+   */
+  moveNotes(input: MoveNotesInput): Promise<MoveNotesResult>;
   /**
    * Hard delete: the document, everything that hangs off it, every outbox row naming any of it, and its indexed words. Forget also
    * records a salted hash of its fingerprints in the forgotten list (R88); an Undo of a save (`undo: true`) never does. Its tags, the
@@ -151,6 +181,7 @@ export const LIBRARY_METHODS = [
   'listLocations',
   'documentAtLink',
   'recordOpen',
+  'moveNotes',
   'forgetDocument',
   'searchPages',
 ] as const satisfies readonly (keyof StoreApi)[];
@@ -629,6 +660,102 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
         return r ? (text(r, 'document_id') as DocumentId) : null;
       });
     },
+
+    moveNotes: (input) =>
+      attempt(() => {
+        assertWritable();
+        if (typeof input !== 'object' || input === null) fail('bad-input', 'nothing to move');
+        checkHex(input.from, 'the earlier version');
+        checkHex(input.to, 'the newer version');
+        if (input.from === input.to) fail('bad-input', 'a reading cannot move its notes to itself');
+        if (!Array.isArray(input.marks) || !Array.isArray(input.threads)) fail('bad-input', 'marks and threads come as lists');
+        const isAnchor = (a: unknown): a is Anchor => typeof a === 'object' && a !== null && typeof (a as { kind?: unknown }).kind === 'string';
+        for (const m of input.marks) {
+          if (!isAnchor(m.anchor) || !isInt(m.pageIndex) || m.pageIndex < 0 || typeof m.sortKey !== 'number' || !Number.isFinite(m.sortKey)) fail('bad-input', 'a mark needs its anchor and place');
+        }
+        for (const t of input.threads) {
+          if (!isAnchor(t.anchor) || (t.pageIndex !== null && (!isInt(t.pageIndex) || t.pageIndex < 0)) || (t.sortKey !== null && (typeof t.sortKey !== 'number' || !Number.isFinite(t.sortKey)))) {
+            fail('bad-input', 'a thread needs its anchor and place');
+          }
+          if (t.placement !== 'placed' && t.placement !== 'unplaced') fail('bad-input', 'a thread is placed or unplaced');
+        }
+        const result: MoveNotesResult = { marks: 0, threads: 0, comments: 0, kept: 0 };
+        const moved = { marks: { from: [] as string[], to: [] as string[] }, threads: { from: [] as string[], to: [] as string[] }, comments: { from: [] as string[], to: [] as string[] } };
+        db.savepoint(() => {
+          const from = one('SELECT save_reasons FROM documents WHERE id = ?', [input.from]);
+          const to = one('SELECT save_reasons FROM documents WHERE id = ?', [input.to]);
+          if (!from || !to) fail('document-missing', 'notes only move between saved readings');
+          const fromReasons = stringList(from, 'save_reasons');
+          const toReasons = stringList(to, 'save_reasons');
+          // Only to the newer version of the same web page: notes never move between unrelated readings.
+          if (!fromReasons.includes(WEB_PAGE) || !toReasons.includes(WEB_PAGE) || !toReasons.includes(earlierReason(input.from))) {
+            fail('bad-input', 'notes only move from a web page to its newer version');
+          }
+          const hlc = () => deps.hlc.tick();
+          for (const m of input.marks) {
+            const cur = one('SELECT * FROM marks WHERE id = ? AND document_id = ? AND deleted_at IS NULL', [m.id, input.from]);
+            if (!cur) continue; // gone or already moved: nothing to do
+            const id = crypto.randomUUID();
+            run(
+              `INSERT INTO marks (id, document_id, style, color, anchor, page_index, sort_key, author, created_at, updated_at, deleted_at, rev, hlc)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, ?)`,
+              [id, input.to, cur.style ?? null, cur.color ?? null, JSON.stringify(m.anchor), m.pageIndex, m.sortKey, cur.author ?? 'me', cur.created_at ?? deps.now(), cur.updated_at ?? deps.now(), hlc()],
+            );
+            run('DELETE FROM marks WHERE id = ?', [m.id]);
+            moved.marks.from.push(m.id);
+            moved.marks.to.push(id);
+            result.marks += 1;
+          }
+          for (const t of input.threads) {
+            const cur = one('SELECT * FROM threads WHERE id = ? AND document_id = ? AND deleted_at IS NULL', [t.id, input.from]);
+            if (!cur) continue;
+            // A note still being typed somewhere (a new thread, an unsent reply, an open edit) stays where its tab has it.
+            const typing =
+              cur.draft_of_tab != null ||
+              one('SELECT 1 AS x FROM comments WHERE thread_id = ? AND draft_of_tab IS NOT NULL', [t.id]) !== undefined ||
+              one(`SELECT 1 AS x FROM comment_edits e JOIN comments c ON c.id = e.comment_id WHERE c.thread_id = ? AND e.state = 'open'`, [t.id]) !== undefined;
+            if (typing) {
+              result.kept += 1;
+              continue;
+            }
+            const id = crypto.randomUUID();
+            run(
+              `INSERT INTO threads (id, document_id, anchor, page_index, sort_key, placement, draft_of_tab, created_at, updated_at, deleted_at, rev, hlc)
+               VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL, 0, ?)`,
+              [id, input.to, JSON.stringify(t.anchor), t.pageIndex, t.sortKey, t.placement, cur.created_at ?? deps.now(), cur.updated_at ?? deps.now(), hlc()],
+            );
+            // Every sent comment goes with it, a reply in Notes → Trash too (it stays in the Trash, now on the newer version).
+            for (const c of db.selectObjects('SELECT * FROM comments WHERE thread_id = ? AND draft_of_tab IS NULL ORDER BY created_at, id', [t.id])) {
+              const cid = crypto.randomUUID();
+              run(
+                `INSERT INTO comments (id, thread_id, document_id, author, body, draft_of_tab, meta, created_at, edited_at, deleted_at, rev, hlc)
+                 VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 0, ?)`,
+                [cid, id, input.to, c.author ?? 'me', c.body ?? '', c.meta ?? '{}', c.created_at ?? deps.now(), c.edited_at ?? null, c.deleted_at ?? null, hlc()],
+              );
+              moved.comments.from.push(text(c, 'id'));
+              moved.comments.to.push(cid);
+              result.comments += 1;
+            }
+            // Closed edit markers go with their comments; nothing in them is text.
+            run('DELETE FROM comments WHERE thread_id = ? AND draft_of_tab IS NULL', [t.id]);
+            run('DELETE FROM threads WHERE id = ?', [t.id]);
+            moved.threads.from.push(t.id);
+            moved.threads.to.push(id);
+            result.threads += 1;
+          }
+          if (result.marks + result.threads > 0 && !fromReasons.includes(notesMovedReason(input.to))) {
+            run('UPDATE documents SET save_reasons = ?, updated_at = ?, hlc = ? WHERE id = ?', [JSON.stringify([...fromReasons, notesMovedReason(input.to)]), deps.now(), hlc(), input.from]);
+          }
+        });
+        const changes: StoreChange[] = [];
+        for (const table of ['marks', 'threads', 'comments'] as const) {
+          if (moved[table].to.length > 0) changes.push({ table, ids: moved[table].to, op: 'upsert', documentId: input.to });
+          if (moved[table].from.length > 0) changes.push({ table, ids: moved[table].from, op: 'delete', documentId: input.from });
+        }
+        if (result.marks + result.threads > 0) changes.push({ table: 'documents', ids: [input.from], op: 'upsert', documentId: input.from });
+        publish(changes);
+        return result;
+      }),
 
     recordOpen: (documentId, at) =>
       attempt(() => {

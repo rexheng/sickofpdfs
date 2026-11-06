@@ -21,6 +21,8 @@ export interface AboutDetails {
   webPage: boolean;
   /** R103: the earlier version of the same web page, when this reading is a newer one; null otherwise (or when it is gone). */
   earlier: (RelatedReading & { savedAt: number }) | null;
+  /** R103: on an earlier version, the newer version the owner's notes moved to; null otherwise (or when it is gone). */
+  notesMovedTo: (RelatedReading & { savedAt: number }) | null;
 }
 
 export interface RelatedReading {
@@ -91,12 +93,12 @@ export function createStoreAboutData(client: AboutStore): AboutData {
     const [locations, reading] = await Promise.all([client.listLocations(id).catch(() => []), client.getReading(id).catch(() => null)]);
     locations.sort((a, b) => b.lastSeen - a.lastSeen);
     const web = webPageOf(doc.saveReasons);
-    const before = web?.earlier == null ? null : await client.getDocument(web.earlier as DocumentId).catch(() => null);
-    const earlier =
-      before === null
-        ? null
-        : { id: before.id, title: shownTitle(before.title, null), authors: before.authors, year: before.year, blobStored: before.blobStored, link: null, savedAt: before.createdAt };
-    return { doc, locations, reading, firstOpened: reading?.firstOpened ?? doc.createdAt, lastOpened: reading?.lastOpened ?? doc.createdAt, webPage: web !== null, earlier };
+    const version = async (other: string | null | undefined) => {
+      const row = other == null ? null : await client.getDocument(other as DocumentId).catch(() => null);
+      return row === null ? null : { id: row.id, title: shownTitle(row.title, null), authors: row.authors, year: row.year, blobStored: row.blobStored, link: null, savedAt: row.createdAt };
+    };
+    const [earlier, notesMovedTo] = await Promise.all([version(web?.earlier), version(web?.notesMovedTo)]);
+    return { doc, locations, reading, firstOpened: reading?.firstOpened ?? doc.createdAt, lastOpened: reading?.lastOpened ?? doc.createdAt, webPage: web !== null, earlier, notesMovedTo };
   };
 
   return {

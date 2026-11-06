@@ -2,17 +2,21 @@
 //
 // - The same link with the same words opens the reading saved before (plan.ts). Changed words make a new reading, linked to
 //   the old one (About this PDF shows "Earlier version").
+// - The owner's marks and notes then move from the old reading to the new one, re-anchored on its text (move-notes.ts); a note
+//   that can't be placed moves as "Couldn't place", and nothing is deleted.
 // - The PDF is saved through the viewer's own save (save-controller.ts), as "+ New → Upload PDF" does: the same fingerprint,
 //   identity check, saved copy, rows and page text. The page's link is its source.
 // - The owner's click is the decision: the learning filter is not asked. The R91 check of every page for card, bank or ID
 //   numbers still runs; if it finds them, the reading is saved without searchable text and the D9 warning is given.
 import type { DocumentId, FilterDecision } from '@sop/core';
-import { loadPdfSource, type PdfBackend } from '@sop/viewer';
+import { createPageTextProvider, loadPdfSource, type PdfBackend } from '@sop/viewer';
 import type { BlobStore } from '../store/blob-store';
 import type { StoreClient } from '../store/client';
 import { webPageReasons } from '../store/reading-flags';
+import { createAnchorContext, createDocumentFigures } from '../viewer/annotations/anchor-context';
 import { createSaveController } from '../viewer/save/save-controller';
 import type { Article } from './article';
+import { type MovedNotes, moveNotesToNewerVersion } from './move-notes';
 import { pdfFileName } from './plan';
 
 /** The filter is not asked: the owner chose to save this page (the save says "You saved it"). */
@@ -31,6 +35,10 @@ export interface SavedPage {
   documentId: DocumentId;
   /** D9: the reading has card, bank or ID numbers, so its text is not searchable; null otherwise. */
   warning: string | null;
+  /** R103: a newer version of a page: what moved of the owner's marks and notes; null when there was nothing to move. */
+  notes: MovedNotes | null;
+  /** The notes could not be moved (the library refused or failed): they all stay on the earlier version. */
+  notesFailed: boolean;
 }
 
 /** Saves the PDF made from `article` as a reading. Rejects when it could not be saved; nothing is left half saved. */
@@ -55,11 +63,24 @@ export async function savePageAsReading(article: Article, pdf: Uint8Array, o: { 
     await save.start();
     // Known already: the same words, saved from another link (a stamped copy, identity rule 2). That reading opens.
     const known = save.documentId();
-    if (known !== null) return { kind: 'already', documentId: known, warning: null };
+    if (known !== null) return { kind: 'already', documentId: known, warning: null, notes: null, notesFailed: false };
     await save.requestSave();
     const id = save.documentId();
     if (id === null) throw new Error('not-saved: the library did not save the page');
-    return { kind: 'saved', documentId: id, warning: save.saveWarning };
+    // R103: a newer version of the page. The owner's marks and notes move to it, re-anchored on this PDF's text, which is open
+    // here now. If the move fails, nothing moved (one transaction): the notes are all still on the earlier version.
+    let notes: MovedNotes | null = null;
+    let notesFailed = false;
+    if (o.earlier !== null) {
+      try {
+        const text = { pageText: createPageTextProvider(deps.backend, open.doc), pages: open.pages };
+        const ctx = createAnchorContext(text, createDocumentFigures({ backend: deps.backend, doc: open.doc, pages: open.pages }));
+        notes = await moveNotesToNewerVersion(deps.store, o.earlier, id, ctx);
+      } catch {
+        notesFailed = true;
+      }
+    }
+    return { kind: 'saved', documentId: id, warning: save.saveWarning, notes, notesFailed };
   } finally {
     save.dispose();
     void deps.backend.close(open.doc).catch(() => {});

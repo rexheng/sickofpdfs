@@ -12,6 +12,7 @@ import { openBlobStore } from '../store/blob-store';
 import { connectStore } from '../store/client';
 import { type PageJob, takeJob } from './job';
 import { makePdf, readPictures } from './make-pdf';
+import { movedNotesWords } from './move-notes';
 import { pdfFileName } from './plan';
 import { savePageAsReading } from './save-page';
 import { UnsupportedScriptError } from './typeset';
@@ -22,8 +23,8 @@ type Step =
   | { kind: 'pictures'; done: number; total: number }
   | { kind: 'making' }
   | { kind: 'saving' }
-  /** Saved, with the D9 warning: the reading opens when the owner says. */
-  | { kind: 'warned'; open: string; warning: string }
+  /** Saved, with something to say first (the D9 warning; notes that couldn't be placed or moved): it opens when the owner says. */
+  | { kind: 'warned'; open: string; warning: string | null; notes: string[] }
   | { kind: 'failed'; message: string };
 
 /** The viewer address of a reading (its saved copy), with "Back to page" going to the page it came from. */
@@ -59,7 +60,8 @@ export function SavePage() {
         try {
           const saved = await savePageAsReading(j.article, pdf.bytes, { textHash: j.textHash, earlier: j.earlier }, { store, blobs, backend, now: () => Date.now() });
           const open = readingUrl(j, saved.documentId);
-          if (saved.warning !== null) setStep({ kind: 'warned', open, warning: saved.warning });
+          const notes = movedNotesWords(saved.notes, saved.notesFailed);
+          if (saved.warning !== null || notes.length > 0) setStep({ kind: 'warned', open, warning: saved.warning, notes });
           else location.replace(open);
         } finally {
           store.close();
@@ -113,10 +115,22 @@ function Status({ step, onClose }: { step: Step; onClose(this: void): void }) {
           <Icon name="library_add_check" size={20} />
           <span>Saved to your library.</span>
         </p>
-        <p className={styles.warning}>
-          <Icon name="warning" size={20} />
-          <span>{step.warning}</span>
-        </p>
+        {step.warning !== null && (
+          <p className={styles.warning}>
+            <Icon name="warning" size={20} />
+            <span>{step.warning}</span>
+          </p>
+        )}
+        {step.notes.length > 0 && (
+          <div className={styles.notes}>
+            <Icon name="comment" size={20} />
+            <div>
+              {step.notes.map((line) => (
+                <p key={line}>{line}</p>
+              ))}
+            </div>
+          </div>
+        )}
         <div className={styles.actions}>
           <TextButton label="Open it" variant="tonal" onClick={() => location.replace(step.open)} />
         </div>

@@ -79,6 +79,23 @@
   color: var(--gm3-sys-color-error);
 }
 
+/* R103: what happened to the owner's notes when a newer version of the page was saved. */
+.notes {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  margin: 0 0 var(--space-3);
+  font: var(--type-body);
+}
+
+.notes > :first-child {
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.notes p {
+  margin: 0 0 var(--space-2);
+}
+
 .actions {
   display: flex;
   justify-content: flex-end;

@@ -76,7 +76,7 @@ export function AboutDetails({ documentId, about, tags, say, onOpenRelated, cont
   // others. It says so, rather than promising related readings that will never come.
   const keptOut = !doc.indexText || (Array.isArray(doc.saveReasons) && doc.saveReasons.includes(SAVED_THOUGH_NOT_LEARNING));
   // R103: the earlier version of a web page has its own row under "Where it came from", so it is not listed again here.
-  const relatedShown = related?.filter((r) => r.id !== details.earlier?.id) ?? null;
+  const relatedShown = related?.filter((r) => r.id !== details.earlier?.id && r.id !== details.notesMovedTo?.id) ?? null;
 
   return (
     <div className={styles.details}>
@@ -120,12 +120,25 @@ export function AboutDetails({ documentId, about, tags, say, onOpenRelated, cont
       <Section title="Where it came from">
         {locations.length === 0 ? (
           details.webPage ? (
-            <p className={styles.note}>Saved from a web page. A newer version of it is in your library now.</p>
+            // When the notes moved, the line below says so, with the newer version under it.
+            details.notesMovedTo === null && <p className={styles.note}>Saved from a web page. A newer version of it is in your library now.</p>
           ) : (
             <p className={styles.note}>It was added from a file. No link was kept.</p>
           )
         ) : (
           <Places locations={locations} webPage={details.webPage} />
+        )}
+        {details.notesMovedTo !== null && (
+          <div className={styles.earlier}>
+            <p className={styles.movedNote}>Your notes moved to the newer version.</p>
+            <button type="button" className={styles.relatedRow} onClick={() => details.notesMovedTo !== null && onOpenRelated(details.notesMovedTo)} title={`Open the newer version, saved ${formatWhen(details.notesMovedTo.savedAt)}`}>
+              <FileTypeIcon kind="pdf" size={24} />
+              <span className={styles.relatedText}>
+                <span className={styles.relatedTitle}>{details.notesMovedTo.title}</span>
+                <span className={styles.relatedMeta}>Newer version · saved {formatWhen(details.notesMovedTo.savedAt)}</span>
+              </span>
+            </button>
+          </div>
         )}
         {details.earlier !== null && (
           <div className={styles.earlier}>

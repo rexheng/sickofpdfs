@@ -44,6 +44,7 @@
  *   reports every change of `state` through `subscribe`.
  */
 
+import { placeOf } from './place-of';
 import {
   planStyle as corePlanStyle,
   resolveAnchor as coreResolveAnchor,
@@ -230,24 +231,6 @@ function cmpPos(a: CharPos, b: CharPos): number {
   return a.page !== b.page ? a.page - b.page : a.index - b.index;
 }
 
-/** The page a row belongs to and where it sits on it (0 to 1), for ordering. */
-function placeOf(a: Anchor): { pageIndex: number | null; sortKey: number | null } {
-  switch (a.kind) {
-    case 'text': {
-      const onStart = a.rects.find((r) => r.page === a.start.page) ?? a.rects[0];
-      return { pageIndex: a.start.page, sortKey: onStart?.rects[0]?.[1] ?? 0 };
-    }
-    case 'area':
-    case 'figure':
-      return { pageIndex: a.page, sortKey: a.rect[1] };
-    case 'point':
-      return { pageIndex: a.page, sortKey: a.point[1] };
-    case 'page':
-      return { pageIndex: a.page, sortKey: 0 };
-    case 'document':
-      return { pageIndex: null, sortKey: null };
-  }
-}
 
 /**
  * Turns the selection's ranges into continuous runs. A run is one range, or ranges on neighbouring pages (a
