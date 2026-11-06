@@ -54,7 +54,7 @@ export function replyErrorOf(e: unknown, o: { stopped?: boolean } = {}): ReplyEr
   if (e instanceof ClaudeCallError) {
     if (e.kind === 'abort') return replyError('cancelled');
     if (e.kind === 'connection') return replyError('network');
-    if (e.status === 404 || e.type === 'not_found_error') return { code: 'server', message: MODEL_GONE_MESSAGE };
+    if (e.status === 404 || e.type === 'not_found_error') return { code: 'no-model', message: MODEL_GONE_MESSAGE };
     if (e.status === 400 || e.type === 'invalid_request_error') return { code: 'server', message: BAD_REQUEST_MESSAGE };
     return replyErrorFromApi(e.type, e.status);
   }

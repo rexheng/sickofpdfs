@@ -55,6 +55,8 @@ const KEYS = {
 const DEFAULT_CONFIRM_OVER_USD = 0.25;
 /** How long a question waits for the PDF's save to land (a first note's keystroke starts it) before it gives up as "not saved". */
 const SAVE_WAIT_MS = 30_000;
+/** A moment for a save the note's first keystroke started to show as busy. */
+const SAVE_GRACE_MS = 200;
 
 const isRec = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -132,7 +134,7 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
   const history = createThreadHistory();
   const spend = createSpend();
   const embedder = createWorkerEmbedder();
-  let builder: { documentId: DocumentId; context: ContextBuilder } | null = null;
+  let builder: { documentId: DocumentId; saved: boolean; context: ContextBuilder } | null = null;
   const log = (e: unknown, where: string) => console.warn(`sickofpdfs: claude (${where})`, e instanceof Error ? e.message : String(e));
 
   const refreshKey = () => {
@@ -164,15 +166,27 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
     onError: log,
   });
 
-  /** The PDF's privacy, from what this tab knows now (the question waits for the save first, see `settle`). */
-  const privacyNow = (documentId: DocumentId | null): PrivateReason | null => {
-    if (incognito) return 'incognito';
-    if (session.state().mode !== 'stored' || documentId === null) return 'unsaved';
-    const f = flags.get(documentId);
-    if (f === undefined || f === null) return 'unsaved'; // not known to be in the library
-    if (!f.indexText) return 'no-text';
-    if (f.notLearning) return 'not-learning';
-    return null;
+  /**
+   * Whether Claude may read this PDF now (controller ruling, 6 Nov; spec "On a PDF that isn't in your library, Claude asks before any
+   * text is sent"):
+   * - saved, and not D9 or R102: yes;
+   * - not saved, and the filter was not sure (or is still checking): yes, but only after the owner says Send (`saved: false`);
+   * - judged not learning (the save question, its No, "Never save this file"), D9, R102, Incognito: never, with the reason.
+   */
+  const privacyNow = (documentId: DocumentId | null): { reason: PrivateReason | null; saved: boolean } => {
+    if (incognito) return { reason: 'incognito', saved: false };
+    const kind = host.save?.state.kind ?? null;
+    if (kind === 'saved' || (kind === null && session.state().mode === 'stored')) {
+      if (session.state().mode !== 'stored' || documentId === null) return { reason: 'unsaved', saved: false }; // forgotten in another tab
+      const f = flags.get(documentId);
+      if (f === undefined || f === null) return { reason: 'unsaved', saved: false }; // not known to be in the library
+      if (!f.indexText) return { reason: 'no-text', saved: true };
+      if (f.notLearning) return { reason: 'not-learning', saved: true };
+      return { reason: null, saved: true };
+    }
+    if (kind === 'unsure' || kind === 'checking') return { reason: null, saved: false };
+    if (kind === 'incognito') return { reason: 'incognito', saved: false };
+    return { reason: 'not-learning', saved: false }; // not-learning, asking, memory-only (the owner said No)
   };
 
   /** Reads the reading's row again (D9 and R102 are on it). */
@@ -188,19 +202,30 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
     }
   }
 
-  /** Waits for a save on its way (the first note's keystroke starts one), then says whether Claude may read this PDF. */
-  async function settle(threadId: ThreadId): Promise<{ reason: PrivateReason | null; documentId: DocumentId | null }> {
-    if (incognito) return { reason: 'incognito', documentId: null };
+  /** A save is on its way (the first note's keystroke starts one), or the save question is open: the answer is worth waiting for. */
+  const saving = (): boolean => {
+    const save = host.save;
+    if (!save) return session.state().mode === 'pending-save';
+    return save.busy === 'save' || save.state.kind === 'asking' || (save.state.kind === 'saved' && session.state().mode !== 'stored');
+  };
+
+  /** Waits for a save on its way, then says whether Claude may read this PDF, and whether it is in the library. */
+  async function settle(threadId: ThreadId): Promise<{ reason: PrivateReason | null; documentId: DocumentId | null; saved: boolean }> {
+    if (incognito) return { reason: 'incognito', documentId: null, saved: false };
+    await sleep(SAVE_GRACE_MS); // a note's first keystroke may have only just started the save
     const until = Date.now() + SAVE_WAIT_MS;
-    while (session.state().mode === 'pending-save' && Date.now() < until && !disposed) await sleep(150);
+    while (saving() && Date.now() < until && !disposed) await sleep(150);
     const thread = session.state().threads.find((t) => t.id === threadId) ?? null;
-    const documentId = session.state().mode === 'stored' ? (thread?.documentId ?? storedDocumentId()) : null;
-    if (documentId !== null) await readFlags(documentId);
-    return { reason: privacyNow(documentId), documentId };
+    // Before a save lands the rows carry the file's fingerprint as their document id (R67): the reply then stays in this tab.
+    const documentId = thread?.documentId ?? storedDocumentId();
+    if (documentId !== null && session.state().mode === 'stored') await readFlags(documentId);
+    const p = privacyNow(documentId);
+    return { reason: p.reason, documentId, saved: p.saved };
   }
 
-  const contextFor = (documentId: DocumentId): ContextBuilder => {
-    if (builder?.documentId === documentId) return builder.context;
+  /** The pack builder for this PDF. A PDF not in the library uses no library search and keeps no vectors in the library. */
+  const contextFor = (documentId: DocumentId, saved: boolean): ContextBuilder => {
+    if (builder?.documentId === documentId && builder.saved === saved) return builder.context;
     builder?.context.dispose();
     const context = createContextBuilder({
       documentId,
@@ -210,10 +235,10 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
       pageText: host.pageText,
       figures: host.figures,
       metadataTitle: host.opened.open.metadata.title,
-      store,
+      store: saved ? store : null,
       embedder,
     });
-    builder = { documentId, context };
+    builder = { documentId, saved, context };
     return context;
   };
 
@@ -255,9 +280,10 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
       running.set(o.replyId, { abort, threadId: o.threadId });
       if (o.preset) presets.set(o.replyId, o.preset);
       const documentId = s.documentId;
+      const saved = s.saved;
       const runner = createTurnRunner({
         client: createClaudeClient,
-        context: contextFor(documentId),
+        context: contextFor(documentId, saved),
         rows: {
           // The reply row is shown with a way back to this entry when the owner deletes it.
           begin: (b) => rows.begin({ ...b, onRemove: onRemoveFor(b.id) }),
@@ -268,7 +294,13 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
         settings: loadSettings,
         spend,
         confirm: (r) => (ui.confirm ? ui.confirm(r) : Promise.resolve(false)),
-        privacy: () => privacyNow(documentId),
+        // Asked again right before anything leaves (a Forget in another tab, "Never save this file" while the owner answered).
+        privacy: () => {
+          const now = privacyNow(documentId);
+          // A PDF that was not sure and got saved meanwhile is the same PDF the owner chose to send: its rows still carry the fingerprint.
+          if (!saved && now.reason === 'unsaved' && host.save?.state.kind === 'saved') return null;
+          return now.reason;
+        },
         comments: commentsOf,
         pageCount: host.pages.length,
         live: ui.live ?? null,
@@ -280,6 +312,7 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
         scope: o.preset === 'whole-document' ? 'whole-document' : 'passages',
         webSearch: settings?.webSearch ?? true,
         focus: anchorOf(thread),
+        saved,
         ...(o.preset ? { preset: o.preset } : {}),
         ...(o.skip ? { skip: o.skip } : {}),
       };
@@ -386,7 +419,7 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
       return estimate(pack, 'think-harder', model, { webSearch: settings?.webSearch === true && model.webSearchTool !== null }).usd;
     },
 
-    privacy: () => privacyNow(storedDocumentId()),
+    privacy: () => privacyNow(storedDocumentId()).reason,
     running: (id) => running.has(id),
 
     dispose() {

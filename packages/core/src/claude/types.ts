@@ -5,7 +5,7 @@ import type { Anchor } from '../model/anchor';
 export type ModelRole = 'default' | 'think-harder';
 export interface PageCitation { n: number; pageIndex: number; start: number; end: number; textSource: string; quote: string }
 export interface WebSource { n: number; url: string; title: string; citedText: string | null }
-export interface ReplyError { code: 'interrupted' | 'network' | 'no-key' | 'bad-key' | 'refused' | 'over-cap' | 'rate-limited' | 'server' | 'cancelled'; message: string /* plain words */ }
+export interface ReplyError { code: 'interrupted' | 'network' | 'no-key' | 'bad-key' | 'no-model' | 'refused' | 'over-cap' | 'rate-limited' | 'server' | 'cancelled'; message: string /* plain words */ }
 export interface ClaudeReplyMeta {
   kind: 'claude-reply'; v: 1;
   role: ModelRole | null;            // null when Claude wrote it through the connector
@@ -65,12 +65,14 @@ export type ClaudeStreamEvent =
 
 // ---- Plain words for every error the owner can see ----
 
-/** Plain, short sentences. The Settings button ("Open Settings") is added by the UI for `no-key`, `bad-key` and `over-cap`. */
+/** Plain, short sentences. The Settings button ("Open Settings") is added by the UI for `no-key`, `bad-key`, `no-model` and `over-cap`. */
 export const REPLY_ERROR_MESSAGES: Readonly<Record<ReplyError['code'], string>> = {
   'interrupted': 'This reply was cut off. Press Try again.',
   'network': "Couldn't reach Claude. Check your internet, then press Try again.",
   'no-key': 'Add your Claude key in Settings.',
   'bad-key': "That Claude key didn't work. Check it in Settings.",
+  // Slice D (controller ruling, 6 Nov): the chosen model has gone, or none is chosen. The card offers Open Settings and Try again.
+  'no-model': 'Your chosen model is no longer available. Pick one in Settings.',
   'refused': 'Claude declined to answer this.',
   'over-cap': "You've reached this month's Claude spending limit. Raise it in Settings to ask more.",
   'rate-limited': 'Claude is busy right now. Wait a moment, then press Try again.',

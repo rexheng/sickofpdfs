@@ -116,7 +116,7 @@ export interface PageFigure extends DetectedFigure /* Task 5: kind, rect (PdfRec
 export type ModelRole = 'default' | 'think-harder';
 export interface PageCitation { n: number; pageIndex: number; start: number; end: number; textSource: string; quote: string }
 export interface WebSource { n: number; url: string; title: string; citedText: string | null }
-export interface ReplyError { code: 'interrupted' | 'network' | 'no-key' | 'bad-key' | 'refused' | 'over-cap' | 'rate-limited' | 'server' | 'cancelled'; message: string /* plain words */ }
+export interface ReplyError { code: 'interrupted' | 'network' | 'no-key' | 'bad-key' | 'no-model' | 'refused' | 'over-cap' | 'rate-limited' | 'server' | 'cancelled'; message: string /* plain words */ }   // 'no-model' (slice D, 6 Nov): the chosen model has gone or none is chosen; the card offers Open Settings and Try again
 export interface ClaudeReplyMeta {
   kind: 'claude-reply'; v: 1;
   role: ModelRole | null;            // null when Claude wrote it through the connector
@@ -454,7 +454,7 @@ export interface ClaudeTurnRunner { run(req: ClaudeTurnRequest, onEvent: (e: Cla
   - The key never enters the store worker, the offscreen document, a message to the service worker, backups, logs, error text or test hooks.
   - The network gate allows `api.anthropic.com` only during a request.
 - **Added by slice D (6 Nov).**
-  - **Privacy, owner rule (p4r2 brief).** Nothing is sent for a PDF that is not saved (memory-only, or a save not landed in 30 s), for a reading saved without searchable text (D9, `indexText` false) or for a reading saved against "not learning" (R102, save reason `not-learning:saved-by-owner`). The entry sends nothing, writes no reply row, and says why in the viewer's note bar ("Claude only reads PDFs in your library…"). `decide` is therefore always called with `saved: true`; its `unsaved` ask is not reached. Incognito: nothing is sent either.
+  - **Privacy (controller ruling, 6 Nov; the spec is normative).** A PDF that is not saved and that the filter called "not sure" (or is still checking) is sent only after the owner says Send in the `unsaved` ask (`decide` with `saved: false`); its reply stays in the tab's memory. Never sent, with the reason in the viewer's note bar and no reply row: a PDF judged not learning (the save question, its No, "Never save this file"), a reading saved without searchable text (D9, `indexText` false), a reading saved against "not learning" (R102, save reason `not-learning:saved-by-owner`), and Incognito. `NotesHost.save` (optional) gives the entry the save state.
   - **The reply row in the card.** `AnnotationSession.holdReply(row, { onRemove })` and `releaseReply(id)` (optional members): the session shows a Claude reply this tab holds (pending, streaming, an error kept local) in `state().comments`, and never writes it; a sent copy from the store wins. Deleting it in the card calls `onRemove`, and the runner stops and discards the draft. The draft keeper never adopts a draft whose `author` is `claude`.
   - **`ClaudeReplyMeta` carries `modelName`** (the model's display name, from its `ModelChoice`) as an extra stored field, so the cost line keeps the name of the model that answered.
   - **The key header.** The client sends the key once, in `x-api-key` (SDK 1.3.0 would send `Authorization: Bearer`; the client removes that header), the same header Settings' key check uses.

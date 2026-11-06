@@ -36,7 +36,7 @@ export interface ClaudeReplyViewProps {
 type Meta = Partial<ClaudeReplyMeta> & { modelName?: string };
 
 /** Which buttons an error offers. A setting to fix comes first; Try again then runs the same reply again. */
-const SETTINGS_ERRORS = new Set<ReplyError['code']>(['no-key', 'bad-key', 'over-cap']);
+const SETTINGS_ERRORS = new Set<ReplyError['code']>(['no-key', 'bad-key', 'no-model', 'over-cap']);
 const NO_RETRY = new Set<ReplyError['code']>(['refused']);
 /** Not a fault, so not in red: Claude declined, or the owner stopped the reply. */
 const CALM = new Set<ReplyError['code']>(['refused', 'cancelled']);

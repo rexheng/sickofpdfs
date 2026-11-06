@@ -100,6 +100,8 @@ export interface NotesHost {
   readonly pages: readonly PageSize[];
   /** The page text everything reads (one cache for the document). */
   readonly pageText: PageTextProviderImpl;
+  /** Phase 4 (slice D): the PDF's library save (Task 30), so @Claude can tell a "not sure" PDF from one judged not learning. */
+  readonly save?: SaveController;
   /** Figure detection (S12): figures(pageIndex), dHash, peek, pageRendered. */
   readonly figures: FigureService;
   /** The view state: zoom, rotation, the page in view. */
@@ -583,6 +585,7 @@ export function createNotes(d: NotesDeps): Notes | null {
     doc,
     pages,
     pageText: d.pageText,
+    save: d.save,
     figures,
     view: d.view,
     pageList: d.pageList,

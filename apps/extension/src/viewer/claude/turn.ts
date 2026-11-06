@@ -33,7 +33,12 @@ export interface ClaudeTurnRunner {
 }
 
 /** A turn request with what the entry adds: a fixed question, and the reply Think harder asks again (left out of the turns). */
-export type TurnRequest = ClaudeTurnRequest & { preset?: 'explain-figure' | 'whole-document'; skip?: readonly CommentRow['id'][] };
+export type TurnRequest = ClaudeTurnRequest & {
+  preset?: 'explain-figure' | 'whole-document';
+  skip?: readonly CommentRow['id'][];
+  /** False for a PDF that is not in the library yet (the filter was not sure): nothing is sent before the owner says Send. Default true. */
+  saved?: boolean;
+};
 
 /** The owner's Claude settings (contract §6 settings keys), as they are when the question is asked. */
 export interface TurnSettings {
@@ -171,7 +176,7 @@ export function createTurnRunner(d: TurnDeps): ClaudeTurnRunner & TurnMemory {
       if ('error' in client) return await failEarly(replyError('no-key'));
       const settings = await d.settings();
       const model = settings.models[role];
-      if (!model) return await failEarly({ code: 'no-key', message: role === 'think-harder' ? 'Choose a Think harder model in Settings.' : 'Choose your Claude model in Settings.' });
+      if (!model) return await failEarly({ code: 'no-model', message: role === 'think-harder' ? 'Choose a Think harder model in Settings.' : 'Choose your Claude model in Settings.' });
       if (stopped()) return await failEarly(replyError('cancelled'));
       if (removed()) return await withdraw();
 
@@ -217,7 +222,7 @@ export function createTurnRunner(d: TurnDeps): ClaudeTurnRunner & TurnMemory {
         if (removed()) return await withdraw();
         const verdict = decide({
           estimateUsd: pack.estimate.usd, spentUsd: spent, capUsd: settings.capUsd, confirmOverUsd: settings.confirmOverUsd,
-          saved: true, scope, priceKnown, confirmed,
+          saved: req.saved !== false, scope, priceKnown, confirmed,
         });
         if (verdict === 'send') break;
         if ('block' in verdict) return await failEarly(replyError('over-cap'), { figureLabels });
@@ -332,7 +337,7 @@ export function createTurnRunner(d: TurnDeps): ClaudeTurnRunner & TurnMemory {
       // Anything unexpected (the pack could not be built, the store went away): nothing more is sent, and the reply says so.
       report(e, 'turn');
       if (removed()) return await withdraw();
-      const error = e instanceof Error && /model/i.test(e.message) ? { code: 'server' as const, message: MODEL_GONE_MESSAGE } : replyError('server');
+      const error = e instanceof Error && /model/i.test(e.message) ? { code: 'no-model' as const, message: MODEL_GONE_MESSAGE } : replyError('server');
       return await failEarly(error);
     }
   }

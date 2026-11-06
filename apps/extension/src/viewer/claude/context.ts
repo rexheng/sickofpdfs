@@ -293,13 +293,14 @@ export function storeRankPages(store: Pick<StoreClient, 'search'>, documentId: D
 
 export function createContextBuilder(h: ContextHost): ContextBuilder {
   const pageCount = h.pages.length;
-  const text = (i: number) => h.pageText.text(i);
+  // A page whose text the engine cannot read gives no text, never a failed question (the rest of the PDF still answers).
+  const text = (i: number) => h.pageText.text(i).catch(() => '');
   const textSource = (i: number) => h.pageText.source(i);
 
   // Pages ranked in memory, built once from every page's text when the library cannot rank them.
   let memoryRank: Promise<(q: string, n: number) => Promise<{ pageIndex: number; rank: number }[]>> | null = null;
   const inMemory = (q: string, n: number) =>
-    (memoryRank ??= Promise.all(Array.from({ length: Math.min(pageCount, 800) }, (_, i) => text(i).catch(() => ''))).then(inMemoryRankPages)).then((rank) => rank(q, n));
+    (memoryRank ??= Promise.all(Array.from({ length: Math.min(pageCount, 800) }, (_, i) => text(i))).then(inMemoryRankPages)).then((rank) => rank(q, n));
 
   const fromStore = h.store ? storeRankPages(h.store, h.documentId, pageCount) : null;
   const rankPages = async (q: string, n: number) => {
@@ -336,11 +337,20 @@ export function createContextBuilder(h: ContextHost): ContextBuilder {
       throw e;
     }));
 
+  // The page text the figure packs and the client tools read: the same provider, with a page that cannot be read giving no text.
+  const pt = h.pageText;
+  const safeText: PageTextProvider = {
+    source: (i) => pt.source(i),
+    text,
+    glyphs: (i) => pt.glyphs(i),
+    rects: (i, start, count) => pt.rects(i, start, count),
+    search: (i, q, o) => pt.search(i, q, o),
+  };
   const figureDeps: FigurePackDeps = {
     be: h.backend,
     doc: h.doc,
     pages: h.pages,
-    text: h.pageText,
+    text: safeText,
     figures: (i) => h.figures.figures(i),
     documentId: h.documentId,
   };
