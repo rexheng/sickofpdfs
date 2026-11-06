@@ -27,7 +27,7 @@
 /*
  * A page is white from the moment it is laid out, as in Chrome's viewer: its preview, then its full render, fill it in.
  * (Drive's grey placeholder, --viewer-page-placeholder, read as a dark screen on open and after a long jump; the rail's
- * thumbnails keep it.)
+ * thumbnails are white until drawn too.)
  */
 .page {
   position: absolute;

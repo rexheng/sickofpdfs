@@ -49,7 +49,8 @@
   overflow: hidden;
   border: 0;
   border-radius: var(--shape-thumb);
-  background-color: var(--viewer-page-placeholder);
+  /* White until its picture is drawn, as the pages are (TB6: the grey placeholder read as a dark, broken tile). */
+  background-color: var(--viewer-page);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
