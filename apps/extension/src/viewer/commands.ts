@@ -36,16 +36,29 @@ export type ViewerCommandId =
   | 'file.about' // Phase 3 (S18, R92): About this PDF, viewer/about/
   | 'file.startOver' // TB5: "Start from page 1" while a resume stands (history/use-reading-history.ts)
   | 'view.fitWidth' | 'view.fitPage' | 'view.zoomIn' | 'view.zoomOut' | 'view.rotateCw' | 'view.rotateCcw'
-  | 'view.twoPage' | 'view.presentation' | 'view.wordStarts' | 'view.caretBrowsing' | 'view.toggleRail'
+  | 'view.twoPage' | 'view.presentation' | 'view.wordStarts' | WordStartsChoiceId | 'view.caretBrowsing' | 'view.toggleRail'
   | 'tools.find' | 'tools.goToPage' | 'tools.search' | 'help.shortcuts' | 'help.about'
   // Phase 2 (plan section 7). S13 runs the marks, the menu and undo; S14 the comment commands; S15 the notes ones;
   // S16 the figure and area ones. P4 adds 'claude.ask' and 'claude.explainFigure'.
   | 'marks.highlight' | 'marks.underline' | 'marks.bold' | 'marks.strike' | 'marks.comment' | 'marks.documentNote' | 'marks.menu'
   | 'edit.undo' | 'edit.redo' | 'notes.next' | 'notes.previous' | 'notes.panel' | 'figures.copyImage' | 'tools.area';
 
+/** View → Bold word starts: Off, Light, Medium or Strong (R90c), one radio group. */
+export type WordStartsChoiceId = 'view.wordStarts.off' | 'view.wordStarts.light' | 'view.wordStarts.medium' | 'view.wordStarts.strong';
+
+/** What each choice turns Bold word starts to. */
+export const WORD_STARTS_CHOICES: readonly [WordStartsChoiceId, 'off' | 'light' | 'medium' | 'strong'][] = [
+  ['view.wordStarts.off', 'off'],
+  ['view.wordStarts.light', 'light'],
+  ['view.wordStarts.medium', 'medium'],
+  ['view.wordStarts.strong', 'strong'],
+];
+
 export interface ViewerCommand {
   id: ViewerCommandId;
   label: string;
+  /** A shorter label for its menu row, where a heading already names it (a radio group's choices). */
+  menuLabel?: string;
   icon?: IconName;
   /** The first is the one menus and tooltips show; the shortcut sheet shows them all. */
   keys: KeyCombo[];
@@ -123,8 +136,11 @@ export interface ViewerContext {
   pageList: RefObject<PageListApi | null>;
   /** The marks as the screen draws them, for Print (S17). Null in Incognito and while there are no notes. */
   printMarks?: PrintMarks | null;
-  /** The bold word starts switch (R90): remembered for every PDF, the same in every tab (word-starts.ts). */
-  wordStarts?: { on(): boolean; toggle(): void };
+  /**
+   * The bold word starts switch (R90) and its strength (R90c): remembered for every PDF, the same in every tab
+   * (word-starts.ts). `level` is 'off' or the strength; `choose` sets both.
+   */
+  wordStarts?: { on(): boolean; toggle(): void; level(): 'off' | 'light' | 'medium' | 'strong'; choose(level: 'off' | 'light' | 'medium' | 'strong'): void };
   /** The caret browsing switch (R93): remembered for every PDF, the same in every tab (caret-browsing.ts). */
   caretBrowsing?: { on(): boolean; toggle(): void };
   ui: ViewerUi;
@@ -134,6 +150,7 @@ export type ViewerCommands = Map<ViewerCommandId, ViewerCommand>;
 
 interface CommandSpec {
   label: string;
+  menuLabel?: string;
   icon: IconName;
   keys: KeyCombo[];
 }
@@ -166,6 +183,11 @@ export const SPECS: [ViewerCommandId, CommandSpec][] = [
   // R90: a reading aid. Alt+Shift+S: no Chrome shortcut on Windows or Linux uses it (Chrome's Alt+Shift letters are A, B,
   // C, I, N, P, R, T, W, X and Z), it is not Ctrl+Alt (AltGr), and like every Alt combo it never fires while typing.
   ['view.wordStarts', { label: 'Bold word starts', icon: 'format_bold', keys: ['Alt+Shift+S'] }],
+  // R90c: the strength, straight from the View menu (the same keys as Settings → Reading). No keys of their own.
+  ['view.wordStarts.off', { label: 'Bold word starts: Off', menuLabel: 'Off', icon: 'format_bold', keys: [] }],
+  ['view.wordStarts.light', { label: 'Bold word starts: Light', menuLabel: 'Light', icon: 'format_bold', keys: [] }],
+  ['view.wordStarts.medium', { label: 'Bold word starts: Medium', menuLabel: 'Medium', icon: 'format_bold', keys: [] }],
+  ['view.wordStarts.strong', { label: 'Bold word starts: Strong', menuLabel: 'Strong', icon: 'format_bold', keys: [] }],
   // R93: F7, Chrome's own key for caret browsing. The page gets it before Chrome, and taking it stops Chrome's question.
   ['view.caretBrowsing', { label: 'Caret browsing', icon: 'text_select_start', keys: ['F7'] }],
   ['view.toggleRail', { label: 'Thumbnails and outline', icon: 'photo_library', keys: ['F4'] }],
@@ -291,6 +313,11 @@ function wordStartsCommand(w: NonNullable<ViewerContext['wordStarts']>): Behavio
   return { run: () => w.toggle(), enabled: always, checked: () => w.on() };
 }
 
+/** View → Bold word starts: Off, Light, Medium, Strong (R90c), the chosen one ticked. */
+function wordStartsChoices(w: NonNullable<ViewerContext['wordStarts']>): Partial<Record<WordStartsChoiceId, Behaviour>> {
+  return Object.fromEntries(WORD_STARTS_CHOICES.map(([id, level]) => [id, { run: () => w.choose(level), enabled: always, checked: () => w.level() === level }]));
+}
+
 /** Caret browsing (R93): a switch with a check mark, for every PDF and every tab. */
 function caretBrowsingCommand(c: NonNullable<ViewerContext['caretBrowsing']>): Behaviour {
   return { run: () => c.toggle(), enabled: always, checked: () => c.on() };
@@ -335,7 +362,7 @@ export function createCommands(ctx: ViewerContext, extra: Partial<Record<ViewerC
     'view.rotateCcw': { run: () => turn(-1), enabled: always },
     'view.twoPage': { run: () => toggleTwoPage(ctx.store), enabled: always, checked: () => ctx.store.get().spread === 'two-page' },
     'view.presentation': { run: () => void enterPresentation(ctx).catch(() => {}), enabled: () => ctx.store.get().presenting === null },
-    ...(ctx.wordStarts !== undefined ? { 'view.wordStarts': wordStartsCommand(ctx.wordStarts) } : {}),
+    ...(ctx.wordStarts !== undefined ? { 'view.wordStarts': wordStartsCommand(ctx.wordStarts), ...wordStartsChoices(ctx.wordStarts) } : {}),
     ...(ctx.caretBrowsing !== undefined ? { 'view.caretBrowsing': caretBrowsingCommand(ctx.caretBrowsing) } : {}),
     'view.toggleRail': { run: () => ctx.store.set({ railOpen: !ctx.store.get().railOpen }), enabled: always, checked: () => ctx.store.get().railOpen },
     'tools.find': { run: () => ctx.openFind?.(), enabled: () => ctx.openFind !== undefined },
@@ -349,7 +376,7 @@ export function createCommands(ctx: ViewerContext, extra: Partial<Record<ViewerC
 /** The commands that need an open document: while there is none, they are greyed out and say why. */
 const DOCUMENT_COMMANDS: ViewerCommandId[] = [
   'file.download', 'file.print', 'file.saveToLibrary', 'view.fitWidth', 'view.fitPage', 'view.zoomIn', 'view.zoomOut',
-  'view.rotateCw', 'view.rotateCcw', 'view.twoPage', 'view.presentation', 'view.wordStarts', 'view.caretBrowsing', 'view.toggleRail', 'tools.find',
+  'view.rotateCw', 'view.rotateCcw', 'view.twoPage', 'view.presentation', 'view.wordStarts', ...WORD_STARTS_CHOICES.map(([id]) => id), 'view.caretBrowsing', 'view.toggleRail', 'tools.find',
   'tools.goToPage',
 ];
 

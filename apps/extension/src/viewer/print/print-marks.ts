@@ -180,8 +180,9 @@ export function createMarkPainter(d: MarkPainterDeps): MarkPainter {
   }
 
   /**
-   * Bold: each range's glyphs, one range at a time (dropped once painted), as the screen draws them (R90b): synthetic
-   * bold on the picture's own pixel grid, blended with darken over the picture, at the print's resolution.
+   * Bold: each range's glyphs, one range at a time (dropped once painted), as the screen draws them (R90b, R90c):
+   * synthetic bold on the picture's own pixel grid, blended with darken over the picture (lighten for light text), at
+   * the print's resolution.
    */
   async function paintBold(context: OffscreenCanvasRenderingContext2D, index: number, page: PageSize, ranges: readonly BoldRange[], k: number, size: { width: number; height: number }): Promise<void> {
     const { matrix } = displayMatrix(page, 0);
@@ -197,11 +198,14 @@ export function createMarkPainter(d: MarkPainterDeps): MarkPainter {
       paintStrong(context, strong);
       context.restore();
       if (drawn !== null && drawn.glyphs.length > 0) {
-        context.save();
-        context.setTransform(1, 0, 0, 1, 0, 0);
-        context.globalCompositeOperation = 'darken';
-        paintBoldGlyphs(context, drawn.glyphs, device);
-        context.restore();
+        // Dark text's bold with darken; light text's (white on a band) with lighten, which darken cannot widen (R90c).
+        for (const tone of ['dark', 'light'] as const) {
+          context.save();
+          context.setTransform(1, 0, 0, 1, 0, 0);
+          context.globalCompositeOperation = tone === 'dark' ? 'darken' : 'lighten';
+          paintBoldGlyphs(context, drawn.glyphs, device, { tone });
+          context.restore();
+        }
       }
     }
   }

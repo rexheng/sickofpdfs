@@ -5,8 +5,15 @@ import type { ViewerCommandId, ViewerCommands } from '../commands';
 
 const SEPARATOR = '-';
 
+/** A radio group: its heading (with the shortcut of `keysOf`, if any) and its choices, each a command with a check. */
+interface RadioEntry {
+  heading: string;
+  keysOf: ViewerCommandId;
+  choices: ViewerCommandId[];
+}
+
 /** Each menu's commands, with a separator between groups (Drive's dark viewer menus, 02 section 4.10). */
-const LAYOUT: { id: string; label: string; items: (ViewerCommandId | typeof SEPARATOR)[] }[] = [
+const LAYOUT: { id: string; label: string; items: (ViewerCommandId | typeof SEPARATOR | RadioEntry)[] }[] = [
   { id: 'file', label: 'File', items: ['file.startOver', SEPARATOR, 'file.openInChrome', 'file.openOriginal', SEPARATOR, 'file.download', 'file.copyLink', SEPARATOR, 'file.about', 'file.print', SEPARATOR, 'file.saveToLibrary', 'file.forget', 'file.reportDecision'] },
   {
     id: 'view',
@@ -15,7 +22,9 @@ const LAYOUT: { id: string; label: string; items: (ViewerCommandId | typeof SEPA
       'view.fitWidth', 'view.fitPage', 'view.zoomIn', 'view.zoomOut', SEPARATOR,
       'view.rotateCw', 'view.rotateCcw', SEPARATOR,
       'view.twoPage', 'view.presentation', SEPARATOR,
-      'view.wordStarts', 'view.caretBrowsing', SEPARATOR,
+      // R90c: Bold word starts offers Off, Light, Medium and Strong directly; Alt+Shift+S turns it on and off.
+      { heading: 'Bold word starts', keysOf: 'view.wordStarts', choices: ['view.wordStarts.off', 'view.wordStarts.light', 'view.wordStarts.medium', 'view.wordStarts.strong'] },
+      'view.caretBrowsing', SEPARATOR,
       'notes.panel', // Shift+F4, with a tick while it is open (TB2/TB4 critics)
       'view.toggleRail',
     ],
@@ -35,6 +44,29 @@ export function buildMenus(cmds: ViewerCommands): MenuDef[] {
     for (const entry of menu.items) {
       if (entry === SEPARATOR) {
         if (items.length > 0 && items.at(-1)?.kind !== 'separator') items.push({ kind: 'separator' });
+        continue;
+      }
+      if (typeof entry !== 'string') {
+        const owner = cmds.get(entry.keysOf);
+        const choices = entry.choices.flatMap((id) => {
+          const c = cmds.get(id);
+          return c !== undefined && c.built ? [c] : [];
+        });
+        if (owner === undefined || !owner.built || choices.length === 0) continue;
+        items.push({ kind: 'heading', id: `menu-heading-${entry.keysOf}`, label: entry.heading, ...(owner.keys[0] !== undefined ? { shortcut: formatCombo(owner.keys[0]) } : {}) });
+        for (const c of choices) {
+          items.push({
+            kind: 'item',
+            id: c.id,
+            label: c.menuLabel ?? c.label,
+            radio: entry.keysOf,
+            checked: c.checked?.() === true,
+            disabled: !c.enabled(),
+            onSelect: () => {
+              if (c.enabled()) c.run();
+            },
+          });
+        }
         continue;
       }
       const cmd = cmds.get(entry);

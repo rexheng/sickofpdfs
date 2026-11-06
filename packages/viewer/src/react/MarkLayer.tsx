@@ -21,6 +21,7 @@ import { cssPerPoint } from '../layout/page-space';
 import { PT_TO_CSS } from '../layout/zoom';
 import { BoldLayer, type BoldLayerProps, type BoldRange } from '../marks/BoldLayer';
 import { type Box, dottedUnderlinePath, highlightPath, normToCss, type PathOptions, strikePath, underlinePath } from '../marks/geometry';
+import type { BoldLook } from './BoldCanvas';
 import type { PageLayerContext } from './PageView';
 
 /** 'passage': the open comment's words when no highlight is under them (a neutral wash). */
@@ -63,8 +64,8 @@ export interface MarkLayerProps {
   page: PageSize;
   /** What BoldLayer needs to read glyph outlines. Without it bold is not drawn. */
   bold?: Pick<BoldLayerProps, 'backend' | 'doc' | 'text'>;
-  /** BoldLayer's gain: while bold word starts are on, a bold mark takes their weight when it is heavier (R90). */
-  boldGain?: number;
+  /** BoldLayer's look: while bold word starts are on, a bold mark takes their weight when it is heavier (R90). */
+  boldLook?: BoldLook;
 }
 
 /** Underline and strikethrough at 100% zoom, CSS px (the token --sop-mark-line-w), and the dotted underline's dots. */
@@ -142,7 +143,7 @@ export function markPaths(items: readonly MarkLayerItem[], o: { page: PageSize; 
 }
 
 /** One page's marks. See the file comment. */
-export const MarkLayer = memo(function MarkLayer({ source, box, ctx, page, bold, boldGain }: MarkLayerProps): JSX.Element {
+export const MarkLayer = memo(function MarkLayer({ source, box, ctx, page, bold, boldLook }: MarkLayerProps): JSX.Element {
   const index = box.index;
   const model = useSyncExternalStore(source.subscribe, () => source.page(index));
   const maskId = `sop-mark-focus-${useId().replace(/[^a-zA-Z0-9_-]/gu, '')}`;
@@ -194,7 +195,7 @@ export const MarkLayer = memo(function MarkLayer({ source, box, ctx, page, bold,
           viewRotation={(((rotation - page.rotation) % 360) + 360) % 360 as PageSize['rotation']}
           ranges={model.bold}
           ctx={ctx}
-          {...(boldGain !== undefined ? { gain: boldGain } : {})}
+          {...(boldLook !== undefined ? { look: boldLook } : {})}
           onDrawn={() => source.drawn?.(index, 'bold')}
         />
       )}

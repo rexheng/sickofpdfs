@@ -74,6 +74,17 @@
   opacity: var(--sop-disabled-content);
 }
 
+/* The name of a radio group (View → Bold word starts): a quiet row, not a choice. */
+.heading {
+  color: var(--gm3-sys-color-on-surface-variant);
+  cursor: default;
+}
+
+/* A radio group's choices, under their heading: their labels 16 px further in, the chosen one ticked. */
+.choice .label {
+  padding-inline-start: var(--space-4);
+}
+
 /* The current choice in a short list of labels (the zoom level now): primary, with a tick before it. */
 .selected .label {
   color: var(--gm3-sys-color-primary);

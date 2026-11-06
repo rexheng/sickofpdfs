@@ -260,6 +260,10 @@ export interface GlyphPlacement {
    * document's own bold face of the family, a typical regular-to-bold gain, or the small gain of a face already bold.
    */
   bold: { x: number; top: number; bottom: number; stem: number; from: 'matched' | 'typical' | 'already-bold' };
+  /** Set when its face is italic (by its name). */
+  italic?: true;
+  /** Set when its face is a maths face (CMMI, CMSY, Symbol, STIX, "…Math…"): bold word starts leave it alone (R90c). */
+  maths?: true;
 }
 
 /** getGlyphShapes: each distinct outline once, and the glyphs that use them. */

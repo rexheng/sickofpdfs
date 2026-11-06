@@ -38,6 +38,8 @@ export interface FaceStyle {
   bold: boolean;
   /** A Black, Heavy or Extra face (by its name: foundries' weights differ): bold, but never another face's matched bold. */
   heavy: boolean;
+  /** A maths face (MATHS_FACE): bold word starts leave its glyphs alone (R90c). */
+  maths: boolean;
 }
 
 /** Computer Modern and the EC fonts: the bold of each roman, italic and slanted face, by name. */
@@ -60,6 +62,12 @@ const CM_FACES: [RegExp, string, boolean, boolean][] = [
 const BOLD_WORDS = /bold|black|heavy|semi|demi|extra|ultra|medi|^bd$|-bd|bx|blk/;
 const HEAVY_WORDS = /black|heavy|extra|ultra|blk/;
 const ITALIC_WORDS = /ital|oblique|obl|slant|kursiv|^it$|it$/;
+/**
+ * Maths faces, by name (R90c): TeX's CMMI, CMSY, CMEX and their bold, the AMS MSAM and MSBM, Symbol, STIX, and any
+ * face with "math" in its name (Cambria Math, the Latin Modern and TeX Gyre maths faces). Bold word starts never
+ * embolden their glyphs: a maths symbol is not the start of a word.
+ */
+const MATHS_FACE = /^(cmmi|cmmib|cmsy|cmbsy|cmex|msam|msbm|symbol|stix)|math/;
 
 /**
  * A face's family and style from its PostScript name (FPDFFont_GetBaseFontName) and PDFium's weight:
@@ -69,7 +77,8 @@ const ITALIC_WORDS = /ital|oblique|obl|slant|kursiv|^it$|it$/;
  */
 export function faceStyle(baseName: string, weight = 0): FaceStyle {
   const name = baseName.replace(/^[A-Z]{6}\+/, '').toLowerCase();
-  for (const [re, family, italic, bold] of CM_FACES) if (re.test(name)) return { family, italic, bold: bold || weight >= BOLD_FONT_WEIGHT, heavy: false };
+  const maths = MATHS_FACE.test(name);
+  for (const [re, family, italic, bold] of CM_FACES) if (re.test(name)) return { family, italic, bold: bold || weight >= BOLD_FONT_WEIGHT, heavy: false, maths };
   const cut = name.search(/[-,]/);
   let family = cut < 0 ? name : name.slice(0, cut);
   let style = cut < 0 ? '' : name.slice(cut + 1);
@@ -83,7 +92,7 @@ export function faceStyle(baseName: string, weight = 0): FaceStyle {
   }
   family = family.replace(/(mt|ps)$/, '').replace(/(mt|ps)$/, '');
   const heavy = HEAVY_WORDS.test(style);
-  return { family, italic: ITALIC_WORDS.test(style), bold: BOLD_WORDS.test(style) || weight >= BOLD_FONT_WEIGHT, heavy };
+  return { family, italic: ITALIC_WORDS.test(style), bold: BOLD_WORDS.test(style) || weight >= BOLD_FONT_WEIGHT, heavy, maths };
 }
 
 /** A face as measured: its style, PDFium's weight, and its letters' measures (stemMeasures, ems). */
@@ -114,6 +123,11 @@ export class BoldFaces {
 
   has(name: string): boolean {
     return this.faces.has(name);
+  }
+
+  /** The style of a face added before (faceStyle), if any. */
+  styleOf(name: string): FaceStyle | undefined {
+    return this.faces.get(name)?.style;
   }
 
   add(name: string, face: FaceMeasures): void {

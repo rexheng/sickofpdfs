@@ -68,9 +68,10 @@ export function boldLetterCount(letters: number): number {
 
 /**
  * The word starts of a page: one range a word, in char order. `chars` is the page's chars as PDFium has them, one
- * UTF-16 unit each, so `chars[i]` is char `i` (PdfBackend.getPageChars, or the glyphs' texts joined).
+ * UTF-16 unit each, so `chars[i]` is char `i` (PdfBackend.getPageChars, or the glyphs' texts joined). `singles`, if
+ * given, gets the start of each word of one letter (a maths letter set in a text font may be one: R90c).
  */
-export function wordStartRanges(chars: string): BoldRange[] {
+export function wordStartRanges(chars: string, singles?: Set<number>): BoldRange[] {
   const n = chars.length;
   // Per char: its kind. An astral char's high half is classified; its low half goes with it.
   const kinds = new Uint8Array(n);
@@ -124,6 +125,7 @@ export function wordStartRanges(chars: string): BoldRange[] {
     const end = i;
     const bold = boldLetterCount(letters);
     if (bold === 0) continue; // a pure number
+    if (letters === 1) singles?.add(start);
     // Through the bold-th letter, and the marks and silent chars that go with it (its accents, an astral letter's low half).
     let seen = 0;
     let k = start;

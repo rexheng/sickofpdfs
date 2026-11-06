@@ -22,7 +22,7 @@ export { MarkLayer, markPaths, type MarkLayerItem, type MarkLayerPage, type Mark
 export { BoldLayer, displayMatrix, drawBoldRange, STRONG_UNDERLINE_EM, type BoldLayerProps, type BoldRange, type BoldTextSource, type DrawnRange } from '../marks/BoldLayer';
 export { type BoldGlyph, boldGlyphs, paintBold } from '../marks/bold-painter';
 export { pageToDevice } from '../marks/synthetic-bold';
-export { BoldCanvas, useBoldCanvas } from './BoldCanvas';
+export { BoldCanvas, type BoldLook, PLAIN_LOOK, useBoldCanvas } from './BoldCanvas';
 export {
   WORD_STARTS_PERF_MARK,
   WordStartsController,

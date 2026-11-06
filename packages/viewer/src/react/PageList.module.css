@@ -65,12 +65,18 @@
  * never the glyph's edge darkened a second time. Under the layers (same z-index, earlier in the page), so marks and the
  * selection lie over it.
  */
-.under {
+.under,
+.underLight {
   position: absolute;
   inset: 0;
   z-index: 3;
   mix-blend-mode: darken;
   pointer-events: none;
+}
+
+/* Its twin for light text (white on a slide's band), which darken cannot make wider: blended with lighten (R90c). */
+.underLight {
+  mix-blend-mode: lighten;
 }
 
 /*

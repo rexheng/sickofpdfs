@@ -6,6 +6,7 @@
 // - Nothing about any PDF is stored. (They are view settings, so an Incognito tab may change the switch too, as Chrome's
 //   own settings can be changed there.)
 // - The drawing is @sop/viewer's WordStartsController and WordStartsLayer; App.tsx joins them to these.
+import type { BoldLook } from '@sop/viewer/react';
 import { useSyncExternalStore } from 'react';
 import { rememberedSwitch, useSwitch } from './remembered-switch';
 
@@ -31,17 +32,23 @@ export const WORD_STARTS_STRENGTH_KEY = 'view.boldWordStartsStrength';
 export type WordStartsStrength = 'light' | 'medium' | 'strong';
 
 /**
- * How much of a face's own regular-to-bold gain each strength draws (R90b's synthetic bold): medium is the face's own
- * bold. Light and strong were chosen by eye on crops at 100% and 200%: 0.7 and 1.35 looked almost like medium at 100%
- * (the ink a bold adds was 0.87 and 1.14 of medium's), 0.5 and 1.6 are three clear steps (0.66–0.76 and 1.21–1.34).
- * The counters stay open at every strength (bold-painter.ts caps the gain per glyph).
+ * How heavy each strength draws (R90c): the gain on each face's own regular-to-bold gain (R90b's synthetic bold), and
+ * the edge darkening (paintBold's `boost`). At 100% on a 1× screen the letters' gaps and counters leave little room to
+ * grow (R90c keeps them open), so the heavier steps also darken the edges, which moves no outline. Measured as the
+ * Test build 5 student critic did (the ink of the DiD paper's abstract at 100%, DPR 1, against the switch off): Light
+ * +15%, Medium +28%, Strong +42%, the ruling's steps. Medium is the face's own bold with a little edge darkening.
  */
-export const WORD_STARTS_GAIN: Readonly<Record<WordStartsStrength, number>> = { light: 0.5, medium: 1, strong: 1.6 };
+export const WORD_STARTS_LOOK: Readonly<Record<WordStartsStrength, BoldLook>> = {
+  light: { gain: 0.9, boost: 0 },
+  medium: { gain: 1, boost: 0.8 },
+  strong: { gain: 1.4, boost: 2.2 },
+};
 
 const asStrength = (v: unknown): WordStartsStrength => (v === 'light' || v === 'strong' ? v : 'medium');
 
 let strength: WordStartsStrength = 'medium';
 let strengthStarted = false;
+let strengthChosen = false;
 const strengthListeners = new Set<() => void>();
 
 /** "How bold", read once and followed in every tab. Outside an extension page it stays medium. */
@@ -62,22 +69,45 @@ export function useWordStartsStrength(): WordStartsStrength {
   return useSyncExternalStore(wordStartsStrength.subscribe, wordStartsStrength.get);
 }
 
+/** 'off', or the strength it is on at: View → Bold word starts' choice (R90c). */
+export function wordStartsLevel(): 'off' | WordStartsStrength {
+  return wordStartsSwitch.get() ? wordStartsStrength.get() : 'off';
+}
+
+/**
+ * View → Bold word starts → Off, Light, Medium or Strong (R90c): here at once, and remembered for every tab in the keys
+ * Settings → Reading uses (Off keeps the strength for next time).
+ */
+export function chooseWordStarts(level: 'off' | WordStartsStrength): void {
+  if (level !== 'off') {
+    strengthChosen = true;
+    applyStrength(level);
+    try {
+      chrome.storage.local.set({ [WORD_STARTS_STRENGTH_KEY]: level }).catch((err: unknown) => console.error('sickofpdfs: could not remember how bold', err));
+    } catch {
+      // not an extension page
+    }
+  }
+  wordStartsSwitch.set(level !== 'off');
+}
+
+function applyStrength(v: unknown): void {
+  const next = asStrength(v);
+  if (next === strength) return;
+  strength = next;
+  for (const l of [...strengthListeners]) l();
+}
+
 function startStrength(): void {
   if (strengthStarted) return;
   strengthStarted = true;
-  const apply = (v: unknown) => {
-    const next = asStrength(v);
-    if (next === strength) return;
-    strength = next;
-    for (const l of [...strengthListeners]) l();
-  };
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
       const change = changes[WORD_STARTS_STRENGTH_KEY];
-      if (area === 'local' && change !== undefined) apply(change.newValue);
+      if (area === 'local' && change !== undefined) applyStrength(change.newValue);
     });
     chrome.storage.local.get(WORD_STARTS_STRENGTH_KEY).then(
-      (stored) => apply(stored[WORD_STARTS_STRENGTH_KEY]),
+      (stored) => strengthChosen || applyStrength(stored[WORD_STARTS_STRENGTH_KEY]), // a choice before the answer came wins
       () => {},
     );
   } catch {

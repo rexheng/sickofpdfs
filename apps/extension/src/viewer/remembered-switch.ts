@@ -9,6 +9,8 @@ export interface RememberedSwitch {
   subscribe(this: void, onChange: () => void): () => void;
   /** Turns it the other way here at once, and remembers it for every tab. Returns the new value. */
   toggle(this: void): boolean;
+  /** Turns it on or off here at once, and remembers it for every tab. */
+  set(this: void, on: boolean): void;
 }
 
 /** The switch stored under `key`. Outside an extension page (unit tests) it stays off and is not stored. */
@@ -41,28 +43,33 @@ export function rememberedSwitch(key: string, what: string): RememberedSwitch {
       // not an extension page: the switch stays off
     }
   };
+  const get = () => {
+    start();
+    return on;
+  };
+  const set = (next: boolean) => {
+    start();
+    touched = true;
+    apply(next);
+    try {
+      chrome.storage.local.set({ [key]: next }).catch((err: unknown) => console.error(`sickofpdfs: could not remember the ${what} switch`, err));
+    } catch {
+      // not an extension page
+    }
+  };
   return {
-    get() {
-      start();
-      return on;
-    },
+    get,
     subscribe(onChange) {
       start();
       listeners.add(onChange);
       return () => listeners.delete(onChange);
     },
     toggle() {
-      start();
-      touched = true;
-      const next = !on;
-      apply(next);
-      try {
-        chrome.storage.local.set({ [key]: next }).catch((err: unknown) => console.error(`sickofpdfs: could not remember the ${what} switch`, err));
-      } catch {
-        // not an extension page
-      }
+      const next = !get();
+      set(next);
       return next;
     },
+    set,
   };
 }
 

@@ -105,7 +105,7 @@ import { LocalFileCard } from './ui/LocalFileCard';
 import { PasswordDialog } from './ui/PasswordDialog';
 import { ScanHint } from './ui/ScanHint';
 import { useStore } from './use-store';
-import { noteScannedPageOnce, useWordStarts, useWordStartsStrength, WORD_STARTS_GAIN, wordStartsStrength, wordStartsSwitch } from './word-starts';
+import { chooseWordStarts, noteScannedPageOnce, useWordStarts, useWordStartsStrength, WORD_STARTS_LOOK, wordStartsLevel, wordStartsStrength, wordStartsSwitch } from './word-starts';
 
 /**
  * The tab's one engine. Its worker starts at once, so PDFium is ready by the time the PDF has downloaded; not in a
@@ -341,9 +341,10 @@ function TabViewer({ params }: { params: ViewerParams }) {
   const viewVersion = useViewVersion(live?.store ?? null);
   const saveKind = useSaveView(save).state?.kind; // File → Save to library follows the save state
   const caretOn = useCaretBrowsing(); // View → Caret browsing shows its check
-  const wordStartsOn = useWordStarts(); // View → Bold word starts shows its check
+  const wordStartsOn = useWordStarts(); // View → Bold word starts ticks its choice
+  const wordStartsStrengthNow = useWordStartsStrength();
   const presenting = useViewerState(live?.store ?? IDLE_STORE, (s) => s.presenting !== null); // R95: the not-sure count pauses
-  const menus = useMemo(() => buildMenus(commands), [commands, viewVersion, saveKind, caretOn, wordStartsOn]); // eslint-disable-line react-hooks/exhaustive-deps -- viewVersion, saveKind, caretOn and wordStartsOn are the triggers
+  const menus = useMemo(() => buildMenus(commands), [commands, viewVersion, saveKind, caretOn, wordStartsOn, wordStartsStrengthNow]); // eslint-disable-line react-hooks/exhaustive-deps -- viewVersion, saveKind, caretOn, wordStartsOn and wordStartsStrengthNow are the triggers
 
   return (
     <div ref={root} className={styles.app}>
@@ -581,8 +582,8 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   // With word starts on, a bold mark takes their weight when it is heavier (Strong), so a word the owner made bold reads
   // as bold all through instead of heavier at its start (R90).
   const wordStartsOn = useWordStarts();
-  const wordStartsGain = WORD_STARTS_GAIN[useWordStartsStrength()];
-  const markBoldGain = wordStartsOn && wordStartsGain > 1 ? wordStartsGain : undefined;
+  const wordStartsLook = WORD_STARTS_LOOK[useWordStartsStrength()];
+  const markBoldLook = wordStartsOn && (wordStartsLook.gain > 1 || wordStartsLook.boost > 0) ? wordStartsLook : undefined;
   const api = useRef<PageListApi | null>(null);
   const [textLayers] = useState(
     () =>
@@ -629,7 +630,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       pageList: api,
       printMarks: notes === null ? null : { layer: notes.layer, text: pageText },
       caretBrowsing: { on: caretBrowsingSwitch.get, toggle: () => ui.showNote(caretBrowsingSwitch.toggle() ? CARET_ON_NOTE : CARET_OFF_NOTE) },
-      wordStarts: { on: wordStartsSwitch.get, toggle: wordStartsSwitch.toggle },
+      wordStarts: { on: wordStartsSwitch.get, toggle: () => void wordStartsSwitch.toggle(), level: wordStartsLevel, choose: chooseWordStarts },
       ui,
     };
     return createCommands(ctx, {
@@ -689,7 +690,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
             ctx={ctx}
             page={doc.open.pages[box.index]}
             bold={bold}
-            {...(markBoldGain !== undefined ? { boldGain: markBoldGain } : {})}
+            {...(markBoldLook !== undefined ? { boldLook: markBoldLook } : {})}
           />
         )}
         {notes !== null && viewerFeatures().map((f) => f.PageLayer && <f.PageLayer key={f.id} host={notes.host} box={box} ctx={ctx} />)}
@@ -698,7 +699,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
         {linksFor(box)}
       </>
     ),
-    [textLayers, findLayer, linksFor, notes, doc, bold, wordStarts, markBoldGain],
+    [textLayers, findLayer, linksFor, notes, doc, bold, wordStarts, markBoldLook],
   );
   // Every render still waiting fails at once when the engine stops: the first one tells the viewer, the rest are quiet.
   const stopped = useRef(false);
@@ -821,7 +822,7 @@ function useWordStartsController(
     controller.start();
     controller.setEnabled(wordStartsSwitch.get());
     const off = wordStartsSwitch.subscribe(() => controller.setEnabled(wordStartsSwitch.get()));
-    const gain = () => controller.setGain(WORD_STARTS_GAIN[wordStartsStrength.get()]);
+    const gain = () => controller.setLook(WORD_STARTS_LOOK[wordStartsStrength.get()]);
     gain();
     const offGain = wordStartsStrength.subscribe(gain);
     return () => {

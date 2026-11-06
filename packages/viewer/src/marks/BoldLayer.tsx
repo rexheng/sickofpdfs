@@ -1,8 +1,9 @@
-// The owner's bold marks (BOLD = glyph-outline; P0-5, rulings R29 and R90b). Each covered glyph's own outline, read
-// from PDFium by PdfBackend.getGlyphShapes, is emboldened as font engines make a bold (synthetic bold: pushed outward
-// along its edges by its face's own regular-to-bold gain, marks/synthetic-bold.ts) and filled in the glyph's own colour
-// on exactly the page picture's pixel grid, in the page's darken underlay (react/BoldCanvas.ts). Bold word starts (R90)
-// draw the same way, so there is one bold look. Nothing is re-rendered by PDFium.
+// The owner's bold marks (BOLD = glyph-outline; P0-5, rulings R29, R90b and R90c). Each covered glyph's own outline,
+// read from PDFium by PdfBackend.getGlyphShapes, is emboldened as font engines make a bold (synthetic bold: pushed
+// outward along its edges by its face's own regular-to-bold gain, never closing the gap to a neighbour,
+// marks/synthetic-bold.ts and bold-painter.ts) and filled in the glyph's own colour on exactly the page picture's pixel
+// grid, in the page's underlay (react/BoldCanvas.ts). Bold word starts (R90) draw the same way, so there is one bold
+// look. Nothing is re-rendered by PDFium.
 //
 // Where a visible char has no outline to redraw (invisible text such as a scan's OCR layer, a Type3 glyph), bold falls
 // back to the "strong" style on that char's line rects: a heavier tint with a dark underline, in an <svg> over the page
@@ -11,12 +12,15 @@
 // on the page's picture with paintBold.
 import { useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react';
 import type { DocHandle, Glyph, PageGlyphs, PageSize, PdfBackend, PdfRect, Rotation } from '../backend/types';
-import { useBoldCanvas } from '../react/BoldCanvas';
+import { type BoldLook, devicePxPerPt, PLAIN_LOOK, useBoldCanvas } from '../react/BoldCanvas';
 import type { PageLayerContext } from '../react/PageView';
 import { pageTransform, totalRotation } from '../view/page-transform';
 import { type BoldGlyph, boldGlyphs, type BoldRange, prepareGlyphs } from './bold-painter';
 
 export type { BoldRange } from './bold-painter';
+
+/** Chars read either side of a bold range, for its end glyphs' neighbours. */
+const NEIGHBOUR_CHARS = 2;
 
 /** The strong style's underline, in ems of the line's height. */
 export const STRONG_UNDERLINE_EM = 0.08;
@@ -43,10 +47,10 @@ export interface BoldLayerProps {
   /** The page's layer context: the bold is drawn on its pictures' pixel grid, in its underlay. */
   ctx: PageLayerContext;
   /**
-   * The gain on each face's own bold (default 1: the face's own bold). While bold word starts are on, the viewer sets
-   * their gain when it is heavier, so a word the owner made bold reads as bold all through (R90).
+   * How heavy the bold is (default PLAIN_LOOK: the face's own bold). While bold word starts are on, the viewer sets their
+   * look when it is heavier, so a word the owner made bold reads as bold all through (R90).
    */
-  gain?: number;
+  look?: BoldLook;
   /** Runs once the bold for the current `ranges` is drawn (S13 records its perf mark here). */
   onDrawn?: () => void;
 }
@@ -107,18 +111,20 @@ export function undrawnRuns(glyphs: readonly Glyph[], start: number, end: number
 }
 
 /** Reads one bold range's glyphs and strong-style rects. BoldLayer draws them on screen; print paints them with paintBold. */
-export async function drawBoldRange(p: { backend: Pick<PdfBackend, 'getGlyphShapes'>; doc: DocHandle; pageIndex: number; text: BoldTextSource }, r: BoldRange): Promise<DrawnRange> {
-  const count = Math.max(0, r.end - r.start);
-  const [set, page] = await Promise.all([p.backend.getGlyphShapes(p.doc, p.pageIndex, r.start, count), p.text.glyphs(p.pageIndex)]);
-  const strong = (await Promise.all(undrawnRuns(page.glyphs, r.start, r.end, set.glyphs).map((u) => p.text.rects(p.pageIndex, u.start, u.end - u.start)))).flat();
-  const glyphs = boldGlyphs(set);
-  await prepareGlyphs(glyphs);
+export async function drawBoldRange(p: { backend: Pick<PdfBackend, 'getGlyphShapes'>; doc: DocHandle; pageIndex: number; text: BoldTextSource; pxPerPt?: number }, r: BoldRange): Promise<DrawnRange> {
+  // A char or two either side too, so the glyphs at its ends know their neighbours (R90c: the bold never closes a gap).
+  const from = Math.max(0, r.start - NEIGHBOUR_CHARS);
+  const [set, page] = await Promise.all([p.backend.getGlyphShapes(p.doc, p.pageIndex, from, Math.max(0, r.end + NEIGHBOUR_CHARS - from)), p.text.glyphs(p.pageIndex)]);
+  const inside = set.glyphs.filter((g) => g.charIndex >= r.start && g.charIndex < r.end);
+  const strong = (await Promise.all(undrawnRuns(page.glyphs, r.start, r.end, inside).map((u) => p.text.rects(p.pageIndex, u.start, u.end - u.start)))).flat();
+  const glyphs = boldGlyphs(set, (g) => g.charIndex >= r.start && g.charIndex < r.end);
+  await prepareGlyphs(glyphs, 1, p.pxPerPt);
   return { glyphs, strong };
 }
 
 /** The bold marks of one page. See the file comment. */
 export function BoldLayer(props: BoldLayerProps): JSX.Element {
-  const { backend, doc, pageIndex, page, viewRotation, ranges, text, ctx, onDrawn, gain = 1 } = props;
+  const { backend, doc, pageIndex, page, viewRotation, ranges, text, ctx, onDrawn, look = PLAIN_LOOK } = props;
   // What is shown, for this document and page only.
   const [state, setState] = useState<{ doc: DocHandle; pageIndex: number; drawn: ReadonlyMap<string, DrawnRange> }>(() => ({ doc, pageIndex, drawn: new Map() }));
   const drawn = state.doc === doc && state.pageIndex === pageIndex ? state.drawn : NOTHING_DRAWN;
@@ -153,7 +159,8 @@ export function BoldLayer(props: BoldLayerProps): JSX.Element {
     void Promise.all(
       missing.map(async (k) => {
         const [start, end] = k.split(':').map(Number) as [number, number];
-        cache.set(k, await drawBoldRange({ backend, doc, pageIndex, text }, { start, end }));
+        const pxPerPt = devicePxPerPt(ctx, page);
+        cache.set(k, await drawBoldRange({ backend, doc, pageIndex, text, ...(pxPerPt !== undefined ? { pxPerPt } : {}) }, { start, end }));
       }),
     ).then(
       () => live && show(),
@@ -162,12 +169,12 @@ export function BoldLayer(props: BoldLayerProps): JSX.Element {
     return () => {
       live = false;
     };
-  }, [keys, backend, doc, pageIndex, text]);
+  }, [keys, backend, doc, pageIndex, text, ctx, page]);
 
   // All ranges' glyphs, one canvas: where two marks cover a glyph it is drawn once.
   const glyphs = useMemo(() => keys.flatMap((k) => drawn.get(k)?.glyphs ?? []), [keys, drawn]);
   // The svg says when the canvas was drawn (data-sop-bold-drawn), so the bold shows as a change of the mark layer too.
-  useBoldCanvas(ctx, page, glyphs.length > 0 ? glyphs : null, 'sop-bold-canvas', (n) => svg.current?.setAttribute('data-sop-bold-drawn', String(n)), gain);
+  useBoldCanvas(ctx, page, glyphs.length > 0 ? glyphs : null, 'sop-bold-canvas', (n) => svg.current?.setAttribute('data-sop-bold-drawn', String(n)), look);
 
   const complete = keys.every((k) => drawn.has(k));
   useLayoutEffect(() => {

@@ -58,12 +58,15 @@ export function outlineOrientation(em: EmPath): number {
  * then moves up by `yShift`, as FreeType moves it to keep the baseline: with `yShift` = `yStrength` / 2 the bottoms
  * stay and the tops rise by `yStrength`. Corners stay sharp: a corner point moves diagonally, so both its edges move
  * out in parallel. The shift is limited where a turn is sharp and its edges are short, as FreeType does, so thin
- * features do not fold over. Ems in, ems out (a new array, same layout).
+ * features do not fold over. Then the whole glyph moves right by `xShift`: growing by sL + sR and moving by
+ * (sR − sL) / 2 grows every stem sL on its left and sR on its right (R90c: each side as far as its neighbour allows).
+ * Ems in, ems out (a new array, same layout).
  */
-export function emboldenOutline(em: EmPath, xStrength: number, yStrength: number, yShift = 0): Float64Array {
+export function emboldenOutline(em: EmPath, xStrength: number, yStrength: number, yShift = 0, xShift = 0): Float64Array {
   const out = Float64Array.from(em);
   embolden(out, em, xStrength / 2, yStrength / 2);
   if (yShift !== 0) for (let s = 0; s < out.length / 4; s++) out[4 * s + 2] = out[4 * s + 2] + yShift;
+  if (xShift !== 0) for (let s = 0; s < out.length / 4; s++) out[4 * s + 1] = out[4 * s + 1] + xShift;
   return out;
 }
 
@@ -354,15 +357,9 @@ function gapsOnLines(edges: Float64Array, lines: readonly number[], vertical: bo
   });
 }
 
-/**
- * The most each side of the glyph may move (ems, across and up and down) so that no counter closes: every counter (the
- * holes of "e", "a", "o", and the open spaces between the stems of "n", "m", "u") keeps COUNTER_KEEP of its width and
- * height. A counter is a gap inside the glyph, read on lines across it (COUNTER_LINES), that is still there on the
- * lines either side over at least half its width, and at least MIN_COUNTER_EM wide: the narrow notch where an arch
- * meets a stem is not a counter, and a real bold fills it too.
- */
-export function counterLimits(em: EmPath): { x: number; y: number } {
-  const { pts, ends } = flatOutline(em, 4);
+/** The outline's edges as polylines (curves cut in `steps`): x0, y0, x1, y1 per edge. */
+function outlineEdges(em: EmPath, steps: number): Float64Array {
+  const { pts, ends } = flatOutline(em, steps);
   const edges = new Float64Array(4 * (ends.length === 0 ? 0 : ends[ends.length - 1]));
   let e = 0;
   let a = 0;
@@ -376,6 +373,18 @@ export function counterLimits(em: EmPath): { x: number; y: number } {
     }
     a = b;
   }
+  return edges;
+}
+
+/**
+ * The width of the glyph's narrowest counter across (`x`) and up and down (`y`), ems; Infinity where it has none. A
+ * counter (the holes of "e", "a", "o", and the open spaces between the stems of "n", "m", "u") is a gap inside the
+ * glyph, read on lines across it (COUNTER_LINES), that is still there on the lines either side over at least half its
+ * width, and at least MIN_COUNTER_EM wide: the narrow notch where an arch meets a stem is not a counter, and a real
+ * bold fills it too.
+ */
+export function counterWidths(em: EmPath): { x: number; y: number } {
+  const edges = outlineEdges(em, 4);
   const box = outlineBox(em);
   const least = (vertical: boolean) => {
     const lo = vertical ? box.x0 : box.y0;
@@ -395,10 +404,65 @@ export function counterLimits(em: EmPath): { x: number; y: number } {
     }
     return smallest;
   };
+  return { x: least(false), y: least(true) };
+}
+
+/**
+ * The most each side of the glyph may move (ems, across and up and down) so that no counter closes: every counter
+ * (counterWidths) keeps COUNTER_KEEP of its width and height.
+ */
+export function counterLimits(em: EmPath): { x: number; y: number } {
+  return capsOf(counterWidths(em));
+}
+
+/** counterLimits from counterWidths. */
+export function capsOf(widths: { x: number; y: number }): { x: number; y: number } {
   const share = (1 - COUNTER_KEEP) / 2;
-  const gapX = least(false);
-  const gapY = least(true);
-  return { x: Number.isFinite(gapX) ? gapX * share : Infinity, y: Number.isFinite(gapY) ? gapY * share : Infinity };
+  return { x: Number.isFinite(widths.x) ? widths.x * share : Infinity, y: Number.isFinite(widths.y) ? widths.y * share : Infinity };
+}
+
+/** The ink profile's lines: y = PROFILE_Y0 + k · PROFILE_STEP ems, k < PROFILE_LINES (from below the descenders to above the caps). */
+export const PROFILE_Y0 = -0.4;
+export const PROFILE_STEP = 0.025;
+export const PROFILE_LINES = 60;
+
+/**
+ * Where a glyph's ink starts and ends on each profile line (ems; NaN where the line misses it): so the gap between two
+ * neighbours can be read line by line, where they face each other, as the eye sees it ("c" and "l", or two italic
+ * letters, whose boxes overlap though their ink does not).
+ */
+export function inkProfile(em: EmPath): { left: Float32Array; right: Float32Array } {
+  const edges = outlineEdges(em, 4);
+  const left = new Float32Array(PROFILE_LINES).fill(NaN);
+  const right = new Float32Array(PROFILE_LINES).fill(NaN);
+  const hits: number[][] = Array.from({ length: PROFILE_LINES }, () => []);
+  for (let e = 0; e < edges.length; e += 4) {
+    const ay = edges[e + 1];
+    const by = edges[e + 3];
+    if (ay === by) continue;
+    const lo = Math.min(ay, by);
+    const hi = Math.max(ay, by);
+    for (let k = Math.max(0, Math.ceil((lo - PROFILE_Y0) / PROFILE_STEP)); k < PROFILE_LINES; k++) {
+      const at = PROFILE_Y0 + k * PROFILE_STEP;
+      if (at >= hi) break;
+      if (at < lo) continue;
+      const ax = edges[e];
+      hits[k].push(ax + ((at - ay) * (edges[e + 2] - ax)) / (by - ay), by > ay ? 1 : -1);
+    }
+  }
+  for (let k = 0; k < PROFILE_LINES; k++) {
+    const h = hits[k];
+    if (h.length === 0) continue;
+    const order = Array.from({ length: h.length / 2 }, (_, i) => i).sort((p, q) => h[2 * p] - h[2 * q]);
+    let wind = 0;
+    for (const i of order) {
+      const was = wind;
+      wind += h[2 * i + 1];
+      if (was === 0 && wind !== 0 && Number.isNaN(left[k])) left[k] = h[2 * i];
+      if (was !== 0 && wind === 0) right[k] = h[2 * i];
+    }
+  }
+  return { left, right };
 }
 
 /** What stemMeasures reads of a letter, in ems; null where the letter has nothing to measure. */

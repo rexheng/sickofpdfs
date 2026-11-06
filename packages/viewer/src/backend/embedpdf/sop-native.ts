@@ -42,7 +42,7 @@ import type {
   TileRequest,
 } from '../types';
 import type { EngineApi, OpenedDocument } from './rpc';
-import { BoldFaces, type BoldGain, faceStyle } from '../../marks/bold-faces';
+import { BoldFaces, faceStyle } from '../../marks/bold-faces';
 import { STEM_LETTERS, type StemMeasures, stemMeasures } from '../../marks/synthetic-bold';
 
 /** FPDF_GetFormType's result (fpdf_formfill.h FORMTYPE_*), by value. */
@@ -1029,7 +1029,12 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
           shapes.push(g.glyph.em);
         }
         const [a, b, c, d] = g.paint.matrix;
-        glyphs.push({ charIndex: g.charIndex, shape: id, m: [a, -b, c, -d], x: g.x, y: g.y, fill: g.paint.fill, stroke: g.paint.stroke, fontSize: g.paint.fontSize, bold: this.boldGain(state, pageCtx, g.paint.font, mem) });
+        const face = this.addFace(state, pageCtx, g.paint.font, mem);
+        const style = state.faces.styleOf(face);
+        const placed: GlyphPlacement = { charIndex: g.charIndex, shape: id, m: [a, -b, c, -d], x: g.x, y: g.y, fill: g.paint.fill, stroke: g.paint.stroke, fontSize: g.paint.fontSize, bold: state.faces.gainFor(face) };
+        if (style?.italic) placed.italic = true;
+        if (style?.maths) placed.maths = true;
+        glyphs.push(placed);
       },
       (pageCtx, mem) => this.readFaces(state, pageIndex, pageCtx, mem),
     );
@@ -1208,11 +1213,6 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
     };
     const count = Math.min(x.FPDFPage_CountObjects(pageCtx.pagePtr), FACE_OBJECTS_READ);
     for (let i = 0; i < count; i++) visit(x.FPDFPage_GetObject(pageCtx.pagePtr, i), 0);
-  }
-
-  /** The bold for a glyph of `font`: its face's own bold where the document has one, typical otherwise. */
-  private boldGain(state: DocState, pageCtx: PageContext, font: number, mem: number): BoldGain {
-    return state.faces.gainFor(this.addFace(state, pageCtx, font, mem));
   }
 
   /**

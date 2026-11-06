@@ -16,9 +16,10 @@ export interface PageLayerContext {
   /**
    * The page's underlay: a box over the page's pictures and under its layers, blended with them by `darken`, so what is
    * drawn there in the text's colour replaces the text it covers instead of darkening it again (synthetic bold, R90b).
-   * Null until the page is in the DOM.
+   * `lighten`: its twin, for light text (white on a slide's band), which `darken` cannot make wider (R90c). Null until
+   * the page is in the DOM.
    */
-  underlay(): HTMLElement | null;
+  underlay(blend?: 'darken' | 'lighten'): HTMLElement | null;
 }
 
 export interface PageViewProps {
@@ -47,6 +48,7 @@ export const PageView = memo(function PageView({ box, device, dpr, driver, rende
   const preview = useRef<HTMLCanvasElement>(null);
   const tiles = useRef<HTMLDivElement>(null);
   const under = useRef<HTMLDivElement>(null);
+  const underLight = useRef<HTMLDivElement>(null);
   const index = box.index;
   const layerCtx = useMemo<PageLayerContext>(
     () => ({
@@ -54,7 +56,7 @@ export const PageView = memo(function PageView({ box, device, dpr, driver, rende
       whenPainted: () => driver.whenPainted(index),
       paints: () => driver.paintsOf(index),
       onPaint: (l) => driver.onPaintOf(index, l),
-      underlay: () => under.current,
+      underlay: (blend = 'darken') => (blend === 'lighten' ? underLight.current : under.current),
     }),
     [driver, index, dpr],
   );
@@ -78,6 +80,7 @@ export const PageView = memo(function PageView({ box, device, dpr, driver, rende
       <canvas ref={preview} className={styles.preview} aria-hidden="true" />
       <div ref={tiles} className={styles.tiles} />
       {renderPage && <div ref={under} className={styles.under} aria-hidden="true" />}
+      {renderPage && <div ref={underLight} className={styles.underLight} aria-hidden="true" />}
       {renderPage && <div className={styles.layers}>{renderPage(box, layerCtx)}</div>}
     </div>
   );

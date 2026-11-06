@@ -32,8 +32,15 @@ export type MenuItemDef =
        * tick before it. Set it (true or false) on every row of such a list, so the labels line up after the tick column.
        */
       selected?: boolean;
+      /**
+       * A row of a radio group (one choice of several, R90c's "How bold"): consecutive rows with the same `radio` are one
+       * group, named by the heading just before them; `checked` marks the chosen one (it shows the check).
+       */
+      radio?: string;
       onSelect: () => void;
     }
+  /** The name of the radio group that follows (not a choice itself), with its shortcut if it has one. */
+  | { kind: 'heading'; id: string; label: string; shortcut?: string }
   | { kind: 'separator' };
 
 export interface MenuDef {
@@ -69,25 +76,86 @@ const PARTS = {
   dropdown: {
     Item: RadixDropdownMenu.Item,
     CheckboxItem: RadixDropdownMenu.CheckboxItem,
+    RadioGroup: RadixDropdownMenu.RadioGroup,
+    RadioItem: RadixDropdownMenu.RadioItem,
+    Label: RadixDropdownMenu.Label,
     Separator: RadixDropdownMenu.Separator,
   },
   menubar: {
     Item: RadixMenubar.Item,
     CheckboxItem: RadixMenubar.CheckboxItem,
+    RadioGroup: RadixMenubar.RadioGroup,
+    RadioItem: RadixMenubar.RadioItem,
+    Label: RadixMenubar.Label,
     Separator: RadixMenubar.Separator,
   },
 } as const;
 
+type Row = Exclude<MenuItemDef, { kind: 'separator' } | { kind: 'heading' }>;
+
 /** The rows of a menu, shared by DropdownMenu and MenuBar. */
 export function MenuItems({ items, kind }: { items: readonly MenuItemDef[]; kind: keyof typeof PARTS }) {
-  const { Item, CheckboxItem, Separator } = PARTS[kind];
+  const { Item, CheckboxItem, RadioGroup, RadioItem, Label, Separator } = PARTS[kind];
   const rows = tidySeparators(items);
   // One icon column for the whole menu, so every label starts at the same x (48 px in, as in Drive).
   const iconColumn = rows.some((i) => i.kind === 'item' && (i.icon !== undefined || i.checked !== undefined));
   // A short list of choices (the zoom levels) ticks the current one, in a narrow column of its own.
   const tickColumn = !iconColumn && rows.some((i) => i.kind === 'item' && i.selected !== undefined);
-  return rows.map((item, index) => {
-    if (item.kind === 'separator') return <Separator key={`separator-${index}`} className={styles.separator} />;
+  const out: ReactElement[] = [];
+  for (let index = 0; index < rows.length; index++) {
+    const item = rows[index];
+    if (item.kind === 'separator') {
+      out.push(<Separator key={`separator-${index}`} className={styles.separator} />);
+      continue;
+    }
+    if (item.kind === 'heading') {
+      out.push(
+        <Label key={item.id} id={item.id} className={cx(styles.item, styles.heading)}>
+          {iconColumn && <span className={styles.icon} />}
+          <span className={styles.label}>{item.label}</span>
+          {item.shortcut !== undefined && (
+            <span className={styles.shortcut} aria-hidden="true">
+              {item.shortcut}
+            </span>
+          )}
+        </Label>,
+      );
+      continue;
+    }
+    if (item.radio !== undefined) {
+      // The group: this row and the ones after it with the same `radio`, named by the heading before it.
+      const group: Row[] = [];
+      while (index < rows.length) {
+        const next = rows[index];
+        if (next.kind !== 'item' || next.radio !== item.radio) break;
+        group.push(next);
+        index++;
+      }
+      index--;
+      const before = rows[index - group.length];
+      const value = group.find((g) => g.checked === true)?.id ?? '';
+      out.push(
+        <RadioGroup key={`radio-${item.radio}`} value={value} {...(before?.kind === 'heading' ? { 'aria-labelledby': before.id } : {})}>
+          {group.map((g) => (
+            <RadioItem key={g.id} value={g.id} className={cx(styles.item, styles.choice)} disabled={g.disabled === true} textValue={g.label} onSelect={() => g.onSelect()}>
+              {iconColumn && <span className={styles.icon}>{g.checked === true && <Icon name="check" size={20} />}</span>}
+              <span className={styles.label}>{g.label}</span>
+              {g.shortcut !== undefined && (
+                <span className={styles.shortcut} aria-hidden="true">
+                  {g.shortcut}
+                </span>
+              )}
+            </RadioItem>
+          ))}
+        </RadioGroup>,
+      );
+      continue;
+    }
+    out.push(itemRow(item));
+  }
+  return out;
+
+  function itemRow(item: Row): ReactElement {
     // A checkbox item shows its check in the icon slot while on, and its own icon (if any) while off.
     const leading = item.checked === true ? 'check' : item.icon;
     const body = (
@@ -131,7 +199,7 @@ export function MenuItems({ items, kind }: { items: readonly MenuItemDef[]; kind
         {row}
       </Tooltip>
     );
-  });
+  }
 }
 
 export interface DropdownMenuProps {
