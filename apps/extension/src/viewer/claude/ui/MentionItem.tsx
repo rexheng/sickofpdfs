@@ -257,14 +257,17 @@ export function ClaudeMentions({ placeOfBox }: { placeOfBox(this: void, box: HTM
     const onLeave = (e: FocusEvent) => {
       if (current.current !== null && e.target === current.current.box) close();
     };
-    document.addEventListener('input', onInput, true);
+    // Bubble, not capture: React's own input handler (the box's onChange, which keeps the text in the draft) must run first. A
+    // state change here before it makes React draw the box again with its old value, and the letter just typed is lost (TB6
+    // gate: the first AltGr "@" in a new reply box).
+    document.addEventListener('input', onInput);
     document.addEventListener('keydown', onKey, true);
     document.addEventListener('selectionchange', onCaret);
     document.addEventListener('focusout', onLeave, true);
     window.addEventListener('resize', close);
     document.addEventListener('scroll', close, true);
     return () => {
-      document.removeEventListener('input', onInput, true);
+      document.removeEventListener('input', onInput);
       document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('selectionchange', onCaret);
       document.removeEventListener('focusout', onLeave, true);
