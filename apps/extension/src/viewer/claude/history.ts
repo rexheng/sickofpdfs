@@ -53,12 +53,15 @@ const done = (c: CommentRow) => c.author === 'claude' && isClaudeMeta(c.meta) &&
 /**
  * The comments of a thread a question is answered from: everything up to and including the question, oldest first, without
  * Claude replies that are not finished and without `skip` (the reply being written, or the reply Think harder re-asks).
+ *
+ * The owner's earlier notes in the thread go too: they are the conversation (R105, "Claude reads the earlier notes in the
+ * thread"; the reply box says so). Words the owner has not sent (a draft) never go.
  */
 export function commentsUpTo(comments: readonly CommentRow[], questionId: CommentId, skip: ReadonlySet<CommentId> = new Set()): CommentRow[] {
   const sorted = [...comments].sort((a, b) => a.createdAt - b.createdAt);
   const at = sorted.findIndex((c) => c.id === questionId);
   const upTo = at >= 0 ? sorted.slice(0, at + 1) : sorted;
-  return upTo.filter((c) => !skip.has(c.id) && c.deletedAt === null && (c.author === 'me' ? c.body.trim() !== '' : done(c)));
+  return upTo.filter((c) => !skip.has(c.id) && c.deletedAt === null && (c.author === 'me' ? c.draftOfTab === null && c.body.trim() !== '' : done(c)));
 }
 
 /**

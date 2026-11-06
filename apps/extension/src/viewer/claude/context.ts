@@ -13,7 +13,7 @@
 // mapped to B's and C's structural types here. For a saved reading the pages are ranked with the library's own search (Phase 3),
 // and the paragraph vectors are kept in the library's local-only `passage_vectors` table (schema v6) so the next question is quick.
 import {
-  buildDocumentMap, buildQuery, createPassageRetriever, documentMapTokens, estimate, focusPassage, inMemoryRankPages, packWholeDocument,
+  buildDocumentMap, buildQuery, createPassageRetriever, documentMapTokens, estimate, focusPassage, hardBlockOnEveryPage, inMemoryRankPages, packWholeDocument,
   type Anchor, type ContextPack, type DocumentId, type DocumentMap, type FigurePack, type ModelChoice, type ModelRole, type OutlineEntry,
   type PageFigure, type Passage, type PassageEmbedder, type SizedLine, type VectorCache,
 } from '@sop/core';
@@ -80,6 +80,12 @@ export interface ContextBuilder {
   readonly figureDeps: FigurePackDeps;
   /** The passage search, for the client tool `search_document`. */
   passages(query: string, tokenBudget: number, exclude?: readonly Passage[]): Promise<Passage[]>;
+  /**
+   * R91 for a PDF that is not in the library (R105, TB6 security 1): whether its pages, or the words of this pack, hold card, bank
+   * or ID numbers, by the every-page check a save runs. Such a PDF would be saved without searchable text (D9), and Claude never
+   * reads one, so nothing is sent. Every page is read once per open PDF; a page that cannot be read counts as no text.
+   */
+  privateNumbers(pack: ContextPack): Promise<boolean>;
   dispose(): void;
 }
 
@@ -165,13 +171,25 @@ export async function figureTargetOf(anchor: Anchor | null, figures: (page: numb
 
 // ---- Meaning: the MiniLM worker and the library's vector table ----
 
-/** B's `PassageEmbedder` on the bundled MiniLM model, in a worker of this tab. Started on the first question. */
-export function createWorkerEmbedder(o: { base?: string; createWorker?: () => Worker; timeoutMs?: number } = {}): PassageEmbedder & { dispose(): void } {
+/** The meaning worker ends after this long with nothing to do (TB6 security 6): MiniLM and onnxruntime hold about 100 MB. */
+export const EMBED_IDLE_MS = 60_000;
+
+/**
+ * B's `PassageEmbedder` on the bundled MiniLM model, in a worker of this tab. Started on the first question, and ended after a
+ * minute with nothing waiting (the next question starts it again; the vectors are kept in the library, so nothing is lost).
+ */
+export function createWorkerEmbedder(o: { base?: string; createWorker?: () => Worker; timeoutMs?: number; idleMs?: number } = {}): PassageEmbedder & { dispose(): void; alive(): boolean } {
   let worker: Worker | null = null;
   let next = 1;
+  let idle: ReturnType<typeof setTimeout> | null = null;
   const waiting = new Map<number, { resolve(v: Float32Array[]): void; reject(e: Error): void; timer: ReturnType<typeof setTimeout> }>();
   const base = o.base ?? (typeof chrome !== 'undefined' && chrome.runtime?.getURL ? chrome.runtime.getURL('') : new URL('/', location.href).href);
+  const stopIdle = () => {
+    if (idle !== null) clearTimeout(idle);
+    idle = null;
+  };
   const fail = (e: Error) => {
+    stopIdle();
     for (const w of waiting.values()) {
       clearTimeout(w.timer);
       w.reject(e);
@@ -180,7 +198,19 @@ export function createWorkerEmbedder(o: { base?: string; createWorker?: () => Wo
     worker?.terminate();
     worker = null;
   };
+  /** Nothing is waiting: the worker ends after the idle time, unless a new request comes first. */
+  const restSoon = () => {
+    stopIdle();
+    if (waiting.size > 0 || worker === null) return;
+    idle = setTimeout(() => {
+      idle = null;
+      if (waiting.size > 0) return;
+      worker?.terminate();
+      worker = null;
+    }, o.idleMs ?? EMBED_IDLE_MS);
+  };
   const start = (): Worker => {
+    stopIdle();
     if (worker) return worker;
     const w = o.createWorker?.() ?? new Worker(new URL('./embed-passages.worker.ts', import.meta.url), { type: 'module', name: 'sop-claude-passages' });
     w.onmessage = (ev: MessageEvent<PassageEmbedResponse>) => {
@@ -190,6 +220,7 @@ export function createWorkerEmbedder(o: { base?: string; createWorker?: () => Wo
       clearTimeout(got.timer);
       if (ev.data.ok) got.resolve(ev.data.vectors);
       else got.reject(new Error(`meaning search: ${ev.data.error}`));
+      restSoon();
     };
     w.onerror = () => fail(new Error('meaning search: the worker stopped'));
     worker = w;
@@ -205,6 +236,7 @@ export function createWorkerEmbedder(o: { base?: string; createWorker?: () => Wo
         const timer = setTimeout(() => {
           waiting.delete(id);
           reject(new Error('meaning search: timed out'));
+          restSoon();
         }, o.timeoutMs ?? 20_000 + texts.length * 400);
         waiting.set(id, { resolve, reject, timer });
         const msg: PassageEmbedRequest = { id, base, texts: [...texts] };
@@ -212,6 +244,7 @@ export function createWorkerEmbedder(o: { base?: string; createWorker?: () => Wo
       });
     },
     dispose: () => fail(new Error('meaning search: closed')),
+    alive: () => worker !== null,
   };
 }
 
@@ -355,9 +388,48 @@ export function createContextBuilder(h: ContextHost): ContextBuilder {
     documentId: h.documentId,
   };
 
+  // R91 over every page. A clean answer is kept (the pages of an open PDF do not change), but only when every page could be read:
+  // a page that failed to read is read again next time, so a number on it is never missed for good.
+  let everyPage: Promise<boolean> | null = null;
+  const pagesHoldNumbers = () =>
+    (everyPage ??= (async () => {
+      const pages: string[] = [];
+      let unread = false;
+      for (let i = 0; i < pageCount; i++) {
+        pages.push(
+          await h.pageText.text(i).catch(() => {
+            unread = true;
+            return '';
+          }),
+        );
+      }
+      const found = hardBlockOnEveryPage(null, pages) !== null;
+      if (unread && !found) everyPage = null;
+      return found;
+    })().catch((e: unknown) => {
+      everyPage = null;
+      throw e;
+    }));
+
   return {
     figureDeps,
     passages: (query, tokenBudget, exclude) => retriever.getPassages(h.documentId, query, tokenBudget, exclude ? { exclude } : undefined),
+
+    async privateNumbers(pack) {
+      // The words that would go, first (cheap), then every page (as the save's check reads them). Without the filter's input
+      // there is no "strong learning evidence" override: a PDF not in the library is judged as strictly as it can be.
+      const words = [
+        pack.map.title ?? '',
+        pack.map.abstract?.text ?? '',
+        ...pack.map.headings.map((x) => x.text),
+        ...pack.map.figures.map((x) => `${x.label} ${x.caption}`),
+        pack.focus?.text ?? '',
+        ...pack.passages.map((p) => p.text),
+        ...pack.figures.flatMap((f) => [f.caption?.text ?? '', f.insideText, ...f.mentions.map((m) => m.text)]),
+      ].join('\n');
+      if (hardBlockOnEveryPage(null, [words]) !== null) return true;
+      return pagesHoldNumbers();
+    },
 
     async build(r) {
       const docMap = await documentMap();
@@ -411,6 +483,7 @@ export function createContextBuilder(h: ContextHost): ContextBuilder {
     dispose() {
       map = null;
       memoryRank = null;
+      everyPage = null;
     },
   };
 }
