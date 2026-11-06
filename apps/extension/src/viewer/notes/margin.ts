@@ -27,16 +27,6 @@ export const MARGIN_RESERVE = CARD_OFFSET - PAGE_GAP + CARD_WIDTH + MARGIN_END;
  */
 export const MARGIN_MAX_SHIFT = 120;
 
-/** The notes panel (S15): 320 px wide, 16 px in from the window's right edge. */
-const PANEL_WIDTH = 320;
-const PANEL_INSET = 16;
-/**
- * The width the page list keeps free at the right while the notes panel is open: the panel and its inset, so a page
- * that fits beside it ends PAGE_GAP before it. When the page does not fit, it stays where it is and the panel lies over
- * its right side; the page can then be scrolled sideways out from under it.
- */
-export const PANEL_RESERVE = PANEL_WIDTH + PANEL_INSET;
-
 /** A 0–1 rect of a page (unrotated, as stored) → the box it covers on screen, in content px. */
 export function rectInContent(n: NormRect, box: PageBox): Box {
   const sideways = box.rotation % 180 !== 0;

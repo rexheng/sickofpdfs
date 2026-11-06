@@ -72,6 +72,7 @@ import {
   reopenDocument,
 } from './open-document';
 import { notesPanelFeature } from './notes-panel/feature';
+import { useNotesPanelOpen } from './notes-panel/panel-state';
 import { type StartOverOffer, useReadingHistory } from './history/use-reading-history';
 import { hitFlashFeature } from './hit-flash';
 import { claudeUiFeature } from './claude/ui/feature';
@@ -354,6 +355,8 @@ function TabViewer({ params }: { params: ViewerParams }) {
   const wordStartsStrengthNow = useWordStartsStrength();
   const presenting = useViewerState(live?.store ?? IDLE_STORE, (s) => s.presenting !== null); // R95: the not-sure count pauses
   const menus = useMemo(() => buildMenus(commands), [commands, viewVersion, saveKind, caretOn, wordStartsOn, wordStartsStrengthNow]); // eslint-disable-line react-hooks/exhaustive-deps -- viewVersion, saveKind, caretOn, wordStartsOn and wordStartsStrengthNow are the triggers
+  // TB6: while the notes panel is open the page column ends before it, so the panel never covers a page (App.module.css).
+  const notesPanelOpen = useNotesPanelOpen();
 
   return (
     <div ref={root} className={styles.app}>
@@ -379,7 +382,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
       {/* Drawn at the bottom left, but early in the Tab order (TB5): its button ("Start from page 1", "Undo") is reached
           right after the header, before the toolbar and every link in the PDF. */}
       <Snackbar note={note} />
-      <div className={styles.content}>
+      <div className={styles.content} data-notes-panel-open={notesPanelOpen && view.kind === 'ready' ? '' : undefined}>
         {view.kind === 'ready' && (
           <Reader
             key={view.doc.open.doc}

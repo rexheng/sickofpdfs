@@ -7,9 +7,8 @@
 }
 
 /*
- * The panel never narrows the page area, so the pages keep their size (ruling R69). The notes margin (S14) keeps room
- * for it at the right of the pages instead (PageListApi.setReserveRight): a page that fits beside the panel moves left
- * just enough; one that does not stays where it is, and the panel lies over its right side, raised.
+ * The panel never covers a page (TB6): while it is open the page column ends before it (App.module.css, the
+ * --viewer-end-inset of NavRail.module.css). A fit zoom fits the pages beside it; a zoom the reader chose stays.
  */
 
 /* Read by screen readers, not shown: where Ctrl+Alt+N and Ctrl+Alt+P went ("Note 3 of 7, page 4."). */

@@ -7,8 +7,9 @@
 //   the margin, the cards fold: each note shows a small numbered marker in the page's right margin, level with its line,
 //   and a click on it (or a note that becomes active) opens the notes panel. A PDF that had notes opens with the room
 //   already kept (R60). Once kept, the room stays while the PDF is open.
-// - On slides (a page wider than tall), the notes panel does not cover the page: in a fit zoom the page is fitted beside
-//   the panel (R98).
+// - The notes panel never covers a page (TB6). While it is open the page column ends before it (App.module.css): a fit
+//   zoom fits the pages beside it (slides too, R98), and a zoom the reader chose is kept, the pages centred in the column
+//   that is left. No room is kept inside the column for the margin then, as its cards are in the panel.
 // - A layout change never closes or unfocuses an open note box (TB4 fix round): when the cards fold while a box has the
 //   caret, the box moves into the notes panel with its text and caret (box-carry.ts).
 // - The note box sits in the margin, level with its line, so it never covers the text.
@@ -40,7 +41,6 @@ import {
   columnLeft,
   MARGIN_MAX_SHIFT,
   MARGIN_RESERVE,
-  PANEL_RESERVE,
   pinAt,
   placeMarkers,
   rectInContent,
@@ -50,7 +50,7 @@ import { keptOf } from './kept';
 import { hadNotes, rememberNotes } from './margin-at-open';
 import { publishNoteCommands, type NoteCommands } from './notes-host';
 import { listNotes } from '../notes-panel/model';
-import { notesPanel, openEdit, type OpenEdit, setCardsFolded, setPanelOverPages, useNotesPanelOpen, useOpenEdit } from '../notes-panel/panel-state';
+import { notesPanel, openEdit, type OpenEdit, setCardsFolded, useNotesPanelOpen, useOpenEdit } from '../notes-panel/panel-state';
 import { claudePlaceholders, claudeReplyRenderer } from '../claude/ui/feature';
 import { useFigureCards } from '../figures/cards';
 import { openSpecialNote } from '../figures/notes-bridge';
@@ -266,40 +266,49 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
 
   // ---------------------------------------------------------------- the margin (R60, R69, R98)
 
-  // The room at the right of the pages: the notes panel's while it is open; otherwise the margin's once it is wanted
-  // (R79; openMargin makes it for a first note, keeping the note's line in place). The margin never moves the pages more
-  // than 120 px (R98). Neither changes the zoom, except that slides in a fit zoom are fitted beside the panel (R98). Any
-  // other page that does not fit beside the panel stays where it is, under the panel, and can be scrolled out from under it.
+  // The room at the right of the pages: the margin's once it is wanted (R79; openMargin makes it for a first note,
+  // keeping the note's line in place), and none while the notes panel is open: the page column then ends before the
+  // panel instead (App.module.css), and the margin's cards are in the panel. The margin never moves the pages more than
+  // 120 px (R98) and never changes the zoom.
+  // It is asked for in a microtask after the commit that opened or closed the panel: before the browser lays the column
+  // out at its new width, so both changes reach the screen in one frame (and outside React's commit, which the page
+  // list's synchronous re-layout needs).
   const [, relaidOut] = useReducer((n: number) => n + 1, 0);
-  useEffect(() => {
-    const a = pages.current;
-    if (!a) return;
-    const slides = panelOpen && isSlide(a.pageBoxes()[store.get().currentPage]);
-    const [px, o] = panelOpen ? [PANEL_RESERVE, { scroll: true, refit: slides }] : marginWanted ? [MARGIN_RESERVE, MARGIN_ROOM] : [0, {}];
-    const key = roomKey(px, o);
-    if (lastRoom.current === key && a.reserveRight() === px) return;
-    lastRoom.current = key;
-    a.glide();
-    a.setReserveRight(px, undefined, o);
-    // The pages may have moved inside a scroll area of the same size, which layoutTick does not see. The page list lays
-    // them out once this effect is done, so the cards are placed again just after, before the browser paints.
-    queueMicrotask(() => flushSync(relaidOut));
+  const room = useRef({ panelOpen, marginWanted });
+  useLayoutEffect(() => {
+    room.current = { panelOpen, marginWanted };
+  });
+  useLayoutEffect(() => {
+    let live = true;
+    queueMicrotask(() => {
+      const a = pages.current;
+      if (!live || !a) return;
+      const { panelOpen: open, marginWanted: wanted } = room.current;
+      const [px, o] = !open && wanted ? [MARGIN_RESERVE, MARGIN_ROOM] : [0, {}];
+      const key = roomKey(px, o);
+      if (lastRoom.current === key && a.reserveRight() === px) return;
+      lastRoom.current = key;
+      a.glide();
+      a.setReserveRight(px, undefined, o);
+      // The pages may have moved inside a scroll area of the same size, which layoutTick does not see: the cards are
+      // placed again at once, before the browser paints.
+      flushSync(relaidOut);
+    });
+    return () => {
+      live = false;
+    };
   }, [panelOpen, marginWanted, pages, host, store, viewRotation]);
 
   // Whether the cards fit beside the pages at their size, moving them no more than 120 px, measured after every layout
-  // (layoutTick). When they do not, each note shows a numbered marker instead (R98).
+  // (layoutTick). When they do not, each note shows a numbered marker instead (R98). While the panel is open the column
+  // is narrower than the margin would have it, so what was measured before it opened stands until it closes.
   void layoutTick;
   const cardsFit = pages.current?.roomForReserve(MARGIN_RESERVE, MARGIN_MAX_SHIFT) ?? false;
   const folded = panelOpen || !cardsFit;
-  useLayoutEffect(() => setCardsFolded(!cardsFit), [cardsFit]);
-  useLayoutEffect(() => setPanelOverPages(panelOpen && !(pages.current?.roomForReserve(PANEL_RESERVE) ?? false)));
-  useLayoutEffect(
-    () => () => {
-      setCardsFolded(false);
-      setPanelOverPages(false);
-    },
-    [],
-  );
+  useLayoutEffect(() => {
+    if (!panelOpen) setCardsFolded(!cardsFit);
+  }, [cardsFit, panelOpen]);
+  useLayoutEffect(() => () => setCardsFolded(false), []);
 
   // Notes arrive (loaded with the PDF, or written in another tab): the margin is needed now, so the rail may fold.
   const sha = notes.opened.loaded.sha256;
@@ -775,7 +784,9 @@ function useLayoutTick(store: ViewerStore, host: HTMLElement | null, scroller: H
   useEffect(() => {
     const sizer = host?.parentElement;
     if (!sizer) return;
-    const ro = new ResizeObserver(() => bump());
+    // Synchronously, before the browser paints: the column changing width (the notes panel) must not show a frame of
+    // markers or cards measured for the old width.
+    const ro = new ResizeObserver(() => flushSync(bump));
     ro.observe(sizer);
     return () => ro.disconnect();
   }, [host]);
@@ -806,9 +817,4 @@ const roomKey = (px: number, o: object): string => `${px}|${JSON.stringify(o)}`;
 
 /** The notes panel's cards (NotesPanel.tsx): each card's element id is this and its thread id. */
 const PANEL_CARD_ID_PREFIX = 'sop-panel-note-';
-
-/** A slide, for the notes panel's room (R98): a page that is wider than it is tall on screen. */
-function isSlide(box: { width: number; height: number } | undefined): boolean {
-  return box !== undefined && box.width > box.height;
-}
 

@@ -43,8 +43,6 @@ export interface NotesPanelProps {
   panelRef?: Ref<HTMLElement>;
   /** The scrolling list of cards. */
   listRef?: Ref<HTMLDivElement>;
-  /** The panel lies over the pages (they do not fit beside it at their size): it is raised with a shadow. */
-  raised?: boolean;
   /** Whether a note's sent text is kept (the quiet "Saved" sign on its card). */
   keptOf?(this: void, note: NoteEntry): NoteKept | null;
   /** "Try again" on a note the library would not take. */
@@ -139,7 +137,6 @@ export function NotesPanel(p: NotesPanelProps) {
       tabIndex={-1}
       onKeyDown={onKeyDown}
       data-notes-panel=""
-      data-raised={p.raised ? 'true' : 'false'}
     >
       <div className={styles.header}>
         <h2 id={titleId} className={styles.title}>

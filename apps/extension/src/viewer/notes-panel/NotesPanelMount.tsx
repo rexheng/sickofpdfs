@@ -25,7 +25,7 @@ import { listNotes, type NoteEntry, type NoteSpot, type NotesFilter, spotOf } fr
 import { distanceBelowTop, goToSpot, noteStops, stepNote } from './navigate';
 import { NotesPanel } from './NotesPanel';
 import styles from './NotesPanelMount.module.css';
-import { cardsFolded, notesPanel, openEdit, publishNotesButton, useCardsFolded, useNotesPanelOpen, useOpenEdit, usePanelOverPages } from './panel-state';
+import { cardsFolded, notesPanel, openEdit, publishNotesButton, useCardsFolded, useNotesPanelOpen, useOpenEdit } from './panel-state';
 
 export interface NotesPanelMountProps {
   /** The tab's annotation session. Null while there is none: then nothing is shown and the keys do nothing. */
@@ -54,8 +54,8 @@ type MountedProps = NotesPanelMountProps & { session: AnnotationSession };
 
 /** How long the snackbar shows a message (chrome/Snackbar.tsx). */
 const NOTE_SHOWN_MS = 4000;
-/** While the panel lies over the pages: a note's words stay this far left of it (and of the view's left edge). */
-const CLEAR_OF_PANEL = 16;
+/** A note's words are kept this far inside the page column's edges when they are scrolled into it. */
+const CLEAR_OF_EDGE = 16;
 /** How much of a spot's surroundings (a point, a page corner) counts as its words. */
 const WORDS_SHOWN = 240;
 
@@ -64,7 +64,6 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
   const state = useSyncExternalStore(subscribe, () => session.state());
   const open = useNotesPanelOpen();
   const folded = useCardsFolded();
-  const raised = usePanelOverPages();
   const editing = useOpenEdit();
   const [filter, setFilter] = useState<NotesFilter>('all');
   const [said, setSaid] = useState('');
@@ -248,25 +247,29 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
     if (el && list.current) reveal(list.current, el);
   }, [open, state.active, filter]);
 
-  // While the panel lies over the pages (R69: they keep their size), the active note's words are slid out from under it
-  // (the pages scroll sideways), so the words a new note is about are never hidden behind its own box.
+  // The panel never covers the pages: while it is open the page column ends before it (App.module.css). A page the
+  // reader zoomed wider than that column scrolls sideways inside it, so the active note's words (the passage or the
+  // figure Claude was asked about) are scrolled into the column when they are past its right edge. It runs a frame
+  // after the panel opens, once the column has its new width and the pages their new place.
   useEffect(() => {
-    if (!open || !raised || state.active === null) return;
+    if (!open || state.active === null) return;
     const e = entry(state.active);
     const api = pageList.current;
-    const frame = requestAnimationFrame(() => {
-      const box = panel.current?.getBoundingClientRect();
-      const scroller = document.querySelector<HTMLElement>('[role="document"]');
-      const span = e && api ? clientSpan(e, api, pages) : null;
-      if (!span || !box || !scroller) return;
-      // Its end clear of the panel, without pushing its start off the left of the view.
-      const need = span.right - (box.left - CLEAR_OF_PANEL);
-      const room = span.left - (scroller.getBoundingClientRect().left + CLEAR_OF_PANEL);
-      const by = Math.min(need, room);
-      if (by > 1) scroller.scrollBy({ left: by, behavior: 'smooth' });
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        const scroller = document.querySelector<HTMLElement>('[role="document"]');
+        const span = e && api ? clientSpan(e, api, pages) : null;
+        if (!span || !scroller) return;
+        const box = scroller.getBoundingClientRect();
+        // Its end inside the column, without pushing its start off the column's left edge.
+        const need = span.right - (box.left + scroller.clientWidth - CLEAR_OF_EDGE);
+        const room = span.left - (box.left + CLEAR_OF_EDGE);
+        const by = Math.min(need, room);
+        if (by > 1) scroller.scrollBy({ left: by, behavior: 'smooth' });
+      });
     });
     return () => cancelAnimationFrame(frame);
-  }, [open, raised, state.active, entry, pageList, pages]);
+  }, [open, state.active, entry, pageList, pages]);
 
   const activeEntry = entry(state.active);
   // A new note's box takes the caret when it appears, unless it is a box moving in from the margin (box-carry.ts puts
@@ -367,7 +370,6 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
           onDelete={onDelete}
           onShowOriginal={onShowOriginal}
           cardRef={cardRef}
-          raised={raised}
           keptOf={(e) => keptOf(state, e.id)}
           onRetrySave={() => void session.retryParked()}
         />

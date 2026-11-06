@@ -57,18 +57,6 @@ export function useCardsFolded(): boolean {
   return useSyncExternalStore(folded.subscribe, folded.get);
 }
 
-const over = createFlag(false);
-
-/** The open panel lies over the pages' right side: they do not fit beside it at their size (R69). It then has a shadow. */
-export function setPanelOverPages(f: boolean): void {
-  over.set(f);
-}
-
-/** Re-renders when the open panel starts or stops lying over the pages. */
-export function usePanelOverPages(): boolean {
-  return useSyncExternalStore(over.subscribe, over.get);
-}
-
 // ---------------------------------------------------------------- the notes button in the toolbar
 
 /** What the toolbar's notes button shows and does: the panel mount publishes it while a document's notes are up. */
