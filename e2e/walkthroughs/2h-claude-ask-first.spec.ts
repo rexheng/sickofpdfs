@@ -9,18 +9,25 @@
 //    tools and no web search, and a page tool Claude calls anyway reads nothing. The card number on page 7 never reaches the double.
 // 3. The same PDF, with its page 7 readable: the R91 check finds the card number before anything leaves, and nothing is sent.
 // 4. A save that lands while the dialog waits (another tab saves it: D9, text not searchable) never skips the last check.
+// 5. R105b, judged per reading, not per tab (Phase 4 security read, N1 and N2): a reading a note saved asks after a reload and in a
+//    second tab, and Cancel sends nothing. The dialog says the thread's earlier note goes too. After one Send, a reload does not
+//    ask, and the reading behaves like any saved one (Claude may look up its pages). The Send is kept on this computer, and Forget
+//    removes it: reopened and saved again by a note, the reading asks again.
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { claudeReplay } from '../support/claude-replay';
 import { forceVerdict } from '../support/filter-verdict';
 import { expect, hooks, test } from '../support/test';
 import {
-  answerThenTool, bodiesHold, breakPageText, CARD, claudeLine, claudeRows, messages, paperWithCardOnPage7, plainAnswer, repliesSettle, scenario,
-  sendDialog, setUpClaude, typeAndSend,
+  agreementsKept, answerThenTool, bodiesHold, breakPageText, CARD, claudeLine, claudeRows, messages, paperWithCardOnPage7, plainAnswer, repliesSettle,
+  scenario, sendDialog, setUpClaude, typeAndSend,
 } from './support/claude';
 import { WALKTHROUGH_DIR } from './support/fixtures.spec-blind';
-import { chipOf, saveFromChip } from './support/library-p3.spec-blind';
-import { ATTENTION, SENTENCE_1, cardWith, libraryId, openPaper, replyBox, selectPassage, startNote, waitSaved, type TlFixture } from './support/marks.spec-blind';
+import { chipOf, forgetThisPdf, saveFromChip } from './support/library-p3.spec-blind';
+import {
+  ATTENTION, SENTENCE_1, SENTENCE_3, cardWith, libraryId, openPaper, replyBox, selectPassage, startNote, waitSaved, type TlFixture,
+} from './support/marks.spec-blind';
+import type { Page } from '@playwright/test';
 import { shot } from './support/takeover';
 
 test.use({ networkGate: 'claude' });
@@ -212,4 +219,120 @@ test('Security 2: the PDF is saved (D9) in another tab while the dialog waits: S
   expect(messages(replay.requests()), 'nothing was sent').toHaveLength(0);
   expect((await claudeRows(a)).every((r) => r.status === 'error'), 'and no answer was written').toBe(true);
   await shot(a, testInfo, 'd9-refused');
+});
+
+/** The reloaded or newly opened tab is in front, has drawn its text, and knows the PDF is in the library. */
+async function readyAndSaved(page: Page): Promise<void> {
+  await page.bringToFront(); // a tab behind another one does not draw its notes
+  await page.waitForSelector('[data-page-index="0"] span[data-start]', { timeout: 40_000 });
+  await expect.poll(() => hooks(page).eval((h) => h.save.state().kind), { timeout: 30_000, message: 'the PDF is in the library' }).toBe('saved');
+}
+
+/**
+ * A reply in the thread of the note that says `words`, typed and sent as the owner does. Where the margin shows numbered markers
+ * instead of cards (R98: the cards do not fit), the owner opens the thread from its marker, `marker`.
+ */
+async function replyIn(page: Page, words: string | RegExp, reply: string, marker: number): Promise<void> {
+  const card = cardWith(page, words).first();
+  if (!(await card.isVisible())) await page.getByRole('button', { name: new RegExp(`^note ${marker}\\. open it in the notes panel`, 'i') }).click();
+  await card.click();
+  await replyBox(page).click();
+  await typeAndSend(page, reply);
+}
+
+test('R105b: judged per reading: a reload and a second tab ask until one Send; then no more asking; after Forget it asks again', async ({ context, openViewer, server }, testInfo) => {
+  test.setTimeout(240_000);
+  await forceVerdict(context, 'unsure');
+  const a = await openPaper(openViewer, server, ATTENTION);
+  await expect(a.getByRole('button', { name: /^not sure/i }), 'the filter is not sure about this PDF').toBeVisible({ timeout: 30_000 });
+  const replay = claudeReplay(server);
+  await replay.attach(a);
+  await setUpClaude(a);
+
+  // A plain note saves the PDF. Its row says so: "Your first note saved it", which is not the owner's choice for Claude.
+  await selectPassage(a, ATTENTION, SENTENCE_1);
+  await startNote(a);
+  await typeAndSend(a, 'a plain note to keep');
+  const id = await waitSaved(a);
+  const reasons = await hooks(a).eval(async (h, doc) => (await h.store!.getDocument(doc as never))?.saveReasons ?? null, id);
+  expect(reasons, 'only the note saved it').toEqual(['Your first note saved it']);
+
+  // 1. After a reload, the first @Claude question still asks. Cancel sends nothing.
+  await a.reload();
+  await readyAndSaved(a);
+  replay.use('ask-passage');
+  await a.keyboard.press('Escape');
+  await selectPassage(a, ATTENTION, SENTENCE_3);
+  await startNote(a);
+  await typeAndSend(a, '@Claude what does this sentence say?');
+  const dialogA = sendDialog(a);
+  await expect(dialogA, 'a reload asks again').toBeVisible({ timeout: 40_000 });
+  await expect(dialogA, 'it says what is true').toContainText(/you haven.t chosen to save this pdf yourself/i);
+  expect(messages(replay.requests()), 'nothing is sent while the dialog asks').toHaveLength(0);
+  await shot(a, testInfo, 'r105b-reload-asks');
+  await dialogA.getByRole('button', { name: 'Cancel' }).click();
+  await expect(claudeLine(a, /not sent\. nothing was charged/i), 'Cancel leaves "Not sent"').toBeVisible();
+  expect(messages(replay.requests()), 'Cancel after a reload sent nothing').toHaveLength(0);
+
+  // 2. A second tab asks too. Its question is a reply in that thread, so the dialog says the earlier note goes too (N2).
+  const b = await openPaper(openViewer, server, ATTENTION);
+  await readyAndSaved(b);
+  await replyIn(b, 'what does this sentence say?', '@Claude and in one line?', 2);
+  const dialogB = sendDialog(b);
+  await expect(dialogB, 'a second tab asks too').toBeVisible({ timeout: 40_000 });
+  await expect(dialogB, 'the earlier note in the thread goes too, and the dialog says so').toContainText(/your earlier note in this thread goes too\. nothing else is sent/i);
+  expect(messages(replay.requests()), 'nothing is sent while the second tab asks').toHaveLength(0);
+  await shot(b, testInfo, 'r105b-second-tab-asks');
+  await dialogB.getByRole('button', { name: 'Cancel' }).click();
+  const notSentB = claudeLine(b, /not sent\. nothing was charged/i);
+  await expect(notSentB).toBeVisible();
+  expect(messages(replay.requests()), 'Cancel in the second tab sent nothing').toHaveLength(0);
+  expect(await agreementsKept(b), 'no Send, so nothing is kept').toBe(0);
+
+  // The owner says Send once, in the second tab: only the pack goes (no tools), and the Send is kept on this computer.
+  await notSentB.getByRole('button', { name: /^ask again$/i }).click();
+  await expect(dialogB, 'Ask again asks first again').toBeVisible({ timeout: 20_000 });
+  await dialogB.getByRole('button', { name: 'Send' }).click();
+  await repliesSettle(b);
+  const sent = messages(replay.requests());
+  expect(sent, 'one request, after Send').toHaveLength(1);
+  expect(sent[0].toolNames, 'the first answer has only the passages the owner agreed to').toEqual([]);
+  expect(sent[0].webSearch, 'and no web search').toBeNull();
+  expect(bodiesHold(sent, 'what does this sentence say?'), 'the earlier note went, as the dialog said').toBe(true);
+  await expect.poll(() => agreementsKept(b), { message: 'the Send is kept for the reading' }).toBe(1);
+
+  // 3. After that Send, a reload does not ask. The reading behaves like any saved one: Claude may look up its pages.
+  await a.bringToFront();
+  await a.reload();
+  await readyAndSaved(a);
+  replay.use({ steps: [answerThenTool(scenario('ask-passage').steps![0], { name: 'get_pages', input: { pages: [9] } }), plainAnswer('Page 9 says what it says.')] });
+  await replyIn(a, 'what does this sentence say?', '@Claude and what about page 9?', 2);
+  await expect.poll(() => messages(replay.requests()).length, { timeout: 40_000, message: 'it is sent without asking' }).toBe(3);
+  await expect(sendDialog(a), 'no dialog after the Send').toHaveCount(0);
+  await repliesSettle(a);
+  const later = messages(replay.requests()).slice(1);
+  expect(later[0].toolNames, 'the page tools are offered').toEqual(expect.arrayContaining(['get_pages']));
+  expect(later[1].searchResultCount, 'and page 9 was read for Claude').toBeGreaterThan(0);
+  await shot(a, testInfo, 'r105b-after-send-reload-no-dialog');
+
+  // 4. Forget removes the Send with the reading. Reopened, and saved again by a note, the reading asks again.
+  const { asked } = await forgetThisPdf(a);
+  expect(asked, 'Forget asks first (the PDF has notes)').toBe(true);
+  await expect.poll(async () => (await libraryId(a)) === null, { timeout: 30_000, message: 'the PDF is forgotten' }).toBe(true);
+  await expect.poll(() => agreementsKept(a), { timeout: 10_000, message: 'Forget removes the Send' }).toBe(0);
+  const count = messages(replay.requests()).length;
+  const c = await openPaper(openViewer, server, ATTENTION);
+  await expect(c.getByRole('button', { name: /^not sure/i }), 'not sure again').toBeVisible({ timeout: 30_000 });
+  replay.use('ask-passage');
+  await selectPassage(c, ATTENTION, SENTENCE_1);
+  await startNote(c);
+  await typeAndSend(c, '@Claude what does this sentence say?');
+  await waitSaved(c); // the note saved it again: a new reading, which the owner has not said Send for
+  const dialogC = sendDialog(c);
+  await expect(dialogC, 'after Forget and reopening, it asks again').toBeVisible({ timeout: 40_000 });
+  expect(messages(replay.requests()), 'nothing more was sent').toHaveLength(count);
+  await shot(c, testInfo, 'r105b-after-forget-asks');
+  await dialogC.getByRole('button', { name: 'Cancel' }).click();
+  await expect(claudeLine(c, /not sent\. nothing was charged/i)).toBeVisible();
+  expect(messages(replay.requests()), 'Cancel sent nothing').toHaveLength(count);
 });

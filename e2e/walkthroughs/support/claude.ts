@@ -149,6 +149,32 @@ export async function breakPageText(page: Page, on: boolean): Promise<void> {
   }, on);
 }
 
+/**
+ * R105b: how many Sends this computer keeps (the local-only store's `claude-agreed` records, read straight from its IndexedDB: the
+ * test hooks never reach that store). Each is a salted fingerprint, so only the count says anything.
+ */
+export async function agreementsKept(page: Page): Promise<number> {
+  return page.evaluate(async () => {
+    if (!(await indexedDB.databases()).some((d) => d.name === 'sop-local')) return 0;
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const r = indexedDB.open('sop-local');
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error ?? new Error('sop-local did not open'));
+    });
+    try {
+      if (!db.objectStoreNames.contains('never_save')) return 0;
+      const all = await new Promise<unknown[]>((resolve, reject) => {
+        const r = db.transaction('never_save').objectStore('never_save').getAll();
+        r.onsuccess = () => resolve(r.result as unknown[]);
+        r.onerror = () => reject(r.error ?? new Error('never_save could not be read'));
+      });
+      return all.filter((x) => (x as { list?: unknown }).list === 'claude-agreed').length;
+    } finally {
+      db.close();
+    }
+  });
+}
+
 /** Waits for the reply to settle: no Claude row is pending or streaming. */
 export async function repliesSettle(page: Page, timeout = 60_000): Promise<void> {
   await expect.poll(async () => (await claudeRows(page)).every((r) => r.status === 'done' || r.status === 'error') && (await claudeRows(page)).length > 0, { timeout }).toBe(true);
