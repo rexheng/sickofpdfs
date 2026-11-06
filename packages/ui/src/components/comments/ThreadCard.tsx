@@ -253,11 +253,17 @@ const UP_KEYS = new Set(['ArrowUp', 'PageUp', 'Home']);
  * - A box that takes the caret here (an edit of the first note) is scrolled into view.
  * - The scroll bar takes its width from the card's right padding, so the text never moves when it appears.
  * - A soft fade at an edge says there is more past it.
+ * - Nothing moves under a press (TB6 follow-up). Pressing a button here takes the caret out of the reply box, which
+ *   then folds its buttons away; the card would give that room to the thread, and a thread at its end would slide its
+ *   words down under the pointer, so the release landed beside the button and the click was lost (Think harder on a
+ *   long thread did nothing). While a press lasts, the thread and the card keep their size and nothing scrolls by
+ *   itself; they let go a frame after the release, once the click has landed.
  */
 function ThreadScroll({ children }: { children: ReactNode }) {
   const box = useRef<HTMLDivElement>(null);
   const inner = useRef<HTMLDivElement>(null);
   const atEnd = useRef(true);
+  const pressed = useRef(false);
   const edges = (el: HTMLElement) => {
     el.toggleAttribute('data-more-above', el.scrollTop > 1);
     el.toggleAttribute('data-more-below', el.scrollHeight - el.scrollTop - el.clientHeight > 1);
@@ -269,7 +275,7 @@ function ThreadScroll({ children }: { children: ReactNode }) {
     const fit = () => {
       const bar = el.offsetWidth - el.clientWidth;
       el.style.paddingInlineEnd = bar > 0 ? `max(0px, calc(var(--sop-card-pad-x) - ${bar}px))` : '';
-      if (atEnd.current) el.scrollTop = el.scrollHeight;
+      if (atEnd.current && !pressed.current) el.scrollTop = el.scrollHeight;
       edges(el);
     };
     fit();
@@ -291,7 +297,32 @@ function ThreadScroll({ children }: { children: ReactNode }) {
     edges(el);
   };
   const onWheel = (event: WheelEvent<HTMLDivElement>) => event.deltaY < 0 && leave();
-  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => event.target === event.currentTarget && leave();
+  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) leave(); // the thread's own scroll bar
+    hold();
+  };
+  /** Keeps the thread and its card the size they are until the press ends (see above). */
+  const hold = () => {
+    const el = box.current;
+    const card = el?.parentElement;
+    if (!el || !card || pressed.current) return;
+    pressed.current = true;
+    el.style.blockSize = `${el.offsetHeight}px`;
+    card.style.minBlockSize = `${card.offsetHeight}px`;
+    const release = () => {
+      window.removeEventListener('pointerup', release, true);
+      window.removeEventListener('pointercancel', release, true);
+      requestAnimationFrame(() => {
+        pressed.current = false;
+        el.style.blockSize = '';
+        card.style.minBlockSize = '';
+        if (atEnd.current) el.scrollTop = el.scrollHeight;
+        edges(el);
+      });
+    };
+    window.addEventListener('pointerup', release, true);
+    window.addEventListener('pointercancel', release, true);
+  };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => !(event.target instanceof HTMLTextAreaElement) && UP_KEYS.has(event.key) && leave();
   const onFocus = (event: FocusEvent<HTMLDivElement>) => {
     const el = box.current;

@@ -60,6 +60,7 @@
  */
 .active > .thread {
   flex-shrink: 1;
+  box-sizing: border-box;
   min-block-size: 0;
   margin: calc(-1 * var(--space-1)) calc(-1 * var(--sop-card-pad-x)) calc(-1 * var(--space-4));
   padding: var(--space-1) var(--sop-card-pad-x) var(--space-4);
