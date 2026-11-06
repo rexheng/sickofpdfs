@@ -64,7 +64,7 @@ export function replyErrorOf(e: unknown, o: { stopped?: boolean } = {}): ReplyEr
 /** The plain words of a code, for places that only know the code. */
 export const messageOf = (code: ReplyError['code']): string => REPLY_ERROR_MESSAGES[code];
 
-// ---- Privacy refusals: said in the viewer's note bar, never stored, nothing sent ----
+// ---- Privacy refusals (R105): a row in the thread that stays until the owner dismisses it, never a toast. Nothing is sent ----
 
 export type PrivateReason = 'unsaved' | 'no-text' | 'not-learning' | 'incognito';
 
@@ -75,3 +75,18 @@ export const PRIVATE_MESSAGES: Readonly<Record<PrivateReason, string>> = {
   'not-learning': 'Claude doesn’t read this PDF. It looked private when you opened it, so nothing was sent.',
   'incognito': 'Claude doesn’t work in Incognito windows. Nothing was sent.',
 };
+
+/**
+ * R105: the hint on every Claude item while the PDF is private (not learning, D9 or R102): the right-click and figure menus,
+ * Tools → Ask Claude about the whole document, and the @ suggestion.
+ */
+export const PRIVATE_HINT = 'Claude doesn’t read private files';
+
+/** R105: a question asked while the PDF looked private, on a PDF the owner saved afterwards (TB6 student critic). */
+export const NOT_READ_MESSAGE = 'Claude did not read this. The PDF looked private when you asked, so nothing was sent.';
+
+/** R105: the owner pressed Cancel in a confirm dialog. Nothing left the computer; the card offers to ask again. */
+export const NOT_SENT_MESSAGE = 'Not sent. Nothing was charged.';
+
+/** R105: the answer stopped at the length limit (`stop_reason: max_tokens`). Try again asks again with more room. */
+export const CUT_SHORT_MESSAGE = 'This answer was cut short.';

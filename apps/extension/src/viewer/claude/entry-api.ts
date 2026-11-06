@@ -23,6 +23,10 @@ export interface ClaudeEntryHost extends ClaudeEntry {
   thinkHarderUsd(threadId: ThreadId): number | null;
   /** Why Claude will not read this PDF now, or null when it may. */
   privacy(): PrivateReason | null;
+  /** R105: "Claude doesn't read private files" while the PDF is private (not learning, D9, R102): the Claude items are greyed out. */
+  privateHint(): string | null;
+  /** Hears when `privateHint` may have changed (the save state, the reading's flags). Returns the function that stops it. */
+  onPrivacyChange(cb: () => void): () => void;
   /** Whether a turn of this tab is writing the reply. */
   running(replyId: CommentId): boolean;
   dispose(): void;

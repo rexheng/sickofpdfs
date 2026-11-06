@@ -1,7 +1,8 @@
 // The reply status (plan §4 F): what Claude is doing right now, in one quiet line under the words, with Stop.
 //
 // "Reading 4 passages…", "Searching the web for “parallel trends”…", "Writing…". It shows only in the tab that runs the
-// reply, because only that tab can stop it. The words come from the live stream (`claudeLive`), which the runner feeds
+// reply, because only that tab can stop it. Two more (R105, TB6): "Getting ready…" while the first question in a paper starts
+// the local search, and "Waiting for you to confirm…" while a confirm dialog asks, with no Stop (nothing is sent until Send). The words come from the live stream (`claudeLive`), which the runner feeds
 // with the same ClaudeStreamEvents it gets from the stream mapper. The reply row in the store is written at most every
 // 500 ms (contract §3), so the live text here lets the words grow smoothly in between; the row stays the record.
 import type { ClaudeStreamEvent, CommentId, PageCitation, ReplyError, WebSource } from '@sop/core';
@@ -32,7 +33,14 @@ export interface ReplyContext {
   scope?: 'passages' | 'whole-document';
   /** Pages, for the whole document. */
   pages?: number;
+  /** The first question in this paper: the local search starts first (it takes a few seconds), so the line says so. */
+  preparing?: boolean;
 }
+
+/** While a confirm dialog asks (R105). The reply shows no Stop then: nothing is sent, and the dialog is the way out. */
+export const WAITING_LABEL = 'Waiting for you to confirm…';
+/** The first question in a paper, while the local search starts. */
+export const PREPARING_LABEL = 'Getting ready…';
 
 const live = new Map<CommentId, ReplyLive>();
 const listeners = new Set<() => void>();
@@ -42,6 +50,7 @@ const notify = () => {
 
 /** "Reading 4 passages…", "Looking at Figure 3…", "Reading all 12 pages…". */
 export function readingLabel(c: ReplyContext | undefined): string {
+  if (c?.preparing === true) return PREPARING_LABEL;
   if (c?.scope === 'whole-document') return c.pages ? `Reading all ${c.pages} pages…` : 'Reading the whole document…';
   const figures = c?.figures ?? [];
   if (figures.length === 1) return `Looking at ${figures[0]}…`;
@@ -101,6 +110,12 @@ export const claudeLive = {
     live.set(replyId, next);
     notify();
   },
+  /** A confirm dialog asks now: "Waiting for you to confirm…" until the answer (then `begin` again says what is read). */
+  waiting: (replyId: CommentId): void => {
+    const was = live.get(replyId) ?? { phase: 'pending' as const, label: null, toolRunning: false, text: '', citations: [], webSources: [], error: null };
+    live.set(replyId, { ...was, phase: 'pending', label: WAITING_LABEL });
+    notify();
+  },
   /** The final row is written: the row is the record from now on. */
   end: (replyId: CommentId): void => {
     if (live.delete(replyId)) notify();
@@ -131,7 +146,9 @@ export interface ReplyStatusProps {
  * One quiet line under a reply that is being written: three breathing dots in Claude's colour, the words, and Stop at
  * the right. It is a polite live region, so a screen reader hears each new step once.
  */
-export function ReplyStatus({ label, onStop }: ReplyStatusProps) {
+export function ReplyStatus({ label, onStop: stop }: ReplyStatusProps) {
+  // While a dialog asks, nothing is being sent: there is nothing to stop (R105).
+  const onStop = label === WAITING_LABEL ? undefined : stop;
   return (
     <div className={styles.status}>
       <span className={styles.dots} aria-hidden="true">

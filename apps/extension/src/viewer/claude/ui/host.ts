@@ -5,7 +5,7 @@
 // Slice D's entry (entry.ts) sets the host once it exists; until then nothing is set, and every Claude item stays hidden
 // (plan §8 A3: "keep those items hidden until it exists").
 import type { Anchor, CommentId, ModelRole, ThreadId } from '@sop/core';
-import { useSyncExternalStore } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
 /** A fixed question instead of the owner's words (plan §8 A3). */
 export type ClaudePreset = 'explain-figure' | 'whole-document';
@@ -41,7 +41,19 @@ export interface ClaudeReplyActions {
   thinkHarderUsd?(threadId: ThreadId): number | null;
 }
 
-export type ClaudeUiHost = ClaudeEntryLike & Partial<ClaudeReplyActions>;
+/**
+ * R105: whether Claude may be asked on this PDF at all. While it is private (not learning, D9 or R102), every Claude item is
+ * greyed out with this hint: the right-click menu, Explain this figure, Tools → Ask Claude about the whole document, and the @
+ * suggestion. A question typed anyway gets the plain refusal in its thread, and nothing is sent.
+ */
+export interface ClaudePrivacy {
+  /** "Claude doesn't read private files" while the PDF is private; null when Claude may be asked. */
+  privateHint(): string | null;
+  /** Hears when the hint may have changed. Returns the function that stops it. */
+  onPrivacyChange(cb: () => void): () => void;
+}
+
+export type ClaudeUiHost = ClaudeEntryLike & Partial<ClaudeReplyActions> & Partial<ClaudePrivacy>;
 
 let current: ClaudeUiHost | null = null;
 let ownTab: string | null = null;
@@ -74,6 +86,13 @@ export const claudeUi = {
 /** The host, or null while there is none (the Claude items then stay hidden). */
 export function useClaudeUi(): ClaudeUiHost | null {
   return useSyncExternalStore(claudeUi.subscribe, claudeUi.get, claudeUi.get);
+}
+
+/** The hint the Claude items show while the PDF is private (R105), or null; the component draws again when it changes. */
+export function useClaudePrivateHint(host: ClaudeUiHost | null): string | null {
+  const subscribe = useCallback((cb: () => void) => host?.onPrivacyChange?.(cb) ?? (() => undefined), [host]);
+  const get = useCallback(() => host?.privateHint?.() ?? null, [host]);
+  return useSyncExternalStore(subscribe, get, get);
 }
 
 /** Settings → Claude, in a new tab beside this one (the section slice G registers as `claude`). */

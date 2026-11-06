@@ -12,13 +12,19 @@
 // - only a click on a button, or Tab to a button and then Enter or Space, answers it. Esc means No;
 // - this holds for every PDF, so a quick note on a receipt can never save it.
 // Closing the tab while the notes are only in memory brings up the browser's "Leave site?" question (session.ts).
+// R105 (TB6): a note that asks Claude ("@Claude …") gets no save question for Claude's sake. Claude never reads a PDF judged not
+// learning, so saving it would not help, and the owner should not have to answer a question about a receipt to ask one. While the
+// note's first letters could still be "@Claude", the question waits, unseen, and typing goes into the note box as usual. A note
+// that starts with "@Claude" answers it No (nothing is kept, as after No); any other note, Enter, Esc, Tab, a click elsewhere or a
+// pause of a few seconds shows it as before. The thread then says, in Claude's row, why there is no answer.
 import { HARD_BLOCK_REASON } from '@sop/core';
 import { Dialog } from '@sop/ui';
 import { FORGOTTEN_REASON, NEVER_SAVE_REASON } from '../filter/async-filter';
 import { CARD_ID_PREFIX } from '../notes/CardColumn';
 import cards from '../ui/cards.module.css';
 import type { SaveControllerImpl } from './save-controller';
-import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useSyncExternalStore } from 'react';
+import { claudeNoteWaiting } from './claude-note';
 import { useSaveView } from './StatusChip';
 import styles from './SaveDialogs.module.css';
 
@@ -35,6 +41,21 @@ const openNoteBox = (): HTMLTextAreaElement | null =>
 
 /** How long letters typed right after the answer are kept for the note box, at most. */
 const TYPE_AHEAD_MS = 1500;
+
+/** R105: a note that asks Claude. */
+const CLAUDE_NOTE = /^\s*@claude(?![\p{L}\p{N}_])/iu;
+/** The note's words could still turn out to be "@Claude …": nothing yet, "@", "@cl". */
+function couldAskClaude(text: string): boolean {
+  const t = text.trimStart().toLowerCase();
+  return t === '' || (t.startsWith('@') && '@claude'.startsWith(t));
+}
+/** How long the question waits, unseen, for the note's first letters (R105). Any pause this long shows it. */
+const CLAUDE_WAIT_MS = 2500;
+/** The note box being written in now, when it has the caret. */
+const noteBeingWritten = (): HTMLTextAreaElement | null => {
+  const box = openNoteBox();
+  return box !== null && document.activeElement === box ? box : null;
+};
 
 /** The question shows at most this many of the letters typed into it (the end, where the owner is typing). */
 const HELD_SHOWN = 160;
@@ -182,7 +203,20 @@ export function whyAsking(reason: string | undefined, privateNumbers: boolean): 
 /** Open while the save state is `asking`. Escape or a click outside answers No: nothing is stored. */
 export function SaveAskDialog({ save }: SaveAskDialogProps) {
   const { state } = useSaveView(save);
-  const open = save !== null && state?.kind === 'asking';
+  const asking = save !== null && state?.kind === 'asking';
+  // R105: while a note being written could still be "@Claude …", the question waits unseen ('wait'), then shows ('show'). Decided as
+  // the question opens, before it is drawn, so it never takes the caret from a note that asks Claude.
+  const hold = useRef<{ asking: boolean; mode: 'wait' | 'show' }>({ asking: false, mode: 'show' });
+  const [, redraw] = useReducer((n: number) => n + 1, 0);
+  // A failed save keeps the question open (the App's note says it failed); the rejection is handled there.
+  const answered = useRef(false);
+  if (hold.current.asking !== asking) {
+    const box = asking ? noteBeingWritten() : null;
+    const forClaude = asking && claudeNoteWaiting.active(); // a sent @Claude note waits on this question (claude-note.ts)
+    hold.current = { asking, mode: forClaude || (box !== null && couldAskClaude(box.value)) ? 'wait' : 'show' };
+    if (asking) answered.current = false;
+  }
+  const open = asking && hold.current.mode === 'show';
   // R96: the question's text takes the focus as it is drawn, before the dialog would give it to its first button (the dialog
   // only does that when the focus is not inside it yet), so no button has it and no ring is ever drawn on one. The shared
   // Dialog does the same for any dialog opened with the mouse; this one does it however it opens, since it usually opens
@@ -206,8 +240,6 @@ export function SaveAskDialog({ save }: SaveAskDialogProps) {
     window.addEventListener('keydown', catchTypedAhead, true);
     return () => window.removeEventListener('keydown', catchTypedAhead, true);
   }, []);
-  // A failed save keeps the question open (the App's note says it failed); the rejection is handled there.
-  const answered = useRef(false);
   const answer = (yes: boolean): void => {
     if (save === null || answered.current) return;
     answered.current = true;
@@ -220,6 +252,74 @@ export function SaveAskDialog({ save }: SaveAskDialogProps) {
     void save.answerAsk(yes).catch(() => {});
     giveBackToNoteBox();
   };
+  // R105: the question waits, unseen, while the note's first letters are typed into the box. "@Claude" answers it No; anything else
+  // shows it, as does Enter, Esc, Tab, a click elsewhere, the caret leaving the box, or a pause.
+  const waiting = asking && hold.current.mode === 'wait';
+  // A sent @Claude note waits on this question: No, quietly, whether the question is seen yet or not.
+  useEffect(() => {
+    if (!asking || save === null) return;
+    const no = () => {
+      if (!claudeNoteWaiting.active() || answered.current) return;
+      answered.current = true;
+      hold.current = { ...hold.current, mode: 'show' };
+      typedAhead.asking = false;
+      void save.answerAsk(false).catch(() => {});
+    };
+    no();
+    return claudeNoteWaiting.subscribe(no);
+  }, [asking, save]);
+  useEffect(() => {
+    if (!waiting || save === null) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const show = () => {
+      if (hold.current.mode !== 'wait') return;
+      hold.current = { ...hold.current, mode: 'show' };
+      redraw();
+    };
+    const pause = () => {
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(show, CLAUDE_WAIT_MS);
+    };
+    const onInput = () => {
+      const box = openNoteBox();
+      const text = box?.value ?? '';
+      if (CLAUDE_NOTE.test(text)) {
+        // No, quietly: nothing is kept (the note stays in this tab), and the thread will say why Claude does not answer.
+        if (answered.current) return;
+        answered.current = true;
+        hold.current = { ...hold.current, mode: 'show' };
+        void save.answerAsk(false).catch(() => {});
+        return;
+      }
+      if (!couldAskClaude(text)) show();
+      else pause();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.isComposing) return;
+      if (e.key !== 'Enter' && e.key !== 'Escape' && e.key !== 'Tab') return;
+      // Enter would send the note, Esc close it, Tab leave it: the question comes first, as before (R100: Enter answers nothing).
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      show();
+    };
+    const onPointer = (e: PointerEvent) => {
+      const box = openNoteBox();
+      if (box === null || !(e.target instanceof Node) || !box.contains(e.target)) show();
+    };
+    const onLeave = () => requestAnimationFrame(() => (noteBeingWritten() === null ? show() : undefined));
+    pause();
+    document.addEventListener('input', onInput);
+    window.addEventListener('keydown', onKey, true);
+    document.addEventListener('pointerdown', onPointer, true);
+    document.addEventListener('focusout', onLeave, true);
+    return () => {
+      if (timer !== null) clearTimeout(timer);
+      document.removeEventListener('input', onInput);
+      window.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('pointerdown', onPointer, true);
+      document.removeEventListener('focusout', onLeave, true);
+    };
+  }, [waiting, save]);
   // R96: from the moment it opens, typing is held for the note box.
   useEffect(() => {
     if (!open) return;
@@ -232,6 +332,14 @@ export function SaveAskDialog({ save }: SaveAskDialogProps) {
   }, [open]);
   // R100: what was typed while it is open shows in it, so the owner sees the letters were kept (and that Enter did not send).
   const held = useSyncExternalStore(subscribeHeld, heldText);
+  // R105: the question showed before the note's words were known (the box took the caret late), and the note asks Claude: No.
+  useEffect(() => {
+    if (!open || answered.current) return;
+    const text = `${openNoteBox()?.value ?? ''}${held}`;
+    if (CLAUDE_NOTE.test(text)) answer(false);
+    // `answer` is made anew each draw; the held letters are what this follows.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, held]);
   if (save === null || state === null) return null;
   return (
     <Dialog
