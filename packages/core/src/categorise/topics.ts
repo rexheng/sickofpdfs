@@ -11,7 +11,7 @@
 //   subject are grouped by closeness and named by their two most telling terms (a word or a two-word phrase), never by a generic word.
 // - `suggestTags` only offers a tag the owner has given to at least TAG_MIN_DOCS readings (the 3-reading rule), never one in
 //   `removed`, and at most MAX_SUGGESTIONS.
-// - `related` is the closest readings by meaning, never the reading itself.
+// - `related` is the closest readings by meaning, never the reading itself; with a floor (the library passes RELATED_MIN_SIMILARITY) it can be fewer than asked, or none.
 //
 // The thresholds were picked by measuring the real model on the 22 learning PDFs of the filter's fixtures (categorise-report.md).
 // A bad vector (empty, not finite, all zero) is left out of everything rather than failing.
@@ -386,6 +386,10 @@ export const READING_SUBJECT_TIE = 0.015;
 export const READING_FIELD_SIMILARITY = 0.34;
 /** The most subjects one reading takes (R92c). */
 export const MAX_SUBJECTS_PER_DOC = 2;
+/** When no subject reaches READING_SUBJECT_SIMILARITY, the closest subject is still used if it is at least this close (a lower floor). */
+export const FALLBACK_SUBJECT_SIMILARITY = 0.25;
+/** The fallback also offers any subject within this of the closest one (so the library's shared subject can win a near tie). */
+export const FALLBACK_SUBJECT_TIE = 0.03;
 /** The key of a topic made from a subject: it never changes, whoever else is in the library. */
 export const subjectTopicKey = (name: string): string => `subject:${name}`;
 /** The key of a topic made from a broad field (R92d). */
@@ -408,6 +412,16 @@ export function subjectsOfReading(vector: Float32Array, subjects: readonly Subje
   return scored.filter((x, i) => i === 0 || (i < MAX_SUBJECTS_PER_DOC && x.score >= best.score - (x.field !== undefined && x.field === best.field ? READING_SUBJECT_MARGIN : READING_SUBJECT_TIE)));
 }
 
+/** A reading's subject candidates, best first: those above the threshold, else (lower floor) the closest and its near ties, at most 3. */
+function subjectCandidates(v: Float32Array, subjects: readonly Subject[]): { name: string; score: number }[] {
+  const strong = subjectsOfReading(v, subjects);
+  if (strong.length > 0) return strong.map((x) => ({ name: x.name, score: x.score }));
+  const scored = subjects.map((s) => ({ name: s.name, score: dot(v, s.vector) })).filter((x) => x.score >= FALLBACK_SUBJECT_SIMILARITY);
+  scored.sort((a, b) => b.score - a.score || byCode(a.name, b.name));
+  const top = scored[0];
+  return top === undefined ? [] : scored.filter((x) => x.score >= top.score - FALLBACK_SUBJECT_TIE).slice(0, 3);
+}
+
 /**
  * Groups readings into topics. See the file's header for what is promised. `opts.minDocs` is the number of readings the library must hold
  * before any topic is made (default TOPIC_MIN_DOCS).
@@ -427,27 +441,39 @@ export function clusterTopics(docs: Doc[], opts?: { minDocs?: number; subjects?:
     const v = unitOf(s.vector);
     return v === null || typeof s.name !== 'string' || s.name === '' ? [] : [{ name: s.name, vector: v, ...(s.field === undefined ? {} : { field: s.field }) }];
   });
-  const bySubject = new Map<string, string[]>();
+  // Each reading offers its own subject candidates (best first). Then the subjects are picked one at a time, the one that most
+  // still-unplaced readings offer first, and each reading is placed once: so a reading is in one topic, and two near-identical subjects
+  // (Deep Learning, Neural Networks) do not both appear: the second has too few readings left to make a topic.
+  const candidates = new Map<string, { name: string; score: number }[]>();
+  for (const u of units) {
+    const c = subjectCandidates(u.v, subjects);
+    if (c.length > 0) candidates.set(u.id, c);
+  }
   const matched = new Set<string>();
-  if (subjects.length > 0) {
-    for (const u of units) {
-      for (const m of subjectsOfReading(u.v, subjects)) {
-        matched.add(u.id);
-        bySubject.set(m.name, [...(bySubject.get(m.name) ?? []), u.id]);
+  const out: Topic[] = [];
+  const used = new Map<string, Topic>();
+  for (;;) {
+    const support = new Map<string, { ids: string[]; sum: number }>();
+    for (const [id, list] of candidates) {
+      if (matched.has(id)) continue;
+      for (const c of list) {
+        const e = support.get(c.name) ?? { ids: [], sum: 0 };
+        e.ids.push(id);
+        e.sum += c.score;
+        support.set(c.name, e);
       }
     }
-  }
-  const out: Topic[] = [];
-  const used = new Set<string>();
-  const bySize = [...bySubject].filter(([, ids]) => ids.length >= MIN_TOPIC_SIZE).sort((a, b) => b[1].length - a[1].length || byCode(a[0], b[0]));
-  for (const [name, ids] of bySize) {
-    used.add(name);
-    out.push({ key: subjectTopicKey(name), docIds: [...ids].sort(byCode), name });
+    const best = [...support].filter(([, e]) => e.ids.length >= MIN_TOPIC_SIZE).sort((a, b) => b[1].ids.length - a[1].ids.length || b[1].sum - a[1].sum || byCode(a[0], b[0]))[0];
+    if (best === undefined) break;
+    const topic: Topic = { key: subjectTopicKey(best[0]), docIds: [...best[1].ids].sort(byCode), name: best[0] };
+    for (const id of best[1].ids) matched.add(id);
+    used.set(best[0], topic);
+    out.push(topic);
   }
 
-  // R92d: a reading that shares no exact subject joins its broad field (that of its best subject, or the field vector when that is closer)
-  // once two or more readings share the field. A reading in a subject topic leaves the field topic but still counts toward it.
-  const inSubjectTopic = new Set(bySize.flatMap(([, ids]) => ids));
+  // R92d: a reading in no subject topic joins its broad field (that of its closest subject, or the field vector when that is closer).
+  // It is a topic even when it is alone, so "No topic" is only for readings that match nothing at all. A field named like a subject
+  // topic joins that topic.
   const fieldVectors = (opts?.fields ?? []).flatMap((f) => {
     const fv = unitOf(f.vector);
     return fv === null || f.name === '' ? [] : [{ name: f.name, vector: fv }];
@@ -456,9 +482,12 @@ export function clusterTopics(docs: Doc[], opts?: { minDocs?: number; subjects?:
   const placed = new Set<string>();
   if (subjects.length > 0 || fieldVectors.length > 0) {
     for (const u of units) {
-      const bestSubject = subjectsOfReading(u.v, subjects)[0];
-      let chosen = bestSubject?.field;
-      let score = bestSubject?.score ?? -1;
+      if (matched.has(u.id)) continue;
+      // A subject above the threshold gives its field; a weak (fallback) subject is not trusted to name a field on its own.
+      const bestSubject = candidates.get(u.id)?.[0];
+      const strong = bestSubject !== undefined && bestSubject.score >= READING_SUBJECT_SIMILARITY;
+      let chosen = strong ? subjects.find((s) => s.name === bestSubject.name)?.field : undefined;
+      let score = strong ? bestSubject.score : -1;
       for (const f of fieldVectors) {
         const sc = dot(u.v, f.vector);
         if (sc >= READING_FIELD_SIMILARITY && (sc > score || (sc === score && chosen !== undefined && byCode(f.name, chosen) < 0))) {
@@ -466,18 +495,33 @@ export function clusterTopics(docs: Doc[], opts?: { minDocs?: number; subjects?:
           score = sc;
         }
       }
+      if (chosen === undefined) {
+        // Fallback: the closest field, if it is above the lower floor.
+        let top = FALLBACK_SUBJECT_SIMILARITY;
+        for (const f of fieldVectors) {
+          const sc = dot(u.v, f.vector);
+          if (sc > top || (sc === top && chosen !== undefined && byCode(f.name, chosen) < 0)) {
+            chosen = f.name;
+            top = sc;
+          }
+        }
+      }
       if (chosen === undefined) continue;
       placed.add(u.id);
       fieldReaders.set(chosen, [...(fieldReaders.get(chosen) ?? []), u.id]);
     }
-    const fields = [...fieldReaders].filter(([, ids]) => ids.length >= MIN_TOPIC_SIZE).sort((a, b) => b[1].length - a[1].length || byCode(a[0], b[0]));
-    for (const [name, ids] of fields) {
-      const members = ids.filter((id) => !inSubjectTopic.has(id));
-      if (members.length === 0 || used.has(name)) continue;
-      used.add(name);
-      out.push({ key: fieldTopicKey(name), docIds: members.sort(byCode), name });
+    for (const [name, ids] of [...fieldReaders].sort((a, b) => b[1].length - a[1].length || byCode(a[0], b[0]))) {
+      const same = used.get(name);
+      if (same !== undefined) {
+        same.docIds = [...same.docIds, ...ids].sort(byCode);
+        continue;
+      }
+      const topic: Topic = { key: fieldTopicKey(name), docIds: [...ids].sort(byCode), name };
+      used.set(name, topic);
+      out.push(topic);
     }
   }
+  out.sort((a, b) => b.docIds.length - a.docIds.length || byCode(a.key, b.key));
 
   // The readings that match no subject and no field are grouped by closeness, as before.
   const rest = units.filter((u) => !matched.has(u.id) && !placed.has(u.id));
@@ -519,7 +563,7 @@ export function clusterTopics(docs: Doc[], opts?: { minDocs?: number; subjects?:
     if (name === '') name = 'Related readings';
     let unique = name;
     for (let i = 2; used.has(unique); i++) unique = `${name} (${i})`;
-    used.add(unique);
+    used.set(unique, { key: t.key, docIds: t.docIds, name: unique });
     out.push({ key: t.key, docIds: t.docIds, name: unique });
   }
   return out;
@@ -564,8 +608,11 @@ export function suggestTags(doc: Doc, tagged: { tag: string; vectors: Float32Arr
 
 // ---- related ----------------------------------------------------------------------------------------------------------------------
 
-/** The `n` readings (default 5) closest in meaning to `doc`, closest first, never `doc` itself. Ties go to the lower id. */
-export function related(doc: Doc, all: Doc[], n = 5): string[] {
+/** The library's Related readings list only readings at least this close (cosine): fewer than five, or none, is a fine answer. */
+export const RELATED_MIN_SIMILARITY = 0.25;
+
+/** Up to `n` readings (default 5) closest in meaning to `doc` and, when `minSimilarity` is given, at least that close, closest first, never `doc` itself. Ties go to the lower id. */
+export function related(doc: Doc, all: Doc[], n = 5, minSimilarity = Number.NEGATIVE_INFINITY): string[] {
   const v = unitOf(doc.vector);
   if (v === null || !Number.isFinite(n) || n <= 0) return [];
   const scored: { id: string; score: number }[] = [];
@@ -575,7 +622,8 @@ export function related(doc: Doc, all: Doc[], n = 5): string[] {
     const u = unitOf(other.vector);
     if (u === null) continue;
     seen.add(other.id);
-    scored.push({ id: other.id, score: dot(v, u) });
+    const score = dot(v, u);
+    if (score >= minSimilarity) scored.push({ id: other.id, score });
   }
   scored.sort((a, b) => b.score - a.score || byCode(a.id, b.id));
   return scored.slice(0, Math.floor(n)).map((s) => s.id);

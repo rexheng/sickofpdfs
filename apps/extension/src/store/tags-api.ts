@@ -27,7 +27,7 @@
 // - Vectors are local: `embeddings` has no outbox triggers and is not a backup table. Nothing here sends anything anywhere.
 // - Every write is one transaction, stamps `hlc`, leaves `rev` to sync, and publishes its change event only after it commits.
 // - Errors are rejections whose message starts with a code (`bad-input: …`), so the code survives a message port.
-import { type DocumentId, EMBEDDING_MODEL, MAX_TOPICS_PER_DOC, TAG_MIN_DOCS, type HlcStamp, related as relatedIds, type TagKind, type TagSource } from '@sop/core';
+import { type DocumentId, EMBEDDING_MODEL, MAX_TOPICS_PER_DOC, RELATED_MIN_SIMILARITY, TAG_MIN_DOCS, type HlcStamp, related as relatedIds, type TagKind, type TagSource } from '@sop/core';
 import { CATEGORISER_TAB, type StoreChange } from './change-bus';
 import { UNDERSTOOD } from './reading-flags';
 import { isReadOnly, type SqlDb, type SqlValue } from './schema-v2';
@@ -675,7 +675,7 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
           return vector === null ? [] : [{ id: str(r, 'id'), vector, text: { title: '', abstract: '' } }];
         });
         const me = docs.find((d) => d.id === documentId);
-        return me === undefined ? [] : (relatedIds(me, docs, count) as DocumentId[]);
+        return me === undefined ? [] : (relatedIds(me, docs, count, RELATED_MIN_SIMILARITY) as DocumentId[]);
       }),
 
     groupBy: (by) =>
@@ -701,7 +701,9 @@ export function createTagsApi(db: SqlDb, deps: TagsDeps): TagsApi {
              WHERE ${LIVE} ORDER BY ${OPENED} DESC, d.id`,
             [by],
           );
+          // A reading shows once in the topic view, under its first topic.
           for (const r of rows) {
+            if (by === 'topic' && seen.has(str(r, 'id'))) continue;
             add(str(r, 'tag_id'), str(r, 'name'), str(r, 'tag_id'), str(r, 'id') as DocumentId);
             seen.add(str(r, 'id'));
           }
