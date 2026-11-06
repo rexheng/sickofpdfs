@@ -353,7 +353,9 @@ The "+ New" button offers Upload PDF, Open file and Paste link. In an Incognito 
       - Course codes ignore postcodes and ID numbers ("SE-106 91").
       - The course page the PDF was opened from counts as a course source, on this computer only.
       - After a burst of saves or a restart, topics refresh once the back-fill ends.
-      - **Broad fields (R92d).** Every subject belongs to one of about 25 broad fields, such as Economics, Computer Science, Statistics, Mathematics, Physics or Biology. A reading that shares no exact subject joins its broad field's topic when 2 or more readings share it. "No topic" is only for readings that match nothing at all.
+      - **Broad fields (R92d).** Every subject belongs to one of about 25 broad fields, such as Economics, Computer Science, Statistics, Mathematics, Physics or Biology. A reading that shares no exact subject joins its broad field's topic, even when it is the only one. "No topic" is only for readings that match nothing at all.
+      - **Fallbacks and one topic per reading (TB6, C6).** When no subject reaches the threshold, a reading offers its closest subject if that is above a lower floor (0.25), else its broad field. Subjects are then picked one at a time, the one most still-unplaced readings offer first, and each reading is placed once. So Deep Learning and Neural Networks never both show, and Group by Topic lists a reading once, under its first topic.
+      - **Related readings floor.** Related readings lists only readings at least 0.25 close, so it can show fewer than five, or none.
   - At most 3 auto topic tags go on one reading.
 - **How it works.** The bundled MiniLM model (the filter's tie-breaker) turns each saved reading's title and abstract, or its opening text, into a meaning vector. This happens on this computer, in a worker, after the save and off the reading path.
   - The vectors stay local. They are never backed up or synced, and are rebuilt when needed.
