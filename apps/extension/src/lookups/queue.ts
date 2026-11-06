@@ -7,7 +7,8 @@
 //   `https://api.crossref.org/works/<DOI>`. No title, text, file name, link, cookie or referrer (arxiv.ts, crossref.ts, http.ts).
 // - Only while the switch is on. It is read from the library right before every request. A change of the setting stops the queue at once:
 //   the request on its way is cancelled and every timer is cleared. Switching it on starts it again.
-// - Only for a saved reading (a row of `documents`, not in Trash) whose text is in the library (not `index_text` 0) and which was saved
+// - Only for a saved reading (a row of `documents`, not in Trash) whose text is in the library (not `index_text` 0), that the owner did not
+//   save against the filter's "not learning" (R102, Nov 6: such a reading never goes online), and which was saved
 //   more than `SETTLE_MS` ago, so a save that is taken back (Undo lasts 10 s) is never asked about. The store decides this (store/lookups-api.ts).
 // - Which readings: those that lack a title, authors or a year, and each reading saved while this runs (one check, whether or not it lacks
 //   anything). An older reading that lacks nothing is not asked about, so a big library is not sent out again at every browser start.

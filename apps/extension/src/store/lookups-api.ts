@@ -7,7 +7,8 @@
 // Rules this file keeps:
 // - Only saved readings: a row of `documents`, not in Trash. A PDF that was never saved has no row, so it is never offered.
 // - A reading whose text the owner keeps out of the library (`index_text` 0: a private PDF saved by choice, D9) is never offered and never
-//   written to.
+//   written to. Nor is a reading the owner saved although the filter judged it "not learning" (R102, Nov 6 ruling): such a reading never
+//   goes online (`MAY_GO_ONLINE`, reading-flags.ts).
 // - A reading is offered when it lacks a title, authors or a year, or when it was saved while the lookups were running (one check for each
 //   new reading; older complete readings are left alone, so a big library is not asked about again and again).
 // - A reading just saved waits `SETTLE_MS` before it is offered, which is longer than the 10 s Undo after a first mark: a save that is taken
@@ -17,6 +18,7 @@
 // - Errors are rejections whose message starts with a code (`bad-input: …`), so the code survives a message port.
 import type { DocumentId, HlcStamp } from '@sop/core';
 import type { StoreChange } from './change-bus';
+import { MAY_GO_ONLINE } from './reading-flags';
 import { isReadOnly, type SqlDb, type SqlValue } from './schema-v2';
 
 /** How long a reading is left alone after it was saved, before a lookup may ask about it (longer than the 10 s Undo of a first mark). */
@@ -123,7 +125,7 @@ export function createLookupsApi(db: SqlDb, deps: LookupsDeps): LookupsApi {
         }
         if (!Number.isInteger(since) || since < 0) throw new LookupsError('bad-input', 'since is a time in milliseconds');
         const now = deps.now();
-        const wanted = `deleted_at IS NULL AND index_text = 1
+        const wanted = `deleted_at IS NULL AND ${MAY_GO_ONLINE}
              AND ((doi IS NOT NULL AND doi <> '') OR (arxiv_id IS NOT NULL AND arxiv_id <> ''))
              AND (title IS NULL OR trim(title) = '' OR authors IN ('', '[]') OR year IS NULL OR created_at >= ?)
              AND id NOT IN (SELECT value FROM json_each(?))`;
@@ -174,8 +176,8 @@ export function createLookupsApi(db: SqlDb, deps: LookupsDeps): LookupsApi {
         if (isReadOnly(db)) throw new LookupsError('read-only', 'Update sickofpdfs. This library was saved by a newer version, so it cannot be changed.');
         const written: ('title' | 'authors' | 'year')[] = [];
         db.savepoint(() => {
-          const cur = db.selectObjects('SELECT title, authors, year FROM documents WHERE id = ? AND deleted_at IS NULL AND index_text = 1', [documentId])[0];
-          if (cur === undefined) return; // gone, in Trash, or its text is kept out of the library
+          const cur = db.selectObjects(`SELECT title, authors, year FROM documents WHERE id = ? AND deleted_at IS NULL AND ${MAY_GO_ONLINE}`, [documentId])[0];
+          if (cur === undefined) return; // gone, in Trash, its text is kept out of the library, or it was saved against "not learning"
           const sets: string[] = [];
           const binds: SqlValue[] = [];
           if (found.title !== undefined && noTitle(text(cur, 'title'))) {
