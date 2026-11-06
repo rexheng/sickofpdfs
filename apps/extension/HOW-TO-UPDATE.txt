@@ -5,35 +5,86 @@ Your readings, marks, comments, tags and settings live inside Chrome,
 under this extension's name. Updating by replacing the files and
 pressing Reload keeps all of them.
 
-Do this each time you get a new test build (Windows):
+The one thing that can lose them is the Remove button. Never press it.
+(More about it at the bottom.)
 
-1. Keep ONE folder for sickofpdfs, for example C:\sickofpdfs.
-   Always load the extension from that same folder. Never make a
-   second copy somewhere else.
+Do this each time you get a new test build.
 
-2. Close any sickofpdfs tabs that are still open (the library and any
-   PDF you are reading). If you were typing a note, it is kept safe
-   and comes back, but closing the tabs first is calmer.
 
-3. Unzip the new test build into that same folder, C:\sickofpdfs.
-   When Windows asks, choose "Replace the files in the destination".
+STEP 1. Use ONE folder.
+   Keep one folder for sickofpdfs, for example C:\sickofpdfs.
+   Chrome always loads the extension from that same folder.
+   Never make a second copy somewhere else.
 
-4. Open Chrome and go to:   chrome://extensions
-   Find sickofpdfs and press the round reload arrow on its card.
+STEP 2. Close the sickofpdfs tabs.
+   Close the library and any PDF you are reading.
+   If you were typing a note, it is kept safe and comes back.
+   Closing the tabs first is calmer.
 
-5. Open your library (click the sickofpdfs icon). You should see:
-   "Updated to test build N. Your library is safe."
+STEP 3. Put the new files into that same folder.
 
-NEVER press "Remove" on the sickofpdfs card.
-Remove deletes your whole library and all your notes. They cannot be
-brought back from Chrome. The same happens if you remove the extension
-and add it again.
+   On Windows:
+     a. Find the zip you were sent. Right-click it.
+     b. Click "Extract All...".
+     c. Windows suggests a new folder named after the zip.
+        Do NOT use it. Press "Browse...".
+     d. Pick your sickofpdfs folder (C:\sickofpdfs).
+        Press "Select Folder".
+     e. The box must now show C:\sickofpdfs and nothing after it.
+     f. Press "Extract".
+     g. When Windows says the files already exist, click
+        "Replace the files in the destination".
 
-For extra safety, turn on a backup before you update:
-   Library -> Settings -> Backup.
-Pick a folder, and your library is copied there. If anything ever goes
-wrong, Settings -> Restore brings it back.
+   On a Mac:
+     a. Double-click the zip. It opens into a new folder.
+     b. Open that new folder. Select everything inside it (Cmd+A).
+     c. Drag it all into your sickofpdfs folder.
+     d. When Finder asks, press "Replace".
 
-Why one folder: Chrome remembers an unpacked extension by its folder.
-If you load it from a second folder, Chrome may ask you to remove the
-first one, and removing it deletes the library.
+   Check it. Open your sickofpdfs folder.
+   Afterwards the folder must hold "manifest.json" directly,
+   not another folder.
+   If you only see a folder (for example "sickofpdfs-test-build-7"),
+   the files went one level too deep. Open that folder, select
+   everything inside it, and move it up into your sickofpdfs folder,
+   replacing the files.
+
+STEP 4. Press Reload.
+   Open Chrome. Type  chrome://extensions  in the address bar and
+   press Enter.
+   Find the sickofpdfs card.
+   Press Reload. It is the small round arrow at the bottom right of the
+   card, next to the on/off switch.
+   Reload is the only button you need. Do not press anything else.
+   The card now says the new build after "sickofpdfs",
+   for example "Test build 7".
+
+STEP 5. Open your library.
+   Click the sickofpdfs icon in Chrome's toolbar.
+   In the menu that opens, click "Open library".
+   On the Home page you should see:
+      "Updated to test build N. Your library is safe."
+   It shows only once for each update.
+   If you do not see it, the new files did not load. Check Step 3 and
+   press Reload again. Do not press Remove.
+
+
+NEVER PRESS "REMOVE".
+   Remove is the button with the word "Remove" on the sickofpdfs card,
+   beside "Details".
+   It deletes your whole library and all your notes. They cannot be
+   brought back from Chrome.
+   The same happens if you remove the extension and add it again.
+
+
+FOR EXTRA SAFETY
+   Turn on a backup before you update:
+      Library -> Settings -> Backup.
+   Pick a folder, and your library is copied there. If anything ever
+   goes wrong, Settings -> Restore brings it back.
+
+
+WHY ONE FOLDER
+   So that there is only ever one sickofpdfs, and you always know which
+   one it is. We have not tested what Chrome does when the same
+   extension is loaded from two different folders. So do not do it.

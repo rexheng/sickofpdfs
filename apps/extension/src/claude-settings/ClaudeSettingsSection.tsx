@@ -495,12 +495,14 @@ function KeyEntry({
   onCancel(this: void): void;
 }) {
   const checking = check.phase === 'checking';
+  // TB6: dots hide a wrong paste from a slow reader. "Show" shows the key; it is hidden again whenever this box closes.
+  const [shown, setShown] = useState(false);
   return (
     <div className={styles.entry}>
       <div className={styles.entryLine}>
         <TextField
           className={styles.keyField}
-          type="password"
+          type={shown ? 'text' : 'password'}
           label={replacing ? 'New Claude key' : 'Claude key'}
           placeholder={replacing ? 'Paste your new key here' : 'Paste your key here'}
           value={draft}
@@ -513,6 +515,7 @@ function KeyEntry({
           onChange={onDraft}
           onEnter={onCheck}
         />
+        <TextButton label={shown ? 'Hide' : 'Show'} onClick={() => setShown((v) => !v)} />
         <TextButton variant="tonal" label={checking ? 'Checking…' : 'Check and save'} disabled={checking || draft.trim() === ''} onClick={onCheck} />
         {replacing && <TextButton label="Cancel" disabled={checking} onClick={onCancel} />}
       </div>

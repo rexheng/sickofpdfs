@@ -9,8 +9,13 @@ import styles from './Settings.module.css';
 
 /** Below this width (px) of the card's body, the section list steps aside and the sections take the whole width. */
 const LIST_MIN = 860;
-/** A section counts as the current one once its top is this close to the top of the page (px). */
+/**
+ * A section counts as the current one once its top is this close to the top of the page (px), or has come into the top third
+ * of the window, whichever is more (TB6: with only 96 px, a section whose heading was well in view still left the list on the
+ * one above it, "Online lookups" while Claude was on screen).
+ */
 const CURRENT_AT = 96;
+const CURRENT_FRACTION = 1 / 3;
 /** After a jump, the scrolling it causes does not move the list's choice for this long (ms). */
 const JUMP_MS = 800;
 
@@ -78,10 +83,11 @@ export function SettingsPage() {
       frame = requestAnimationFrame(() => {
         if (performance.now() - jumpedAt.current < JUMP_MS) return;
         const top = scroller.getBoundingClientRect().top;
+        const reach = Math.max(CURRENT_AT, scroller.clientHeight * CURRENT_FRACTION);
         let id = SETTINGS_SECTIONS[0]?.id ?? '';
         for (const s of SETTINGS_SECTIONS) {
           const el = document.getElementById(slotId(s.id));
-          if (el !== null && el.getBoundingClientRect().top - top <= CURRENT_AT) id = s.id;
+          if (el !== null && el.getBoundingClientRect().top - top <= reach) id = s.id;
         }
         if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2) id = SETTINGS_SECTIONS.at(-1)?.id ?? id;
         setCurrent(id);

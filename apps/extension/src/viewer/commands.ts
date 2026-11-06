@@ -208,7 +208,7 @@ export const SPECS: [ViewerCommandId, CommandSpec][] = [
   ['marks.strike', { label: 'Strikethrough', icon: 'format_strikethrough', keys: ['Alt+Shift+Digit5'] }],
   ['marks.comment', { label: 'Comment', icon: 'add_comment', keys: ['Ctrl+Alt+M'] }],
   ['marks.documentNote', { label: 'Note on the whole document', icon: 'comment', keys: ['Ctrl+Alt+Shift+M'] }],
-  ['marks.menu', { label: 'Mark-up menu', icon: 'more_vert', keys: ['Shift+F10', 'ContextMenu'] }],
+  ['marks.menu', { label: 'Mark up menu', icon: 'more_vert', keys: ['Shift+F10', 'ContextMenu'] }],
   ['edit.undo', { label: 'Undo', icon: 'undo', keys: ['Ctrl+Z'] }],
   ['edit.redo', { label: 'Redo', icon: 'redo', keys: ['Ctrl+Y', 'Ctrl+Shift+Z'] }],
   ['notes.next', { label: 'Next note', icon: 'keyboard_arrow_down', keys: ['Ctrl+Alt+N'] }],

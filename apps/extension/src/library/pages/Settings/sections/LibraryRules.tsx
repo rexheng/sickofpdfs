@@ -32,6 +32,47 @@ function storeProblem(e: unknown): string | null {
   return message.slice(message.lastIndexOf(': ') + 2) || null;
 }
 
+/** The site name inside an entry: "https://*.co.uk/x" → "co.uk". */
+function hostOf(entry: string): string {
+  return entry.trim().toLowerCase().replace(/^[a-z][a-z0-9+.-]*:\/\//, '').replace(/^\*\./, '').split('/')[0]!.replace(/:\d+$/, '').replace(/^\.+|\.+$/g, '');
+}
+
+/**
+ * Why an entry is refused, as a whole plain sentence (TB6). `problem` is the short reason from the rules (R91); the words
+ * here do not use "top-level", "domain" or "serves".
+ */
+function plainProblem(problem: string, entry: string): string {
+  const host = hostOf(entry);
+  switch (problem) {
+    case 'not a site or folder':
+      return 'That isn’t a site or a folder. Try a site such as moodle.lse.ac.uk, or a folder such as C:\\Users\\me\\Courses\\EC1A1.';
+    case 'a top-level domain, or a single name':
+      return host.length > 0 && host.length <= 3 && !host.includes('.')
+        ? `That’s too wide: it would match every site ending in .${host}.`
+        : 'That is only one word, not a whole site name. Use the full name, such as moodle.lse.ac.uk.';
+    case 'a name many sites share':
+      return `That’s too wide: it would match every site ending in .${host}.`;
+    case 'a place that serves everyone’s files':
+      return 'That’s a file-sharing site everyone uses, so it can’t be trusted as a place.';
+    case 'the whole computer':
+      return 'That’s the whole computer, which is too wide.';
+    case 'every home folder':
+      return 'That would match every person’s home folder, which is too wide.';
+    case 'a whole drive':
+      return 'That’s a whole drive, which is too wide.';
+    case 'less than two levels below home':
+      return 'That folder is too high up. Pick one two folders inside your home folder, such as C:\\Users\\me\\Courses\\EC1A1.';
+    case 'less than two levels below a drive':
+      return 'That folder is too high up. Pick one two folders inside the drive, such as D:\\Courses\\EC1A1.';
+    case 'a folder files land in by themselves':
+      return 'Files land in that folder by themselves (like Downloads), so it can’t be trusted as a place.';
+    case 'a folder that holds everything':
+      return 'That folder holds everything (like Documents), so it can’t be trusted as a place.';
+    default:
+      return `That can’t be used: ${problem}.`;
+  }
+}
+
 /** Every saved reading, a page at a time, up to SUGGESTION_SCAN. */
 async function allReadings(data: LibraryData): Promise<LibraryItem[]> {
   const out: LibraryItem[] = [];
@@ -71,14 +112,14 @@ export function LibraryRulesSection() {
       const current = lists?.[list] ?? [];
       if (current.some((e) => e.trim().toLowerCase() === entry.toLowerCase())) return `“${entry}” is already on this list.`;
       const problem = listEntryProblem(entry, list);
-      if (problem !== null) return `Can’t add “${entry}”: it is ${problem}.${list === 'allow' && listEntryProblem(entry, 'deny') === null ? ' Add the site or folder of one course instead.' : ''}`;
+      if (problem !== null) return `Can’t add “${entry}”. ${plainProblem(problem, entry)}${list === 'allow' && listEntryProblem(entry, 'deny') === null ? ' Add the site or folder of one course instead.' : ''}`;
       try {
         const now = await data.addToSettingList(KEYS[list], entry);
         setLists((l) => (l === null ? l : { ...l, [list]: now }));
         return null;
       } catch (e) {
         const why = storeProblem(e);
-        return why === null ? 'Couldn’t add it. Try again.' : `Can’t add “${entry}”: it is ${why}.`;
+        return why === null ? 'Couldn’t add it. Try again.' : `Can’t add “${entry}”. ${plainProblem(why, entry)}`;
       }
     },
     [data, lists],
@@ -187,7 +228,7 @@ function RuleList({ list, entries, description, placeholder, onAdd, onRemove, su
             key={entry}
             icon={<Icon name={isFolder(entry) ? 'folder' : 'language'} size={20} />}
             label={entry}
-            problem={problem === null ? undefined : `Not used: it is ${problem}.`}
+            problem={problem === null ? undefined : `Not used. ${plainProblem(problem, entry)}`}
             actions={<IconButton icon="close" label={`Remove ${entry}`} size={40} iconSize={20} onClick={() => onRemove(entry)} />}
           />
         );
