@@ -63,9 +63,15 @@ If it ever stops, the toolbar icon shows a red **!**. Click the library's "Backu
 
 You only need this for @Claude. Anthropic bills you for what you ask. A normal question costs well under 1 cent.
 
-1. Open **console.anthropic.com** and sign in.
-2. Set a spend limit first. Go to **Settings**, then **Limits**, and set a **monthly spend limit** you are happy with, for example 5 dollars.
-3. Go to **API keys**. Click **Create key**. Name it `sickofpdfs`. Copy the key.
+1. Open **platform.claude.com** (the Claude Console) and sign in.
+2. Set a spend limit first:
+   1. Open the **Billing** page (`platform.claude.com/settings/billing`).
+   2. In **Spend limits**, click **Set limit**. If one is already set, the button says **Adjust limit**.
+   3. Enter a monthly amount you are happy with, for example 5 dollars.
+3. Make the key in the same Console:
+   1. Open **API keys**.
+   2. Click **Create key** and name it `sickofpdfs`.
+   3. Copy the key.
 4. In the library, click **Settings**, then **Claude**.
 5. Paste the key into the box.
 6. Press **Check and save**. It makes three small calls to Anthropic: one to check the key and list the models, then one free count for each of your two models. No document text is sent.

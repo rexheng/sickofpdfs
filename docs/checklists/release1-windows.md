@@ -23,7 +23,7 @@ Write a word or a tick in "Result / notes". If something is wrong, write what yo
 | 11 | Ask about a figure (select a chart). The answer describes it correctly. | |
 | 12 | Ask something that needs the web. The answer shows its web sources. | |
 | 13 | Press **Think harder** under an answer. A new answer arrives, labelled as thought harder. | |
-| 14 | Add up the cost lines shown. Open Console, Usage. The two agree (small rounding is fine). Write both numbers. | |
+| 14 | Add up the cost lines shown. Open the Claude Console (platform.claude.com), Usage. The two agree (small rounding is fine). Write both numbers. | |
 | **Backup and restore** | | |
 | 15 | Settings, Backup, **Choose folder**: a folder in Google Drive for desktop. Wait for the first backup. | |
 | 16 | The folder in Explorer holds `sickofpdfs-backup` with your notes. Drive shows it syncing. | |
