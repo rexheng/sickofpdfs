@@ -8,7 +8,7 @@ Nov 1, 2026. Short plan (CLAUDE.md rule 5). The spec is normative, the contracts
 
 **Phase 4 is done when:**
 1. @Claude in a thread streams an answer with clickable "p. N" chips, plus source chips when it searched the web (Release 1 criterion 5).
-2. A typical question sends the marked passage and its paragraph, the document map and at most 5 passages: 3,500 tokens of document text at most, never the whole PDF. A figure question sends a local crop of the figure, its caption, the exact text inside it and up to 3 paragraphs that mention it.
+2. A typical question sends the marked passage and its paragraph, the document map and up to 8 passages (hybrid words + meaning, measured 18/20; P4 B, Nov 6): 3,500 tokens of document text at most, never the whole PDF. A figure question sends a local crop of the figure, its caption, the exact text inside it and up to 3 paragraphs that mention it.
 3. Costs, checked with real `usage` in the live check: a Haiku question without web search costs under 0.1 cent; a follow-up within 5 minutes shows cache reads; Think harder costs about 3 to 5 cents; any request over $0.25 asks first; the monthly cap blocks.
 4. The key never leaves `sop-local` except in the request header to Anthropic. Nothing goes to `api.anthropic.com` unless you started an @Claude action. On a PDF that isn't saved, nothing is sent until you confirm.
 5. A reply cut off by a crash or a closed tab keeps its text and offers "Try again" (the no-lost-text gate, now for replies).
@@ -40,7 +40,7 @@ What changed since research 03/06 (31 Oct), and what it changes here:
 
 | Piece | Default role | Think harder |
 | --- | --- | --- |
-| Document map / focus paragraph / top passages | ≤ 800 / ≤ 300 / 5 passages; document text ≤ 3,500 in all | same |
+| Document map / focus paragraph / top passages | ≤ 800 / ≤ 300 / up to 8 passages; document text ≤ 3,500 in all | same |
 | Figure image (contract `maxTokens`) | 1,600 (scans 4,784) | 3,200 (scans 4,784) |
 | Client-tool results per turn (`search_document`, `get_pages`, `get_figure`) | ≤ 6,000 tokens, ≤ 3 calls | ≤ 15,000, ≤ 5 calls |
 | Web searches per question (`max_uses`) | 1 | 1 |
@@ -60,7 +60,7 @@ What changed since research 03/06 (31 Oct), and what it changes here:
   - the body uses `[p. 4](cite:n)` and `[source](web:n)`; citations on the same passage merge, and an out-of-range index is dropped, never guessed.
 - Depends on: NOW (contract only). Risk: **high**. Spec-blind table tests: citation mapping for both location types, request order, breakpoint count and placement, no sampling parameters, and the web search tool and `max_uses` only when web search is on. Model: sonnet. Size: M.
 
-**B · Passage retrieval and the document map.** Finds the 5 passages a question needs, and builds the title, abstract, headings and figure list. Afterwards a question sends 2,000 to 5,000 well-chosen tokens.
+**B · Passage retrieval and the document map.** Finds the passages (up to 8) a question needs, and builds the title, abstract, headings and figure list. Afterwards a question sends 2,000 to 5,000 well-chosen tokens.
 - Owns: `packages/core/src/claude/{passages.ts,paragraphs.ts,rank.ts,doc-map.ts,whole-document.ts}`.
 - Interfaces:
   - `createPassageRetriever` and `DocumentMap` (contract §6), plus `buildDocumentMap(src)`, `focusPassage(anchor, src)` (the anchor's paragraph), `inMemoryRankPages(pages)` (BM25 for unsaved PDFs) and `packWholeDocument(src, maxTokens)`;
@@ -155,7 +155,7 @@ What changed since research 03/06 (31 Oct), and what it changes here:
 
 ## 6. Gate 1 walkthrough tests to add (spec-blind author; spec moments 5 and 6, criterion 5)
 
-1. **Ask about a passage.** In a saved paper, select a sentence, press Ctrl+Alt+M, type "@Claude why does this assumption matter?" and press Enter. The reply grows as it streams and ends with "p. N" chips; clicking one jumps to the passage and flashes it. The captured request holds the marked passage and at most 5 passages (document text ≤ 3,500 tokens), and no text from an unrelated page.
+1. **Ask about a passage.** In a saved paper, select a sentence, press Ctrl+Alt+M, type "@Claude why does this assumption matter?" and press Enter. The reply grows as it streams and ends with "Page N" chips (R74); clicking one jumps to the passage and flashes it. The captured request holds the marked passage and up to 8 passages (document text ≤ 3,500 tokens), and no text from an unrelated page.
 2. **Right-click → Ask Claude** on a selection gives the same thread and the same kind of request as typing @Claude.
 3. **Explain this figure.** Click a chart, then right-click → Explain this figure. The reply carries a "Fig. N · p. M" chip and a caption citation. The request holds exactly one image, placed before the caption and mention text.
 4. **Web search.** A question needing outside knowledge shows "Searching the web…", and the answer has a source chip that opens in a new tab. With web search off in Settings, the request has no web search tool.
