@@ -327,6 +327,13 @@ The "+ New" button offers Upload PDF, Open file and Paste link. In an Incognito 
 - After an update, the library shows "Updated to test build N. Your library is safe." once.
 - Removing the extension in Chrome deletes its data; the update text says so plainly, and suggests turning on the backup folder first.
 
+**R105: Claude asks first on any PDF you didn't save yourself (Nov 6, Test build 6 critics).**
+- "On a PDF that isn't in your library, Claude asks before any text is sent" is judged when the question starts. A note that saves a "not sure" PDF does not count as the owner's choice for Claude. The first question on such a reading shows "Send … to Anthropic?" with Cancel as the default. After one Send, later questions on that reading don't ask again.
+- On a private PDF (not learning, D9 or R102), every Claude entry point is greyed out, with the hint "Claude doesn't read private files". A note typed with "@Claude" there gets no save question for Claude's sake. The thread shows Claude's plain answer as a row that stays until dismissed: "Claude doesn't read this PDF. It looked private when you opened it, so nothing was sent." Nothing is sent.
+- A question waiting on a confirm dialog shows "Waiting for you to confirm…", never "Reading…". Cancel leaves "Not sent. Nothing was charged." with "Ask again".
+- An answer cut short by the length limit says so in one line, with one click to ask again with more room.
+- Claude reads the earlier notes in the thread (they are context). The reply box says so when a reply starts with @Claude.
+
 **R92: Tags, the auto categoriser and smart sorting (Nov 2, owner request).** The owner chose two things: auto tags are applied, marked "auto"; and everything runs on the laptop only, with no network.
 - **Tags.** Any reading can carry tags.
   - Add or remove them from the library (a row's menu, or several rows at once), from the viewer's "Saved to library" menu, and from File → "About this PDF".
