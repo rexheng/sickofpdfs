@@ -13,7 +13,7 @@ import type { CommentId, ThreadId } from '@sop/core';
 import { lastInputWasPointer } from '@sop/ui';
 import type { JumpHistory, PageSize, ViewerStore } from '@sop/viewer';
 import type { PageListApi } from '@sop/viewer/react';
-import { type RefObject, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { type RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { AnnotationSession } from '../annotations/session';
 import { Snackbar } from '../chrome/Snackbar';
 import { boxOfKind, type CarriedBox, carryBox, isBoxMoving, isEditBox } from '../notes/box-carry';
@@ -273,10 +273,15 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
   // The panel never covers the pages: while it is open the page column ends before it (App.module.css). A page the
   // reader zoomed wider than that column scrolls sideways inside it, so the active note's words (the passage or the
   // figure Claude was asked about) are scrolled into the column when they are past its right edge. It runs a frame
-  // after the panel opens, once the column has its new width and the pages their new place.
+  // after the panel opens, once the column has its new width and the pages their new place; only then and when another
+  // note becomes active, never as an answer streams in (the owner may have scrolled the pages since).
+  const entryNow = useRef(entry);
+  useLayoutEffect(() => {
+    entryNow.current = entry;
+  });
   useEffect(() => {
     if (!open || state.active === null) return;
-    const e = entry(state.active);
+    const e = entryNow.current(state.active);
     const api = pageList.current;
     let frame = requestAnimationFrame(() => {
       frame = requestAnimationFrame(() => {
@@ -292,7 +297,7 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
       });
     });
     return () => cancelAnimationFrame(frame);
-  }, [open, state.active, entry, pageList, pages]);
+  }, [open, state.active, pageList, pages]);
 
   const activeEntry = entry(state.active);
   // A new note's box takes the caret when it appears, unless it is a box moving in from the margin (box-carry.ts puts
