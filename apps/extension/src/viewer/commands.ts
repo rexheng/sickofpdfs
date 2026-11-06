@@ -34,6 +34,7 @@ export type ViewerCommandId =
   | 'file.openInChrome' | 'file.openOriginal' | 'file.download' | 'file.copyLink' | 'file.print' | 'file.saveToLibrary'
   | 'file.forget' | 'file.reportDecision' // Phase 3 (S11): save/save-commands.ts
   | 'file.about' // Phase 3 (S18, R92): About this PDF, viewer/about/
+  | 'file.startOver' // TB5: "Start from page 1" while a resume stands (history/use-reading-history.ts)
   | 'view.fitWidth' | 'view.fitPage' | 'view.zoomIn' | 'view.zoomOut' | 'view.rotateCw' | 'view.rotateCcw'
   | 'view.twoPage' | 'view.presentation' | 'view.wordStarts' | 'view.caretBrowsing' | 'view.toggleRail'
   | 'tools.find' | 'tools.goToPage' | 'tools.search' | 'help.shortcuts' | 'help.about'
@@ -93,6 +94,11 @@ export interface ViewerUi {
 export interface NoteAction {
   label: string;
   run: () => void;
+  /**
+   * The note stays, with no timer, until this calls `done` (TB5: "Start from page 1" stays until the reader scrolls or
+   * presses a key). It returns what stops listening.
+   */
+  until?: (done: () => void) => () => void;
 }
 
 /** Built once per tab in App.tsx; later tasks fill the nullable fields. */
@@ -134,6 +140,8 @@ interface CommandSpec {
 
 /** Every command, in the order of the shortcut sheet. (Dark pages were dropped: ruling R41.) Settings → Shortcuts lists them too. */
 export const SPECS: [ViewerCommandId, CommandSpec][] = [
+  // TB5: after the viewer opened where the reader stopped, the snackbar's "Start from page 1" is here too, for the keyboard.
+  ['file.startOver', { label: 'Start from page 1', icon: 'first_page', keys: [] }],
   ['file.openInChrome', { label: 'Open in Chrome’s viewer', icon: 'open_in_new', keys: [] }],
   // Phase 3 (S15): only for a reading opened from its saved copy (`?doc=`).
   ['file.openOriginal', { label: 'Open original link', icon: 'link', keys: [] }],

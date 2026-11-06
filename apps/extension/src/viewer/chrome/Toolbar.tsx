@@ -53,7 +53,7 @@ export function Toolbar({ commands, view, returnFocus, end }: ToolbarProps) {
         {view === null ? (
           <TextField label="Page" value="" width={BASE_WIDTH} disabled onChange={() => {}} />
         ) : (
-          <PageField store={view.store} pageCount={view.pageCount} onGoToPage={view.onGoToPage} inputRef={view.pageFieldRef} />
+          <PageField store={view.store} pageCount={view.pageCount} onGoToPage={view.onGoToPage} inputRef={view.pageFieldRef} onDone={returnFocus} />
         )}
         <span className={styles.total}>/ {view === null ? '–' : view.pageCount}</span>
         <ToolbarSeparator />
@@ -221,6 +221,8 @@ interface PageFieldProps {
   pageCount: number;
   onGoToPage: (index: number) => void;
   inputRef: RefObject<HTMLInputElement | null>;
+  /** Enter or Escape: the box lets go, and the focus goes to the pages (TB5), so F7 and the reading keys work at once. */
+  onDone?: (() => void) | undefined;
 }
 
 /** What the note under the page box says when the number typed was not a page: where it went instead. */
@@ -236,9 +238,10 @@ const HOW_TO = 'Type a page number, then press Enter';
  * "Page [n]": shows the page in view and follows scrolling. Type a number and press Enter to go there; while the box
  * has the focus, a note under it says so. A number past either end goes to the first or the last page, as Chrome's
  * page box does, and the note says so (never a silent red flash). Escape or leaving the box puts it back. After a jump
- * or Escape the box lets go of the focus, so the reading keys (arrows, Page Down) move the pages again.
+ * or Escape the box lets go of the focus, so the reading keys (arrows, Page Down) move the pages again. TB5: Enter always
+ * lets go, also with the number unchanged, and hands the focus to the pages, so F7 and Alt+Shift+S work straight after.
  */
-function PageField({ store, pageCount, onGoToPage, inputRef }: PageFieldProps) {
+function PageField({ store, pageCount, onGoToPage, inputRef, onDone }: PageFieldProps) {
   const current = useViewerState(store, (s) => s.currentPage);
   const [typed, setTyped] = useState<string | null>(null);
   // After a jump the page in view may not be the one asked for (the last pages cannot reach the top): show the one asked
@@ -263,10 +266,20 @@ function PageField({ store, pageCount, onGoToPage, inputRef }: PageFieldProps) {
     noteTimer.current = setTimeout(() => setNote(null), NOTE_MS);
   };
 
+  const letGo = () => {
+    inputRef.current?.blur();
+    onDone?.();
+  };
   const commit = () => {
-    if (typed === null) return;
+    if (typed === null) {
+      letGo(); // the number in the box is the page in view already
+      return;
+    }
     setTyped(null);
-    if (!/^\d+$/u.test(typed)) return; // nothing typed: the box shows the page in view again
+    if (!/^\d+$/u.test(typed)) {
+      letGo(); // nothing typed: the box shows the page in view again
+      return;
+    }
     const n = Number(typed);
     const page = Math.min(pageCount, Math.max(1, n));
     if (page !== n) showNote(rangeNote(n, pageCount));
@@ -276,14 +289,14 @@ function PageField({ store, pageCount, onGoToPage, inputRef }: PageFieldProps) {
     // In two-page view a page lands with its pair, and the box shows the pair's left page (Task 26).
     const pairLanded = store.get().spread === 'two-page' && Math.floor(landed / 2) === Math.floor((page - 1) / 2);
     setJump(landed === page - 1 || pairLanded ? null : { target: page - 1, landed });
-    inputRef.current?.blur();
+    letGo();
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Escape') return;
     e.preventDefault();
     setTyped(null);
-    inputRef.current?.blur();
+    letGo();
   };
   const onFocus = (e: FocusEvent<HTMLInputElement>) => {
     e.currentTarget.select();

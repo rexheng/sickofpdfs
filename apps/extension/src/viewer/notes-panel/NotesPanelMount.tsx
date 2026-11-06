@@ -3,8 +3,9 @@
 // where they go (R69). App.tsx mounts it with one line.
 //
 // What it does with drafts, so no text is lost:
-// - Esc in a note or reply box sends what was typed (the controller's reading of the spec: Esc "saves typed text");
-//   Esc on an empty box drops it, and an empty new note takes its highlight with it.
+// - Esc in a note or reply box never sends (TB5 ruling): it closes the box, and what was typed stays on the card as
+//   "Not sent yet", for Enter or Comment later. Esc on an empty box drops it, and an empty new note takes its highlight
+//   with it.
 // - Leaving a card (another card, Esc on the card, next or previous note) does the same, as in the margin (S14; the
 //   controller's ruling): a note or reply with text is sent, an empty one is dropped. While it is being typed, the
 //   draft keeper keeps the text safe.
@@ -284,13 +285,13 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
   const onDraftEscape = useCallback((e: NoteEntry, body: string) => {
     const id = e.draft?.id;
     if (id !== undefined) {
+      // TB5 ruling: Esc never sends. Typed text stays on the card as "Not sent yet"; an empty box is dropped. The card lets
+      // go without the "leaving a card sends" step, so the next Esc (which closes the panel) does not send it either.
       if (body.trim() === '') void session.cancel(id);
-      else {
-        session.typeDraft(id, body);
-        void session.send(id);
-      }
+      else session.typeDraft(id, body);
     }
-    // The box is done with: the focus goes to its card, where a second Esc closes the card.
+    if (session.state().active === e.id) session.setActive(null);
+    // The box is done with: the focus goes to its card, where a second Esc closes the panel.
     cards.current.get(e.id)?.focus({ preventScroll: true });
   }, [session]);
   const onDraftCancel = useCallback((e: NoteEntry) => {

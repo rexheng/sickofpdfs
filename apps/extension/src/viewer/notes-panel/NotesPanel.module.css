@@ -3,8 +3,8 @@
  *   320 px wide with 16 px corners, on --sop-notes-panel-bg (#1e1f20). It sits under the toolbar row on the right,
  *   16 px in, level with the first page, as the navigation rail sits on the left (Task 24).
  *   Header 56 px: "Notes" in Google Sans 22/28 at 16 px in, Close (24 px icon) at the right.
- *   Tabs row 48 px with 12 px side padding and a 1 px divider. The selected tab: primary label, an 8 % primary wash and a
- *   3 px primary bar with round top corners, the width of its label plus 3 px.
+ *   Tabs row 48 px with 12 px side padding and a 1 px divider. The selected tab: primary label and Docs' 3 px primary bar
+ *   with round top corners, the width of its label plus 3 px; no block behind it (TB5: the wash read as a focus ring).
  *   Cards 16 px apart and 16 px in (Docs: x+16, 288 wide, a 16 px gap). A card in the panel does not move left when it
  *   is active: that is for margin cards only.
  */
@@ -74,8 +74,14 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.tab:hover {
+/* Hover: a rounded state layer inset in the row, as the focus ring is (TB5: no square block). */
+.tab:hover::before {
+  position: absolute;
+  inset: calc(var(--space-1) + var(--focus-ring-width)) var(--focus-ring-width);
+  border-radius: var(--shape-menu);
   background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), transparent);
+  content: "";
+  pointer-events: none;
 }
 
 /*
@@ -96,7 +102,6 @@
 }
 
 .tab[aria-selected='true'] {
-  background-color: color-mix(in srgb, var(--gm3-sys-color-primary) calc(var(--gm3-state-hover) * 100%), transparent);
   color: var(--gm3-sys-color-primary);
 }
 

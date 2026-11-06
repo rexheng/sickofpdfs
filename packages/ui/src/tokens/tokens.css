@@ -444,6 +444,8 @@
   --type-tag-auto: 400 11px/16px var(--font-text);
   --sop-tag-bg: var(--gm3-sys-color-surface-container-high);
   --sop-tag-fg: var(--gm3-sys-color-on-surface-variant);
+  /* TB5: the "Saved to library" chip is tonal, Drive's secondary container (the dark chrome softens it, tokens-dark.css) */
+  --sop-chip-saved-bg: var(--gm3-sys-color-secondary-container);
   --sop-tag-auto-edge: var(--gm3-sys-color-outline-variant);
   --sop-tag-auto-fg: var(--gm3-sys-color-outline);
   /* A selected row is #c2e7ff: its chips sit on white so they still read as chips */

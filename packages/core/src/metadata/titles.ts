@@ -65,6 +65,8 @@ const JUNK_PATTERNS: readonly RegExp[] = [
   /^(?:\/|\\\\)[\w./\\-]+$/,
   // LaTeX left in the field, or a replacement character from a bad conversion
   /\\[a-zA-Z]+\s*\{|�/,
+  // a typesetter's note at the top of a preprint: "Typeset using LATEX twocolumn style in AASTeX63" (TB5)
+  /^(?:typeset (?:using|with|in|by)|prepared (?:using|with))\b/i,
 ];
 
 /**
@@ -171,7 +173,7 @@ const HAS_DATE = new RegExp(`(?:\\b${MONTH}\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?,?\\s
 
 /** Lines that label a document or run along the top of a page: never the title. */
 const LABEL_LINE =
-  /^(?:preprint|pre-print|working paper|discussion paper|technical report|research article|original article|review article|short communication|research report|article|letter|abstract|summary|contents|table of contents|keywords?|key words|submitted|accepted|received|published|draft|confidential|copyright|©|\(c\)|all rights reserved|under review|to appear|nber working paper series|national bureau of economic research|cover|title page|front matter|version|page \d+|doi\b|arxiv\b|issn\b|isbn\b|www\.|https?:|available (?:at|online)|journal of\b|proceedings of\b|transactions on\b|ieee transactions|annals of\b|conference on\b|workshop on\b|symposium on\b|volume\b|vol\.|issue\b|no\.\s*\d|number\s+\d|report no|series\b|a (?:thesis|dissertation)\b)/i;
+  /^(?:typeset (?:using|with|in|by)\b|prepared (?:using|with)\b|preprint|pre-print|working paper|discussion paper|technical report|research article|original article|review article|short communication|research report|article|letter|abstract|summary|contents|table of contents|keywords?|key words|submitted|accepted|received|published|draft|confidential|copyright|©|\(c\)|all rights reserved|under review|to appear|nber working paper series|national bureau of economic research|cover|title page|front matter|version|page \d+|doi\b|arxiv\b|issn\b|isbn\b|www\.|https?:|available (?:at|online)|journal of\b|proceedings of\b|transactions on\b|ieee transactions|annals of\b|conference on\b|workshop on\b|symposium on\b|volume\b|vol\.|issue\b|no\.\s*\d|number\s+\d|report no|series\b|a (?:thesis|dissertation)\b)/i;
 const SECTION_WORD = /^(?:abstract|introduction|contents|preface|foreword|references|bibliography|acknowledg(?:e)?ments?|appendix|summary|overview|chapter\s+\d+|table of contents|index|page|lecture\s+\d+|section\s+\d+)\.?$/i;
 const BOILERPLATE_WORDS = /\b(?:permission|hereby grants?|proper attribution|licen[cs]e[sd]?|copyright|all rights|reproduc\w+|redistribut\w+|creative commons|distributed under|published by|this work|terms of use)\b/i;
 const AFFILIATION_START = /^(?:university|universität|université|universidad|massachusetts institute|department|school|faculty|institute|college|centre|center|laboratory|laboratoire|dept\.?|division|graduate department)\b/i;

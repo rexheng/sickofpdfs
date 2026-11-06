@@ -71,7 +71,7 @@ import {
   reopenDocument,
 } from './open-document';
 import { notesPanelFeature } from './notes-panel/feature';
-import { useReadingHistory } from './history/use-reading-history';
+import { type StartOverOffer, useReadingHistory } from './history/use-reading-history';
 import { hitFlashFeature } from './hit-flash';
 import { createHitJumper, type HitJumper, useOpenTarget } from './jump-to-hit';
 import { openSavedCopy, savedCopyName } from './open-saved';
@@ -366,6 +366,9 @@ function TabViewer({ params }: { params: ViewerParams }) {
         }
         returnFocus={focusPages}
       />
+      {/* Drawn at the bottom left, but early in the Tab order (TB5): its button ("Start from page 1", "Undo") is reached
+          right after the header, before the toolbar and every link in the PDF. */}
+      <Snackbar note={note} />
       <div className={styles.content}>
         {view.kind === 'ready' && (
           <Reader
@@ -421,7 +424,6 @@ function TabViewer({ params }: { params: ViewerParams }) {
       {printAsk !== null && <PrintDialog ask={printAsk.ask} onAnswer={printAsk.answer} />}
       <SaveDialogs save={save} ui={ui} />
       {printing !== null && <PrintProgressDialog done={printing.done} total={printing.total} onCancel={printing.cancel} />}
-      <Snackbar note={note} />
     </div>
   );
 }
@@ -607,7 +609,9 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   // The document's notes: marks, comments and drafts (Phase 2). Null in Incognito, which has none.
   const notes = useNotes(doc, pageText, store, api, textLayers, save, nav.jumps, ui);
   // Reading time, the last spot and the pages visited (kept once the PDF is saved), and the return to the last spot.
-  useReadingHistory({ doc, params, view: store, pageList: api, save, ui, restarted: resume !== undefined });
+  // TB5: "Start from page 1" in the File menu as well as on the note, while the resume stands.
+  const [startOver, setStartOver] = useState<StartOverOffer | null>(null);
+  useReadingHistory({ doc, params, view: store, pageList: api, save, ui, restarted: resume !== undefined, onStartOver: setStartOver });
   const originalLink = useOriginalLink(params);
   const commands = useMemo(() => {
     const ctx: ViewerContext = {
@@ -628,8 +632,13 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       wordStarts: { on: wordStartsSwitch.get, toggle: wordStartsSwitch.toggle },
       ui,
     };
-    return createCommands(ctx, { ...notes?.behaviours(), ...saveDecisionCommands(save), ...aboutCommands() });
-  }, [params, doc, store, scheduler, rootRef, ui, save, nav.jumps, find.controller, find.open, notes, pageText, originalLink]);
+    return createCommands(ctx, {
+      ...notes?.behaviours(),
+      ...saveDecisionCommands(save),
+      ...aboutCommands(),
+      ...(startOver !== null ? { 'file.startOver': { run: startOver.run, enabled: () => true } } : {}),
+    });
+  }, [params, doc, store, scheduler, rootRef, ui, save, nav.jumps, find.controller, find.open, notes, pageText, originalLink, startOver]);
   // Search hits in this document (S15): a jump in place, through the same history as links and find.
   const jumper = useMemo(
     () =>

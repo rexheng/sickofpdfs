@@ -45,8 +45,12 @@ export interface DialogProps {
   focusOnClose?: () => HTMLElement | null;
 }
 
-/** A text field takes the focus wherever the dialog was opened from: typing goes straight into it. */
-const FIELD = 'input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not(:disabled), textarea:not(:disabled), select:not(:disabled)';
+/**
+ * A text field takes the focus wherever the dialog was opened from: typing goes straight into it. A box that listens for
+ * keys (Settings → Shortcuts → Change: `role="textbox"`) counts as one.
+ */
+const FIELD =
+  'input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not(:disabled), textarea:not(:disabled), select:not(:disabled), [role="textbox"][tabindex="0"]';
 
 /** The controls Tab reaches, in order (Radix's own list, without the ones that cannot take the focus). */
 const TABBABLE = 'button:not(:disabled), [href], input:not(:disabled):not([type="hidden"]), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
@@ -57,9 +61,11 @@ const TABBABLE = 'button:not(:disabled), [href], input:not(:disabled):not([type=
  * onOpenChange(false)), and puts focus back where it was.
  *
  * Focus rings show for keyboard use only (TB4). Opened from the keyboard, the first action (or the primary one) takes
- * the focus with its ring, as keyboard users expect. Opened with the pointer, the dialog itself takes it: no button
- * wears a ring the owner did not choose (a ringed "No" beside a filled "Save" read as two choices), and the first Tab
- * then reaches the first control, ring and all. A dialog with a text field always gives the field the focus.
+ * the focus with its ring, as keyboard users expect. Opened with the pointer (a click, a menu chosen with the mouse), the
+ * dialog itself takes it: no button wears a ring the owner did not choose (a ringed "No" beside a filled "Save" read as
+ * two choices), and the first Tab then reaches the first control, ring and all. A dialog with a text field gives the
+ * field the focus however it opened, so the first key typed lands in it (TB5: the Change-key box), unless the dialog
+ * asks for its primary action (Print, whose "Pages" box is only one of its choices).
  */
 export function Dialog({
   open,
@@ -112,20 +118,17 @@ export function Dialog({
             onOpenAutoFocus={(event) => {
               opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
               const content = surface.current;
-              if (focusSurface && content !== null) {
+              if (content === null) return;
+              const take = (el: HTMLElement): void => {
                 event.preventDefault();
-                content.focus({ preventScroll: true });
-                return;
-              }
-              if (lastInputWasPointer() && content !== null && content.querySelector(FIELD) === null) {
-                event.preventDefault();
-                content.focus({ preventScroll: true });
-                return;
-              }
-              if (focusPrimary && primary.current !== null) {
-                event.preventDefault();
-                primary.current.focus();
-              }
+                el.focus({ preventScroll: true });
+              };
+              if (focusSurface) return take(content);
+              const field = focusPrimary ? null : content.querySelector<HTMLElement>(FIELD);
+              if (field !== null) return take(field);
+              // Opened with the pointer: the dialog itself, so no button wears a ring (Enter still means the primary action).
+              if (lastInputWasPointer()) return take(content);
+              if (focusPrimary && primary.current !== null) take(primary.current);
             }}
             onCloseAutoFocus={(event) => {
               const next = focusOnClose?.() ?? null;

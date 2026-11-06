@@ -1,14 +1,17 @@
 // The library status chip in the header (Task 30, worded for Phase 3's real filter by S11 and ruling R73): it always shows
-// the save decision. On a saved PDF it opens a small menu with "Remove from library…" (the Forget flow). After a first mark
-// saved the PDF, "Undo" stands next to it for 10 s.
-// - R95: on a "not sure" PDF it opens a menu with the banner's choices: Save to library, Never for this file, Always for <place>.
+// the save decision. On a saved PDF it opens a small menu with "Move to Trash" and "Forget this PDF…", the library's own
+// words (TB5). After a first mark saved the PDF, "Undo" stands next to it for 10 s.
+// - R95: on a "not sure" PDF it opens a menu with the banner's choices: Save to library, Never for this file, Always save from
+//   <place>.
 // - R96: a click on a "Not saved: …" chip asks first ("This looks like a bank statement. Save it to your library anyway?"),
 //   with Cancel as the default, so a stray click never saves a private PDF. Ctrl+Alt+S still saves at once.
 //
 // Wording (R73: plain, for an owner who reads best in short sentences):
 //   not sure      "Not sure: Save to library"                     hover: "This PDF isn't in your library yet. Save it to keep your notes."
 //   a scan        "Not sure: scanned pages · Save to library"     hover: "It's a scan, but its title looks like a course reading." (R94)
-//   not learning  "Not saved: looks like an invoice or receipt"   hover: "Click to save it to your library anyway." and what else it saw
+//   not learning  "Not saved: looks like an invoice or receipt"   hover: one plain sentence, "Not saved because it looks like an invoice
+//                                                                 or receipt: it has many money amounts and paperwork words in its
+//                                                                 name." (TB5); a click asks before it saves (R96)
 //   saved         "Saved to library"                              hover: one plain sentence, "Saved because it looks like a paper: it
 //                                                                 has an arXiv number and a References section."
 //   saved, D9     "Saved · text not searchable"                   a PDF with card, bank or ID numbers saved by the owner's choice
@@ -33,10 +36,13 @@ export const NOT_IN_LIBRARY = 'This PDF isn’t in your library yet. Save it to 
 const SAVE_ANYWAY = 'Click to save it to your library anyway.';
 /** D9: what a "Not saved: has card or bank numbers" chip adds. */
 const SAVE_ANYWAY_PRIVATE = 'Its text won’t be searchable.';
+/** After the chip's Move to Trash (TB5). The chip then says "In Trash" and offers Restore. */
+const MOVED_TO_TRASH_NOTE = 'Moved to Trash. You can restore it for 30 days.';
 /** The memory-only chip's tooltip. */
 const SAVE_HINT = 'Save it to your library (Ctrl+Alt+S)';
-/** The saved chip's one menu item (R73), which opens the Forget flow (R75). */
-export const REMOVE_FROM_LIBRARY = 'Remove from library…';
+/** The saved chip's menu (TB5): the library's own words for its two ways out. "Forget this PDF…" opens the Forget flow (R75). */
+export const MOVE_TO_TRASH = 'Move to Trash';
+export const FORGET_THIS_PDF = 'Forget this PDF…';
 
 type ChipLook = Pick<ChipProps, 'label' | 'icon' | 'tone' | 'tooltip' | 'disabled'> & {
   saves: boolean;
@@ -137,17 +143,16 @@ export function chipFor(state: SaveState, busy: SaveControllerImpl['busy'], save
         choices: menu, // R95: the banner's choices, where the owner's rules can be kept
       };
     }
-    case 'not-learning': {
-      const also = reasonsLine(state.reasons.slice(1, 3));
-      const hint = privateNumbers ? `${SAVE_ANYWAY} ${SAVE_ANYWAY_PRIVATE}` : SAVE_ANYWAY;
+    case 'not-learning':
+      // TB5: an icon, as the other chips have, and the hover as one plain sentence, as the saved chip's.
       return {
         label: `Not saved: ${state.reasons[0] ?? 'not a learning PDF'}`,
+        icon: 'do_not_disturb_on',
         tone: 'neutral',
-        tooltip: also === undefined ? hint : `${hint} It also has: ${also}.`,
+        tooltip: notSavedSentence(state.reasons, privateNumbers),
         saves: true,
         asks: true,
       };
-    }
     case 'asking':
       return { label: 'Not saved', tone: 'neutral', saves: false };
     case 'memory-only':
@@ -156,6 +161,33 @@ export function chipFor(state: SaveState, busy: SaveControllerImpl['busy'], save
       // A status, not a broken control (TB2 visual 4): full contrast, an icon, and a tooltip that says why.
       return { label: 'Incognito: view only', icon: 'visibility', tone: 'neutral', tooltip: INCOGNITO_HINT, saves: false };
   }
+}
+
+/** What else a "not saved" PDF has, in the words of "it has …" (TB5): the filter's signal labels, lower case and plain. */
+const NOT_SAVED_HAS: Readonly<Record<string, string>> = {
+  'Many money amounts': 'many money amounts',
+  'Paperwork words in the link, file name or title': 'paperwork words in its name',
+  'Order, account or customer numbers': 'order or account numbers',
+  'VAT or sales tax': 'VAT or sales tax',
+  'Invoice or receipt wording': 'invoice or receipt wording',
+};
+
+/**
+ * The "Not saved" chip's hover (TB5): one plain sentence, as the saved chip's. "Not saved because it looks like an invoice
+ * or receipt: it has many money amounts and paperwork words in its name." "Made by invoice software" is said as a fact
+ * of its own. Without anything else to say: what a click does.
+ */
+export function notSavedSentence(reasons: readonly string[], privateNumbers = false): string {
+  if (privateNumbers) return `Not saved because it has card, bank or ID numbers. ${SAVE_ANYWAY} ${SAVE_ANYWAY_PRIVATE}`;
+  const [first, ...rest] = reasons;
+  const madeBy = rest.includes('Made by invoice or report software');
+  const has = rest
+    .filter((r) => r !== 'Made by invoice or report software')
+    .slice(0, 2)
+    .map((r) => NOT_SAVED_HAS[r] ?? r.charAt(0).toLowerCase() + r.slice(1));
+  const parts = [...(has.length > 0 ? [`it has ${andList(has)}`] : []), ...(madeBy ? ['it was made by invoice software'] : [])];
+  const why = first === undefined ? 'Not saved' : first.startsWith('looks like ') ? `Not saved because it ${first}` : `Not saved: ${first}`;
+  return parts.length === 0 ? `${why}. ${SAVE_ANYWAY}` : `${why}: ${parts.join(', and ')}.`;
 }
 
 /** The tooltip shows this many reasons at most, strongest first, so it stays short. */
@@ -310,7 +342,10 @@ export function StatusChip({ save, returnFocus, ui }: StatusChipProps) {
         trigger={<Chip {...chip} className={styles.chip} />}
         items={[
           { kind: 'item', id: 'about', label: 'Tags and details…', icon: 'sell', onSelect: () => aboutPanel.open() }, // S18 (R92)
-          { kind: 'item', id: 'remove', label: REMOVE_FROM_LIBRARY, icon: 'delete_forever', onSelect: () => openSaveDialog('forget') },
+          { kind: 'separator' },
+          // TB5: the library's words. Trash keeps it 30 days; Forget removes it for good, after asking (R75).
+          { kind: 'item', id: 'trash', label: MOVE_TO_TRASH, icon: 'delete', onSelect: () => void save.moveToTrash().then(() => ui?.showNote(MOVED_TO_TRASH_NOTE), () => ui?.showNote(FAILED_NOTE)) },
+          { kind: 'item', id: 'remove', label: FORGET_THIS_PDF, icon: 'delete_forever', onSelect: () => openSaveDialog('forget') },
         ]}
         align="end"
         {...focusProps}

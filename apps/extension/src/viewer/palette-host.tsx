@@ -34,6 +34,18 @@ function paletteStore(): Promise<StoreClient | null> {
   return connecting;
 }
 
+/**
+ * Where the palette opens in a viewer tab (TB5): 16 px below the toolbar pill, never across it. Centred, as before, while
+ * there is no pill to measure (presentation mode).
+ */
+function belowToolbar(): { top: number } | null {
+  const pill = document.querySelector<HTMLElement>('[role="toolbar"][aria-label="Document"]');
+  const r = pill?.getBoundingClientRect();
+  if (r === undefined || r.height === 0) return null;
+  const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--space-4')) || 16;
+  return { top: r.bottom + gap };
+}
+
 const INCOGNITO = 'Your library isn’t available in an Incognito window. Nothing is saved there.';
 const UNAVAILABLE = 'Couldn’t open your library just now. Your readings and notes are safe.';
 
@@ -101,5 +113,5 @@ function Open({ commands, jumper, ui, initialQuery }: ViewerPaletteProps & { ini
     },
     [jumper, store, ui],
   );
-  return <Palette store={store} unavailable={unavailable} commands={group} initialQuery={initialQuery} onOpen={onOpen} onClose={() => palette.close()} />;
+  return <Palette store={store} unavailable={unavailable} commands={group} initialQuery={initialQuery} onOpen={onOpen} onClose={() => palette.close()} anchor={belowToolbar} />;
 }

@@ -1,5 +1,5 @@
 // The quiet "not sure" banner (spec, "When the filter is wrong"): on a PDF the filter is not sure about, after 20 seconds
-// of reading, a bar under the toolbar offers Save, Not now, Never for this file and "Always for <the place>". It never
+// of reading, a bar under the toolbar offers Save, Not now, Never for this file and "Always save from <the place>". It never
 // takes the focus. Not now closes it for this tab, and any of the others settles the question for good.
 // R95 (TB4 critics): it never covers the page.
 // - It is an inline bar directly under the toolbar: the page list starts below it (`--viewer-banner-h`, which the page area's
@@ -9,8 +9,9 @@
 // - In the Tab order it comes right after the chip: it is drawn in the header, right after the chip, and placed under the
 //   toolbar from there.
 // - Its choices are also in the chip's menu (StatusChip.tsx, `notSureChoices`).
-// R91: "Always for …" names the place, on its button and in its note ("Always for moodle.lse.ac.uk", "Always for the folder
-// Week 3 readings"), and is not there at all for a catch-all place (Downloads, a mail attachment, a shared store).
+// R91: "Always save from …" (TB5: a button with a verb) names the place, on its button and in its note ("Always save from
+// moodle.lse.ac.uk", "Always save from the folder Week 3 readings"), and is not there at all for a catch-all place (Downloads,
+// a mail attachment, a shared store).
 import { Icon, TextButton } from '@sop/ui';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ViewerUi } from '../commands';
@@ -41,8 +42,8 @@ export function placeWords(rule: SiteRule, max = Infinity): string {
   return rule.kind === 'site' ? name : `the folder ${name}`;
 }
 
-/** The button: "Always for moodle.lse.ac.uk". */
-export const alwaysLabel = (rule: SiteRule): string => `Always for ${placeWords(rule, PLACE_CHARS)}`;
+/** The button: "Always save from moodle.lse.ac.uk". */
+export const alwaysLabel = (rule: SiteRule): string => `Always save from ${placeWords(rule, PLACE_CHARS)}`;
 
 /** The note after it: the place, and what it still never saves (R91). */
 export const alwaysNote = (rule: SiteRule): string =>
@@ -63,7 +64,7 @@ export interface NotSureChoice {
   done: string;
 }
 
-/** Save, Never for this file and Always for <place> (when the place may be on the allow list): the banner's and the chip's. */
+/** Save, Never for this file and Always save from <place> (when the place may be on the allow list): the banner's and the chip's. */
 export function notSureChoices(save: SaveControllerImpl): NotSureChoice[] {
   const out: NotSureChoice[] = [
     { id: 'save', label: 'Save', run: () => save.requestSave(), done: SAVED_NOTE },

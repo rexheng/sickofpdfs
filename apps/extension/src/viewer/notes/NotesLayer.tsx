@@ -560,12 +560,11 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
         if (isNew) focusPages(); // the note is on its card; reading goes on
       },
       onDraftEscape: (body) => {
-        // Esc with text sends it, a new note or a reply alike (plan section 7); Esc on an empty box drops it.
+        // TB5 ruling: Esc never sends. With text, it closes the box and keeps the text on the card as "Not sent yet" (a new
+        // note or a reply alike); Enter or Comment sends it later. Esc on an empty box drops it.
         const d = draftOf(t);
-        if (d && body.trim() !== '') {
-          session.typeDraft(d.id, body);
-          void session.send(d.id);
-        } else if (d) void session.cancel(d.id);
+        if (d && body.trim() !== '') session.typeDraft(d.id, body);
+        else if (d) void session.cancel(d.id);
         session.setActive(null);
         focusPages();
       },

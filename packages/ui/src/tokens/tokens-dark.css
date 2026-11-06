@@ -66,4 +66,9 @@
   --sop-tag-fg: var(--gm3-sys-color-on-surface-variant);
   --sop-tag-auto-edge: var(--gm3-sys-color-outline-variant);
   --sop-tag-auto-fg: var(--gm3-sys-color-outline);
+  /*
+   * TB5: the "Saved to library" chip, tonal and quiet in the dark header: the secondary container (#004a77) at half
+   * strength over the header, so it reads as a calm state, not as the loudest button on the screen.
+   */
+  --sop-chip-saved-bg: color-mix(in srgb, var(--gm3-sys-color-secondary-container) 50%, transparent);
 }

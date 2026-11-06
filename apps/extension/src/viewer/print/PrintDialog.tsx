@@ -31,8 +31,10 @@ type Range = 'all' | 'this' | 'pages';
 /**
  * Ctrl+P's first step (R99): which pages print (All, This page, or Pages such as 3–7), and, when the PDF has marks,
  * whether they print too (ticked: printing is not destructive). Only the chosen pages are drawn, so one chapter of a
- * book prints at once. "Print" has the focus, and Enter anywhere in the dialog means Print, never Cancel. Escape, a click
- * outside and Cancel print nothing. Plain words: it says what prints and what does not.
+ * book prints at once. "Print" has the focus (opened from a menu with the mouse, the dialog itself has it, with no ring),
+ * and Enter anywhere in the dialog means Print, never Cancel. Choosing "Pages" moves the caret into its box, and a click in
+ * the box chooses "Pages". Escape, a click outside and Cancel print nothing. Plain words: it says what prints and what does
+ * not.
  */
 export function PrintDialog({ ask, onAnswer }: PrintDialogProps) {
   const [range, setRange] = useState<Range>('all');
@@ -77,7 +79,17 @@ export function PrintDialog({ ask, onAnswer }: PrintDialogProps) {
           <Choice type="radio" name={name} label={`All pages (${pageCount})`} checked={range === 'all'} onChange={() => setRange('all')} />
           <Choice type="radio" name={name} label={`This page (page ${currentPage + 1})`} checked={range === 'this'} onChange={() => setRange('this')} />
           <div className={styles.pagesRow}>
-            <Choice type="radio" name={name} label="Pages" checked={range === 'pages'} onChange={() => setRange('pages')} />
+            {/* Choosing "Pages" puts the caret in its box, so the range typed next lands there (TB5). */}
+            <Choice
+              type="radio"
+              name={name}
+              label="Pages"
+              checked={range === 'pages'}
+              onChange={() => {
+                setRange('pages');
+                field.current?.focus();
+              }}
+            />
             <TextField
               ref={field}
               className={styles.pagesField}

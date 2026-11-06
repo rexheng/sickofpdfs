@@ -169,6 +169,8 @@ export interface SaveControllerImpl extends SaveController {
   readonly trashed: boolean;
   /** Takes the saved document out of the Trash. Rejects when the library could not do it. */
   restoreFromTrash(): Promise<void>;
+  /** TB5: the chip's "Move to Trash", as the library's: the document goes to the Trash (kept 30 days). Rejects when it could not. */
+  moveToTrash(): Promise<void>;
   /** `cb` hears of a save or forget that failed. The state is then what it was before; the call also rejects. */
   onFailure(cb: (what: 'save' | 'forget') => void): () => void;
   /** Phase 3: the filter's decision in this tab; null while checking, or when the PDF was in the library already. */
@@ -1047,6 +1049,12 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       if (store === null || state.kind !== 'saved') return;
       const id = state.documentId;
       await store.restoreDocument(id);
+      await readTrashed(store, id);
+    },
+    async moveToTrash() {
+      if (store === null || state.kind !== 'saved') return;
+      const id = state.documentId;
+      await store.trashDocument(id);
       await readTrashed(store, id);
     },
     subscribe(cb) {

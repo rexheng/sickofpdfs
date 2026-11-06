@@ -31,9 +31,10 @@
   text-overflow: ellipsis;
 }
 
+/* Tonal (TB5): Drive's secondary container, softened in the dark viewer header (--sop-chip-saved-bg). */
 .saved {
   border-color: transparent;
-  background-color: var(--gm3-sys-color-secondary-container);
+  background-color: var(--sop-chip-saved-bg);
   color: var(--gm3-sys-color-on-secondary-container);
 }
 
@@ -51,7 +52,7 @@
   background-color: color-mix(
     in srgb,
     var(--gm3-sys-color-on-secondary-container) calc(var(--gm3-state-hover) * 100%),
-    var(--gm3-sys-color-secondary-container)
+    var(--sop-chip-saved-bg)
   );
 }
 

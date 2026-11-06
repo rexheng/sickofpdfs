@@ -30,6 +30,9 @@ export function Snackbar({ note }: SnackbarProps) {
   useEffect(() => {
     if (note === null) return;
     setShown(note);
+    // A note that waits for the reader (TB5: "Start from page 1") has no timer: it goes when the reader moves on.
+    const until = note.action?.until;
+    if (until !== undefined) return until(() => setShown((now) => (now === note ? null : now)));
     // A longer note stays longer, so it can be read to the end (about 60 ms a character).
     const ms = Math.max(note.action === undefined ? SHOW_MS : ACTION_MS, note.text.length * READ_MS_PER_CHAR);
     let timer: ReturnType<typeof setTimeout>;
