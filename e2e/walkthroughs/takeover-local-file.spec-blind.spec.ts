@@ -45,39 +45,41 @@ test.describe('You open a local PDF, with file access on', () => {
 test.describe('You open a local PDF, with file access off', () => {
   test.use({ profile: 'bare' });
 
-  test('our viewer opens anyway and shows how to turn file access on, one click from the extension page', async ({ context }, testInfo) => {
-    expect(await fileAccess(context), 'this profile starts with file access off').toBe(false);
-    const file = await localPdf(testInfo, 'Lecture 3 notes.pdf');
-    const page = await context.newPage();
+  test('With file access off, our viewer still opens and the whole set-up to turn file access on works', async ({ step }, testInfo) => {
+    test.setTimeout(120_000);
+    await step('our viewer opens anyway and shows how to turn file access on, one click from the extension page', async ({ context }) => {
+      expect(await fileAccess(context), 'this profile starts with file access off').toBe(false);
+      const file = await localPdf(testInfo, 'Lecture 3 notes.pdf');
+      const page = await context.newPage();
 
-    await visit(page, file.url);
+      await visit(page, file.url);
 
-    await expectOurViewer(page, file.url);
-    await expect(fileAccessControl(page).first(), 'a clear way to switch file access on').toBeVisible();
-    await shot(page, testInfo, 'file-access-is-off');
+      await expectOurViewer(page, file.url);
+      await expect(fileAccessControl(page).first(), 'a clear way to switch file access on').toBeVisible();
+      await shot(page, testInfo, 'file-access-is-off');
 
-    await fileAccessControl(page).first().click();
-    const settings = await findExtensionSettingsTab(context);
-    expect(settings.url()).toContain(EXTENSION_ID);
-    await shot(settings, testInfo, 'extension-page-opened');
-  });
+      await fileAccessControl(page).first().click();
+      const settings = await findExtensionSettingsTab(context);
+      expect(settings.url()).toContain(EXTENSION_ID);
+      await shot(settings, testInfo, 'extension-page-opened');
+    }, 60_000);
+    await step('the whole set-up: follow the prompt, switch file access on, open the file again, and it opens in our viewer', async ({ context }) => {
+      const file = await localPdf(testInfo, 'Lecture 3 notes.pdf');
+      const page = await context.newPage();
+      await visit(page, file.url);
+      await expectOurViewer(page, file.url);
+      await fileAccessControl(page).first().click();
+      const settings = await findExtensionSettingsTab(context);
 
-  test('the whole set-up: follow the prompt, switch file access on, open the file again, and it opens in our viewer', async ({ context }, testInfo) => {
-    const file = await localPdf(testInfo, 'Lecture 3 notes.pdf');
-    const page = await context.newPage();
-    await visit(page, file.url);
-    await expectOurViewer(page, file.url);
-    await fileAccessControl(page).first().click();
-    const settings = await findExtensionSettingsTab(context);
+      // The owner's step on Chrome's own page. It reloads the extension (and closes its tabs).
+      await settings.locator('extensions-toggle-row', { hasText: 'Allow access to file URLs' }).locator('cr-toggle').click();
+      await expect.poll(() => fileAccess(context), { message: 'file access is on after the toggle', timeout: 20_000, intervals: [500] }).toBe(true);
+      await settings.close().catch(() => {});
 
-    // The owner's step on Chrome's own page. It reloads the extension (and closes its tabs).
-    await settings.locator('extensions-toggle-row', { hasText: 'Allow access to file URLs' }).locator('cr-toggle').click();
-    await expect.poll(() => fileAccess(context), { message: 'file access is on after the toggle', timeout: 20_000, intervals: [500] }).toBe(true);
-    await settings.close().catch(() => {});
-
-    const again = await context.newPage();
-    await visit(again, file.url);
-    await expectOurViewer(again, file.url);
-    await shot(again, testInfo, 'our-viewer-after-file-access-is-on');
+      const again = await context.newPage();
+      await visit(again, file.url);
+      await expectOurViewer(again, file.url);
+      await shot(again, testInfo, 'our-viewer-after-file-access-is-on');
+    }, 60_000);
   });
 });

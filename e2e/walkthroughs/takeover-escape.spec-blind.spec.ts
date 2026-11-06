@@ -40,38 +40,40 @@ test.describe('You use "Open in Chrome\'s viewer"', () => {
     // Every character a pattern treats as special, as a link can carry them.
     { name: 'a link with a long query full of punctuation', path: '/f/paper-50.pdf?q=a+b(c)[d]{2}|e$f^g.*h%20i&x=1;y=2' },
   ];
-  for (const address of ADDRESSES) {
-    test(`on ${address.name}: Chrome's own viewer shows it and stays`, async ({ context, server }, testInfo) => {
+
+  test('Open in Chrome\'s viewer shows the PDF there and stays, also for an embedded PDF, and only for that tab', async ({ step }, testInfo) => {
+    test.setTimeout(300_000);
+    for (const address of ADDRESSES) {
+      await step(`on ${address.name}: Chrome's own viewer shows it and stays`, async ({ context, server }) => {
+        const page = await context.newPage();
+
+        await escapeFromOurViewer(page, server.url(address.path), testInfo);
+      }, 60_000);
+    }
+    await step("on a PDF that was embedded in a page: the PDF itself opens in Chrome's own viewer, full tab", async ({ context, server }) => {
+      const pdf = server.url('/h/plain.pdf');
+      const pageUrl = server.url('/h/iframe-page');
       const page = await context.newPage();
+      await visit(page, pageUrl);
+      await expectOurViewer(page, pdf, { back: pageUrl });
 
-      await escapeFromOurViewer(page, server.url(address.path), testInfo);
-    });
-  }
+      await openInChromesViewer(page, pdf, testInfo);
 
-  test("on a PDF that was embedded in a page: the PDF itself opens in Chrome's own viewer, full tab", async ({ context, server }, testInfo) => {
-    const pdf = server.url('/h/plain.pdf');
-    const pageUrl = server.url('/h/iframe-page');
-    const page = await context.newPage();
-    await visit(page, pageUrl);
-    await expectOurViewer(page, pdf, { back: pageUrl });
+      await expectChromesOwnViewer(page, pdf);
+      await shot(page, testInfo, 'embedded-pdf-in-chromes-own-viewer');
+    }, 60_000);
+    await step('is for that tab only: the same link in another tab still opens our viewer', async ({ context, server }) => {
+      const url = server.url('/f/paper-50.pdf');
+      const first = await context.newPage();
+      await escapeFromOurViewer(first, url, testInfo);
 
-    await openInChromesViewer(page, pdf, testInfo);
+      const second = await context.newPage();
+      await visit(second, url);
 
-    await expectChromesOwnViewer(page, pdf);
-    await shot(page, testInfo, 'embedded-pdf-in-chromes-own-viewer');
-  });
-
-  test('is for that tab only: the same link in another tab still opens our viewer', async ({ context, server }, testInfo) => {
-    const url = server.url('/f/paper-50.pdf');
-    const first = await context.newPage();
-    await escapeFromOurViewer(first, url, testInfo);
-
-    const second = await context.newPage();
-    await visit(second, url);
-
-    await expectOurViewer(second, url);
-    await expectChromesOwnViewer(first, url);
-    await shot(second, testInfo, 'other-tab-opens-our-viewer');
+      await expectOurViewer(second, url);
+      await expectChromesOwnViewer(first, url);
+      await shot(second, testInfo, 'other-tab-opens-our-viewer');
+    }, 60_000);
   });
 });
 

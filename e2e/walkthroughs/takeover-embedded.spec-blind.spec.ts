@@ -24,73 +24,74 @@ async function expectStaysOnPage(page: Page, pageUrl: string, nav: ReturnType<ty
 }
 
 test.describe('A PDF embedded in a page', () => {
-  for (const embed of EMBEDS) {
-    test(`as ${embed.element}: it opens full-tab in our viewer; Back to page returns to the exact page`, async ({ context, server }, testInfo) => {
+
+  test('A PDF embedded in a page opens full-tab in our viewer with Back to page, and the browser\'s Back, a viewer address with an unknown page and a download are handled', async ({ step }, testInfo) => {
+    test.setTimeout(360_000);
+    for (const embed of EMBEDS) {
+      await step(`as ${embed.element}: it opens full-tab in our viewer; Back to page returns to the exact page`, async ({ context, server }) => {
+        const pdf = server.url('/h/plain.pdf');
+        const pageUrl = server.url(`${embed.page}?course=EC1A1&week=3#reading`);
+        const page = await context.newPage();
+        const nav = trackNavigations(page);
+        const tabs = context.pages().length;
+
+        await visit(page, pageUrl);
+
+        await expectOurViewer(page, pdf, { back: pageUrl });
+        await expect(backToPage(page), 'a "Back to page" button').toBeVisible();
+        await shot(page, testInfo, 'full-tab-viewer-with-back-to-page');
+        expect(context.pages().length, 'the same tab, no new one').toBe(tabs);
+
+        await backToPage(page).click();
+
+        await expectStaysOnPage(page, pageUrl, nav);
+        await shot(page, testInfo, 'back-on-the-page');
+      }, 60_000);
+    }
+    // The spec names the "Back to page" button only. This is the same wish with the browser's Back button, which a person
+    // presses without thinking; if the page is taken over again each time, the owner cannot leave the viewer that way.
+    await step("and the owner presses the browser's own Back button instead: the page returns and stays, not thrown back into the viewer", async ({ context, server }) => {
       const pdf = server.url('/h/plain.pdf');
-      const pageUrl = server.url(`${embed.page}?course=EC1A1&week=3#reading`);
+      const pageUrl = server.url('/h/iframe-page?course=EC1A1#reading');
       const page = await context.newPage();
       const nav = trackNavigations(page);
-      const tabs = context.pages().length;
-
       await visit(page, pageUrl);
-
       await expectOurViewer(page, pdf, { back: pageUrl });
-      await expect(backToPage(page), 'a "Back to page" button').toBeVisible();
-      await shot(page, testInfo, 'full-tab-viewer-with-back-to-page');
-      expect(context.pages().length, 'the same tab, no new one').toBe(tabs);
 
-      await backToPage(page).click();
+      await page.goBack();
 
       await expectStaysOnPage(page, pageUrl, nav);
-      await shot(page, testInfo, 'back-on-the-page');
-    });
-  }
+      await shot(page, testInfo, 'browser-back-on-the-page');
+    }, 60_000);
+    // sec1 (finding 8, ruled by the controller): this test used to expect "Back to page" here, and that button then sent
+    // the owner to whatever page the address named: an open redirect, since any web page can open the viewer with any
+    // back=. "Back to page" now goes only to the page the extension saw embed this PDF in this tab; a tab created straight
+    // on the viewer (restored, duplicated, or opened by a page) has the browser's own Back instead.
+    await step('opened straight on a viewer address with a page to go back to that the extension never saw: no Back to page', async ({ context, sw, server }) => {
+      const pdf = server.url('/h/plain.pdf');
+      const pageUrl = server.url('/h/iframe-page?course=EC1A1');
+      const [tab] = await Promise.all([
+        context.waitForEvent('page'),
+        sw.evaluate((url) => chrome.tabs.create({ url }), buildViewerUrl({ source: pdf, back: pageUrl, page: null }, OUR_VIEWER)),
+      ]);
+      await expectOurViewer(tab, pdf, { back: pageUrl });
+      await expect(tab.locator('[role="document"]'), 'the PDF opens').toBeVisible({ timeout: 15_000 });
 
-  // The spec names the "Back to page" button only. This is the same wish with the browser's Back button, which a person
-  // presses without thinking; if the page is taken over again each time, the owner cannot leave the viewer that way.
-  test("and the owner presses the browser's own Back button instead: the page returns and stays, not thrown back into the viewer", async ({ context, server }, testInfo) => {
-    const pdf = server.url('/h/plain.pdf');
-    const pageUrl = server.url('/h/iframe-page?course=EC1A1#reading');
-    const page = await context.newPage();
-    const nav = trackNavigations(page);
-    await visit(page, pageUrl);
-    await expectOurViewer(page, pdf, { back: pageUrl });
+      await expect(backToPage(tab), 'no "Back to page" for a page the extension did not see').toHaveCount(0);
+      await shot(tab, testInfo, 'viewer-opened-straight-without-back-to-page');
+    }, 60_000);
+    await step('that offers itself as a download (an attachment in an iframe) is left alone: the page stays and no viewer opens', async ({ context, server }) => {
+      const pageUrl = server.url('/h/iframe-attachment-page');
+      const page = await context.newPage();
+      const nav = trackNavigations(page);
 
-    await page.goBack();
+      await visit(page, pageUrl);
+      await quietFor(page, 2000);
 
-    await expectStaysOnPage(page, pageUrl, nav);
-    await shot(page, testInfo, 'browser-back-on-the-page');
-  });
-
-  // sec1 (finding 8, ruled by the controller): this test used to expect "Back to page" here, and that button then sent
-  // the owner to whatever page the address named: an open redirect, since any web page can open the viewer with any
-  // back=. "Back to page" now goes only to the page the extension saw embed this PDF in this tab; a tab created straight
-  // on the viewer (restored, duplicated, or opened by a page) has the browser's own Back instead.
-  test('opened straight on a viewer address with a page to go back to that the extension never saw: no Back to page', async ({ context, sw, server }, testInfo) => {
-    const pdf = server.url('/h/plain.pdf');
-    const pageUrl = server.url('/h/iframe-page?course=EC1A1');
-    const [tab] = await Promise.all([
-      context.waitForEvent('page'),
-      sw.evaluate((url) => chrome.tabs.create({ url }), buildViewerUrl({ source: pdf, back: pageUrl, page: null }, OUR_VIEWER)),
-    ]);
-    await expectOurViewer(tab, pdf, { back: pageUrl });
-    await expect(tab.locator('[role="document"]'), 'the PDF opens').toBeVisible({ timeout: 15_000 });
-
-    await expect(backToPage(tab), 'no "Back to page" for a page the extension did not see').toHaveCount(0);
-    await shot(tab, testInfo, 'viewer-opened-straight-without-back-to-page');
-  });
-
-  test('that offers itself as a download (an attachment in an iframe) is left alone: the page stays and no viewer opens', async ({ context, server }, testInfo) => {
-    const pageUrl = server.url('/h/iframe-attachment-page');
-    const page = await context.newPage();
-    const nav = trackNavigations(page);
-
-    await visit(page, pageUrl);
-    await quietFor(page, 2000);
-
-    expect(page.url()).toBe(normalize(pageUrl));
-    expect(nav.ourViewerVisits(), 'our viewer must not open for an attachment').toBe(0);
-    await shot(page, testInfo, 'page-with-an-attachment-iframe');
+      expect(page.url()).toBe(normalize(pageUrl));
+      expect(nav.ourViewerVisits(), 'our viewer must not open for an attachment').toBe(0);
+      await shot(page, testInfo, 'page-with-an-attachment-iframe');
+    }, 60_000);
   });
 });
 
