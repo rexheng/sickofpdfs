@@ -8,6 +8,10 @@
 //   edit, an undo or a reload never asks again.
 // - "Ask Claude" in the menus opens the same note box with "@Claude " already in it (`prefillNoteBox`), so a question
 //   from the menu is the same thread and the same request as one typed by hand (plan §6 walkthrough 2).
+// - R105 and TB6: a box holding only "@Claude" says "Type your question after @Claude" under it, and Enter there keeps the box
+//   open (nothing is sent, no empty note is made). A reply that starts with @Claude says "Claude reads the notes in this thread
+//   too": the earlier notes go with the question. On a private PDF the suggestion is greyed out with "Claude doesn't read
+//   private files", and so is the line under the box.
 //
 // The suggestion is drawn by one host for the whole tab (`ClaudeMentions`), so the note box itself needs no change: it
 // listens for typing in any note box and leaves every key it does not use to the box.
@@ -35,6 +39,8 @@ export interface MentionOption {
   label: string;
   /** One quiet line under the name. */
   detail: string;
+  /** R105: greyed out (a private PDF); `detail` says why. Choosing it does nothing. */
+  disabled?: boolean;
 }
 
 /** What a note is about, for the suggestion's words. */
@@ -68,17 +74,39 @@ const ABOUT: Record<MentionPlace, string> = {
  * The mention source of the note box (A4): Claude, while this tab has a Claude host. With no key yet it still shows, and
  * says so; the reply then explains how to add one (plan §6 walkthrough 7).
  */
-export function claudeMentionItems(o: { place?: MentionPlace; host?: Pick<ClaudeUiHost, 'status'> | null } = {}): MentionOption[] {
+export function claudeMentionItems(o: { place?: MentionPlace; host?: Pick<ClaudeUiHost, 'status' | 'privateHint'> | null } = {}): MentionOption[] {
   const status = o.host?.status() ?? null;
   if (status === null || status === 'incognito') return [];
+  const hint = o.host?.privateHint?.() ?? null;
   return [
     {
       id: 'claude',
       insert: `${CLAUDE_MENTION} `,
       label: 'Claude',
-      detail: status === 'no-key' ? 'Add your key in Settings first' : ABOUT[o.place ?? 'passage'],
+      detail: hint ?? (status === 'no-key' ? 'Add your key in Settings first' : ABOUT[o.place ?? 'passage']),
+      ...(hint !== null ? { disabled: true } : {}),
     },
   ];
+}
+
+/** A box that holds only the mention, with no question yet ("@Claude", "@Claude ,"). */
+const ONLY_MENTION = /^\s*@claude[\s,:]*$/iu;
+/** A note that starts with the mention. */
+const STARTS_WITH_MENTION = /^\s*@claude(?![\p{L}\p{N}_])/iu;
+
+/** The quiet line under a note or reply box that asks Claude (R105, TB6). */
+export const ASK_HINT = 'Type your question after @Claude';
+export const THREAD_HINT = 'Claude reads the notes in this thread too';
+
+/**
+ * What the line under a box says, or null: the private hint (R105) on a private PDF; "Type your question after @Claude" while the
+ * box holds only the mention; "Claude reads the notes in this thread too" in a reply box that starts with @Claude.
+ */
+export function boxHint(value: string, variant: 'note' | 'reply', privateHint: string | null): string | null {
+  if (!STARTS_WITH_MENTION.test(value)) return null;
+  if (privateHint !== null) return privateHint;
+  if (ONLY_MENTION.test(value)) return ASK_HINT;
+  return variant === 'reply' ? THREAD_HINT : null;
 }
 
 export interface MentionItemProps {
@@ -90,18 +118,20 @@ export interface MentionItemProps {
 
 /** One row of the @ list: Claude's 32 px avatar, its name and one quiet line, as Docs lists people. */
 export function MentionItem({ option, id, selected, onChoose }: MentionItemProps) {
+  const off = option.disabled === true;
   return (
     <div
       id={id}
       role="option"
       aria-selected={selected}
+      aria-disabled={off ? 'true' : undefined}
       className={styles.item}
-      data-selected={selected ? 'true' : 'false'}
+      data-selected={selected && !off ? 'true' : 'false'}
       // The caret stays in the note box while the row is pressed.
       onMouseDown={(event: MouseEvent) => event.preventDefault()}
       onClick={(event) => {
         event.stopPropagation();
-        onChoose();
+        if (!off) onChoose();
       }}
     >
       <CommentAvatar author="claude" />
@@ -162,6 +192,16 @@ function caretPoint(el: HTMLTextAreaElement, at: number): { x: number; y: number
   return point;
 }
 
+/** The line under a box (`boxHint`), while the box has the caret. */
+interface Hint {
+  box: HTMLTextAreaElement;
+  text: string;
+  at: { x: number; width: number; bottom: number };
+  light: boolean;
+  /** Enter was pressed on a box with no question: the line is said to a screen reader too. */
+  nudged: boolean;
+}
+
 interface Open {
   box: HTMLTextAreaElement;
   start: number;
@@ -194,12 +234,26 @@ function typeInto(box: HTMLTextAreaElement, from: number, to: number, text: stri
 export function ClaudeMentions({ placeOfBox }: { placeOfBox(this: void, box: HTMLTextAreaElement): MentionPlace }) {
   const host = useClaudeUi();
   const [open, setOpen] = useState<Open | null>(null);
+  const [hint, setHint] = useState<Hint | null>(null);
   const listId = useId();
   const optionId = `${listId}-claude`;
   const current = useRef<Open | null>(null);
   current.current = open;
 
   const close = useCallback(() => setOpen(null), []);
+
+  /** The line under the box, from what it holds now (or none). */
+  const hintFor = useCallback(
+    (box: HTMLTextAreaElement, nudged = false) => {
+      const variant = box.closest('[data-variant="reply"]') !== null ? 'reply' : 'note';
+      const text = document.activeElement === box ? boxHint(box.value, variant, host?.privateHint?.() ?? null) : null;
+      if (text === null) return setHint(null);
+      const field = (box.closest(BOX) ?? box).getBoundingClientRect();
+      const light = (box.closest('[data-theme]')?.getAttribute('data-theme') ?? 'light') === 'light';
+      setHint({ box, text, at: { x: field.left + EDGE, width: field.width, bottom: field.bottom }, light, nudged });
+    },
+    [host],
+  );
 
   const look = useCallback(
     (box: HTMLTextAreaElement) => {
@@ -219,7 +273,7 @@ export function ClaudeMentions({ placeOfBox }: { placeOfBox(this: void, box: HTM
 
   const choose = useCallback((o: Open) => {
     const option = o.options[0];
-    if (option === undefined) return;
+    if (option === undefined || option.disabled === true) return setOpen(null);
     typeInto(o.box, o.start, o.caret, option.insert);
     setOpen(null);
   }, []);
@@ -228,11 +282,23 @@ export function ClaudeMentions({ placeOfBox }: { placeOfBox(this: void, box: HTM
     if (host === null) return;
     const onInput = (e: Event) => {
       const box = noteBoxOf(e.target);
-      if (box !== null) look(box);
+      if (box === null) return;
+      look(box);
+      hintFor(box);
     };
     // Capture: the list's keys are taken before the box sees them (Enter would send, Esc would close the box).
     const onKey = (e: KeyboardEvent) => {
       const o = current.current;
+      // A box holding only "@Claude": Enter keeps it open and says what to do (no empty note, no question with no words).
+      if (o === null && e.key === 'Enter' && !e.shiftKey && !e.altKey && !e.isComposing) {
+        const box = noteBoxOf(e.target);
+        if (box !== null && ONLY_MENTION.test(box.value)) {
+          e.preventDefault();
+          e.stopPropagation();
+          hintFor(box, true);
+        }
+        return;
+      }
       if (o === null || e.target !== o.box || e.isComposing) return;
       if (e.key === 'Enter' || e.key === 'Tab') {
         if (e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return close();
@@ -256,6 +322,12 @@ export function ClaudeMentions({ placeOfBox }: { placeOfBox(this: void, box: HTM
     };
     const onLeave = (e: FocusEvent) => {
       if (current.current !== null && e.target === current.current.box) close();
+      if (noteBoxOf(e.target) !== null) setHint(null);
+    };
+    // A box that opens with "@Claude " in it ("Ask Claude" in a menu) says what to type as it takes the caret.
+    const onEnter = (e: FocusEvent) => {
+      const box = noteBoxOf(e.target);
+      if (box !== null) requestAnimationFrame(() => hintFor(box));
     };
     // Bubble, not capture: React's own input handler (the box's onChange, which keeps the text in the draft) must run first. A
     // state change here before it makes React draw the box again with its old value, and the letter just typed is lost (TB6
@@ -264,6 +336,7 @@ export function ClaudeMentions({ placeOfBox }: { placeOfBox(this: void, box: HTM
     document.addEventListener('keydown', onKey, true);
     document.addEventListener('selectionchange', onCaret);
     document.addEventListener('focusout', onLeave, true);
+    document.addEventListener('focusin', onEnter, true);
     window.addEventListener('resize', close);
     document.addEventListener('scroll', close, true);
     return () => {
@@ -271,10 +344,23 @@ export function ClaudeMentions({ placeOfBox }: { placeOfBox(this: void, box: HTM
       document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('selectionchange', onCaret);
       document.removeEventListener('focusout', onLeave, true);
+      document.removeEventListener('focusin', onEnter, true);
       window.removeEventListener('resize', close);
       document.removeEventListener('scroll', close, true);
     };
-  }, [host, look, choose, close]);
+  }, [host, look, choose, close, hintFor]);
+
+  // The line follows the box when the page moves under it (a scroll, the window's size), and goes with the box.
+  useEffect(() => {
+    if (hint === null) return;
+    const follow = () => (hint.box.isConnected ? hintFor(hint.box, hint.nudged) : setHint(null));
+    window.addEventListener('resize', follow);
+    document.addEventListener('scroll', follow, true);
+    return () => {
+      window.removeEventListener('resize', follow);
+      document.removeEventListener('scroll', follow, true);
+    };
+  }, [hint, hintFor]);
 
   // The box tells assistive technology about the list while it is open.
   useEffect(() => {
@@ -305,7 +391,22 @@ export function ClaudeMentions({ placeOfBox }: { placeOfBox(this: void, box: HTM
     setPlace({ left, top });
   }, [open]);
 
-  if (open === null) return null;
+  if (open === null) {
+    if (hint === null) return null;
+    return createPortal(
+      <div
+        className={styles.boxHint}
+        data-theme={hint.light ? 'light' : 'dark'}
+        data-claude-hint=""
+        data-nudged={hint.nudged ? 'true' : 'false'}
+        role={hint.nudged ? 'status' : undefined}
+        style={{ left: hint.at.x, top: hint.at.bottom + GAP, maxInlineSize: Math.max(hint.at.width - 2 * EDGE, 160) }}
+      >
+        {hint.text}
+      </div>,
+      document.body,
+    );
+  }
   return createPortal(
     <div
       ref={list}

@@ -9,6 +9,9 @@
 //
 // Everything here waits for the turn runner (slice D) to set the host (host.ts). Until then no Claude item shows, no
 // command is built, and a note with "@Claude" in it is only a note.
+//
+// R105: on a private PDF (not learning, D9 or R102) every Claude item is greyed out with "Claude doesn't read private files", and
+// the figure toolbar (Ask Claude, Explain) does not show.
 import type { ThreadRow } from '@sop/core';
 import type { CommentView, MenuItemDef } from '@sop/ui';
 import { type ReactNode, useCallback, useEffect } from 'react';
@@ -20,7 +23,7 @@ import { noteCommands } from '../../notes/notes-host';
 import { ClaudeConfirmHost } from './ClaudeConfirmDialog';
 import { ClaudeReplyView } from './ClaudeReplyView';
 import { FigureToolbar } from './FigureToolbar';
-import { claudeUi, useClaudeUi } from './host';
+import { claudeUi, useClaudeUi, useClaudePrivateHint } from './host';
 import { claudeJump, createClaudeJumper } from './jump';
 import { CLAUDE_MENTION, ClaudeMentions, type MentionPlace, placeOf, prefillNoteBox, presetFor, watchClaudeMentions } from './MentionItem';
 
@@ -36,6 +39,7 @@ function threadOfBox(box: HTMLElement, host: NotesHost): ThreadRow | null {
 
 function ClaudeUiView({ host }: { host: NotesHost }) {
   const ui = useClaudeUi();
+  const privateHint = useClaudePrivateHint(ui);
 
   // The chips of this document jump within it.
   useEffect(() => {
@@ -65,23 +69,29 @@ function ClaudeUiView({ host }: { host: NotesHost }) {
     <>
       <ClaudeMentions placeOfBox={placeOfBox} />
       <ClaudeConfirmHost />
-      <FigureToolbar
-        controller={figures}
-        onAsk={() => {
-          const r = selected();
-          if (r !== null) askOnRegion(figures, r);
-        }}
-        onExplain={() => {
-          const r = selected();
-          if (r !== null) explainRegion(host, figures, r);
-        }}
-      />
+      {privateHint === null && (
+        <FigureToolbar
+          controller={figures}
+          onAsk={() => {
+            const r = selected();
+            if (r !== null) askOnRegion(figures, r);
+          }}
+          onExplain={() => {
+            const r = selected();
+            if (r !== null) explainRegion(host, figures, r);
+          }}
+        />
+      )}
     </>
   );
 }
 
 /** Whether notes can be written here (not a view-only PDF). */
 const editable = (host: NotesHost) => host.session.state().mode !== 'view-only';
+/** R105: the hint while this PDF is private; null when Claude may be asked. */
+const privateHint = (): string | null => claudeUi.get()?.privateHint?.() ?? null;
+/** The greyed-out item's reason: the private hint, when that is why. */
+const whyOff = (): string | undefined => privateHint() ?? undefined;
 
 /** Ask Claude about the selected figure or area: its note opens (or the note it has), with "@Claude " in the box. */
 function askOnRegion(c: FigureController, region: Region): void {
@@ -113,14 +123,16 @@ function commands(host: NotesHost): Partial<Record<ViewerCommandId, CommandBehav
         noteCommands()?.['marks.comment'].run();
         void prefillNoteBox(CLAUDE_MENTION);
       },
-      enabled: () => editable(host) && (host.selection().length > 0 || figures().region() !== null),
+      enabled: () => privateHint() === null && editable(host) && (host.selection().length > 0 || figures().region() !== null),
+      disabledReason: whyOff,
     },
     'claude.explainFigure': {
       run: () => {
         const region = figures().region();
         if (region !== null) explainRegion(host, figures(), region);
       },
-      enabled: () => editable(host) && figures().region() !== null,
+      enabled: () => privateHint() === null && editable(host) && figures().region() !== null,
+      disabledReason: whyOff,
     },
     // A note on the whole document, with "@Claude " in it; the cost is shown before anything is sent.
     'claude.wholeDocument': {
@@ -133,7 +145,8 @@ function commands(host: NotesHost): Partial<Record<ViewerCommandId, CommandBehav
           },
         });
       },
-      enabled: () => editable(host),
+      enabled: () => privateHint() === null && editable(host),
+      disabledReason: whyOff,
     },
   };
 }
@@ -141,10 +154,12 @@ function commands(host: NotesHost): Partial<Record<ViewerCommandId, CommandBehav
 /** The figure menu's Claude rows (FigureMenu.tsx): Ask Claude and Explain this figure, after Comment. */
 export function claudeFigureItems(c: FigureController, region: Extract<Region, { kind: 'figure' }>): MenuItemDef[] {
   if (claudeUi.get() === null) return [];
-  const off = !c.editable();
+  const hint = privateHint();
+  const off = !c.editable() || hint !== null;
+  const why = hint !== null ? { disabledReason: hint } : {};
   return [
-    { kind: 'item', id: 'claude.ask', label: 'Ask Claude', icon: 'auto_awesome', disabled: off, onSelect: () => askOnRegion(c, region) },
-    { kind: 'item', id: 'claude.explainFigure', label: 'Explain this figure', icon: 'insert_chart', disabled: off, onSelect: () => explainRegion(c.host, c, region) },
+    { kind: 'item', id: 'claude.ask', label: 'Ask Claude', icon: 'auto_awesome', disabled: off, ...why, onSelect: () => askOnRegion(c, region) },
+    { kind: 'item', id: 'claude.explainFigure', label: 'Explain this figure', icon: 'insert_chart', disabled: off, ...why, onSelect: () => explainRegion(c.host, c, region) },
   ];
 }
 

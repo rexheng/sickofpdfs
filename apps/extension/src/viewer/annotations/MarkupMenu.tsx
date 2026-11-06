@@ -44,6 +44,8 @@ function commandRow(commands: ViewerCommands, id: ViewerCommandId, run: () => vo
       ...(cmd.icon !== undefined ? { icon: cmd.icon } : {}),
       ...(key !== undefined ? { shortcut: formatCombo(key) } : {}),
       disabled: !enabled,
+      // Why it is greyed out, when the command says (R105: "Claude doesn't read private files").
+      ...(!enabled && cmd.disabledReason?.() !== undefined ? { disabledReason: cmd.disabledReason() } : {}),
       onSelect: run,
     },
   ];

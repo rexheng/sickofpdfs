@@ -29,8 +29,18 @@
 }
 
 .item[data-selected='true'],
-.item:hover {
+.item:not([aria-disabled='true']):hover {
   background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+/* R105: greyed out on a private PDF, as a disabled Drive menu row: the avatar and name at 38%, the reason still readable. */
+.item[aria-disabled='true'] {
+  cursor: default;
+}
+
+.item[aria-disabled='true'] > :first-child,
+.item[aria-disabled='true'] .name {
+  opacity: 0.38;
 }
 
 .text {
@@ -64,6 +74,30 @@
   letter-spacing: var(--tracking-tight);
 }
 
+/*
+ * The quiet line under a note or reply box that asks Claude ("Type your question after @Claude", "Claude reads the notes in this
+ * thread too"): a quiet line on Drive's search-bar surface (#e9eef6, 12/16, 4 px corners), so it reads as help, not as a message. It never takes the
+ * pointer, so the box and its buttons stay usable.
+ */
+.boxHint {
+  position: fixed;
+  z-index: var(--z-menu);
+  box-sizing: border-box;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--shape-menu);
+  background-color: var(--gm3-sys-color-surface-container-high);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-docs-comment-time);
+  letter-spacing: var(--tracking-tight);
+  pointer-events: none;
+  animation: appear 90ms ease-out;
+}
+
+/* Enter was pressed with no question: the same line, in the on-surface colour, so it is noticed. */
+.boxHint[data-nudged='true'] {
+  color: var(--gm3-sys-color-on-surface);
+}
+
 @keyframes appear {
   from {
     opacity: 0;
@@ -72,7 +106,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .list {
+  .list,
+  .boxHint {
     animation: none;
   }
 }
