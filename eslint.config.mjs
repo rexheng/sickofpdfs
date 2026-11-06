@@ -32,9 +32,35 @@ const SDK_CLIENT = 'apps/extension/src/viewer/claude/client.ts';
 
 // Spec R103: the extension never reads a page on its own. chrome.scripting may be called only from the toolbar menu's click path:
 // the menu (webclip/ActionMenu.tsx) puts the page script in, and webclip/make-pdf.ts reads the article's pictures through it.
+// The rule catches the usual spellings: `chrome.scripting`, `chrome['scripting']`, `const { scripting } = chrome`, and any
+// `.executeScript(`. Lint can still be got round (a name built at run time), so the build checks the bundle too
+// (apps/extension/scripts/check-scripting.mjs): only the popup and the save-page tab may hold it.
 const SCRIPTING_MESSAGE = 'Only webclip/ActionMenu.tsx and webclip/make-pdf.ts may use chrome.scripting, from the toolbar menu click (spec R103).';
-const SCRIPTING_SYNTAX = [{ selector: "MemberExpression[property.name='scripting']", message: SCRIPTING_MESSAGE }];
+const SCRIPTING_NAME = '/^(?:scripting|executeScript|registerContentScripts|updateContentScripts)$/';
+const SCRIPTING_SYNTAX = [
+  { selector: `MemberExpression[property.name=${SCRIPTING_NAME}]`, message: SCRIPTING_MESSAGE },
+  { selector: `MemberExpression[computed=true][property.value=${SCRIPTING_NAME}]`, message: SCRIPTING_MESSAGE },
+  { selector: `MemberExpression[computed=true] > TemplateLiteral.property > TemplateElement[value.cooked=${SCRIPTING_NAME}]`, message: SCRIPTING_MESSAGE },
+  { selector: `ObjectPattern > Property[key.name=${SCRIPTING_NAME}]`, message: SCRIPTING_MESSAGE },
+  { selector: `ObjectPattern > Property[key.value=${SCRIPTING_NAME}]`, message: SCRIPTING_MESSAGE },
+];
 const SCRIPTING_FILES = ['apps/extension/src/webclip/ActionMenu.tsx', 'apps/extension/src/webclip/make-pdf.ts'];
+// Those two files are the click path: only the popup and the save-page tab bring them in, and never by a dynamic import (a page
+// that imported make-pdf.ts could read the pictures of any tab it names).
+const CLICK_PATH_MESSAGE = 'Only the popup (entrypoints/popup/main.tsx) and the save-page tab (webclip/SavePage.tsx) may import webclip/ActionMenu.tsx or webclip/make-pdf.ts, and never with import() (spec R103).';
+const CLICK_PATH_MODULE = '/(?:^|\\/)(?:ActionMenu|make-pdf)(?:\\.[jt]sx?)?$/';
+// (An import() of a name built at run time is not caught here; the build check is.)
+const CLICK_PATH_DYNAMIC = [
+  { selector: `ImportExpression[source.value=${CLICK_PATH_MODULE}]`, message: CLICK_PATH_MESSAGE },
+  { selector: `ImportExpression > TemplateLiteral.source > TemplateElement[value.cooked=/(?:ActionMenu|make-pdf)/]`, message: CLICK_PATH_MESSAGE },
+];
+const CLICK_PATH_SYNTAX = [
+  ...CLICK_PATH_DYNAMIC,
+  { selector: `ImportDeclaration[source.value=${CLICK_PATH_MODULE}]`, message: CLICK_PATH_MESSAGE },
+  { selector: `ExportNamedDeclaration[source.value=${CLICK_PATH_MODULE}]`, message: CLICK_PATH_MESSAGE },
+  { selector: `ExportAllDeclaration[source.value=${CLICK_PATH_MODULE}]`, message: CLICK_PATH_MESSAGE },
+];
+const CLICK_PATH_IMPORTERS = ['apps/extension/src/entrypoints/popup/main.tsx', 'apps/extension/src/webclip/SavePage.tsx'];
 
 export default defineConfig(
   globalIgnores([
@@ -117,7 +143,7 @@ export default defineConfig(
     rules: {
       'no-restricted-imports': ['error', { patterns: [LOCAL_ONLY_IMPORT_PATTERN, SDK_IMPORT_PATTERN] }],
       // import(), require() and import('...') in a type are not covered by no-restricted-imports.
-      'no-restricted-syntax': ['error', ...LOCAL_ONLY_SYNTAX, ...SDK_SYNTAX, ...SCRIPTING_SYNTAX],
+      'no-restricted-syntax': ['error', ...LOCAL_ONLY_SYNTAX, ...SDK_SYNTAX, ...SCRIPTING_SYNTAX, ...CLICK_PATH_SYNTAX],
     },
   },
   {
@@ -130,12 +156,12 @@ export default defineConfig(
       'apps/extension/src/claude-settings/**',
     ],
     // The secrets store is allowed here; the SDK still is not (only the client below may import it).
-    rules: { 'no-restricted-imports': ['error', { patterns: [SDK_IMPORT_PATTERN] }], 'no-restricted-syntax': ['error', ...SDK_SYNTAX, ...SCRIPTING_SYNTAX] },
+    rules: { 'no-restricted-imports': ['error', { patterns: [SDK_IMPORT_PATTERN] }], 'no-restricted-syntax': ['error', ...SDK_SYNTAX, ...SCRIPTING_SYNTAX, ...CLICK_PATH_SYNTAX] },
   },
   // The one door to Anthropic: it reads the key (getSecret) and imports the SDK.
   {
     files: [SDK_CLIENT],
-    rules: { 'no-restricted-imports': 'off', 'no-restricted-syntax': ['error', ...SCRIPTING_SYNTAX] },
+    rules: { 'no-restricted-imports': 'off', 'no-restricted-syntax': ['error', ...SCRIPTING_SYNTAX, ...CLICK_PATH_SYNTAX] },
   },
   // The backup (Phase 3, S13) never reaches the secrets store: no backup file may hold the key. Its folder is barred by the default
   // block above already; it is named here on purpose, with the Backup section, which sits in the settings folder that is allowed.
@@ -144,7 +170,7 @@ export default defineConfig(
     files: ['apps/extension/src/backup/**', 'apps/extension/src/store/backup-api.ts', 'apps/extension/src/library/settings/{Backup*,Restore*,use-backup}.{ts,tsx}', 'apps/extension/src/store/restore-api.ts'],
     rules: {
       'no-restricted-imports': ['error', { patterns: [LOCAL_ONLY_IMPORT_PATTERN, SDK_IMPORT_PATTERN] }],
-      'no-restricted-syntax': ['error', ...LOCAL_ONLY_SYNTAX, ...SDK_SYNTAX, ...SCRIPTING_SYNTAX],
+      'no-restricted-syntax': ['error', ...LOCAL_ONLY_SYNTAX, ...SDK_SYNTAX, ...SCRIPTING_SYNTAX, ...CLICK_PATH_SYNTAX],
     },
   },
   // The two files that may use chrome.scripting (the secrets and SDK bars stay as they are for them).
@@ -152,8 +178,13 @@ export default defineConfig(
     files: SCRIPTING_FILES,
     rules: {
       'no-restricted-imports': ['error', { patterns: [LOCAL_ONLY_IMPORT_PATTERN, SDK_IMPORT_PATTERN] }],
-      'no-restricted-syntax': ['error', ...LOCAL_ONLY_SYNTAX, ...SDK_SYNTAX],
+      'no-restricted-syntax': ['error', ...LOCAL_ONLY_SYNTAX, ...SDK_SYNTAX, ...CLICK_PATH_DYNAMIC],
     },
+  },
+  // The two files that bring the click path in (statically: never with a dynamic import).
+  {
+    files: CLICK_PATH_IMPORTERS,
+    rules: { 'no-restricted-syntax': ['error', ...LOCAL_ONLY_SYNTAX, ...SDK_SYNTAX, ...SCRIPTING_SYNTAX, ...CLICK_PATH_DYNAMIC] },
   },
 
   // Design tokens: colours, lengths, fonts and shadows come from packages/ui/src/tokens (see the rule for the details)
