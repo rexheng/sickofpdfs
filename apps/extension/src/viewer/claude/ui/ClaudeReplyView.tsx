@@ -7,7 +7,8 @@
 // - done: the answer with its chips: "Page 4" (jumps and lights the cited sentence), the site of a web source (opens a
 //   new tab), and "Figure 3 · Page 5" for a figure (jumps and selects it). Under the newest everyday answer of the thread,
 //   Think harder, with the model and the cost at the right end of its row on hover (cost-words.ts).
-// - error: the text so far stays, then one plain sentence and the buttons that help: Try again, Open Settings.
+// - error: the text so far stays, then one plain sentence and the buttons that help: Try again, Open Settings; Ask again
+//   after Cancel or Stop; Ask again with more room for an answer cut short; OK for a private PDF's refusal (R105).
 // A Think harder answer says so at its top: "Thought harder · Claude Opus 5.5", the model's name from the Models list.
 //
 // The body is Claude's Markdown, drawn as React elements only. Links are limited to `cite:`, `web:` and https (plan
@@ -41,7 +42,13 @@ export interface ClaudeReplyViewProps {
 }
 
 /** The parts of `meta` this view reads; a reply written before Phase 4 (or by claude.ai) may lack some. */
-type Meta = Partial<ClaudeReplyMeta> & { modelName?: string };
+type Meta = Partial<ClaudeReplyMeta> & {
+  modelName?: string;
+  /** R105: the owner pressed Cancel in the ask-first dialog; nothing was sent (turn.ts). */
+  notSent?: boolean;
+  /** The length limit stopped the answer; asking again gives it more room (turn.ts). */
+  cutShort?: boolean;
+};
 
 /** Which buttons an error offers. A setting to fix comes first; Try again then runs the same reply again. */
 const SETTINGS_ERRORS = new Set<ReplyError['code']>(['no-key', 'bad-key', 'no-model', 'over-cap']);
@@ -95,7 +102,7 @@ export function ClaudeReplyView({ thread, comment, comments }: ClaudeReplyViewPr
         </div>
       )}
       {status === 'streaming' && <ReplyStatus label={label} onStop={stop} />}
-      {status === 'error' && <ErrorBlock error={error} host={host} replyId={comment.id} />}
+      {status === 'error' && <ErrorBlock error={error} meta={meta} host={host} replyId={comment.id} />}
       {(status === 'done' || error?.code === 'refused') && <Footer meta={meta} host={host} thread={thread} comment={comment} comments={comments} />}
     </div>
   );
@@ -126,23 +133,47 @@ function ThoughtHarder({ meta, host }: { meta: Meta; host: ClaudeUiHost | null }
   );
 }
 
-function ErrorBlock({ error, host, replyId }: { error: ReplyError | null; host: ClaudeUiHost | null; replyId: CommentRow['id'] }) {
+/**
+ * The sentence of a reply that did not end in an answer, and the buttons that help (R105):
+ * - a real error: Try again (and Open Settings when a setting is the fix);
+ * - Cancel in the ask-first dialog, or Stop: "Ask again", in the calm colour: nothing went wrong;
+ * - an answer cut short by the length limit: "Ask again with more room", calm too;
+ * - "Claude doesn't read this PDF" on a private PDF: a plain OK, which takes the row away. Until then it stays.
+ */
+function ErrorBlock({ error, meta, host, replyId }: { error: ReplyError | null; meta: Meta; host: ClaudeUiHost | null; replyId: CommentRow['id'] }) {
   const place = useContext(ReplyChipPlace);
   const code = error?.code ?? null;
+  const cut = meta.cutShort === true;
   const settings = code !== null && SETTINGS_ERRORS.has(code);
   const retry = host?.retry !== undefined && (code === null || !NO_RETRY.has(code));
+  const again = cut ? 'Ask again with more room' : code === 'cancelled' || meta.notSent === true ? 'Ask again' : 'Try again';
+  // A private PDF's refusal is the runner's row (no model): Claude never saw the question. A refusal by Claude has its model.
+  const dismiss = code === 'refused' && (meta.role ?? null) === null ? claudeReplyDismiss.get() : null;
+  const calm = cut || (code !== null && CALM.has(code));
   return (
     <div className={styles.error} role="alert">
-      <p className={code !== null && CALM.has(code) ? `${styles.errorText} ${styles.calm}` : styles.errorText}>{error?.message ?? GENERIC_ERROR}</p>
-      {(settings || retry) && (
+      <p className={calm ? `${styles.errorText} ${styles.calm}` : styles.errorText}>{error?.message ?? GENERIC_ERROR}</p>
+      {(settings || retry || dismiss !== null) && (
         <div className={styles.errorActions}>
           {settings && <TextButton label="Open Settings" variant="tonal" onClick={place.openSettings ?? openClaudeSettings} />}
-          {retry && <TextButton label="Try again" icon="refresh" className={settings ? undefined : styles.flush} onClick={() => host?.retry?.(replyId)} />}
+          {retry && <TextButton label={again} icon="refresh" className={settings ? undefined : styles.flush} onClick={() => host?.retry?.(replyId)} />}
+          {dismiss !== null && <TextButton label="OK" className={styles.flush} onClick={() => dismiss(replyId)} />}
         </div>
       )}
     </div>
   );
 }
+
+/** Takes a reply row away from its thread, as ⋮ → Delete reply does. The Claude feature sets it for the open document. */
+let dismissRow: ((replyId: CommentRow['id']) => void) | null = null;
+export const claudeReplyDismiss = {
+  set(fn: ((replyId: CommentRow['id']) => void) | null): void {
+    dismissRow = fn;
+  },
+  get(): ((replyId: CommentRow['id']) => void) | null {
+    return dismissRow;
+  },
+};
 
 /**
  * Under a finished reply. The newest everyday answer of the thread offers Think harder, and the model and cost sit at the
