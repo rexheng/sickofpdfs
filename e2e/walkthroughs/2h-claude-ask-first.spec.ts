@@ -50,6 +50,9 @@ test('R105: a note saves a "not sure" PDF, and the first @Claude question still 
   const dialog = sendDialog(page);
   await expect(dialog, 'the first question asks before anything is sent').toBeVisible({ timeout: 40_000 });
   await expect(dialog.getByRole('button', { name: 'Cancel' }), 'Cancel is the default').toBeFocused();
+  // The note saved the PDF, so the dialog must not say it is not in the library (C3 follow-up, R105).
+  await expect(dialog, 'it says what is true: the owner did not choose this PDF').toContainText(/you haven.t chosen to save this pdf yourself/i);
+  await expect(dialog, 'and not "not in your library"').not.toContainText(/not in your library/i);
   await expect(claudeLine(page, /waiting for you to confirm/i), 'the reply says it waits for the owner').toBeVisible();
   await expect(claudeLine(page, /waiting for you to confirm/i).getByRole('button', { name: /stop/i }), 'with no Stop').toHaveCount(0);
   await shot(page, testInfo, 'ask-first-dialog');
@@ -61,7 +64,8 @@ test('R105: a note saves a "not sure" PDF, and the first @Claude question still 
   await shot(page, testInfo, 'cancel-not-sent');
 
   // Ask again: the same reply asks the same question once more. This time the owner says Send.
-  await notSent.getByRole('button', { name: /ask again|try again/i }).click();
+  await expect(notSent.getByRole('button', { name: /try again/i }), 'nothing went wrong, so no "Try again"').toHaveCount(0);
+  await notSent.getByRole('button', { name: /^ask again$/i }).click();
   await expect(dialog, 'asking again asks first again').toBeVisible({ timeout: 20_000 });
   await dialog.getByRole('button', { name: 'Send' }).click();
   await repliesSettle(page);
@@ -139,7 +143,8 @@ test('Security 1 (R91, at the turn): a "not sure" PDF not in the library, with a
   await expect(notSent).toBeVisible();
   // Page 7 reads again. Ask again makes no new note, so no save runs: the turn's own R91 check reads every page.
   await breakPageText(page, false);
-  await notSent.getByRole('button', { name: /ask again|try again/i }).click();
+  await expect(notSent.getByRole('button', { name: /try again/i }), 'nothing went wrong, so no "Try again"').toHaveCount(0);
+  await notSent.getByRole('button', { name: /^ask again$/i }).click();
   await expect(claudeLine(page, /card, bank or id numbers/i), 'the thread says why, in plain words').toBeVisible({ timeout: 40_000 });
   await expect(sendDialog(page), 'no dialog: there is nothing to agree to').toHaveCount(0);
   expect(messages(replay.requests()), 'nothing was sent').toHaveLength(0);

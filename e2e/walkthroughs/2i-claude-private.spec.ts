@@ -3,9 +3,9 @@
 //
 // On a PDF judged not learning:
 // - every Claude item is greyed out with "Claude doesn't read private files": Ask Claude in the right-click menu, Tools → Ask
-//   Claude about the whole document, the @ suggestion, and Explain this figure in the figure menu;
+//   Claude about the whole document, the @ suggestion, Explain this figure in the figure menu, and the figure toolbar;
 // - an "@Claude" note gets no save question for Claude's sake;
-// - the thread shows the plain refusal as a row of Claude's that stays (never a toast), and nothing reaches Anthropic;
+// - the thread shows the plain refusal as a row of Claude's that stays (never a toast) until its OK, and nothing reaches Anthropic;
 // - saved later anyway (R102), the row says "Claude did not read this".
 import type { Page } from '@playwright/test';
 import { claudeReplay } from '../support/claude-replay';
@@ -83,6 +83,8 @@ test('R105: on a PDF judged not learning, every Claude item is greyed out, an @C
   await expect(refusal, 'it stays: it is not a toast').toBeVisible();
   await expect(savePrompt(page), 'and the save question never came').toHaveCount(0);
   expect(messages(replay.requests()), 'nothing was sent to Anthropic').toHaveLength(0);
+  await expect(refusal.getByRole('button', { name: 'OK' }), 'it has a plain OK that dismisses it').toBeVisible();
+  await expect(refusal.getByRole('button', { name: /try again|ask again/i }), 'and nothing to try again').toHaveCount(0);
   await shot(page, testInfo, 'refusal-row-stays');
 
   // The owner saves the PDF anyway (R102). The note is kept, and the row says Claude did not read it.
@@ -94,9 +96,16 @@ test('R105: on a PDF judged not learning, every Claude item is greyed out, an @C
   expect(messages(replay.requests()), 'and still nothing was sent').toHaveLength(0);
   await expect(chipOf(page)).toBeVisible();
   await shot(page, testInfo, 'saved-later-not-read');
+
+  // OK dismisses the row (R105: "a row that stays until dismissed").
+  await claudeLine(page, /claude did not read this/i).getByRole('button', { name: 'OK' }).click();
+  await expect(claudeLine(page, /claude did not read this/i), 'OK takes the row away').toHaveCount(0);
+  await expect(cardWith(page, 'what is this total?'), 'the note itself stays').toBeVisible();
+  expect(messages(replay.requests()), 'and nothing was sent').toHaveLength(0);
+  await shot(page, testInfo, 'refusal-dismissed');
 });
 
-test('R105: on a PDF judged not learning, Explain this figure is greyed out in the figure menu, and the figure toolbar does not show', async ({ context, openViewer, server }, testInfo) => {
+test('R105: on a PDF judged not learning, Explain this figure is greyed out in the figure menu and in the figure toolbar', async ({ context, openViewer, server }, testInfo) => {
   await forceVerdict(context, 'not-learning');
   const page = await openFigurePaper(openViewer, server, FIG_PICTURE);
   await expect.poll(() => hooks(page).eval((h) => h.save.state().kind), { timeout: 30_000 }).toBe('not-learning');
@@ -125,6 +134,16 @@ test('R105: on a PDF judged not learning, Explain this figure is greyed out in t
   await page.keyboard.press('Escape');
   await page.mouse.click(at.x, at.y); // selects the figure
   await page.waitForTimeout(800);
-  await expect(page.getByRole('toolbar', { name: 'Figure' }), 'no figure toolbar with Claude buttons').toHaveCount(0);
-  expect(messages(replay.requests()), 'nothing was sent').toHaveLength(0);
+  await shot(page, testInfo, 'figure-toolbar-greyed');
+  // Adjusted in the C3 follow-up (R105): the toolbar shows, greyed out, instead of not showing.
+  const bar = page.getByRole('toolbar', { name: 'Figure' });
+  await expect(bar, 'the figure toolbar shows').toBeVisible();
+  for (const name of [/^ask claude$/i, /^explain$/i]) await expect(bar.getByRole('button', { name }), 'greyed out').toHaveAttribute('aria-disabled', 'true');
+  await bar.getByRole('button', { name: /^explain$/i }).hover();
+  await expect(page.getByRole('tooltip').filter({ hasText: HINT }), 'with the hint').toBeVisible();
+  await shot(page, testInfo, 'figure-toolbar-hint');
+  await bar.getByRole('button', { name: /^explain$/i }).click({ force: true }); // aria-disabled: Playwright would wait for it to be enabled
+  await page.waitForTimeout(800);
+  expect(messages(replay.requests()), 'pressing it sends nothing').toHaveLength(0);
+  await expect(savePrompt(page), 'and asks nothing').toHaveCount(0);
 });
