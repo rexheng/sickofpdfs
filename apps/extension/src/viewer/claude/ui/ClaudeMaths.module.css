@@ -1,17 +1,50 @@
 /*
  * Maths in a reply. KaTeX draws at 1.21 em of the text around it, which towers over Docs' 14/20 body; a little over the
  * body size reads as part of the sentence. A formula on its own line sits on a line of its own, left-aligned like the
- * words, and scrolls sideways in the narrow card rather than spilling out of it.
+ * words. A wide one scrolls sideways inside the card, never out of it, and shows that it does (TB6, visual 5): the edge
+ * where more of it is fades out, the scroll bar is the thin one, and a quiet line under it says to scroll.
  */
 .inline :global(.katex) {
   font-size: var(--sop-maths-size);
 }
 
-.display {
+.wide {
   display: block;
   margin-block: var(--space-2);
+}
+
+.display {
+  --_fade: var(--space-8);
+  /* A mask reads only how opaque a colour is: any solid token will do. */
+  --_solid: var(--gm3-sys-color-on-surface);
+
+  display: block;
+  /* KaTeX's tall brackets reach a little past their line; the padding keeps them inside the box that scrolls. */
+  padding-block: 1px;
   overflow-x: auto;
   overflow-y: hidden;
+  border-radius: var(--shape-menu);
+  /* eslint-disable css/use-baseline -- a Chrome-only extension (minimum Chrome 128; Chrome has both since 121) */
+  scrollbar-width: thin;
+  scrollbar-color: var(--gm3-sys-color-outline-variant) transparent;
+  /* eslint-enable css/use-baseline */
+}
+
+.display[data-more-right] {
+  mask-image: linear-gradient(to right, var(--_solid) calc(100% - var(--_fade)), transparent);
+}
+
+.display[data-more-left] {
+  mask-image: linear-gradient(to right, transparent, var(--_solid) var(--_fade));
+}
+
+.display[data-more-left][data-more-right] {
+  mask-image: linear-gradient(to right, transparent, var(--_solid) var(--_fade), var(--_solid) calc(100% - var(--_fade)), transparent);
+}
+
+.display:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 1px;
 }
 
 .display :global(.katex-display) {
@@ -19,14 +52,24 @@
   text-align: start;
 }
 
+/* `--_fit` is 1, or a little under when that lets the formula fit the card whole (ClaudeMaths.tsx). */
 .display :global(.katex) {
-  font-size: var(--sop-maths-size);
+  font-size: calc(var(--sop-maths-size) * var(--_fit, 1));
   text-align: start;
 }
 
 .display[hidden],
 .inline[hidden] {
   display: none;
+}
+
+/* "Scroll sideways to see the whole formula": 12/16, the size of the time under a name, in the quiet body colour. */
+.more {
+  display: block;
+  margin-block-start: var(--space-1);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-docs-comment-time);
+  letter-spacing: var(--tracking-tight);
 }
 
 /* A formula KaTeX could not read, or that is still loading: the text as the reply wrote it. */

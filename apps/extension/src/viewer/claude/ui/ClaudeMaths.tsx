@@ -9,7 +9,9 @@
 //   links, classes or styles through \href or \htmlClass. Formulas are capped in length, size and macro expansion. One
 //   that does not parse is shown as the text it was.
 // - KaTeX loads the first time a reply has maths, so opening a PDF does not wait for it.
-import { useLayoutEffect, useRef, useState } from 'react';
+// - A formula on its own line that is wider than the card scrolls sideways inside it, and shows that it does (WideFormula).
+// - The library's Notes page and Home draw replies with this same code (ClaudeReplyView's LibraryClaudeReply).
+import { type ReactNode, type RefObject, useLayoutEffect, useRef, useState } from 'react';
 import styles from './ClaudeMaths.module.css';
 
 export interface MathSpan {
@@ -170,10 +172,82 @@ export function MathView({ tex, display }: MathSpan) {
     };
   }, [tex, display]);
   const raw = display ? `$$${tex}$$` : `$${tex}$`;
+  if (!display) {
+    return (
+      <>
+        <span ref={box} className={styles.inline} hidden={drawn !== 'drawn'} />
+        {drawn !== 'drawn' && <span className={styles.raw}>{raw}</span>}
+      </>
+    );
+  }
   return (
-    <>
-      <span ref={box} className={display ? styles.display : styles.inline} hidden={drawn !== 'drawn'} />
+    <WideFormula box={box} drawn={drawn === 'drawn'}>
       {drawn !== 'drawn' && <span className={styles.raw}>{raw}</span>}
-    </>
+    </WideFormula>
+  );
+}
+
+/** A formula at most this much too wide for the card is drawn a little smaller, so it fits whole; a wider one scrolls. */
+const SMALLEST_FIT = 0.85;
+
+interface Overflow {
+  left: boolean;
+  right: boolean;
+}
+
+/**
+ * A formula on its own line (TB6, visual 5 and student 3). One that is a little too wide for the card is drawn up to 15%
+ * smaller, so it fits whole. A wider one keeps its size and scrolls sideways inside the card, and says so: the edge where
+ * more of it is fades out, and a quiet line under it says "Scroll sideways to see the whole formula". Once focused, the
+ * arrow keys scroll it too. KaTeX draws into the box itself, so React never puts children in it.
+ */
+function WideFormula({ box, drawn, children }: { box: RefObject<HTMLSpanElement | null>; drawn: boolean; children: ReactNode }) {
+  const [more, setMore] = useState<Overflow>({ left: false, right: false });
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!drawn || el === null) return;
+    const edges = () => {
+      const max = el.scrollWidth - el.clientWidth;
+      const left = max > 1 && el.scrollLeft > 1;
+      const right = max > 1 && el.scrollLeft < max - 1;
+      setMore((was) => (was.left === left && was.right === right ? was : { left, right }));
+    };
+    const measure = () => {
+      // The natural width, at full size, against the card's.
+      el.style.setProperty('--_fit', '1');
+      const ratio = el.scrollWidth > 0 ? el.clientWidth / el.scrollWidth : 1;
+      const fit = ratio >= 1 || ratio < SMALLEST_FIT ? 1 : Math.floor(ratio * 100) / 100;
+      el.style.setProperty('--_fit', String(fit));
+      edges();
+    };
+    measure();
+    const seen = new ResizeObserver(measure);
+    seen.observe(el);
+    el.addEventListener('scroll', edges, { passive: true });
+    return () => {
+      seen.disconnect();
+      el.removeEventListener('scroll', edges);
+    };
+  }, [box, drawn]);
+  const scrolls = more.left || more.right;
+  return (
+    <span className={styles.wide}>
+      <span
+        ref={box}
+        className={styles.display}
+        hidden={!drawn}
+        data-more-left={more.left ? '' : undefined}
+        data-more-right={more.right ? '' : undefined}
+        tabIndex={scrolls ? 0 : undefined}
+        role={scrolls ? 'group' : undefined}
+        aria-label={scrolls ? 'Formula. Scroll sideways to see all of it.' : undefined}
+      />
+      {children}
+      {scrolls && (
+        <span className={styles.more} aria-hidden="true">
+          Scroll sideways to see the whole formula
+        </span>
+      )}
+    </span>
   );
 }
