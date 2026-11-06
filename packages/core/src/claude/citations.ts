@@ -117,9 +117,12 @@ export function createCitationBook(blocks: readonly CitableBlock[]): CitationBoo
   };
 }
 
-/** The Markdown link for a page citation: `[p. 4](cite:1)`. Page numbers are 1-based; `pageIndex` is 0-based. */
+/**
+ * The Markdown link for a page citation: `[Page 4](cite:1)` (R74: "Page N" everywhere, so the Notes page, exports and search snippets
+ * read it the same way). Replies stored before 6 Nov say `[p. 4](cite:1)`; both forms are read. Page numbers are 1-based; `pageIndex` is 0-based.
+ */
 export function pageLink(c: PageCitation): string {
-  return `[p. ${c.pageIndex + 1}](cite:${c.n})`;
+  return `[Page ${c.pageIndex + 1}](cite:${c.n})`;
 }
 
 /** The Markdown link for a web source: `[source](web:2)`. */
@@ -129,11 +132,11 @@ export function webLink(s: WebSource): string {
 
 /**
  * A stored reply body, as plain text for Claude when a thread is rebuilt after a reload. The `cite:` and `web:` links mean
- * nothing to Claude and cost tokens, so page chips become "(p. 4)" and source chips disappear.
+ * nothing to Claude and cost tokens, so page chips become "(Page 4)" (an older reply's "[p. 4]" too) and source chips disappear.
  */
 export function replyBodyToPlainText(body: string): string {
   return body
-    .replace(/\[(p\. \d+)\]\(cite:\d+\)/g, '($1)')
+    .replace(/\[(?:Page|p\.) (\d+)\]\(cite:\d+\)/g, '(Page $1)')
     .replace(/[ \t]?\[[^\]]*\]\(web:\d+\)/g, '')
     .replace(/[ \t]+\n/g, '\n')
     .trim();

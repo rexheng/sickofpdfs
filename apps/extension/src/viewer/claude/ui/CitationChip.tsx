@@ -1,6 +1,6 @@
 // "Page 4" in a reply from Claude (plan §4 F; R74: "Page N" everywhere): a small tonal pill on the text line that jumps
 // to the cited passage and flashes it. Hovering it shows the cited words, so the owner can check a claim without leaving
-// the thread. The stored body writes "[p. 4](cite:n)" (slice A); the chip always says "Page".
+// the thread. The stored body writes "[Page 4](cite:n)" (slice D, 6 Nov; older replies "[p. 4]"); the chip always says "Page".
 //
 // The pill itself (ReplyChip) is shared by the page, web source and figure chips: Drive's chip shape at the size of a
 // line of comment text (20 px, 12/16 500), one colour per kind.

@@ -1,7 +1,7 @@
 // Turns the raw Messages stream back into contract events, a Markdown body and `ClaudeReplyMeta`.
 //
 // `push` takes the stream events exactly as the API sends them (the SDK's stream yields the same objects). `finish` takes the
-// final message. The body cites with `[p. 4](cite:n)` and `[source](web:n)`; the chip for a cited text goes right after it.
+// final message. The body cites with `[Page 4](cite:n)` and `[source](web:n)`; the chip for a cited text goes right after it.
 // One mapper serves a whole turn: when Claude uses a tool and the runner sends a second request, keep pushing into the same
 // mapper so numbering, text and cost carry on.
 //

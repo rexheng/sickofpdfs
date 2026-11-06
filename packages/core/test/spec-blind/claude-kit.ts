@@ -392,7 +392,7 @@ export async function runMapper(create: CreateStreamMapper, blocks: CitableBlock
 export const LINK_RE = /\[([^\]]+)\]\((cite|web):(-?\d+)\)/g;
 export const linksOf = (body: string): { text: string; kind: string; n: number }[] => [...body.matchAll(LINK_RE)].map((m) => ({ text: m[1]!, kind: m[2]!, n: Number(m[3]) }));
 /** The body without its chips and with runs of spaces folded, so it can be compared with the plain streamed text. */
-export const withoutChips = (s: string): string => s.replace(/\[(?:p\. \d+|source)\]\((?:cite|web):-?\d+\)/g, '').replace(/\s+/g, ' ').trim();
+export const withoutChips = (s: string): string => s.replace(/\[(?:p\. \d+|Page \d+|source)\]\((?:cite|web):-?\d+\)/g, '').replace(/\s+/g, ' ').trim();
 export const textEvents = (emitted: StreamEvent[]): string => emitted.flatMap((e) => (e.type === 'text' ? [e.delta] : [])).join('');
 
 // ---------------------------------------------------------------------------------------------------------------------

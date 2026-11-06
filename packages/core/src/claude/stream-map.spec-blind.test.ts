@@ -15,6 +15,7 @@
 //
 // The fake streams are built in the Messages wire format (see claude-kit.ts) and the final message the SDK would hold is rebuilt
 // from the same events, so the two always agree.
+// Controller ruling (6 Nov, R74 "Page N" everywhere): a page chip's stored link text is "Page 4" (it was "p. 4"); the expectations follow.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   FAKE_KEY, StreamBuilder, docCite, findModelId, linksOf, looksLikeKey, runMapper, searchCite, textEvents, webCite, withoutChips,
@@ -56,7 +57,7 @@ describe('citations land on the right page and characters (slice A; A5)', () => 
     expect(out.status).toBe('done');
     expect(out.error).toBeNull();
     expect(out.citations).toEqual([{ n: 1, pageIndex: want.pageIndex, start: want.start, end: want.end, textSource: want.textSource, quote: cite.cited_text }]);
-    expect(out.body).toMatch(new RegExp(`The claim holds[.!?]?\\s*\\[p\\. ${want.pageIndex + 1}\\]\\(cite:1\\)`));
+    expect(out.body).toMatch(new RegExp(`The claim holds[.!?]?\\s*\\[Page ${want.pageIndex + 1}\\]\\(cite:1\\)`));
     const events = emitted.filter((e) => e.type === 'citation');
     expect(events.length).toBeGreaterThanOrEqual(1);
     for (const e of events) expect(e.type === 'citation' && e.citation).toEqual(out.citations[0]);
@@ -71,7 +72,7 @@ describe('citations land on the right page and characters (slice A; A5)', () => 
       .end().events;
     const { emitted, out } = await runMapper(create, BLOCKS, events);
     expect(out.citations.map((c) => [c.n, c.pageIndex, c.start])).toEqual([[1, 3, 1200], [2, 2, 300], [3, 3, 2000]]);
-    expect(linksOf(out.body).map((l) => [l.text, l.kind, l.n])).toEqual([['p. 4', 'cite', 1], ['p. 3', 'cite', 2], ['p. 4', 'cite', 1], ['p. 4', 'cite', 3]]);
+    expect(linksOf(out.body).map((l) => [l.text, l.kind, l.n])).toEqual([['Page 4', 'cite', 1], ['Page 3', 'cite', 2], ['Page 4', 'cite', 1], ['Page 4', 'cite', 3]]);
     const byN = new Map(emitted.flatMap((e) => (e.type === 'citation' ? [[e.citation.n, e.citation] as const] : [])));
     expect([...byN.keys()].sort()).toEqual([1, 2, 3]);
     for (const [n, c] of byN) expect(c).toEqual(out.citations.find((x) => x.n === n));
@@ -81,8 +82,9 @@ describe('citations land on the right page and characters (slice A; A5)', () => 
     const events = new StreamBuilder().text('First claim.', [docCite(1, 0, 'a')]).text(' Second claim.', [docCite(1, 0, 'a')]).text(' Third claim.', [docCite(1, 0, 'a')]).end().events;
     const { out } = await runMapper(create, BLOCKS, events);
     expect(out.citations).toHaveLength(1); // one passage, one number ...
-    expect(linksOf(out.body).map((l) => [l.text, l.kind, l.n])).toEqual([['p. 4', 'cite', 1], ['p. 4', 'cite', 1], ['p. 4', 'cite', 1]]); // ... and three chips
-    expect(out.body).toMatch(/First claim\.\s*\[p\. 4\]\(cite:1\)\s*Second claim\.\s*\[p\. 4\]\(cite:1\)\s*Third claim\.\s*\[p\. 4\]\(cite:1\)/);
+    // Controller ruling (6 Nov, R74 "Page N" everywhere): the stored link text is "Page 4" (it was "p. 4").
+    expect(linksOf(out.body).map((l) => [l.text, l.kind, l.n])).toEqual([['Page 4', 'cite', 1], ['Page 4', 'cite', 1], ['Page 4', 'cite', 1]]); // ... and three chips
+    expect(out.body).toMatch(/First claim\.\s*\[Page 4\]\(cite:1\)\s*Second claim\.\s*\[Page 4\]\(cite:1\)\s*Third claim\.\s*\[Page 4\]\(cite:1\)/);
   });
 
   it.each<{ name: string; cite: Obj }>([
@@ -265,7 +267,7 @@ describe('a refusal, a mid-stream error, and a stream that just stops (no lost t
     expect(withoutChips(out.body)).toBe(want);
     expect(textEvents(emitted)).toContain(PART_TWO);
     expect(out.citations).toHaveLength(1);
-    expect(linksOf(out.body)).toEqual([{ text: 'p. 4', kind: 'cite', n: 1 }]);
+    expect(linksOf(out.body)).toEqual([{ text: 'Page 4', kind: 'cite', n: 1 }]); // R74 ruling (6 Nov): "Page N"
   });
 
   it('an error before any text leaves an empty body and an error state', async () => {

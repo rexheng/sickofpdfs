@@ -57,7 +57,7 @@ What changed since research 03/06 (31 Oct), and what it changes here:
 - Interfaces:
   - the contract types exactly, plus `buildRequest(pack: ContextPack, turns: ThreadTurn[], o: { role: ModelRole; model: ModelChoice; webSearch: boolean }): { params; blocks: CitableBlock[] }`;
   - `createStreamMapper(blocks, onEvent): { push(rawEvent): void; finish(finalMessage): ClaudeReplyMeta & { body: string } }` and `EXPLAIN_FIGURE_QUESTION`;
-  - the body uses `[p. 4](cite:n)` and `[source](web:n)`; citations on the same passage merge, and an out-of-range index is dropped, never guessed.
+  - the body uses `[Page 4](cite:n)` (R74; it was `[p. 4](cite:n)` before 6 Nov) and `[source](web:n)`; citations on the same passage merge, and an out-of-range index is dropped, never guessed.
 - Depends on: NOW (contract only). Risk: **high**. Spec-blind table tests: citation mapping for both location types, request order, breakpoint count and placement, no sampling parameters, and the web search tool and `max_uses` only when web search is on. Model: sonnet. Size: M.
 
 **B · Passage retrieval and the document map.** Finds the passages (up to 8) a question needs, and builds the title, abstract, headings and figure list. Afterwards a question sends 2,000 to 5,000 well-chosen tokens.
