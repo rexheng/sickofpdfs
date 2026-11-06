@@ -5,7 +5,7 @@
 // as they render, so a card that grows (a reply, a longer note) pushes the ones below it at once.
 import { ThreadCard, type ThreadCardProps } from '@sop/ui';
 import { CARD_GAP, layoutCards } from '@sop/viewer';
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { type CarriedBox, openBoxIn } from './box-carry';
 import styles from './CardColumn.module.css';
 
@@ -29,6 +29,11 @@ export interface CardColumnProps {
    */
   band?: { top: number; bottom: number } | null;
   /**
+   * The height of the view the cards scroll through (CSS px). The open card is never taller than it, less VIEW_EDGE at
+   * the top and bottom, so its reply box always fits in view; a longer thread scrolls inside the card (TB6).
+   */
+  viewHeight?: number | null;
+  /**
    * The column is going (the cards fold) while one of its note boxes has the caret: called with that box, read before it
    * goes, so it can move where the note shows now (box-carry.ts).
    */
@@ -39,11 +44,13 @@ export interface CardColumnProps {
 const ESTIMATE = 96;
 /** The room an active card keeps from the top and bottom edges of the view. */
 const VIEW_EDGE = 16;
+/** The open card's height cap never goes below this, however short the window: a question, an answer's start, the box. */
+const MIN_OPEN_CARD = 240;
 
 /** Each card's element id is this and its note's thread id (the click-away test and the tests find cards by it). */
 export const CARD_ID_PREFIX = 'note-card-';
 
-export function CardColumn({ cards, left, activeId, animate, band = null, onFold }: CardColumnProps) {
+export function CardColumn({ cards, left, activeId, animate, band = null, viewHeight = null, onFold }: CardColumnProps) {
   const [heights, setHeights] = useState<ReadonlyMap<string, number>>(() => new Map());
   const column = useRef<HTMLDivElement>(null);
   const folding = useRef(onFold);
@@ -136,7 +143,12 @@ export function CardColumn({ cards, left, activeId, animate, band = null, onFold
   }, [cards, heights, activeId, band]);
 
   return (
-    <div ref={column} className={styles.column} data-animate={animate ? 'true' : 'false'}>
+    <div
+      ref={column}
+      className={styles.column}
+      data-animate={animate ? 'true' : 'false'}
+      style={viewHeight === null ? undefined : ({ '--sop-card-max-h': `${Math.max(MIN_OPEN_CARD, viewHeight - 2 * VIEW_EDGE)}px` } as CSSProperties)}
+    >
       {cards.map((c) => (
         <ThreadCard
           key={c.id}

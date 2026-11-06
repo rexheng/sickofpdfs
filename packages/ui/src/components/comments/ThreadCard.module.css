@@ -37,10 +37,50 @@
 }
 
 .active {
+  display: flex;
+  flex-direction: column;
+  /* TB6: never taller than the place it is shown in (the margin's view, the notes panel's list); its thread scrolls. */
+  max-block-size: var(--sop-card-max-h, none);
   background-color: var(--gm3-sys-color-surface);
   box-shadow: var(--shadow-docs-comment-active);
   translate: calc(-1 * var(--sop-card-shift)) 0;
   cursor: default;
+}
+
+/* Only the thread gives way when the card is at its tallest: the lines above it and the reply box keep their size. */
+.active > * {
+  flex-shrink: 0;
+}
+
+/*
+ * The open card's comments (ThreadScroll). It spans the card's padding, so the ⋮ buttons, chips and focus rings near
+ * the edges are not clipped, and its scroll bar sits at the card's right edge. 4 px above and below keep the rings of
+ * the first and last controls whole.
+ */
+.active > .thread {
+  flex-shrink: 1;
+  min-block-size: 0;
+  margin: calc(-1 * var(--space-1)) calc(-1 * var(--sop-card-pad-x));
+  padding: var(--space-1) var(--sop-card-pad-x);
+  overflow-y: auto;
+  /* eslint-disable css/use-baseline -- a Chrome-only extension (minimum Chrome 128): Chrome has overflow-anchor since 56,
+     overscroll-behavior since 63 and scrollbar-width since 121 */
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  /* eslint-enable css/use-baseline */
+}
+
+.thread[data-more-above] {
+  mask-image: linear-gradient(to bottom, transparent, currentcolor var(--space-6));
+}
+
+.thread[data-more-below] {
+  mask-image: linear-gradient(to top, transparent, currentcolor var(--space-6));
+}
+
+.thread[data-more-above][data-more-below] {
+  mask-image: linear-gradient(to bottom, transparent, currentcolor var(--space-6), currentcolor calc(100% - var(--space-6)), transparent);
 }
 
 /* A line above the note: "Page 4 · “the passage…”" (Docs sidebar: 12/20 500 on-surface-variant, one line). */
@@ -173,6 +213,30 @@
 .repliesNote {
   color: var(--gm3-sys-color-on-surface-variant);
   font-style: italic;
+}
+
+/* "Claude couldn't answer. Open": the quiet grey line, then Open in the primary link style of "2 replies". */
+.repliesFailed {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: baseline;
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+.repliesOpen {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gm3-sys-color-primary);
+  font: inherit;
+  font-weight: 500;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+
+.repliesOpen:hover {
+  text-decoration: underline;
 }
 
 @media (prefers-reduced-motion: reduce) {

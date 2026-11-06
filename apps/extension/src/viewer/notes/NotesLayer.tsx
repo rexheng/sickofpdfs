@@ -682,7 +682,7 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
           {m.n}
         </button>
       ))}
-      {cards.length > 0 && !folded && <CardColumn cards={cards} left={left} activeId={s.active} animate={animate} band={band} onFold={onFold} />}
+      {cards.length > 0 && !folded && <CardColumn cards={cards} left={left} activeId={s.active} animate={animate} band={band} viewHeight={scroller?.clientHeight ?? null} onFold={onFold} />}
     </>
   );
 

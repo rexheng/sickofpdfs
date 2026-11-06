@@ -1,5 +1,5 @@
 import type { ClaudeReplyMeta, CommentId } from '@sop/core';
-import type { CSSProperties, KeyboardEvent, MouseEvent, ReactNode, Ref } from 'react';
+import { type CSSProperties, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode, type Ref, useLayoutEffect, useRef, type WheelEvent } from 'react';
 import '../../tokens/comments.css';
 import { cx } from '../classes';
 import type { MenuItemDef } from '../Menu';
@@ -206,7 +206,7 @@ function Thread(props: ThreadCardProps & { root: CommentView; replies: CommentVi
     return (
       <>
         {item(root, true)}
-        {replies.length > 0 && <RepliesLine replies={replies} />}
+        {replies.length > 0 && <RepliesLine replies={replies} onOpen={onActivate} />}
         {draft !== null && draft !== '' && (
           <div className={styles.replyDraft}>
             <span className={styles.draftLabel}>Reply not sent yet</span>
@@ -218,8 +218,10 @@ function Thread(props: ThreadCardProps & { root: CommentView; replies: CommentVi
   }
   return (
     <>
-      {item(root, true)}
-      {replies.map((reply) => item(reply, false))}
+      <ThreadScroll>
+        {item(root, true)}
+        {replies.map((reply) => item(reply, false))}
+      </ThreadScroll>
       {editing == null && (
         <ReplyBox
           className={styles.replyBox}
@@ -234,6 +236,84 @@ function Thread(props: ThreadCardProps & { root: CommentView; replies: CommentVi
         />
       )}
     </>
+  );
+}
+
+/** How close to the end of the thread (CSS px) counts as being at its end: the newest words stay in view from there. */
+const AT_END_PX = 8;
+/** Keys that scroll a thread up. */
+const UP_KEYS = new Set(['ArrowUp', 'PageUp', 'Home']);
+
+/**
+ * The comments of an open card (TB6). The card is at most `--sop-card-max-h` tall (the margin's view, or the notes
+ * panel's list), so a long thread scrolls here, inside the card, while the reply box under it stays in view.
+ * - It opens at its end, with the newest answer (and Think harder under it) in view.
+ * - While it is at its end, words that arrive (a streaming answer) keep it there. Scrolling up stops that; scrolling
+ *   back down to the end starts it again. (It manages this itself, so the browser's scroll anchoring is off.)
+ * - A box that takes the caret here (an edit of the first note) is scrolled into view.
+ * - The scroll bar takes its width from the card's right padding, so the text never moves when it appears.
+ * - A soft fade at an edge says there is more past it.
+ */
+function ThreadScroll({ children }: { children: ReactNode }) {
+  const box = useRef<HTMLDivElement>(null);
+  const inner = useRef<HTMLDivElement>(null);
+  const atEnd = useRef(true);
+  const edges = (el: HTMLElement) => {
+    el.toggleAttribute('data-more-above', el.scrollTop > 1);
+    el.toggleAttribute('data-more-below', el.scrollHeight - el.scrollTop - el.clientHeight > 1);
+  };
+  useLayoutEffect(() => {
+    const el = box.current;
+    const content = inner.current;
+    if (el === null || content === null) return;
+    const fit = () => {
+      const bar = el.offsetWidth - el.clientWidth;
+      el.style.paddingInlineEnd = bar > 0 ? `max(0px, calc(var(--sop-card-pad-x) - ${bar}px))` : '';
+      if (atEnd.current) el.scrollTop = el.scrollHeight;
+      edges(el);
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(el);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
+  // Only the owner leaves the end: the wheel or a swipe, the scroll bar, or a key that scrolls. A scroll event alone
+  // cannot tell: it can come a frame late, after new words made the thread longer, or from a row getting shorter.
+  // Reaching the end again, however it is reached, sticks again.
+  const leave = () => {
+    atEnd.current = false;
+  };
+  const onScroll = () => {
+    const el = box.current;
+    if (el === null) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < AT_END_PX) atEnd.current = true;
+    edges(el);
+  };
+  const onWheel = (event: WheelEvent<HTMLDivElement>) => event.deltaY < 0 && leave();
+  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => event.target === event.currentTarget && leave();
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => !(event.target instanceof HTMLTextAreaElement) && UP_KEYS.has(event.key) && leave();
+  const onFocus = (event: FocusEvent<HTMLDivElement>) => {
+    const el = box.current;
+    if (el === null || !(event.target instanceof HTMLTextAreaElement)) return;
+    const r = event.target.getBoundingClientRect();
+    const b = el.getBoundingClientRect();
+    if (r.top < b.top) el.scrollTop -= b.top - r.top;
+    else if (r.bottom > b.bottom) el.scrollTop += Math.min(r.bottom - b.bottom, r.top - b.top);
+  };
+  return (
+    <div
+      ref={box}
+      className={styles.thread}
+      onScroll={onScroll}
+      onFocus={onFocus}
+      onWheel={onWheel}
+      onTouchMove={leave}
+      onPointerDown={onPointerDown}
+      onKeyDown={onKeyDown}
+    >
+      <div ref={inner}>{children}</div>
+    </div>
   );
 }
 
@@ -288,23 +368,61 @@ function DraftText({ text, lines = 4 }: { text: string; lines?: 2 | 4 }) {
   );
 }
 
-/** "2 replies" on an inactive card, as Docs collapses a thread. A reply Claude is still writing is named. */
-function RepliesLine({ replies }: { replies: CommentView[] }) {
+/**
+ * "2 replies" on an inactive card, as Docs collapses a thread. A reply Claude is still writing is named, and so is a
+ * thread whose last reply is Claude's that stopped with an error (TB6): after a reload the owner would otherwise see
+ * only their own question, and not that it needs another try. Stopped by the owner is not "couldn't answer".
+ */
+function RepliesLine({ replies, onOpen }: { replies: CommentView[]; onOpen?: () => void }) {
   const last = replies.at(-1);
   const meta = last?.meta as Partial<ClaudeReplyMeta> | undefined;
-  const writing = last?.author === 'claude' && (meta?.status === 'pending' || meta?.status === 'streaming');
+  const claude = last?.author === 'claude';
+  const writing = claude && (meta?.status === 'pending' || meta?.status === 'streaming');
+  const failed = claude && meta?.status === 'error' && meta.error?.code !== 'cancelled';
   return (
     <p className={styles.replies}>
       <span className={styles.repliesCount}>{replies.length === 1 ? '1 reply' : `${replies.length} replies`}</span>
       {writing && <span className={styles.repliesNote}>Claude is replying…</span>}
+      {failed && (
+        <span className={styles.repliesFailed}>
+          Claude couldn’t answer.
+          {onOpen !== undefined && (
+            <button
+              type="button"
+              className={styles.repliesOpen}
+              // The card itself is in the Tab order and opens on Enter; this is the pointer's way in.
+              tabIndex={-1}
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpen();
+              }}
+            >
+              Open
+            </button>
+          )}
+        </span>
+      )}
     </p>
   );
 }
 
 function ContextLine({ label, quote }: { label: string | null; quote: string | null }) {
   if (label === null && (quote === null || quote === '')) return null;
-  const parts = [label, quote ? `“${quote.replace(/\s+/gu, ' ').trim()}”` : null].filter(Boolean);
+  const parts = [label, quote ? quoted(quote) : null].filter(Boolean);
   return <p className={styles.context}>{parts.join(' · ')}</p>;
+}
+
+/** Quote marks that may already open or close a selected passage (curly, straight, low and angle quotes). */
+const OPENING_QUOTE = /^["'“‘„«‹]/u;
+const CLOSING_QUOTE = /["'”’»›]$/u;
+
+/**
+ * The passage in quote marks, on one line. A passage that already starts (or ends) with a quote mark keeps its own:
+ * no doubled marks, as in ““parallel trends” (TB6).
+ */
+function quoted(text: string): string {
+  const t = text.replace(/\s+/gu, ' ').trim();
+  return `${OPENING_QUOTE.test(t) ? '' : '“'}${t}${CLOSING_QUOTE.test(t) ? '' : '”'}`;
 }
 
 function FigureRow({ figure }: { figure: CardFigure }) {

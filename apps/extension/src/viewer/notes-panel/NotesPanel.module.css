@@ -119,8 +119,12 @@
  * the list starts to scroll. The 8 px right padding plus the gutter matches the 16 px on the left.
  */
 .list {
+  /* TB6: an open card is never taller than the list's room for cards (its content box), so its reply box is in view. */
+  --sop-card-max-h: var(--sop-card-max-h-in-list);
+
   flex: 1 1 auto;
   min-block-size: 0;
+  container-type: size;
   padding: var(--space-4) var(--space-2) var(--space-4) var(--space-4);
   overflow-y: auto;
   /* eslint-disable css/use-baseline -- a Chrome-only extension (minimum Chrome 128): Chrome has overscroll-behavior since 63,

@@ -240,11 +240,34 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
     if (filter === 'mine' && entry(state.active)?.mine === false) setFilter('all');
   }, [state.active, folded, filter, entry, setOpen]);
 
-  // The card that becomes active is scrolled into sight in the list (once: typing in it must not move the list).
+  // The card that becomes active is scrolled into sight in the list. Then, as it grows (an answer streaming in, a reply
+  // being typed), the list follows its foot, so the newest words and the reply box stay in view (TB6). The card is never
+  // taller than the list (NotesPanel.module.css), so its top stays in view too. The owner scrolling the list (the wheel,
+  // the scroll bar, the keys) stops the following until another card becomes active.
   useEffect(() => {
-    if (!open || state.active === null) return;
-    const el = cards.current.get(state.active);
-    if (el && list.current) reveal(list.current, el);
+    const ls = list.current;
+    const el = state.active === null ? undefined : cards.current.get(state.active);
+    if (!open || !ls || !el) return;
+    reveal(ls, el);
+    let follow = true;
+    const stop = () => {
+      follow = false;
+    };
+    const onPointer = (e: PointerEvent) => e.target === ls && stop(); // the list's own scroll bar
+    const onKey = (e: KeyboardEvent) => !(e.target instanceof HTMLTextAreaElement) && SCROLL_KEYS.has(e.key) && stop();
+    const observer = new ResizeObserver(() => follow && reveal(ls, el));
+    observer.observe(el);
+    ls.addEventListener('wheel', stop, { passive: true });
+    ls.addEventListener('touchmove', stop, { passive: true });
+    ls.addEventListener('pointerdown', onPointer);
+    ls.addEventListener('keydown', onKey);
+    return () => {
+      observer.disconnect();
+      ls.removeEventListener('wheel', stop);
+      ls.removeEventListener('touchmove', stop);
+      ls.removeEventListener('pointerdown', onPointer);
+      ls.removeEventListener('keydown', onKey);
+    };
   }, [open, state.active, filter]);
 
   // The panel never covers the pages: while it is open the page column ends before it (App.module.css). A page the
@@ -408,6 +431,9 @@ function clientSpan(e: NoteEntry, api: PageListApi, pages: readonly PageSize[]):
   const p = at(e.spot.pageIndex, e.spot.x, e.spot.y);
   return p && Number.isFinite(p.x) ? { left: p.x, right: p.x + WORDS_SHOWN } : null;
 }
+
+/** Keys that scroll the list: pressing one stops the list following the active card. */
+const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']);
 
 /** How long after a panel box lost the caret a Close still takes the box back to the margin. */
 const RECENT_BOX_MS = 1000;
