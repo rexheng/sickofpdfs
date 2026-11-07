@@ -4,6 +4,7 @@ import { startBackupHost } from '../../backup/host';
 import { startReindexHost } from '../../backup/reindex';
 import { startCategoriseHost } from '../../categorise/host';
 import { startLookupsHost } from '../../lookups/host';
+import { startOcrHost } from '../../ocr/host';
 import { isMessageOf, STORE_PORT, type StorePortMessage } from '../../store/transport';
 
 const worker = new Worker(new URL('../../store/store-worker.ts', import.meta.url), { type: 'module', name: 'sop-store' });
@@ -27,3 +28,7 @@ startReindexHost(worker);
 
 // The online lookups (arXiv, Crossref) are a queue here. It does nothing, and sends nothing, until the owner switches "Online lookups" on.
 startLookupsHost(worker);
+
+// Scanned pages of saved readings are read here, in the background, with a worker of its own (ocr/host.ts), so the reading goes
+// on after the tab closes. Local only: the recogniser and its models are the extension's own files.
+startOcrHost(worker);
