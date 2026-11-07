@@ -1,34 +1,40 @@
-// The owner's bold marks (BOLD = glyph-outline; P0-5, rulings R29, R90b and R90c). Each covered glyph's own outline,
-// read from PDFium by PdfBackend.getGlyphShapes, is emboldened as font engines make a bold (synthetic bold: pushed
-// outward along its edges by its face's own regular-to-bold gain, never closing the gap to a neighbour,
+// The owner's bold marks (BOLD = glyph-outline; P0-5, rulings R29, R90b, R90c and R106). Each covered glyph's own
+// outline, read from PDFium by PdfBackend.getGlyphShapes, is emboldened as font engines make a bold (synthetic bold:
+// pushed outward along its edges by its face's own regular-to-bold gain, never closing the gap to a neighbour,
 // marks/synthetic-bold.ts and bold-painter.ts) and filled in the glyph's own colour on exactly the page picture's pixel
 // grid, in the page's underlay (react/BoldCanvas.ts). Bold word starts (R90) draw the same way, so there is one bold
 // look. Nothing is re-rendered by PDFium.
 //
-// Where a visible char has no outline to redraw (invisible text such as a scan's OCR layer, a Type3 glyph), bold falls
-// back to the "strong" style on that char's line rects: a heavier tint with a dark underline, in an <svg> over the page
-// box in the page's displayed orientation (user units: points, turned by the page's /Rotate plus the view's rotation).
-// S13 mounts BoldLayer in the page's mark layer; S17 (print) reads the same glyphs with drawBoldRange and paints them
-// on the page's picture with paintBold.
+// Where a visible char has no outline to redraw (a scan's recognised text, a scanner's own invisible text layer, a
+// Type3 glyph), its word's own ink on the page's picture is made heavier instead (R106, marks/scan-ink.ts): the
+// letters' dark pixels grow a little, in their own colour, on the same canvas. No box, tint or underline is drawn.
+// S13 mounts BoldLayer in the page's mark layer; S17 (print) reads the same glyphs and words with drawBoldRange and
+// paints them on the page's picture with paintBold and paintInk.
 import { useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react';
 import type { DocHandle, Glyph, PageGlyphs, PageSize, PdfBackend, PdfRect, Rotation } from '../backend/types';
 import { type BoldLook, devicePxPerPt, PLAIN_LOOK, useBoldCanvas } from '../react/BoldCanvas';
 import type { PageLayerContext } from '../react/PageView';
 import { pageTransform, totalRotation } from '../view/page-transform';
 import { type BoldGlyph, boldGlyphs, type BoldRange, prepareGlyphs } from './bold-painter';
+import { type InkWord, inkWordsOf } from './scan-ink';
 
 export type { BoldRange } from './bold-painter';
 
 /** Chars read either side of a bold range, for its end glyphs' neighbours. */
 const NEIGHBOUR_CHARS = 2;
 
-/** The strong style's underline, in ems of the line's height. */
+/**
+ * The strong style's underline, in ems of the line's height: the simpler bold print uses when the engine cannot give a
+ * range at all (print-marks' simplerBold). The screen never draws it.
+ */
 export const STRONG_UNDERLINE_EM = 0.08;
 
 
 /** What BoldLayer reads of the page's text. S7's PageTextProvider has both, cached per page. */
 export interface BoldTextSource {
   glyphs(pageIndex: number): Promise<PageGlyphs>;
+  /** Where the page's text comes from: 'pdfium', or 'ocr:…' for a scan's recognised text (its chars are not PDFium's). */
+  source?(pageIndex: number): string;
   /** Merged line rects of chars [start, start + count) (R44). */
   rects(pageIndex: number, start: number, count: number): Promise<PdfRect[]>;
 }
@@ -55,13 +61,14 @@ export interface BoldLayerProps {
   onDrawn?: () => void;
 }
 
-/** One range, read: its glyphs to embolden, and its strong-style line rects (chars with no outline). */
+/** One range, read: its glyphs to embolden, and its words with no outline, whose ink on the picture grows (R106). */
 export interface DrawnRange {
   glyphs: BoldGlyph[];
-  strong: PdfRect[];
+  ink: InkWord[];
 }
 
 const rangeKey = (r: BoldRange) => `${r.start}:${r.end}`;
+const NO_WORDS: InkWord[] = [];
 const NOTHING_DRAWN: ReadonlyMap<string, DrawnRange> = new Map();
 
 /**
@@ -110,16 +117,23 @@ export function undrawnRuns(glyphs: readonly Glyph[], start: number, end: number
   return runs;
 }
 
-/** Reads one bold range's glyphs and strong-style rects. BoldLayer draws them on screen; print paints them with paintBold. */
+/**
+ * Reads one bold range's glyphs and its words with no outline. BoldLayer draws them on screen; print paints them with
+ * paintBold and paintInk. A page of recognised text has no PDFium chars to ask for: all its words are ink words.
+ */
 export async function drawBoldRange(p: { backend: Pick<PdfBackend, 'getGlyphShapes'>; doc: DocHandle; pageIndex: number; text: BoldTextSource; pxPerPt?: number }, r: BoldRange): Promise<DrawnRange> {
+  if (p.text.source?.(p.pageIndex).startsWith('ocr:') === true) {
+    const page = await p.text.glyphs(p.pageIndex);
+    return { glyphs: [], ink: inkWordsOf(page.glyphs, [r]) };
+  }
   // A char or two either side too, so the glyphs at its ends know their neighbours (R90c: the bold never closes a gap).
   const from = Math.max(0, r.start - NEIGHBOUR_CHARS);
   const [set, page] = await Promise.all([p.backend.getGlyphShapes(p.doc, p.pageIndex, from, Math.max(0, r.end + NEIGHBOUR_CHARS - from)), p.text.glyphs(p.pageIndex)]);
   const inside = set.glyphs.filter((g) => g.charIndex >= r.start && g.charIndex < r.end);
-  const strong = (await Promise.all(undrawnRuns(page.glyphs, r.start, r.end, inside).map((u) => p.text.rects(p.pageIndex, u.start, u.end - u.start)))).flat();
+  const ink = inkWordsOf(page.glyphs, undrawnRuns(page.glyphs, r.start, r.end, inside));
   const glyphs = boldGlyphs(set, (g) => g.charIndex >= r.start && g.charIndex < r.end);
   await prepareGlyphs(glyphs, 1, p.pxPerPt);
-  return { glyphs, strong };
+  return { glyphs, ink };
 }
 
 /** The bold marks of one page. See the file comment. */
@@ -171,10 +185,11 @@ export function BoldLayer(props: BoldLayerProps): JSX.Element {
     };
   }, [keys, backend, doc, pageIndex, text, ctx, page]);
 
-  // All ranges' glyphs, one canvas: where two marks cover a glyph it is drawn once.
+  // All ranges' glyphs and ink words, one canvas: where two marks cover a glyph it is drawn once.
   const glyphs = useMemo(() => keys.flatMap((k) => drawn.get(k)?.glyphs ?? []), [keys, drawn]);
+  const ink = useMemo(() => keys.map((k) => drawn.get(k)?.ink ?? NO_WORDS), [keys, drawn]);
   // The svg says when the canvas was drawn (data-sop-bold-drawn), so the bold shows as a change of the mark layer too.
-  useBoldCanvas(ctx, page, glyphs.length > 0 ? glyphs : null, 'sop-bold-canvas', (n) => svg.current?.setAttribute('data-sop-bold-drawn', String(n)), look);
+  useBoldCanvas(ctx, page, glyphs.length > 0 ? glyphs : null, 'sop-bold-canvas', (n) => svg.current?.setAttribute('data-sop-bold-drawn', String(n)), look, false, ink);
 
   const complete = keys.every((k) => drawn.has(k));
   useLayoutEffect(() => {
@@ -190,29 +205,6 @@ export function BoldLayer(props: BoldLayerProps): JSX.Element {
       viewBox={`0 0 ${view.width} ${view.height}`}
       preserveAspectRatio="none"
       style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'none' }}
-    >
-      <g transform={view.transform || undefined}>
-        {keys.map((k) => {
-          const r = drawn.get(k);
-          if (!r || r.strong.length === 0) return null;
-          return (
-            <g key={k}>
-              {r.strong.map((rect, n) => (
-                <g key={`s${n}`}>
-                  <rect x={rect.x} y={rect.y} width={rect.width} height={rect.height} style={{ fill: 'var(--gm3-sys-color-surface-container-highest)', mixBlendMode: 'multiply' }} />
-                  <rect
-                    x={rect.x}
-                    y={rect.y + rect.height * (1 - STRONG_UNDERLINE_EM)}
-                    width={rect.width}
-                    height={rect.height * STRONG_UNDERLINE_EM}
-                    style={{ fill: 'var(--gm3-sys-color-on-surface)' }}
-                  />
-                </g>
-              ))}
-            </g>
-          );
-        })}
-      </g>
-    </svg>
+    />
   );
 }

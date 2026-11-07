@@ -121,6 +121,9 @@ async function boldFillsOf(host: NotesHost, plan: readonly PdfAnnotationPlan[], 
     if (p.ap.kind !== 'bold-outlines' || !p.ap.chars) continue;
     const g = geometry[p.pageIndex];
     if (!g) continue;
+    // A scan's recognised text has no glyphs in the PDF (its char indices are not PDFium's): its bold mark is written
+    // with an empty appearance, as text with no outlines is (R106: the screen and print thicken the scan's ink instead).
+    if (host.pageText.source(p.pageIndex).startsWith('ocr:')) continue;
     const { start, count } = p.ap.chars;
     const end = count >= TO_PAGE_END ? (await host.pageText.rawText(p.pageIndex)).length : start + count;
     const from = Math.max(0, start - NEIGHBOUR_CHARS);

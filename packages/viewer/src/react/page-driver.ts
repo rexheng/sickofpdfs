@@ -51,6 +51,8 @@ export interface PagePaint {
   viewRotation: Rotation;
   /** Where it sits in the page box, as shares of the box (0–1). */
   box: { left: number; top: number; width: number; height: number };
+  /** The canvas that shows it: a layer that reads the picture's own pixels (bold on a scan, R106) draws it. */
+  source: HTMLCanvasElement;
 }
 
 /** What the page list shows now. */
@@ -564,7 +566,7 @@ export class PageDriver {
     s.slot.preview.style.visibility = 'hidden';
     s.painted = 'full';
     // The canvas's size, not the bitmap's: transferFromImageBitmap has detached the bitmap (its size reads 0 now).
-    s.paints.set('full', { key: 'full', width: s.slot.full.width, height: s.slot.full.height, rect: undefined, viewRotation: this.view?.viewRotation ?? 0, box: { left: 0, top: 0, width: 1, height: 1 } });
+    s.paints.set('full', { key: 'full', width: s.slot.full.width, height: s.slot.full.height, rect: undefined, viewRotation: this.view?.viewRotation ?? 0, box: { left: 0, top: 0, width: 1, height: 1 }, source: s.slot.full });
     this.notifyPaint(i);
     this.onPainted(i, true);
   }
@@ -602,6 +604,7 @@ export class PageDriver {
       rect: t.rect,
       viewRotation: this.view?.viewRotation ?? 0,
       box: { left: t.dev.x / plan.devW, top: t.dev.y / plan.devH, width: t.dev.w / plan.devW, height: t.dev.h / plan.devH },
+      source: canvas,
     });
     this.notifyPaint(i);
     this.onPainted(i, true);

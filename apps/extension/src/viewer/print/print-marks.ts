@@ -7,7 +7,9 @@
 //   widths and the same multiply blending, so overlapping marks never print darker.
 // - Bold is the screen's synthetic bold (R90b): the glyphs BoldLayer reads (drawBoldRange), emboldened by their face's
 //   own regular-to-bold gain and filled in their own colour on the picture's pixel grid (paintBold, blended with
-//   darken), or the strong style where a glyph has no outline. Bold word starts never print.
+//   darken). Words with no outline (a scan's recognised text) are bold in the picture's own ink, as on screen
+//   (R106: planInk and paintInk on the print's picture, before the highlights, as the screen draws it under them).
+//   Only a range the engine cannot give at all prints in the simpler strong style. Bold word starts never print.
 //
 // What is left out, on purpose (R78: notes never print): the dotted underline and the grey wash of the open comment's
 // words (both are signs of a comment), the darker fill of the open comment, and the ring round a focused mark. Those are
@@ -28,6 +30,8 @@ import {
   markPaths,
   pageToDevice,
   paintBold as paintBoldGlyphs,
+  paintInk,
+  planInk,
   STRONG_UNDERLINE_EM,
 } from '@sop/viewer/react';
 
@@ -184,19 +188,21 @@ export function createMarkPainter(d: MarkPainterDeps): MarkPainter {
    * synthetic bold on the picture's own pixel grid, blended with darken over the picture (lighten for light text), at
    * the print's resolution.
    */
-  async function paintBold(context: OffscreenCanvasRenderingContext2D, index: number, page: PageSize, ranges: readonly BoldRange[], k: number, size: { width: number; height: number }): Promise<void> {
+  async function paintBold(context: OffscreenCanvasRenderingContext2D, index: number, page: PageSize, ranges: readonly BoldRange[], k: number, size: { width: number; height: number }, drawnOf: (range: BoldRange) => Promise<Awaited<ReturnType<typeof outlinesOf>>>): Promise<void> {
     const { matrix } = displayMatrix(page, 0);
     const device = pageToDevice(page, 0, size.width, size.height);
     for (const range of ranges) {
       if (d.signal.aborted) return;
-      const drawn = await outlinesOf(index, range);
-      const strong = drawn === null ? await d.marks.text.rects(index, range.start, range.end - range.start) : drawn.strong;
-      if (drawn === null) simpler++;
-      context.save();
-      context.setTransform(k, 0, 0, k, 0, 0);
-      if (matrix !== null) context.transform(...matrix);
-      paintStrong(context, strong);
-      context.restore();
+      const drawn = await drawnOf(range);
+      if (drawn === null) {
+        simpler++;
+        const strong = await d.marks.text.rects(index, range.start, range.end - range.start);
+        context.save();
+        context.setTransform(k, 0, 0, k, 0, 0);
+        if (matrix !== null) context.transform(...matrix);
+        paintStrong(context, strong);
+        context.restore();
+      }
       if (drawn !== null && drawn.glyphs.length > 0) {
         // Dark text's bold with darken; light text's (white on a band) with lighten, which darken cannot widen (R90c).
         for (const tone of ['dark', 'light'] as const) {
@@ -210,6 +216,29 @@ export function createMarkPainter(d: MarkPainterDeps): MarkPainter {
     }
   }
 
+  /**
+   * Bold in the picture's own ink (R106): the ink words of every range, planned and grown on the print's picture, blended
+   * with darken (lighten for light ink), as the screen draws them.
+   */
+  function paintInkWords(context: OffscreenCanvasRenderingContext2D, page: PageSize, drawn: readonly (Awaited<ReturnType<typeof outlinesOf>>)[], size: { width: number; height: number }): void {
+    const words = drawn.flatMap((r) => r?.ink ?? []);
+    if (words.length === 0) return;
+    const device = pageToDevice(page, 0, size.width, size.height);
+    const src = { read: (x: number, y: number, w: number, h: number) => ({ data: context.getImageData(x, y, w, h).data, x, y, width: w }) };
+    const { patches } = paintInk(src, device, planInk(src, device, words), { gain: 1, boost: 0 });
+    context.save();
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    const scratch = new OffscreenCanvas(1, 1).getContext('2d')!;
+    for (const patch of patches) {
+      scratch.canvas.width = patch.w;
+      scratch.canvas.height = patch.h;
+      scratch.putImageData(new ImageData(patch.rgba as Uint8ClampedArray<ArrayBuffer>, patch.w, patch.h), 0, 0);
+      context.globalCompositeOperation = patch.tone === 'dark' ? 'darken' : 'lighten';
+      context.drawImage(scratch.canvas, patch.x, patch.y);
+    }
+    context.restore();
+  }
+
   return {
     async paint(index, context, size) {
       const found = d.marks.pages.get(index);
@@ -217,8 +246,16 @@ export function createMarkPainter(d: MarkPainterDeps): MarkPainter {
       if (found === undefined || page === undefined) return;
       // Pixels a point: the picture's width over the page as displayed (width and height swap for /Rotate 90 and 270).
       const k = size.width / displayMatrix(page, 0).width;
+      // Each range read once; ink words first, on the clean picture (the screen draws them under the highlights).
+      const read = new Map<BoldRange, Promise<Awaited<ReturnType<typeof outlinesOf>>>>();
+      const drawnOf = (r: BoldRange) => {
+        let got = read.get(r);
+        if (!got) read.set(r, (got = outlinesOf(index, r)));
+        return got;
+      };
+      if (found.bold.length > 0) paintInkWords(context, page, await Promise.all(found.bold.map(drawnOf)), size);
       paintPaths(context, page, found.items, k);
-      await paintBold(context, index, page, found.bold, k, size);
+      await paintBold(context, index, page, found.bold, k, size, drawnOf);
     },
     simplerBold: () => simpler,
     dispose() {

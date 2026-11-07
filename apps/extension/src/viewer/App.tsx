@@ -37,6 +37,7 @@ import {
   TextLayerController,
   WordStartsController,
   WordStartsLayer,
+  warmInkSoon,
 } from '@sop/viewer/react';
 import { memo, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { sendRuntimeMessage } from '../shared/send-message';
@@ -682,6 +683,8 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       ocr.onPageText((i) => {
         textLayers.refreshPage(i);
         findController?.refreshPage?.(i);
+        // A bold mark on recognised text thickens the scan's own ink (R106): its code is warmed up while idle.
+        warmInkSoon();
       }),
     [ocr, textLayers, findController],
   );
