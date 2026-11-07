@@ -31,6 +31,11 @@ const NOTIFY_MS = 60;
 export interface FindControllerOptions {
   /** Default 150 ms. */
   debounceMs?: number;
+  /**
+   * Phase 7: where a page's chars are read (PageTextProvider.rawText, which answers a scanned page with its recognised text).
+   * Default: the engine's getPageChars.
+   */
+  chars?: (pageIndex: number) => Promise<string>;
 }
 
 /** One query's search: the pages searched so far are the run lo..hi, which always holds the start page. */
@@ -110,7 +115,7 @@ export function createFindController(
   function load(pageIndex: number): Promise<FindText | null> {
     let p = loads.get(pageIndex);
     if (!p) {
-      p = backend.getPageChars(doc, pageIndex).then(
+      p = (o.chars ? o.chars(pageIndex) : backend.getPageChars(doc, pageIndex)).then(
         (raw) => {
           const t = buildFindText(raw);
           if (!disposed) texts.set(pageIndex, t);
@@ -338,6 +343,25 @@ export function createFindController(
     subscribe(cb) {
       listeners.add(cb);
       return () => listeners.delete(cb);
+    },
+    refreshPage(pageIndex) {
+      const old = texts.get(pageIndex);
+      texts.delete(pageIndex);
+      loads.delete(pageIndex);
+      const r = run;
+      // A page the open search has passed is searched again with its new text; one it has not reached is read when it gets there.
+      if (r === null || disposed || r.hi < r.lo || pageIndex < r.lo || pageIndex > r.hi) return;
+      void load(pageIndex).then((t) => {
+        if (r !== run || disposed || t === null) return;
+        r.letters += t.letters - (old?.letters ?? 0);
+        const found = matchFindText(t, r.pattern);
+        if (found.length > 0) r.pageHits.set(pageIndex, found.map((m) => ({ pageIndex, start: m.start, count: m.count, rects: [] })));
+        else r.pageHits.delete(pageIndex);
+        // The current hit's char positions were the old text's: it moves to the first hit from here on.
+        if (r.current?.pageIndex === pageIndex) r.current = null;
+        r.dirty = true;
+        notify(true);
+      });
     },
     dispose() {
       disposed = true;

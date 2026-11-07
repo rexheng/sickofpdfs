@@ -42,6 +42,8 @@ export interface FindController {
   previous(): SearchHit | null;
   readonly state: FindState;
   subscribe(cb: (s: FindState) => void): () => void;
+  /** Phase 7: the page's text changed (its recognised text arrived): it is read again, and searched again for the open query. */
+  refreshPage?(pageIndex: number): void;
   dispose(): void;
 }
 

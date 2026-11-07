@@ -275,6 +275,8 @@ export class TextLayerController {
   private readonly textLoads = new Map<number, Promise<void>>();
   /** Where the last plain click (a press that did not drag) landed: a Shift+click with no selection extends from there. */
   private clickedAt: End | null = null;
+  /** Pages whose text changed while their layer was being built (refreshPage): built again once that build ends. */
+  private readonly stale = new Set<number>();
 
   constructor(private readonly o: TextLayerControllerOptions) {
     this.rectSource = {
@@ -429,6 +431,30 @@ export class TextLayerController {
     });
   }
 
+  /**
+   * The page's text changed under it (Phase 7: its recognised text arrived, or was replaced): everything read from its old
+   * text is dropped, and its layer is built again from the new glyphs. A selection on the page is let go of, since its char
+   * positions belonged to the old text.
+   */
+  refreshPage(pageIndex: number): void {
+    this.glyphCache.delete(pageIndex);
+    this.glyphLoads.delete(pageIndex);
+    this.charCounts.delete(pageIndex);
+    this.pageTexts.delete(pageIndex);
+    this.endModels.delete(pageIndex);
+    if (this.model && this.rangesOf(this.model).some((r) => r.pageIndex === pageIndex)) this.setModel(null);
+    const s = this.pages.get(pageIndex);
+    if (!s) return;
+    if (s.building) {
+      this.stale.add(pageIndex);
+      return;
+    }
+    s.builtScale = 0;
+    s.handle?.destroy();
+    s.handle = null;
+    void this.ensureBuilt(s);
+  }
+
   dispose(): void {
     for (const s of [...this.pages.values()]) {
       s.disposed = true;
@@ -484,6 +510,10 @@ export class TextLayerController {
       return;
     } finally {
       s.building = false;
+    }
+    if (this.stale.delete(s.index)) {
+      this.refreshPage(s.index);
+      return;
     }
     if (this.isReady(s)) {
       this.caret.warm(s.index);
