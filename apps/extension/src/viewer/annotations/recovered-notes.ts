@@ -102,7 +102,7 @@ export function listRecoveredNotes(now: number = Date.now(), storage: KeyValueSt
 
 /**
  * Deletes one recovered note: the owner's own choice. A save-pending record with nothing left in it goes. Its IndexedDB copy
- * follows (save-pending.ts), so a crash cannot bring the deleted note back.
+ * follows (save-pending.ts, draft-journal.ts), so a crash cannot bring the deleted note back.
  */
 export function deleteRecoveredNote(
   key: string,
@@ -113,7 +113,10 @@ export function deleteRecoveredNote(
   const hash = key.indexOf('#');
   try {
     if (hash < 0) {
-      if (key.startsWith(JOURNAL_PREFIX)) storage.removeItem(key);
+      if (key.startsWith(JOURNAL_PREFIX)) {
+        storage.removeItem(key);
+        mirror?.remove(key);
+      }
       return;
     }
     const storageKey = key.slice(0, hash);

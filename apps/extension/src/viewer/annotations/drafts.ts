@@ -24,7 +24,7 @@
 import type { CommentId, CommentRow, DocumentId, TabId, ThreadId, ThreadRow } from '@sop/core';
 import type { AnnotationErrorCode, AnnotationsApi, EditDraft } from '../../store/annotations';
 import { type DraftJournal, type JournalCommentEntry, type JournalEditEntry, noteIsNewer } from './draft-journal';
-import type { TabPresence } from './tab-presence';
+import { tabsHoldingLocks, type TabPresence } from './tab-presence';
 
 /**
  * The part of the store this file uses. A full `StoreApi` or `StoreClient` fits it; a store that lacks one of these methods
@@ -213,6 +213,14 @@ export function createDraftKeeper(d: {
   };
   // A reload of this tab: what its earlier page held privately shows under "Recovered notes" now (that page is gone).
   journal?.releaseAside?.(d.presence.tabId, PAGE_LIFE);
+  // A crash can take words set aside, or a note held after a Forget, out of localStorage: their IndexedDB copies go back now, and
+  // what an earlier page of this tab held is let go again.
+  if (journal?.recover) {
+    void tabsHoldingLocks()
+      .then((live) => journal.recover?.((tab) => tab !== d.presence.tabId && live.includes(tab)))
+      .then(() => journal.releaseAside?.(d.presence.tabId, PAGE_LIFE))
+      .catch(() => {});
+  }
 
   const usable = (): DraftStore | null => (d.store !== null && !d.memoryOnly() ? d.store : null);
   const report = (id: CommentId | null, error: unknown): void => {
@@ -706,7 +714,7 @@ export function createDraftKeeper(d: {
         row,
         ...(thread ? { thread } : {}),
       };
-      journal.put(entry);
+      journal.put(entry, { crashCopy: true }); // the store has no copy of it now
     },
 
     sent(id) {
@@ -794,6 +802,8 @@ export function createDraftKeeper(d: {
         const editedHere = new Set(edits.keys());
         const live = await d.presence.liveTabs();
         const tabId = d.presence.tabId;
+        // A crash can take a journal entry out of localStorage: its IndexedDB copy goes back first (draft-journal.ts).
+        await journal?.recover?.((tab) => tab !== tabId && live.includes(tab as TabId));
         try {
           await store.claimDrafts(documentId, tabId, live);
         } catch (err) {

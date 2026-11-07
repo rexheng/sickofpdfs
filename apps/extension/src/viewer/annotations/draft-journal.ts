@@ -5,9 +5,14 @@
 // way to the store is lost. A localStorage write is different: `setItem` hands the change to the browser process before it
 // returns, and the browser keeps it there. Measured (crash-report.md): a setItem that has returned survives `kill -9` of the
 // renderer right after it, 8 times out of 8. But not always once Chrome has terminated the extension and the owner reloads it:
-// then it sometimes drops every write of the crashed pages' last seconds (crashsave, 2 crashes in 16). Here the store's own copy
-// is at most DRAFT_MAX_MS behind, so that loses at most the last letters; a save-pending record, the only copy, has an
-// IndexedDB copy for this (save-pending.ts).
+// then it sometimes drops every write of the crashed pages' last seconds (crashsave, 2 crashes in 16). For a draft of a saved
+// PDF the store's own copy is at most DRAFT_MAX_MS behind, so that loses at most the last letters. The two kinds of entry that
+// have no copy in the store get a second copy in IndexedDB instead (`crashCopy`, the same copy as save-pending.ts keeps):
+// - an unsent note this tab holds after another tab forgot the PDF (TB4 ruling, below);
+// - words set aside for "Recovered notes" (`keepAside`, below).
+// The copy is the same text as the entry, nothing more (an aside has no document id and no fingerprint, TB5 F1). It goes when
+// the entry goes, and Forget clears it with the entry. It is never in the store, a backup or search. The next viewer of a saved
+// PDF and the Notes page put a lost entry back from it (`recover`) before they read the journal.
 //
 // Rules (contracts section 3, "no lost text"):
 // - One key per draft: `sop-draft:c:<comment id>` for a note or reply being typed, `sop-draft:e:<comment id>` for an unsent
@@ -30,6 +35,7 @@
 // - Only extension pages can read it: localStorage is per origin, and web pages and content scripts have another origin.
 
 import type { CommentId, CommentRow, DocumentId, TabId, ThreadId, ThreadRow } from '@sop/core';
+import { localPendingMirror, type PendingMirror } from './save-pending';
 
 export const JOURNAL_PREFIX = 'sop-draft:';
 
@@ -98,8 +104,11 @@ export function noteIsNewer(note: Pick<CommentRow, 'createdAt' | 'editedAt'>, at
 export type JournalKind = JournalEntry['kind'];
 
 export interface DraftJournal {
-  /** Writes the entry now. Never throws; returns false if it could not be written (an older copy is then removed). */
-  put(e: JournalEntry): boolean;
+  /**
+   * Writes the entry now. Never throws; returns false if it could not be written (an older copy is then removed). `crashCopy`:
+   * the store has no copy of this text (TB4), so it is copied to IndexedDB too. An entry written without it loses its copy.
+   */
+  put(e: JournalEntry, o?: { crashCopy?: boolean }): boolean;
   get(kind: JournalKind, commentId: CommentId): JournalEntry | null;
   remove(kind: JournalKind, commentId: CommentId): void;
   /** Every entry of one document. */
@@ -118,7 +127,15 @@ export interface DraftJournal {
   removeAside?(id: string): void;
   /** Words set aside that a tab held: the ones a page of `tab` other than `life` held are that tab's no more (it was reloaded). */
   releaseAside?(tab: TabId, life: string): void;
+  /**
+   * Puts back into localStorage each IndexedDB copy that localStorage lost or holds an older version of, unless `skip` says the
+   * tab named in it still owns it (a tab that is open and still typing). Call it before reading the journal. Never rejects.
+   */
+  recover?(skip: (tab: string) => boolean): Promise<void>;
 }
+
+/** The keys this page copied to IndexedDB: an entry written again without its copy (the store has it now) drops the copy. */
+const copiedKeys = new Set<string>();
 
 /** The part of the Web Storage API the journal uses. */
 export interface KeyValueStorage {
@@ -165,7 +182,7 @@ export function canPlace(raw: string | null): boolean {
 const lockManager = (): LockManager | null => (typeof navigator !== 'undefined' && 'locks' in navigator ? navigator.locks : null);
 
 /** A journal over `storage`. `createDraftJournal(localStorage)` is the viewer's; tests pass their own storage. */
-export function createDraftJournal(storage: KeyValueStorage): DraftJournal {
+export function createDraftJournal(storage: KeyValueStorage, mirror: PendingMirror | null = null): DraftJournal {
   const keys = (): string[] => {
     const out: string[] = [];
     try {
@@ -191,19 +208,30 @@ export function createDraftJournal(storage: KeyValueStorage): DraftJournal {
     } catch {
       // nothing more can be done
     }
+    copiedKeys.delete(k);
+    mirror?.remove(k); // a copy another tab or an earlier page made goes too
+  };
+  /** Writes `raw` under `k`, with its IndexedDB copy when `copy`. False if localStorage refused it. */
+  const write = (k: string, raw: string, copy: boolean): boolean => {
+    try {
+      storage.setItem(k, raw);
+    } catch {
+      return false;
+    }
+    if (copy) {
+      copiedKeys.add(k);
+      mirror?.put(k, raw);
+    } else if (copiedKeys.delete(k)) mirror?.remove(k);
+    return true;
   };
 
   return {
-    put(e) {
+    put(e, o) {
       const k = keyOf(e.kind, e.commentId);
-      try {
-        storage.setItem(k, JSON.stringify(e));
-        return true;
-      } catch {
-        // Full or refused. An older copy must not outlive the newer text, so it goes; the store still has the draft.
-        removeKey(k);
-        return false;
-      }
+      if (write(k, JSON.stringify(e), o?.crashCopy === true)) return true;
+      // Full or refused. An older copy must not outlive the newer text, so it goes; the store still has the draft.
+      removeKey(k);
+      return false;
     },
     get: (kind, id) => read(keyOf(kind, id)),
     remove: (kind, id) => removeKey(keyOf(kind, id)),
@@ -220,6 +248,16 @@ export function createDraftJournal(storage: KeyValueStorage): DraftJournal {
         const e = read(k);
         if (e !== null && e.documentId === documentId && k === keyOf(e.kind, e.commentId)) removeKey(k);
       }
+      // A copy whose entry localStorage lost goes too: nothing of a forgotten PDF's notes comes back from it.
+      void mirror
+        ?.read(JOURNAL_PREFIX)
+        .then((copies) => {
+          for (const [k, raw] of copies) {
+            const e = parse(raw);
+            if (e !== null && e.documentId === documentId && k === keyOf(e.kind, e.commentId) && readRaw(k) === null) mirror.remove(k);
+          }
+        })
+        .catch(() => {});
     },
     locked(documentId, fn) {
       const locks = lockManager();
@@ -229,12 +267,8 @@ export function createDraftJournal(storage: KeyValueStorage): DraftJournal {
     keepAside(id, e) {
       const k = `${ASIDE_PREFIX}${id}`;
       const entry: AsideEntry = { v: 1, aside: true, kind: e.kind, body: e.body, at: e.at, ...(e.held ? { held: e.held } : {}) };
-      try {
-        storage.setItem(k, JSON.stringify(entry));
-        return true;
-      } catch {
-        return false; // full or refused: the words are still where they were (the tab, or the journal entry not yet removed)
-      }
+      // Full or refused: false, and the words are still where they were (the tab, or the journal entry not yet removed).
+      return write(k, JSON.stringify(entry), true);
     },
     removeAside: (id) => removeKey(`${ASIDE_PREFIX}${id}`),
     releaseAside(tab, life) {
@@ -249,14 +283,44 @@ export function createDraftJournal(storage: KeyValueStorage): DraftJournal {
         if (e?.aside !== true || e.held?.tab !== tab || e.held.life === life) continue;
         const rest = { ...e };
         delete rest.held;
+        write(k, JSON.stringify(rest), true); // if refused, it stays held; it shows once the tab has gone
+      }
+    },
+    async recover(skip) {
+      if (!mirror) return;
+      const copies = await mirror.read(JOURNAL_PREFIX).catch((): [string, string][] => []);
+      for (const [k, raw] of copies) {
+        const copy = fields(safeJson(raw));
+        if (!copy) continue;
+        const owner = typeof copy.tab === 'string' ? copy.tab : fields(copy.held)?.tab;
+        if (typeof owner === 'string' && skip(owner)) continue;
+        const here = fields(safeJson(readRaw(k)));
+        if (here !== null && typeof here.at === 'number' && typeof copy.at === 'number' && here.at >= copy.at) continue; // as new or newer
         try {
-          storage.setItem(k, JSON.stringify(rest));
+          storage.setItem(k, raw);
+          copiedKeys.add(k);
         } catch {
-          // it stays held; it shows once the tab has gone
+          // full: the copy stays in IndexedDB, and the next look tries again
         }
       }
     },
   };
+  function readRaw(k: string): string | null {
+    try {
+      return storage.getItem(k);
+    } catch {
+      return null;
+    }
+  }
+}
+
+function safeJson(raw: string | null): unknown {
+  if (raw === null) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 /** The viewer's journal: the extension's localStorage. Null in Incognito and where localStorage cannot be used. */
@@ -264,7 +328,7 @@ export function localDraftJournal(): DraftJournal | null {
   try {
     if (typeof chrome !== 'undefined' && chrome.extension?.inIncognitoContext) return null;
     if (typeof localStorage === 'undefined') return null;
-    return createDraftJournal(localStorage);
+    return createDraftJournal(localStorage, localPendingMirror());
   } catch {
     return null; // a page with storage blocked throws on the first touch
   }

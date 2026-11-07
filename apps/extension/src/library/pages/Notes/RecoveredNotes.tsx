@@ -5,6 +5,7 @@
 import { CommentAvatar, Dialog, formatCommentTime, formatCommentTimeFull, TextButton } from '@sop/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { deleteRecoveredNote, listRecoveredNotes, type RecoveredNote } from '../../../viewer/annotations/recovered-notes';
+import { localDraftJournal } from '../../../viewer/annotations/draft-journal';
 import { localPendingSaves } from '../../../viewer/annotations/save-pending';
 import { tabsHoldingLocks } from '../../../viewer/annotations/tab-presence';
 import { useLibrary } from '../../app/context';
@@ -18,6 +19,7 @@ async function recoveredNow(): Promise<RecoveredNote[]> {
   const live = new Set(await tabsHoldingLocks());
   // A crash can take a waiting note out of localStorage: the copy of a tab that has gone goes back first (save-pending.ts).
   await localPendingSaves()?.recover?.(null, (rec) => live.has(rec.tab));
+  await localDraftJournal()?.recover?.((tab) => live.has(tab)); // and words set aside, and notes held after a Forget
   return listRecoveredNotes().filter((n) => n.heldBy === undefined || !live.has(n.heldBy));
 }
 

@@ -286,7 +286,10 @@ export function createPendingMirror(factory: IDBFactory): PendingMirror {
 }
 
 let localMirror: PendingMirror | null | undefined;
-/** This page's copy of the records (one queue and one connection per page). Null where IndexedDB cannot be used. */
+/**
+ * This page's copy of the records (one queue and one connection per page). Null where IndexedDB cannot be used. The drafts
+ * journal keeps its two kinds of entry with no copy in the store here too, under their own `sop-draft:` keys (draft-journal.ts).
+ */
 export function localPendingMirror(): PendingMirror | null {
   if (localMirror !== undefined) return localMirror;
   try {
