@@ -164,6 +164,13 @@ export function createEmbedPdfBackend(assets: EngineAssets, opts: EmbedPdfBacken
     getPageGeometry: (doc, pageIndex) => call(doc, pageIndex, 'getPageBoxes', [pageIndex]),
     readAnnotations: (doc, pageIndex) => call(doc, pageIndex, 'readAnnots', [pageIndex]),
     getSignatureCount: (doc) => call(doc, null, 'getSignatureCount', []),
+    setAnnotationsHidden: async (doc, items, hidden) => {
+      // each page is served by workers[pageIndex % n], which is the copy that draws it
+      const n = entry(doc).workers.length;
+      const lanes = new Map<number, { pageIndex: number; objectNumber: number }[]>();
+      for (const it of items) lanes.set(it.pageIndex % n, [...(lanes.get(it.pageIndex % n) ?? []), it]);
+      await Promise.all([...lanes.values()].map((list) => call(doc, list[0].pageIndex, 'hideAnnots', [list, hidden])));
+    },
     // A copy is written on a handle of its own in the first worker, apart from any open document (contracts §9).
     async writeAnnotations(source, plan, o) {
       const w = await workerIn(0);

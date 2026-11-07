@@ -65,6 +65,11 @@ export interface PageListApi {
    * point under `keep` (client px) stays where it is on screen; without one, the line at the top of the view does.
    */
   setReserveRight(px: number, keep?: { clientX: number; clientY: number }, o?: ReserveOptions): void;
+  /**
+   * Draws every page again from the engine (slice 8.4): after annotations were hidden or shown in the open document, the
+   * pictures already on screen and in the preview cache still show them. What is on screen stays until the new picture lands.
+   */
+  redrawPages(): void;
   /** The width kept free at the right (setReserveRight). */
   reserveRight(): number;
   /**
@@ -652,6 +657,7 @@ export function PageList({
         const x = pageClientLeft(i);
         glideFrom.current = x === null ? null : { index: i, clientX: x, scale: latest.current.scale, until: performance.now() + GLIDE_WINDOW_MS, base: null };
       },
+      redrawPages: () => driver.redrawAll(),
       overlayHost: () => overlayRef.current,
     };
     return self;

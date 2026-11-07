@@ -44,6 +44,12 @@ export interface CommentItemProps {
   className?: string;
 }
 
+/** The name a note carried in the PDF it was imported from (slice 8.4), kept as a label; the note is still the owner's. */
+function importedAuthor(meta: unknown): string | null {
+  const m = meta as { kind?: unknown; author?: unknown } | null;
+  return m?.kind === 'pdf-import' && typeof m.author === 'string' && m.author.trim() !== '' ? m.author.trim() : null;
+}
+
 /**
  * One comment of a thread, laid out as a Docs comment (02 section 4.11): a 32 px avatar, the author's name (14/20 500)
  * and the time (12/16) beside it, then the Markdown body (14/20) 12 px below. A reply from Claude shows Claude's name
@@ -75,7 +81,7 @@ export function CommentItem({
       <div className={styles.head}>
         <CommentAvatar author={comment.author} />
         <div className={styles.who}>
-          <span className={styles.name}>{AUTHOR_NAME[comment.author]}</span>
+          <span className={styles.name}>{importedAuthor(comment.meta) ?? AUTHOR_NAME[comment.author]}</span>
           <span className={styles.timeLine}>
             <CommentTime comment={comment} now={now} />
             {kept !== null && comment.draftOfTab === null && <KeptSign kept={kept} onRetry={onRetrySave} />}

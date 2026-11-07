@@ -428,6 +428,12 @@ export interface PdfBackend {
   getPageGeometry(doc: DocHandle, pageIndex: number): Promise<PageGeometry>;
   /** Phase 8. The page's annotations as they are in the file, in /Annots order (rects in PDF user space). */
   readAnnotations(doc: DocHandle, pageIndex: number): Promise<PdfAnnotation[]>;
+  /**
+   * Phase 8, slice 8.4. Hides (or shows again) annotations of the open document by object number (`readAnnotations`'
+   * `objectNumber`), so a note the library already shows is not drawn twice. Only the open copy changes, in memory; the file
+   * and what "Download with notes" writes do not. Pages already drawn keep their picture until they are drawn again.
+   */
+  setAnnotationsHidden(doc: DocHandle, items: readonly { pageIndex: number; objectNumber: number }[], hidden: boolean): Promise<void>;
   /** Phase 8. How many digital signatures the file has (FPDF_GetSignatureCount): adding notes shows a signature as changed. */
   getSignatureCount(doc: DocHandle): Promise<number>;
   /**

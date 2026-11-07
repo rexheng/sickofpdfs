@@ -15,7 +15,7 @@ import type { MarkLayerItem, MarkLayerPage, MarkLayerSource, PageLayerContext, P
 import type { IconName } from '@sop/ui';
 import type { ComponentType, RefObject } from 'react';
 import type { StoreClient } from '../../store/client';
-import type { CommandBehaviour, ViewerCommandId } from '../commands';
+import type { CommandBehaviour, NoteAction, ViewerCommandId } from '../commands';
 import { isIncognito } from '../incognito';
 import type { OpenedDocument } from '../open-document';
 import { libraryStore } from '../use-store';
@@ -117,8 +117,8 @@ export interface NotesHost {
    * Read it, never the DOM selection, which only holds the part of the selection on mounted pages.
    */
   readonly textSelection: TextSelectionSource;
-  /** A short note at the bottom of the window (the viewer's snackbar). */
-  showNote(text: string): void;
+  /** A short note at the bottom of the window (the viewer's snackbar), with at most one button ("Undo"). */
+  showNote(text: string, action?: NoteAction): void;
   /** A text anchor for char ranges: the quote with its context, the positions, and the rects the selection had. */
   textAnchor(ranges: CharRange[]): Promise<TextAnchor>;
   /** The colour H and the menu use (marks.lastColor). */
@@ -519,7 +519,7 @@ export interface NotesDeps {
   /** The text layer's selection model (TextLayerController.textSelection). */
   textSelection: TextSelectionSource;
   /** The viewer's snackbar (ViewerUi.showNote). */
-  showNote(text: string): void;
+  showNote(text: string, action?: NoteAction): void;
   /** ViewerContext.save: Task 30's controller. The notes are made once it exists (one render after the PDF is ready). */
   save: SaveController;
   /** Phase 7.4: the figures of a scanned page (ocr/layout-wire.ts); null for a page that is not a scan. */
@@ -595,7 +595,7 @@ export function createNotes(d: NotesDeps): Notes | null {
     jumps: d.jumps,
     selection: () => d.textSelection.ranges(),
     textSelection: d.textSelection,
-    showNote: (text) => d.showNote(text),
+    showNote: (text, action) => d.showNote(text, action),
     textAnchor,
     lastColor: () => lastColor,
     pointer: () => input?.pointer() ?? null,

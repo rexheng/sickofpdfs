@@ -110,6 +110,7 @@ import { commentsFeature } from './notes/feature';
 import { AreaToolButton } from './figures/AreaToolButton';
 import { figuresFeature } from './figures/feature';
 import { exportPdfFeature } from './export/feature';
+import { importPdfFeature } from './import/feature';
 import { LoadErrorCard } from './ui/LoadErrorCard';
 import { LocalFileCard } from './ui/LocalFileCard';
 import { PasswordDialog } from './ui/PasswordDialog';
@@ -130,6 +131,7 @@ registerViewerFeature(notesPanelFeature);
 registerViewerFeature(figuresFeature);
 // Phase 8 (slice 8.3): File → Download with notes, and the toolbar's download menu.
 registerViewerFeature(exportPdfFeature);
+registerViewerFeature(importPdfFeature);
 // Phase 3 (S15): the words a search jump landed on, picked out for a moment.
 registerViewerFeature(hitFlashFeature);
 // Phase 4 (slice F): Claude in the thread: its chips, the @Claude suggestion, the confirm dialog and the Ask Claude items.
@@ -838,7 +840,7 @@ function useNotes(
   const [notes, setNotes] = useState<Notes | null>(null);
   useEffect(() => {
     if (save === null) return;
-    const made = createNotes({ backend, opened: doc, pageText, view, pageList, jumps, textSelection: textLayers.textSelection, showNote: (text) => ui.showNote(text), save, scanFigures: (i) => scanFigures.figures(i), onScanFiguresNamed: (cb) => scanFigures.onNamed(cb) });
+    const made = createNotes({ backend, opened: doc, pageText, view, pageList, jumps, textSelection: textLayers.textSelection, showNote: (text, action) => ui.showNote(text, action), save, scanFigures: (i) => scanFigures.figures(i), onScanFiguresNamed: (cb) => scanFigures.onNamed(cb) });
     setNotes(made);
     publishRuntime({ annotations: made?.host.session ?? null });
     return () => {

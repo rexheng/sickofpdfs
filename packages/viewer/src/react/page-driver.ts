@@ -128,6 +128,8 @@ export class PageDriver {
   private scroller: HTMLElement | null = null;
   private view: DriverView | null = null;
   private gen = '';
+  /** Bumped by redrawAll: part of `gen`, so every picture made before it counts as out of date. */
+  private epoch = 0;
   private genAbort = new AbortController();
   private readonly slots = new Map<number, SlotState>();
   /** Request keys whose results are awaited, with the priority they were asked at. */
@@ -177,7 +179,7 @@ export class PageDriver {
   setView(view: DriverView): void {
     const rotationChanged = this.view !== null && this.view.viewRotation !== view.viewRotation;
     this.view = view;
-    const gen = `${view.scale}|${view.dpr}|${view.viewRotation}`;
+    const gen = `${view.scale}|${view.dpr}|${view.viewRotation}|${this.epoch}`;
     if (gen !== this.gen) {
       this.gen = gen;
       this.genAbort.abort();
@@ -192,6 +194,13 @@ export class PageDriver {
       if (this.firstPageMarked) for (let i = this.visible.first; i <= this.visible.last; i++) this.openBlank(i);
     }
     this.update(false);
+  }
+
+  /** Draws every page again (annotations were hidden or shown in the engine): old pictures stay on screen until replaced. */
+  redrawAll(): void {
+    this.epoch++;
+    this.scheduler.dropPreviews();
+    if (this.view) this.setView(this.view);
   }
 
   /** Zooming by wheel or pinch: hold full renders until the gesture pauses for `ms`. */

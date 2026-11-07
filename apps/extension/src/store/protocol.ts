@@ -42,6 +42,7 @@ const READ_METHODS: ReadonlySet<string> = new Set<StoreMethod>([
   'documentAtLink',
   'searchPages',
   'listAnnotations',
+  'importContext',
   'listDrafts',
   'listDraftThreads',
   'listEditDrafts',

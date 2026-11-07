@@ -7,6 +7,7 @@ import { applySchemaV4 } from './schema-v4';
 import { applySchemaV5, ensureCategoriserLocals } from './schema-v5';
 import { applySchemaV6 } from './schema-v6';
 import { applySchemaV7 } from './schema-v7';
+import { applySchemaV8 } from './schema-v8';
 
 /**
  * The connection settings, set on every open. Deleted rows are overwritten in the file (secure_delete), and the journal
@@ -16,7 +17,7 @@ import { applySchemaV7 } from './schema-v7';
 const CONNECTION_PRAGMAS = ['PRAGMA foreign_keys = ON', 'PRAGMA journal_mode = TRUNCATE', 'PRAGMA synchronous = FULL', 'PRAGMA secure_delete = ON'];
 
 /**
- * Brings the database up to the newest schema this code knows and returns its `user_version` (7 now). Safe to run on
+ * Brings the database up to the newest schema this code knows and returns its `user_version` (8 now). Safe to run on
  * every open: a step runs only when the version is below it. A database written by a newer version is opened read-only
  * and left exactly as it is; its version is returned, and every write is refused ("Update sickofpdfs").
  */
@@ -40,6 +41,7 @@ export function migrate(db: Sqlite3Database): number {
   if (userVersion(db) >= 5) ensureCategoriserLocals(db);
   if (userVersion(db) < 6) applySchemaV6(db);
   if (userVersion(db) < 7) applySchemaV7(db);
+  if (userVersion(db) < 8) applySchemaV8(db);
   // R67: drafts never touch comments_fts. Idempotent and a no-op when the trigger is current; repairs databases made before the fix.
   if (userVersion(db) >= 2) refreshCommentsFtsTrigger(db);
   return userVersion(db);

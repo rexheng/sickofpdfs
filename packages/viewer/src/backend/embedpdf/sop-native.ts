@@ -1563,6 +1563,42 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
     }
   }
 
+  /**
+   * Slice 8.4. Sets or clears the hidden flag of annotations (by object number) on the viewer's open copy, so they are not
+   * drawn: the notes the library shows already stand for them. In memory only (this engine never saves a document); the
+   * file and a "Download with notes" copy (which opens its own handle) are untouched. Pages already drawn are drawn again
+   * by the caller.
+   */
+  hideAnnots(docId: string, items: { pageIndex: number; objectNumber: number }[], hidden: boolean): void {
+    const { doc } = this.state(docId);
+    const byPage = new Map<number, Set<number>>();
+    for (const it of items) {
+      const set = byPage.get(it.pageIndex);
+      if (set) set.add(it.objectNumber);
+      else byPage.set(it.pageIndex, new Set([it.objectNumber]));
+    }
+    for (const [pageIndex, numbers] of byPage) {
+      this.page(doc, pageIndex);
+      const pageCtx = this.ctx(doc).acquirePage(pageIndex);
+      try {
+        const count = this.m.FPDFPage_GetAnnotCount(pageCtx.pagePtr);
+        for (let i = 0; i < count; i++) {
+          const annot = this.m.FPDFPage_GetAnnot(pageCtx.pagePtr, i);
+          if (!annot) continue;
+          try {
+            if (!numbers.has(this.m.EPDFAnnot_GetObjectNumber(annot))) continue;
+            const flags = this.m.FPDFAnnot_GetFlags(annot);
+            this.m.FPDFAnnot_SetFlags(annot, hidden ? flags | FPDF_ANNOT_FLAG_HIDDEN : flags & ~FPDF_ANNOT_FLAG_HIDDEN);
+          } finally {
+            this.m.FPDFPage_CloseAnnot(annot);
+          }
+        }
+      } finally {
+        pageCtx.release();
+      }
+    }
+  }
+
   /** FPDF_GetSignatureCount: a signed file's signature shows as changed once notes are added. */
   getSignatureCount(docId: string): number {
     const { doc } = this.state(docId);

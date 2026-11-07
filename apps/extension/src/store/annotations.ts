@@ -51,7 +51,48 @@ export interface EditDraft {
   updatedAt: number;
 }
 
+/** What "Import on open" needs to know about a reading's rows (slice 8.4). */
+export interface ImportContext {
+  /** Rows of this document (deleted ones too) whose id is among the ids asked, so a deleted note is not brought back. */
+  own: { id: string; table: AnnotationTable; threadId: string | null }[];
+  /** Ids asked that other documents' rows already use: an import gives its rows other ids. */
+  elsewhere: string[];
+  /** `pdf_import_refs` of the document: the annotations imported before. */
+  refs: { pdfRef: string; rowTable: AnnotationTable; rowId: string }[];
+}
+
+/** The rows an import adds, as `planPdfImport` makes them, and the refs that go with them. */
+export interface ImportRows {
+  marks: MarkRow[];
+  threads: ThreadRow[];
+  comments: CommentRow[];
+  refs: { pdfRef: string; rowTable: AnnotationTable; rowId: string }[];
+}
+
+/** The pdf_ref of the row Undo leaves, so the file is not imported again. */
+export const IMPORT_DECLINED_REF = 'declined';
+
+/** What an import added: the new rows' ids, per table (Undo needs exactly these). */
+export interface ImportAdded {
+  marks: string[];
+  threads: string[];
+  comments: string[];
+}
+
 export interface AnnotationsApi {
+  /** Slice 8.4. What the library already has for these ids and which annotations of the file were imported before. */
+  importContext(documentId: DocumentId, ids: string[]): Promise<ImportContext>;
+  /**
+   * Slice 8.4. Adds the notes of a PDF's own annotations in one transaction. It only inserts: a row whose id is taken is
+   * left out (never overwritten), a comment needs its thread, and every row is stamped with `documentId`. Returns the ids
+   * of the rows that were added. Publishes the change like any write.
+   */
+  applyImport(documentId: DocumentId, rows: ImportRows): Promise<ImportAdded>;
+  /**
+   * Slice 8.4, Undo on the chip. Soft-deletes the rows an import added (they sync as deletes), forgets their refs and
+   * leaves a `declined` ref, so the same file is not imported again.
+   */
+  undoImport(documentId: DocumentId, ids: { marks: string[]; threads: string[]; comments: string[] }): Promise<void>;
   /** Live, non-draft rows of one document. */
   listAnnotations(documentId: DocumentId): Promise<{ marks: MarkRow[]; threads: ThreadRow[]; comments: CommentRow[] }>;
   /**
@@ -92,6 +133,9 @@ export interface AnnotationsApi {
 
 /** The method names `protocol.ts` serves and `client.ts` proxies. */
 export const ANNOTATION_METHODS = [
+  'importContext',
+  'applyImport',
+  'undoImport',
   'listAnnotations',
   'writeAnnotations',
   'saveDraft',
@@ -524,6 +568,96 @@ export function createAnnotationsApi(db: SqlDb, deps: AnnotationDeps): Annotatio
           'comments',
         );
         return { marks, threads, comments };
+      }),
+
+    importContext: (documentId, ids) =>
+      attempt(() => {
+        const own: ImportContext['own'] = [];
+        const elsewhere: string[] = [];
+        const unique = [...new Set(ids)];
+        for (let i = 0; i < unique.length; i += 300) {
+          const chunk = unique.slice(i, i + 300);
+          const marks = chunk.map(() => '?').join(', ');
+          for (const table of ['marks', 'threads', 'comments'] as const) {
+            const cols = table === 'comments' ? 'id, document_id, thread_id' : 'id, document_id, NULL AS thread_id';
+            for (const r of db.selectObjects(`SELECT ${cols} FROM ${table} WHERE id IN (${marks})`, chunk)) {
+              if (r.document_id === documentId) own.push({ id: text(r, 'id'), table, threadId: textOrNull(r, 'thread_id') });
+              else elsewhere.push(text(r, 'id'));
+            }
+          }
+        }
+        const refs = db
+          .selectObjects('SELECT pdf_ref, row_table, row_id FROM pdf_import_refs WHERE document_id = ?', [documentId])
+          .map((r) => ({ pdfRef: text(r, 'pdf_ref'), rowTable: text(r, 'row_table') as AnnotationTable, rowId: text(r, 'row_id') }));
+        return { own, elsewhere, refs };
+      }),
+
+    applyImport: (documentId, rows) =>
+      attempt(() => {
+        assertWritable();
+        if (!documentExists(documentId)) fail('document-missing', 'notes are only imported into saved documents');
+        const exists = (table: AnnotationTable, id: string): boolean => one(`SELECT 1 AS x FROM ${table} WHERE id = ?`, [id]) !== undefined;
+        const added: ImportAdded = { marks: [], threads: [], comments: [] };
+        const kept = new Set<string>();
+        touched.clear();
+        try {
+          db.savepoint(() => {
+            for (const m of rows.marks) {
+              if (exists('marks', m.id)) continue; // import only inserts
+              writeMark({ table: 'marks', op: 'upsert', row: { ...m, documentId } }, undefined);
+              kept.add(m.id);
+              added.marks.push(m.id);
+            }
+            for (const t of rows.threads) {
+              if (exists('threads', t.id)) continue;
+              writeThread({ table: 'threads', op: 'upsert', row: { ...t, documentId } }, undefined);
+              kept.add(t.id);
+              added.threads.push(t.id);
+            }
+            for (const c of rows.comments) {
+              if (exists('comments', c.id) || !exists('threads', c.threadId)) continue;
+              writeComment({ table: 'comments', op: 'upsert', row: { ...c, documentId } }, undefined);
+              kept.add(c.id);
+              added.comments.push(c.id);
+            }
+            const now = deps.now();
+            for (const r of rows.refs) {
+              if (!kept.has(r.rowId)) continue;
+              run('INSERT OR IGNORE INTO pdf_import_refs (document_id, pdf_ref, row_table, row_id, created_at) VALUES (?, ?, ?, ?, ?)', [documentId, r.pdfRef, r.rowTable, r.rowId, now]);
+            }
+          });
+        } catch (e) {
+          touched.clear();
+          throw e;
+        }
+        publishTouched();
+        return added;
+      }),
+
+    undoImport: (documentId, ids) =>
+      attempt(() => {
+        assertWritable();
+        const now = deps.now();
+        touched.clear();
+        try {
+          db.savepoint(() => {
+            for (const [table, list] of [['marks', ids.marks], ['threads', ids.threads], ['comments', ids.comments]] as const) {
+              for (const id of list) {
+                const cur = one(`SELECT document_id, deleted_at FROM ${table} WHERE id = ?`, [id]);
+                if (!cur || cur.document_id !== documentId || cur.deleted_at !== null) continue;
+                if (table === 'comments') run('UPDATE comments SET deleted_at = ?, hlc = ? WHERE id = ?', [now, deps.hlc.tick(), id]);
+                else run(`UPDATE ${table} SET deleted_at = ?, updated_at = ?, hlc = ? WHERE id = ?`, [now, now, deps.hlc.tick(), id]);
+                touch(table, documentId, id);
+              }
+              for (const id of list) run('DELETE FROM pdf_import_refs WHERE document_id = ? AND row_id = ?', [documentId, id]);
+            }
+            run(`INSERT OR IGNORE INTO pdf_import_refs (document_id, pdf_ref, row_table, row_id, created_at) VALUES (?, ?, 'marks', '', ?)`, [documentId, IMPORT_DECLINED_REF, now]);
+          });
+        } catch (e) {
+          touched.clear();
+          throw e;
+        }
+        publishTouched();
       }),
 
     writeAnnotations: (ops, o) =>

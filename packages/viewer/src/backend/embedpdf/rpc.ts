@@ -66,6 +66,7 @@ export interface EngineApi {
   getPageBoxes(docId: string, pageIndex: number): PageGeometry;
   readAnnots(docId: string, pageIndex: number): PdfAnnotation[];
   getSignatureCount(docId: string): number;
+  hideAnnots(docId: string, items: { pageIndex: number; objectNumber: number }[], hidden: boolean): void;
   /** Not on an open document: the first argument is only a label. The source Blob is cloned (by reference), the result transferred. */
   writeAnnotsCopy(job: string, source: Blob | ArrayBuffer, plan: PdfAnnotationPlan[], opts: WriteAnnotationsOptions): Promise<Uint8Array>;
 }
@@ -95,6 +96,7 @@ export const ENGINE_METHODS: readonly EngineMethod[] = [
   'getPageBoxes',
   'readAnnots',
   'getSignatureCount',
+  'hideAnnots',
   'writeAnnotsCopy',
 ];
 

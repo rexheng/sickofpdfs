@@ -247,6 +247,11 @@ export class RenderScheduler {
     }
   }
 
+  /** Frees the cached previews so they are drawn again (the document's look changed). A queued preview is still delivered. */
+  dropPreviews(): void {
+    this.clearPreviews();
+  }
+
   private clearPreviews(): void {
     for (const bitmap of this.previews.values()) bitmap.close();
     this.previews.clear();
