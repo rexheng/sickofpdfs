@@ -87,3 +87,8 @@ export { inMemoryRankPages } from './claude/rank';
 export { passageSpans } from './claude/paragraphs';
 export { packWholeDocument, wholeDocumentTokens } from './claude/whole-document';
 export type { WholeDocumentPack, WholeDocumentSource } from './claude/whole-document';
+// Phase 7: scanned pages' recognised text.
+export {
+  countWords, JOINED_HYPHEN, needsOcr, OCR_MAX_WORDS, OCR_MIN_IMAGE_COVERAGE, ocrAngle, ocrLines, ocrPlainText, ocrRects, ocrSource, ocrText, ocrToPageGlyphs, searchOcr,
+} from './ocr';
+export type { OcrEngine, OcrPageKind, OcrPageResult, OcrProgress, OcrService, OcrWord, PageImageSource } from './ocr';
