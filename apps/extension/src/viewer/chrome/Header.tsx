@@ -12,6 +12,10 @@ export interface HeaderProps {
   menus: MenuDef[];
   /** The escape hatch at the right; null hides it (the error card then carries its own). */
   onOpenInChrome: (() => void) | null;
+  /** "Copy link": the PDF's web address to the clipboard. Disabled, with its reason in the tooltip, when there is none; null hides it. */
+  copyLink?: { run(this: void): void; enabled: boolean; reason?: string | undefined; shortcut?: string | undefined } | null;
+  /** "Hide the menus" is on: the header is folded away (Header.module.css) and the toolbar carries what mattered. */
+  menusHidden?: boolean;
   /** Chrome refused the escape (a local file without "Allow access to file URLs"). */
   chromeRefused: boolean;
   /** The library status chip (Task 30). */
@@ -25,12 +29,12 @@ export interface HeaderProps {
  * canvas. "Back to page" where Drive has its close button (in words, with its arrow: an arrow alone read as the
  * browser's own Back), the 24 px PDF tile, the PDF's name (its title once known, else the file name; TB4) in Google Sans
  * 18 with the File, View, Tools and Help menus tight under it, and at the right the status chip and "Open in Chrome's
- * viewer" where Drive has "Open in new tab". The spec's escape hatch "is always there": File → Open in Chrome's viewer
+ * viewer" where Drive has "Open in new tab", and "Copy link" just before it. The spec's escape hatch "is always there": File → Open in Chrome's viewer
  * and this button.
  */
-export function Header({ name, hint = name, onBack, menus, onOpenInChrome, chromeRefused, status, returnFocus }: HeaderProps) {
+export function Header({ name, hint = name, onBack, menus, onOpenInChrome, chromeRefused, status, returnFocus, copyLink = null, menusHidden = false }: HeaderProps) {
   return (
-    <header className={styles.header} data-theme="dark" data-viewer-chrome="" data-viewer-back={onBack !== null ? '' : undefined}>
+    <header className={styles.header} data-theme="dark" data-viewer-chrome="" data-viewer-back={onBack !== null ? '' : undefined} data-menus-hidden={menusHidden ? '' : undefined}>
       {onBack !== null && (
         <Tooltip label="Go back to the web page this PDF was in">
           <TextButton icon="arrow_back" label="Back to page" onClick={onBack} className={styles.back} />
@@ -54,6 +58,15 @@ export function Header({ name, hint = name, onBack, menus, onOpenInChrome, chrom
           </p>
         )}
         {status}
+        {copyLink !== null && (
+          <IconButton
+            icon="link"
+            label="Copy link"
+            disabled={!copyLink.enabled}
+            disabledReason={copyLink.reason}
+            onClick={copyLink.run}
+          />
+        )}
         {onOpenInChrome !== null && (
           <IconButton icon="open_in_new" label="Open in Chrome’s viewer" onClick={onOpenInChrome} />
         )}

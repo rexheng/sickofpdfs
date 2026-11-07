@@ -14,7 +14,7 @@
   display: flex;
   align-items: center;
   box-sizing: border-box;
-  block-size: var(--viewer-header-h);
+  block-size: var(--viewer-header-size);
   padding: 0 var(--space-4);
   background-color: var(--gm3-sys-color-surface-container-low);
   color: var(--gm3-sys-color-on-surface);
@@ -90,4 +90,28 @@
   color: var(--gm3-sys-color-error);
   font: var(--type-tooltip);
   font-variation-settings: "opsz" 17;
+}
+
+/*
+ * "Hide the menus": the header slides up out of the way and the content moves up with it (App.module.css sets
+ * --viewer-header-h to 0). It stays in the page, so Tab still reaches the menus: the focused header slides back down over the
+ * toolbar until the focus leaves it. With reduced motion there is no slide.
+ */
+.header[data-menus-hidden] {
+  transform: translateY(-100%);
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.header[data-menus-hidden]:focus-within {
+  z-index: 5;
+  transform: none;
+  box-shadow: var(--elev-2);
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .header {
+    transition: transform 150ms ease-out;
+  }
 }

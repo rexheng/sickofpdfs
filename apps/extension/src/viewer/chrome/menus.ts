@@ -27,6 +27,7 @@ const LAYOUT: { id: string; label: string; items: (ViewerCommandId | typeof SEPA
       'view.caretBrowsing', SEPARATOR,
       'notes.panel', // Shift+F4, with a tick while it is open (TB2/TB4 critics)
       'view.toggleRail',
+      'view.hideMenus',
     ],
   },
   { id: 'tools', label: 'Tools', items: ['tools.find', 'tools.goToPage', 'tools.search', 'tools.area', SEPARATOR, 'claude.wholeDocument'] },

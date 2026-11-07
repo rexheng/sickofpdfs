@@ -1,8 +1,10 @@
 import { DropdownMenu, Icon, IconButton, type MenuItemDef, PillToolbar, TextField, ToolbarSeparator } from '@sop/ui';
 import { createViewerStore, useViewerState, type ViewerStore, type ZoomMode } from '@sop/viewer';
-import { type ComponentPropsWithRef, type FocusEvent, type KeyboardEvent, type ReactNode, type RefObject, useEffect, useRef, useState } from 'react';
+import { type ComponentPropsWithRef, type FocusEvent, type KeyboardEvent, type ReactNode, type RefObject, useContext, useEffect, useRef, useState } from 'react';
 import type { ViewerCommand, ViewerCommandId, ViewerCommands } from '../commands';
 import { useCompactToolbar } from './compact';
+import { useMenusHidden } from '../menus-hidden';
+import { ToolbarExtrasContext } from './toolbar-extras';
 import { formatCombo } from './menus';
 import styles from './Toolbar.module.css';
 
@@ -43,6 +45,8 @@ export function Toolbar({ commands, view, returnFocus, end }: ToolbarProps) {
   const scale = useViewerState(store, (s) => s.scale);
   const zoom = useViewerState(store, (s) => s.zoom);
   const compact = useCompactToolbar();
+  const hidden = useMenusHidden(); // "Hide the menus": the chip and the header's actions move into the pill
+  const extras = useContext(ToolbarExtrasContext);
   const button = (id: ViewerCommandId) => <CommandButton cmd={commands.get(id)} />;
   return (
     <div className={styles.row} data-viewer-chrome="">
@@ -78,7 +82,9 @@ export function Toolbar({ commands, view, returnFocus, end }: ToolbarProps) {
         <ToolbarSeparator />
         {button('tools.find')}
         {end !== undefined && <span className={styles.end}>{end}</span>}
-        {compact && <MoreMenu commands={commands} returnFocus={returnFocus} />}
+        {hidden && <span className={styles.end}>{extras.chip}</span>}
+        {(compact || hidden) && <MoreMenu commands={commands} returnFocus={returnFocus} compact={compact} hidden={hidden} rows={extras.moreRows} />}
+        <HideMenusButton cmd={commands.get('view.hideMenus')} hidden={hidden} />
       </PillToolbar>
     </div>
   );
@@ -147,20 +153,47 @@ function DownloadButton({ commands, returnFocus }: { commands: ViewerCommands; r
 }
 
 /** What the compact pill's "More" menu holds, in this order. */
-const MORE: (ViewerCommandId | '-')[] = ['file.downloadWithNotes', 'file.download', 'file.print', '-', 'tools.area'];
+const MORE_COMPACT: (ViewerCommandId | '-')[] = ['file.downloadWithNotes', 'file.download', 'file.print', '-', 'tools.area'];
+/** What the header held that the hidden menus take with them (menus-hidden.ts), then the way back. */
+const MORE_HIDDEN: (ViewerCommandId | '-')[] = ['file.copyLink', 'file.openOriginal', 'file.openInChrome', '-', 'view.hideMenus'];
 
 /**
  * "More" (⋮) at the end of the compact pill: the controls that had no room, as rows of the dark viewer menu, each with
  * its icon and its key, greyed out with its reason when it is off.
  */
-function MoreMenu({ commands, returnFocus }: { commands: ViewerCommands; returnFocus: (() => void) | undefined }) {
-  const items: MenuItemDef[] = MORE.flatMap((id): MenuItemDef[] => (id === '-' ? [{ kind: 'separator' }] : menuItemOf(id, commands.get(id))));
+function MoreMenu({ commands, returnFocus, compact, hidden, rows }: { commands: ViewerCommands; returnFocus: (() => void) | undefined; compact: boolean; hidden: boolean; rows: MenuItemDef[] }) {
+  const ids = [...(compact ? MORE_COMPACT : []), ...(compact && hidden ? (['-'] as const) : []), ...(hidden ? MORE_HIDDEN : [])];
+  const own: MenuItemDef[] = ids.flatMap((id): MenuItemDef[] => {
+    if (id === '-') return [{ kind: 'separator' }];
+    // Under "More" the switch reads as the action it will do.
+    const swap = id === 'view.hideMenus' ? { label: 'Show the menus', icon: 'keyboard_arrow_down' as const } : {};
+    return menuItemOf(id, commands.get(id)).map((item) => ({ ...item, ...swap }));
+  });
+  const items = rows.length > 0 && hidden ? [...rows, { kind: 'separator' as const }, ...own] : own;
   return (
     <DropdownMenu
       trigger={<IconButton icon="more_vert" label="More" />}
       items={items}
       align="end"
       {...(returnFocus !== undefined ? { returnFocus } : {})}
+    />
+  );
+}
+
+/**
+ * "Hide the menus" / "Show the menus": a small chevron at the far right of the pill, as Google Docs has it. It points up
+ * while the menus are showing (press it to fold them away) and down once they are hidden.
+ */
+function HideMenusButton({ cmd, hidden }: { cmd: ViewerCommand | undefined; hidden: boolean }) {
+  if (cmd === undefined || !cmd.built) return null;
+  const key = cmd.keys[0];
+  return (
+    <IconButton
+      icon={hidden ? 'keyboard_arrow_down' : 'keyboard_arrow_up'}
+      label={hidden ? 'Show the menus' : 'Hide the menus'}
+      iconSize={24}
+      {...(key !== undefined ? { shortcut: formatCombo(key) } : {})}
+      onClick={() => cmd.run()}
     />
   );
 }

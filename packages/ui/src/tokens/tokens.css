@@ -187,7 +187,8 @@
    * Viewer dimensions, 02 section 4.10. TB6 (owner: "this header is also a little bit too big"): more compact than Drive's
    * 64 px header and 48 px pill, as Google Docs' tight title block: 44 + 40 = 84 px of chrome, not 112.
    */
-  --viewer-header-h: 44px;
+  --viewer-header-h: 44px; /* where the content starts: 0 while the menus are hidden (App.module.css) */
+  --viewer-header-size: 44px; /* the header's own height */
   --viewer-pill-h: 40px;
   --viewer-pill-pad: 4px 8px; /* a 32 px button in the 40 px pill, 8 px in from the round ends as in Drive */
   --icon-btn: 32px;

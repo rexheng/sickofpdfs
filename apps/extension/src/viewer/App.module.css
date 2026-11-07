@@ -8,10 +8,21 @@
   color-scheme: dark;
 }
 
+/* "Hide the menus": the header is folded away, so everything under it starts at the top (Header.module.css). */
+.app[data-menus-hidden] {
+  --viewer-header-h: 0px;
+}
+
 /* Everything under the header: the toolbar pill and the page list, the loader's cards and the loading bar. */
 .content {
   position: absolute;
   inset: var(--viewer-header-h) 0 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .content {
+    transition: inset-block-start 150ms ease-out;
+  }
 }
 
 /*

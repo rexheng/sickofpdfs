@@ -28,3 +28,8 @@
     display: none;
   }
 }
+
+/* The chip in the toolbar pill (the menus are hidden): its state only, with the same icon and hover. */
+.status[data-status-compact] .chip [data-chip-detail] {
+  display: none;
+}

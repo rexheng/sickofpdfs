@@ -41,7 +41,9 @@ import {
 import { memo, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { sendRuntimeMessage } from '../shared/send-message';
 import { parseViewerUrl, type ViewerParams } from '../shared/viewer-url';
-import { copyLink } from './actions/copy-link';
+import { copyLink, linkForCopy } from './actions/copy-link';
+import { ToolbarExtrasContext, type ToolbarExtras } from './chrome/toolbar-extras';
+import { useMenusHidden } from './menus-hidden';
 import { MarkupMenu } from './annotations/MarkupMenu';
 import { createNotes, type Notes, registerViewerFeature, viewerFeatures } from './annotations/wire';
 import styles from './App.module.css';
@@ -308,7 +310,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
       },
       showShortcuts: () => setDialog('shortcuts'),
       showAbout: () => setDialog('about'),
-      copyLink: (link) => void copyLink(link).then((ok) => setNote({ text: ok ? 'Link copied' : 'Couldn’t copy the link. Try again.' })),
+      copyLink: (link) => void copyLink(link).then((ok) => setNote({ text: ok ? 'Link copied' : `Couldn’t copy the link. Copy it by hand: ${linkForCopy(link)}` })),
       printProgress: setPrinting,
       askPrint: (ask) =>
         new Promise((resolve) =>
@@ -363,9 +365,30 @@ function TabViewer({ params }: { params: ViewerParams }) {
   // TB6: while the notes panel is open the page column ends before it, so the panel never covers a page (App.module.css).
   const notesPanelOpen = useNotesPanelOpen();
 
+  // "Hide the menus": the header is folded away, so the status chip and "Back to page" move into the toolbar pill.
+  const menusHidden = useMenusHidden();
+  const copyLinkCmd = commands.get('file.copyLink');
+  const toolbarExtras = useMemo<ToolbarExtras>(
+    () => ({
+      chip: save === null ? null : <StatusChip save={save} returnFocus={focusPages} ui={ui} compact />,
+      moreRows:
+        back === null
+          ? []
+          : [{ kind: 'item', id: 'back', label: 'Back to page', icon: 'arrow_back', onSelect: () => void goBackToPage(back) }],
+    }),
+    [save, focusPages, ui, back],
+  );
+
   return (
-    <div ref={root} className={styles.app}>
+    <ToolbarExtrasContext.Provider value={toolbarExtras}>
+    <div ref={root} className={styles.app} data-menus-hidden={menusHidden ? '' : undefined}>
       <Header
+        menusHidden={menusHidden}
+        copyLink={
+          copyLinkCmd === undefined || !copyLinkCmd.built
+            ? null
+            : { run: () => copyLinkCmd.run(), enabled: copyLinkCmd.enabled(), reason: copyLinkCmd.disabledReason?.() }
+        }
         name={name}
         hint={title === null ? name : title.full === title.fileName ? title.fileName : `${title.full}\n${title.fileName}`}
         onBack={back === null ? null : () => void goBackToPage(back)}
@@ -373,20 +396,14 @@ function TabViewer({ params }: { params: ViewerParams }) {
         // The error and stopped cards carry their own "Open in Chrome's viewer"; one is enough on screen.
         onOpenInChrome={!canEscape || view.kind === 'error' || view.kind === 'stopped' ? null : () => escape(source, (live?.store.get().currentPage ?? 0) + 1)}
         chromeRefused={chromeRefused}
-        status={
-          save !== null && (
-            <>
-              <StatusChip save={save} returnFocus={focusPages} ui={ui} />
-              {/* R95: right after the chip in the Tab order; drawn under the toolbar, above the pages it pushes down. */}
-              {view.kind === 'ready' && form.notice === null && <NotSureBanner save={save} ui={ui} presenting={presenting} />}
-            </>
-          )
-        }
+        status={save !== null && <StatusChip save={save} returnFocus={focusPages} ui={ui} />}
         returnFocus={focusPages}
       />
       {/* Drawn at the bottom left, but early in the Tab order (TB5): its button ("Start from page 1", "Undo") is reached
           right after the header, before the toolbar and every link in the PDF. */}
       <Snackbar note={note} />
+      {/* R95: drawn under the toolbar, above the pages it pushes down. Outside the header, which can be folded away. */}
+      {save !== null && view.kind === 'ready' && form.notice === null && <NotSureBanner save={save} ui={ui} presenting={presenting} />}
       <div className={styles.content} data-notes-panel-open={notesPanelOpen && view.kind === 'ready' ? '' : undefined}>
         {view.kind === 'ready' && (
           <Reader
@@ -444,6 +461,7 @@ function TabViewer({ params }: { params: ViewerParams }) {
       <SaveDialogs save={save} ui={ui} />
       {printing !== null && <PrintProgressDialog done={printing.done} total={printing.total} onCancel={printing.cancel} />}
     </div>
+    </ToolbarExtrasContext.Provider>
   );
 }
 

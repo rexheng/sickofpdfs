@@ -19,6 +19,7 @@ import type { ViewerParams } from '../shared/viewer-url';
 import { downloadOriginal } from './actions/download';
 import { palette } from '../shared/palette/state';
 import type { OpenedDocument } from './open-document';
+import { menusHiddenSwitch } from './menus-hidden';
 import { enterPresentation } from './presentation';
 import type { PrintAsk, PrintChoice } from './print/PrintDialog';
 import { printDocument } from './print/print';
@@ -37,7 +38,7 @@ export type ViewerCommandId =
   | 'file.about' // Phase 3 (S18, R92): About this PDF, viewer/about/
   | 'file.startOver' // TB5: "Start from page 1" while a resume stands (history/use-reading-history.ts)
   | 'view.fitWidth' | 'view.fitPage' | 'view.zoomIn' | 'view.zoomOut' | 'view.rotateCw' | 'view.rotateCcw'
-  | 'view.twoPage' | 'view.presentation' | 'view.wordStarts' | WordStartsChoiceId | 'view.caretBrowsing' | 'view.toggleRail'
+  | 'view.twoPage' | 'view.presentation' | 'view.wordStarts' | WordStartsChoiceId | 'view.caretBrowsing' | 'view.toggleRail' | 'view.hideMenus'
   | 'tools.find' | 'tools.goToPage' | 'tools.search' | 'help.shortcuts' | 'help.about'
   // Phase 2 (plan section 7). S13 runs the marks, the menu and undo; S14 the comment commands; S15 the notes ones;
   // S16 the figure and area ones. P4 adds 'claude.ask' and 'claude.explainFigure'.
@@ -196,6 +197,8 @@ export const SPECS: [ViewerCommandId, CommandSpec][] = [
   // R93: F7, Chrome's own key for caret browsing. The page gets it before Chrome, and taking it stops Chrome's question.
   ['view.caretBrowsing', { label: 'Caret browsing', icon: 'text_select_start', keys: ['F7'] }],
   ['view.toggleRail', { label: 'Thumbnails and outline', icon: 'photo_library', keys: ['F4'] }],
+  // As Google Docs' "Hide the menus": folds the title and menu row away. Remembered for every PDF and tab (menus-hidden.ts).
+  ['view.hideMenus', { label: 'Hide the menus', icon: 'keyboard_arrow_up', keys: ['Ctrl+Shift+F'] }],
   ['tools.find', { label: 'Find', icon: 'find_in_page', keys: ['Ctrl+F'] }],
   // Not 'pageview' (a page and a magnifier), which looks like Find's icon beside it in the Tools menu.
   ['tools.goToPage', { label: 'Go to page', icon: 'move_down', keys: ['Ctrl+G'] }],
@@ -255,10 +258,20 @@ function offBecause(reason: string): Behaviour {
 
 /** The reason a command with no web address to use is off. */
 const NO_ADDRESS = 'this PDF has no web address';
+/** Why Copy link is off: a local file or a PDF with no web page behind it. */
+const NO_LINK = 'This PDF has no web link';
+
+/** The hide-the-menus switch as a command: it needs no document, so the idle commands have it too. */
+const hideMenus: Behaviour = { run: () => void menusHiddenSwitch.toggle(), enabled: always, checked: () => menusHiddenSwitch.get() };
 
 /** The link "Copy link" copies: the address the PDF was opened from (for a saved copy, the link it came from). A file picked from disk has none. */
 function linkOf(ctx: Pick<ViewerContext, 'params' | 'opened' | 'originalLink'>): string | null {
-  return ctx.opened.loaded.sourceUrl === null ? (ctx.originalLink ?? null) : (ctx.params.source ?? ctx.opened.loaded.sourceUrl);
+  return webLink(ctx.opened.loaded.sourceUrl === null ? (ctx.originalLink ?? null) : (ctx.params.source ?? ctx.opened.loaded.sourceUrl));
+}
+
+/** The address only when it is a web link: a file: address stays on this computer, so it is never copied. */
+function webLink(address: string | null | undefined): string | null {
+  return address !== null && address !== undefined && /^https?:/i.test(address) ? address : null;
 }
 
 /**
@@ -360,7 +373,8 @@ export function createCommands(ctx: ViewerContext, extra: Partial<Record<ViewerC
         }
       : {}),
     'file.download': { run: () => downloadOriginal(ctx.opened.loaded.blob, ctx.opened.loaded.displayName), enabled: always },
-    'file.copyLink': { run: () => link !== null && ctx.ui.copyLink(link), enabled: () => link !== null, disabledReason: () => NO_ADDRESS },
+    'file.copyLink': { run: () => link !== null && ctx.ui.copyLink(link), enabled: () => link !== null, disabledReason: () => NO_LINK },
+    'view.hideMenus': hideMenus,
     'file.saveToLibrary': saveToLibrary(ctx.save),
     'file.print': { run: () => void printDocument(ctx), enabled: always },
     'view.fitWidth': { run: () => pages()?.zoomTo({ kind: 'fit-width' }), enabled: always, checked: () => isFitWidth(ctx.store) },
@@ -405,7 +419,8 @@ export function createIdleCommands(o: { source: string | null; canOpenInChrome: 
       enabled: () => source !== null && o.canOpenInChrome,
       disabledReason: () => (source === null ? NO_ADDRESS : 'Chrome can’t open this file from here'),
     },
-    'file.copyLink': { run: () => source !== null && ui.copyLink(source), enabled: () => source !== null, disabledReason: () => NO_ADDRESS },
+    'file.copyLink': { run: () => webLink(source) !== null && ui.copyLink(source ?? ''), enabled: () => webLink(source) !== null, disabledReason: () => NO_LINK },
+    'view.hideMenus': hideMenus,
     'tools.search': { run: () => palette.toggle(), enabled: always },
     'help.shortcuts': { run: () => ui.showShortcuts(), enabled: always },
     'help.about': { run: () => ui.showAbout(), enabled: always },

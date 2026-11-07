@@ -369,12 +369,14 @@ export interface StatusChipProps {
   returnFocus?: () => void;
   /** Its `showNote`: what a choice in the "not sure" menu did (R95). */
   ui?: Pick<ViewerUi, 'showNote'>;
+  /** The chip in the toolbar pill while the menus are hidden: its state only ("Saved", "Not saved", "Not sure"); the hover keeps the rest. */
+  compact?: boolean;
 }
 
 /** A failed save or Undo is told by the App's note (SaveControllerImpl.onFailure); here it only must not go unhandled. */
 const quietly = (p: Promise<void>): void => void p.catch(() => {});
 
-export function StatusChip({ save, returnFocus, ui }: StatusChipProps) {
+export function StatusChip({ save, returnFocus, ui, compact = false }: StatusChipProps) {
   const { state, busy, failed, trashed, resuming } = useSaveView(save);
   const subscribe = useCallback((cb: () => void) => save.subscribe(cb), [save]);
   const warning = useSyncExternalStore(subscribe, () => save.saveWarning);
@@ -435,7 +437,7 @@ export function StatusChip({ save, returnFocus, ui }: StatusChipProps) {
     control = <Chip {...chip} className={styles.chip} onClick={saves ? () => (asks === true ? setAsking(true) : quietly(save.requestSave())) : undefined} />;
   }
   return (
-    <div className={styles.status}>
+    <div className={styles.status} data-status-compact={compact ? '' : undefined}>
       {control}
       {/* R96: a stray click on "Not saved" never saves a private PDF: it asks, and Cancel is the default. */}
       <Dialog
