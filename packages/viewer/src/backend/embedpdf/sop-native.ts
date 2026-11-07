@@ -26,11 +26,14 @@ import type {
   GlyphShapes,
   LinkTarget,
   OutlineItem,
+  PageGeometry,
   PageGlyphs,
   PageObjectInfo,
   PageObjectList,
   PageObjectType,
   PageSize,
+  PdfAnnotation,
+  PdfAnnotationPlan,
   PdfColor,
   PdfLink,
   PdfMetadata,
@@ -41,8 +44,10 @@ import type {
   TextRun,
   TextRunList,
   TileRequest,
+  WriteAnnotationsOptions,
 } from '../types';
 import type { EngineApi, OpenedDocument } from './rpc';
+import { readPageAnnotations, writeAnnotationsCopy } from './annots';
 import { BoldFaces, faceStyle } from '../../marks/bold-faces';
 import { glyphInk, type InkPicture, luminanceOf } from '../../marks/glyph-ink';
 import { pageToDevice, STEM_LETTERS, type StemMeasures, stemMeasures } from '../../marks/synthetic-bold';
@@ -1524,6 +1529,53 @@ export class SopPdfiumNative extends PdfiumNative implements EngineApi {
       if (found) return found;
     }
     return 0;
+  }
+
+  // ---- annotations (Phase 8, slice 8.2) ----
+
+  /**
+   * The page's boxes in PDF user space: `crop` is the box the engine's coordinates start from (the crop box within the
+   * media box, as pageOrigin), so a rect read here maps to user space as x = crop.left + x, y = crop.top − y.
+   */
+  getPageBoxes(docId: string, pageIndex: number): PageGeometry {
+    const { doc, sizes } = this.state(docId);
+    const page = this.page(doc, pageIndex);
+    const origin = pageOrigin(doc, pageIndex);
+    const size = sizes[pageIndex];
+    const media = page.boxes?.media;
+    const box = (b: PdfBox): [number, number, number, number] => [Math.min(b.left, b.right), Math.min(b.top, b.bottom), Math.max(b.left, b.right), Math.max(b.top, b.bottom)];
+    return {
+      crop: [origin.left, origin.top - size.height, origin.left + size.width, origin.top],
+      media: media ? box(media) : [origin.left, origin.top - size.height, origin.left + size.width, origin.top],
+      rotation: size.rotation,
+    };
+  }
+
+  /** The page's annotations as they are in the file (on the viewer's handle; reading changes nothing). */
+  readAnnots(docId: string, pageIndex: number): PdfAnnotation[] {
+    const { doc } = this.state(docId);
+    this.page(doc, pageIndex);
+    const pageCtx = this.ctx(doc).acquirePage(pageIndex);
+    try {
+      return readPageAnnotations(this.m, pageCtx.pagePtr, pageIndex);
+    } finally {
+      pageCtx.release();
+    }
+  }
+
+  /** FPDF_GetSignatureCount: a signed file's signature shows as changed once notes are added. */
+  getSignatureCount(docId: string): number {
+    const { doc } = this.state(docId);
+    return Math.max(0, this.m.FPDF_GetSignatureCount(this.docPtr(doc)));
+  }
+
+  /**
+   * "Download with notes": `plan` written into a copy of `source`, on a handle of its own (annots.ts). `_job` only keeps
+   * the rule that every engine call names its document first; nothing is open under it. Returns the update PDFium
+   * appends (save 'tail') or the whole copy.
+   */
+  writeAnnotsCopy(_job: string, source: Blob | ArrayBuffer, plan: PdfAnnotationPlan[], opts: WriteAnnotationsOptions): Promise<Uint8Array> {
+    return writeAnnotationsCopy(this.m, source, plan, opts);
   }
 
   // ---- helpers ----

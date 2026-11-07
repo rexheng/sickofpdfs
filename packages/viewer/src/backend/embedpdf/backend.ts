@@ -161,5 +161,14 @@ export function createEmbedPdfBackend(assets: EngineAssets, opts: EmbedPdfBacken
     getGlyphOutlines: (doc, pageIndex, charStart, charCount) => call(doc, pageIndex, 'getGlyphOutlines', [pageIndex, charStart, charCount]),
     getGlyphShapes: (doc, pageIndex, charStart, charCount, o) => call(doc, pageIndex, 'getGlyphShapes', o?.ink ? [pageIndex, charStart, charCount, { ink: true }] : [pageIndex, charStart, charCount]),
     hashImageObject: (doc, pageIndex, objectIndex) => call(doc, pageIndex, 'hashImageObject', [pageIndex, objectIndex]),
+    getPageGeometry: (doc, pageIndex) => call(doc, pageIndex, 'getPageBoxes', [pageIndex]),
+    readAnnotations: (doc, pageIndex) => call(doc, pageIndex, 'readAnnots', [pageIndex]),
+    getSignatureCount: (doc) => call(doc, null, 'getSignatureCount', []),
+    // A copy is written on a handle of its own in the first worker, apart from any open document (contracts §9).
+    async writeAnnotations(source, plan, o) {
+      const w = await workerIn(0);
+      const bytes = await w.call('writeAnnotsCopy', ['download-with-notes', source, [...plan], o]);
+      return new Blob(o.save === 'tail' ? [source, bytes as Uint8Array<ArrayBuffer>] : [bytes as Uint8Array<ArrayBuffer>], { type: 'application/pdf' });
+    },
   };
 }

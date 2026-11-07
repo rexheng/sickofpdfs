@@ -6,7 +6,12 @@
 // the origin at the top-left corner of the page's crop box and y growing downwards. "Unrotated" means the page's
 // /Rotate is not applied: a page with /Rotate 90 still has its glyph boxes where they are in the file. PageSize gives
 // the size of that space and the rotation to display it with.
-import type { Sha256 } from '@sop/core';
+import type { PageGeometry, PdfAnnotation, PdfAnnotationPlan, Sha256 } from '@sop/core';
+
+// Phase 8 (contracts §9): the shapes of a page's boxes, an annotation read from a file and one to write are declared once,
+// in the pure mapping (packages/core/src/export), and used here as they are. Their rects are PDF USER SPACE (y up), never
+// PdfRect.
+export type { PageGeometry, PdfAnnotation, PdfAnnotationPlan, PdfUserRect } from '@sop/core';
 
 /** An open document. Made by PdfBackend.open; valid until close, or until the engine stops (PdfEngineCrashedError). */
 export type DocHandle = string & { readonly __doc: unique symbol };
@@ -286,6 +291,33 @@ export interface GlyphShapes {
 }
 
 /**
+ * A filled shape in an annotation's appearance, in PDF USER SPACE (y up, origin at the page's lower left, before /Rotate):
+ * PDFium's path layout, four numbers a segment, [type, x, y, close], type 2 a move, 0 a line, 1 a cubic Bézier point
+ * (three in a row: two controls and the end). Bold marks carry their emboldened glyphs this way (synthetic bold, R90b).
+ */
+export interface ApFill {
+  /** 0–255 each. */
+  rgb: [number, number, number];
+  path: number[];
+}
+
+/** writeAnnotations' options (contracts §9, plus what the exporter hands in). */
+export interface WriteAnnotationsOptions {
+  /** The password that opens the file; the copy keeps the same encryption. */
+  password?: string;
+  /**
+   * 'tail' (the default, spike 8.0's EXPORT_SAVE): PDFium's incremental save, keeping only the bytes it adds, so the
+   * result is the original's own bytes followed by a short update; 'incremental': the same save, every byte from PDFium;
+   * 'full': a full rewrite.
+   */
+  save: 'tail' | 'incremental' | 'full';
+  /** The appearance of each bold mark ('bold-outlines' plan items), by the item's /NM: its glyphs, emboldened. */
+  boldFills?: Record<string, ApFill[]>;
+  /** The document information to set in the copy (spec: tags in Keywords, the reading's context in Subject). */
+  info?: { keywords?: string; subject?: string };
+}
+
+/**
  * The PDF engine. It runs in a worker (or two: ENGINE_WORKERS); each worker runs its calls one at a time, in the
  * order they are made.
  *
@@ -389,4 +421,21 @@ export interface PdfBackend {
    * before its objects). null when the index is out of range, the object is not an image, or it has no data.
    */
   hashImageObject(doc: DocHandle, pageIndex: number, objectIndex: number): Promise<Sha256 | null>;
+  /**
+   * Phase 8. The page's crop box (as the engine's coordinates start from it: the crop box within the media box), its
+   * media box and its /Rotate, in PDF user space.
+   */
+  getPageGeometry(doc: DocHandle, pageIndex: number): Promise<PageGeometry>;
+  /** Phase 8. The page's annotations as they are in the file, in /Annots order (rects in PDF user space). */
+  readAnnotations(doc: DocHandle, pageIndex: number): Promise<PdfAnnotation[]>;
+  /** Phase 8. How many digital signatures the file has (FPDF_GetSignatureCount): adding notes shows a signature as changed. */
+  getSignatureCount(doc: DocHandle): Promise<number>;
+  /**
+   * Phase 8, "Download with notes": a COPY of `source` with `plan` written into it as PDF annotations, in plan order. It
+   * opens a handle of its own on `source` that loads only the pages that get notes, so nothing of the viewer's open
+   * document (and no flag set on it) reaches the file, and `source` itself is never changed. With `save: 'tail'` the
+   * result is `source`'s bytes, unchanged, followed by PDFium's incremental update. Rejects when the file does not
+   * open (PdfPasswordError, PdfFormatError) or a note could not be written (nothing is half written: no Blob comes back).
+   */
+  writeAnnotations(source: Blob, plan: readonly PdfAnnotationPlan[], o: WriteAnnotationsOptions): Promise<Blob>;
 }

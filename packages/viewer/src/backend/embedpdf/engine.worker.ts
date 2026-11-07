@@ -63,7 +63,7 @@ async function call({ id, method, args }: CallMessage): Promise<void> {
     if (!methods.has(method)) throw new Error(`the engine has no method "${method}"`);
     const fn = (native as unknown as Record<EngineMethod, (...a: unknown[]) => unknown>)[method];
     const value: unknown = await fn.apply(native, args);
-    post({ id, ok: true, value }, value instanceof ImageBitmap ? [value] : []);
+    post({ id, ok: true, value }, value instanceof ImageBitmap ? [value] : value instanceof Uint8Array ? [value.buffer as ArrayBuffer] : []);
   } catch (err) {
     const fatal = fatalReason(err);
     if (fatal) post({ type: 'fatal', reason: fatal, message: err instanceof Error ? err.message : String(err) });

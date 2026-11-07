@@ -4,7 +4,7 @@
 //   page → worker  { id, method, args }                         worker → page  { id, ok: true, value } | { id, ok: false, error }
 //                                                               worker → page  { type: 'fatal', reason, message }
 //
-// `method` is one of ENGINE_METHODS. An ImageBitmap or ArrayBuffer travels by transfer, not by copy. `fatal` means the
+// `method` is one of ENGINE_METHODS. An ImageBitmap, an ArrayBuffer or a Uint8Array result travels by transfer, not by copy. `fatal` means the
 // wasm module can no longer be trusted (a trap, or out of memory); the page then ends the worker.
 import { PdfEngineCrashedError, PdfFormatError, PdfPasswordError, type EngineFailure } from '../errors';
 import type { EngineAssets } from '../engine-config';
@@ -15,9 +15,12 @@ import type {
   GlyphShapeOptions,
   GlyphShapes,
   OutlineItem,
+  PageGeometry,
   PageGlyphs,
   PageObjectList,
   PageSize,
+  PdfAnnotation,
+  PdfAnnotationPlan,
   PdfLink,
   PdfMetadata,
   PdfRect,
@@ -26,6 +29,7 @@ import type {
   TextRun,
   TextRunList,
   TileRequest,
+  WriteAnnotationsOptions,
 } from '../types';
 
 /** What openDocument tells the page (OpenResult without the handle, which the page makes). */
@@ -58,6 +62,12 @@ export interface EngineApi {
   getGlyphOutlines(docId: string, pageIndex: number, charStart: number, charCount: number): GlyphOutline[];
   getGlyphShapes(docId: string, pageIndex: number, charStart: number, charCount: number, opts?: GlyphShapeOptions): GlyphShapes;
   hashImageObject(docId: string, pageIndex: number, objectIndex: number): Promise<Sha256 | null>;
+  // Phase 8 (slice 8.2). PdfiumNative has its own getPageGeometry, getSignatures and saveAsCopy, hence these names.
+  getPageBoxes(docId: string, pageIndex: number): PageGeometry;
+  readAnnots(docId: string, pageIndex: number): PdfAnnotation[];
+  getSignatureCount(docId: string): number;
+  /** Not on an open document: the first argument is only a label. The source Blob is cloned (by reference), the result transferred. */
+  writeAnnotsCopy(job: string, source: Blob | ArrayBuffer, plan: PdfAnnotationPlan[], opts: WriteAnnotationsOptions): Promise<Uint8Array>;
 }
 export type EngineMethod = keyof EngineApi;
 
@@ -82,6 +92,10 @@ export const ENGINE_METHODS: readonly EngineMethod[] = [
   'getGlyphOutlines',
   'getGlyphShapes',
   'hashImageObject',
+  'getPageBoxes',
+  'readAnnots',
+  'getSignatureCount',
+  'writeAnnotsCopy',
 ];
 
 export interface InitMessage {

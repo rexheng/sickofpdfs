@@ -26,6 +26,7 @@ export { createPageTextProvider, type PageTextProvider, type PageTextProviderImp
 export * from './marks/geometry';
 export * from './marks/card-layout';
 export { boldLetterCount, type WordStartChunk, wordStartChunks, wordStartRanges } from './marks/word-starts';
+export { boldVectorFills, type BoldVectorFill } from './marks/bold-vector';
 
 export { MAX_OPEN_BYTES } from './source/limits';
 export { PdfLoadError, type PdfLoadErrorCode } from './source/errors';
