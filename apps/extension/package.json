@@ -1,6 +1,6 @@
 {
   "name": "@sop/extension",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "The sickofpdfs Chrome extension (Manifest V3, built with WXT).",

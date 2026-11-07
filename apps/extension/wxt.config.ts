@@ -29,10 +29,18 @@ function sopTestHooks() {
  * The test build number, set by the release script (`pnpm test-build <N>`, scripts/dev/make-test-build.mjs) through SOP_BUILD_NUMBER.
  * It becomes `version_name` ("Test build 6", shown in chrome://extensions and Help → About) and the last part of `version` (0.1.6).
  * The library compares `version_name` with the one it last saw to say "Updated to test build N" (R104). Without it (a dev build)
- * the manifest keeps 0.1.0 and has no `version_name`, so no "Updated" note is ever shown.
+ * the manifest keeps the version of apps/extension/package.json and has no `version_name`, so no "Updated" note is ever shown.
  */
 const buildNumber = process.env.SOP_BUILD_NUMBER;
 if (buildNumber !== undefined && !/^[1-9]\d{0,4}$/.test(buildNumber)) throw new Error(`SOP_BUILD_NUMBER must be a whole number such as 6, not "${buildNumber}"`);
+
+/**
+ * The release name, set by `pnpm release:zip` (scripts/release/package.mjs) through SOP_VERSION_NAME. The manifest's `version`
+ * then stays the one in apps/extension/package.json (1.0.0) and `version_name` becomes "Release 1". A test build never has both.
+ */
+const versionName = process.env.SOP_VERSION_NAME;
+const packageVersion = (JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }).version;
+if (versionName !== undefined && buildNumber !== undefined) throw new Error('SOP_VERSION_NAME and SOP_BUILD_NUMBER cannot both be set: a build is a release or a test build');
 
 export default defineConfig({
   srcDir: 'src',
@@ -49,6 +57,8 @@ export default defineConfig({
     name: 'sickofpdfs',
     // What this build does, in plain words (Help → About shows it too); say more as more ships.
     ...(buildNumber !== undefined ? { version: `0.1.${buildNumber}`, version_name: `Test build ${buildNumber}` } : {}),
+    // WXT takes `version` from version_name when only that is set, so the package version is named here.
+    ...(versionName !== undefined ? { version: packageVersion, version_name: versionName } : {}),
     description: 'A PDF reader that replaces Chrome’s, with highlights and comments.',
     key,
     minimum_chrome_version: '128',

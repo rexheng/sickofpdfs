@@ -9,6 +9,10 @@ const repoRoot = fileURLToPath(new URL('.', import.meta.url));
 // Never collected, by either project. spikes/** is the throwaway Phase 0 package with its own Playwright suite.
 const exclude = [...configDefaults.exclude, '**/.output/**', '**/.wxt/**', 'test-assets/**', 'spikes/**'];
 
+// The release workflow (SOP_NO_FIXTURES=1) has no test-assets/: the real PDFs are not in git. These three test files read them,
+// so the workflow skips them; they run on the owner's machine and in the release checklist.
+const needRealPdfs = process.env.SOP_NO_FIXTURES === '1' ? ['**/classify-fixtures.spec-blind.test.ts', '**/classify-speed.spec-blind.test.ts', '**/pdf-mapping.spec-blind.test.ts'] : [];
+
 export default defineConfig({
   test: {
     projects: [
@@ -19,7 +23,7 @@ export default defineConfig({
           name: 'unit',
           environment: 'node',
           include: ['**/*.test.{ts,js}'],
-          exclude: [...exclude, '**/*.browser.test.*', 'apps/cloud/**'],
+          exclude: [...exclude, ...needRealPdfs, '**/*.browser.test.*', 'apps/cloud/**'],
         },
       },
       {
