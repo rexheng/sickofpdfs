@@ -3,7 +3,8 @@
 //
 // The table (contracts §9):
 //   highlight / underline / strikethrough  → /Highlight / /Underline / /StrikeOut, /QuadPoints from the anchor's line rects
-//   bold                                   → /Square, no border, /Subj (Bold), appearance = the glyph outlines; one per page
+//   bold                                   → /Square, no border, /Subj (Bold), appearance = the glyphs in synthetic bold
+//                                            (R90b, as the screen draws them); one per page
 //   area mark                              → /Square, outline in the area colour, no fill
 //   text thread                            → root = the /Highlight over the same range if there is one (and it has no thread
 //                                            yet), else an /Underline with a dotted appearance; /Contents = the root comment
@@ -83,8 +84,8 @@ export type PdfSubtype = 'Highlight' | 'Underline' | 'StrikeOut' | 'Square' | 'T
  * - `rect` and `quads`: PDF user space, see above. `quads` is empty except for the three text markups.
  * - `ap.kind`: how slice 8.2 draws the annotation. 'text-markup' PDFium's own highlight (drawn with a Multiply blend),
  *   underline or strikethrough; 'dotted-underline' a dotted line along each quad's baseline in `rgb`; 'bold-outlines' the
- *   outlines of the chars `ap.chars` (the exporter reads them with getGlyphOutlines; fill and a 0.03 em stroke in the text's
- *   own colour, as the viewer draws bold); 'box' the outline of `rect` in `rgb`, no fill; 'note-icon' the note icon;
+ *   glyphs of the chars `ap.chars` in the screen's synthetic bold (R90b: each outline emboldened by its face's own gain,
+ *   filled in the text's own colour; the exporter reads them with getGlyphShapes, marks/bold-vector.ts); 'box' the outline of `rect` in `rgb`, no fill; 'note-icon' the note icon;
  *   'empty' an appearance that draws nothing. A /Popup has no appearance at all (ISO 32000-1 12.5.6.14): its kind is
  *   'empty' and the writer writes none.
  * - `irt`: the NM of the root a reply answers; `popupOf`: the NM of the annotation a /Popup belongs to. The writer creates
@@ -193,6 +194,11 @@ export function quadPoints(r: PdfUserRect, rotation: Rotation): number[] {
     default: return [l, t, rr, t, l, b, rr, b];
   }
 }
+
+/** A point given 0–1 of `outer` (a figure's box), as 0–1 of the page. */
+const withinRect = (outer: NormRect, p: readonly [number, number]): [number, number] => [outer[0] + p[0] * (outer[2] - outer[0]), outer[1] + p[1] * (outer[3] - outer[1])];
+/** A rect given 0–1 of `outer` (a figure's box), as 0–1 of the page. */
+const rectWithin = (outer: NormRect, r: NormRect): NormRect => [...withinRect(outer, [r[0], r[1]]), ...withinRect(outer, [r[2], r[3]])];
 
 /** The smallest rect holding all of `rs`. */
 export function unionRect(rs: readonly PdfUserRect[]): PdfUserRect {
@@ -424,12 +430,14 @@ export function planPdfExport(i: PdfExportInput, o: PdfExportOptions): PdfExport
         const first = parts?.[0];
         if (!first) break;
         const g = first.g;
+        // a pin on a figure and a part of a figure are stored 0–1 of the figure's box (spec: "Pins and sub-areas are
+        // stored relative to the figure"), so they go back on the page first
         if (a.kind === 'figure' && a.sub?.point) {
-          const p = pointToUser(g, a.sub.point);
+          const p = pointToUser(g, withinRect(a.rect, a.sub.point));
           note(a.page, clampRectInto(g, { x: p.x, y: p.y - NOTE_ICON_SIZE, width: NOTE_ICON_SIZE, height: NOTE_ICON_SIZE }), null, contents);
           break;
         }
-        const rect = a.kind === 'figure' && a.sub?.rect ? normToUser(g, a.sub.rect) : unionRect(first.rects);
+        const rect = a.kind === 'figure' && a.sub?.rect ? normToUser(g, rectWithin(a.rect, a.sub.rect)) : unionRect(first.rects);
         rootPlan = { ...rootBase, nm: rowNm(t.id), subtype: 'Square', pageIndex: first.page, rect, rgb: areaRgb, contents, subject: SUBJ_THREAD, flags: ANNOT_FLAG.print, ap: { kind: 'box' } };
         rootEntry = addEntry(first.page, t.sortKey, t.createdAt, [rootPlan]);
         withPopup = true;
