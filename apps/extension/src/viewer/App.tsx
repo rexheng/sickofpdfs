@@ -706,7 +706,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       publishRuntime({
         viewer: viewerHooks(api, store, scans, textLayers),
         selectionRanges: () => textLayers.selectionRanges(),
-        ocr: { progress: () => ocr.progress(), recognised: () => ocr.recognised(), text: (i: number) => pageText.text(i), source: (i: number) => pageText.source(i) },
+        ocr: { progress: () => ocr.progress(), recognised: () => ocr.recognised(), text: (i: number) => pageText.text(i), chars: (i: number) => pageText.rawText(i), source: (i: number) => pageText.source(i) },
         glyphCenter: (pageIndex, charIndex) => textLayers.glyphCenter(pageIndex, charIndex),
         caret: () => ({ on: textLayers.caret.enabled, position: textLayers.caret.position() }),
       }),

@@ -63,6 +63,8 @@ export interface ViewerRuntime {
     progress(): OcrProgress | null;
     recognised(): number[];
     text(pageIndex: number): Promise<string>;
+    /** The page's chars (rawText): offsets into it are char indices. */
+    chars(pageIndex: number): Promise<string>;
     source(pageIndex: number): string;
   } | null;
 }

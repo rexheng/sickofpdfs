@@ -50,6 +50,8 @@ export interface ViewerOcrDeps {
 
 /** A page waits at most this long to learn whether a stored result exists (a saved scan that was just reopened). */
 const SETTLE_MAX_MS = 5000;
+/** A tab hands its scan to the background at most this long after the save: the page it is reading is finished first. */
+const DRAIN_MAX_MS = 10_000;
 /** The save decision is waited for at most this long before an unsaved scan is read in memory anyway. */
 const CHECKING_MAX_MS = 4000;
 
@@ -59,7 +61,7 @@ export function createViewerOcr(d: ViewerOcrDeps): ViewerOcr {
   const pages = d.opened.open.pages;
   const source = createPageSource(d.backend, d.opened.open.doc, pages);
   /** The memory job's key: the file's own hash. It is never stored or sent anywhere. */
-  const memoryId = d.opened.loaded.sha256 as unknown as DocumentId;
+  const memoryId = d.opened.loaded.sha256;
   const results = new Map<number, OcrPageResult>();
   const loads = new Map<number, Promise<OcrPageResult | null>>();
   const kinds = new Map<number, Promise<boolean>>();
@@ -114,7 +116,7 @@ export function createViewerOcr(d: ViewerOcrDeps): ViewerOcr {
     const made = createOcrService({ engine: () => createOcrEngine({ base: chrome.runtime.getURL('') }), store: null, now: () => Date.now() });
     service = made;
     made.onResult((r) => {
-      if (mode.kind !== 'memory' && mode.kind !== 'unknown') return;
+      if (mode.kind === 'off' || service !== made) return;
       results.set(r.pageIndex, r);
       tell(r.pageIndex);
     });
@@ -161,27 +163,40 @@ export function createViewerOcr(d: ViewerOcrDeps): ViewerOcr {
   async function becomeSaved(id: DocumentId): Promise<void> {
     const wasMemory = service !== null;
     mode = { kind: 'saved', id };
-    if (wasMemory && store !== null) {
-      // What the tab read before the save goes into the library now (D7.1), then the background reads the rest.
-      const held = [...results.values()].map((r) => ({ ...r, documentId: id }));
-      stopMemory();
-      await writeHeldPages(store, held, (i) => pages[i]?.rotation ?? 0);
-    }
     try {
       stored = new Set((await (store?.listPageOcr(id) ?? Promise.resolve([]))).map((s) => s.pageIndex));
     } catch {
       stored = new Set();
     }
     settle();
+    if (wasMemory && store !== null) {
+      // A page on screen that the library does not have yet is finished here first (it is the one being read); then what the
+      // tab read before the save goes into the library (D7.1), and the background reads the rest.
+      const draining = service;
+      if (!stored.has(hintNow.visible[0] ?? 0)) {
+        await Promise.race([draining?.drain(), new Promise((resolve) => setTimeout(resolve, DRAIN_MAX_MS))]);
+      }
+      if (service === draining) stopMemory();
+      const held = [...results.values()].filter((r) => !stored.has(r.pageIndex)).map((r) => ({ ...r, documentId: id }));
+      await writeHeldPages(store, held, (i) => pages[i]?.rotation ?? 0);
+      for (const r of held) stored.add(r.pageIndex);
+    }
     if (!(await setting('ocr.enabled'))) return;
     if (stored.size > 0 || wasMemory || (await needs(hintNow.visible[0] ?? 0))) askBackground(id);
   }
+
 
   async function becomeUnsaved(): Promise<void> {
     mode = { kind: 'memory' };
     settle();
     if (!(await setting('ocr.enabled')) || !(await setting('ocr.unsavedInMemory'))) {
       mode = { kind: 'off' };
+      stopMemory();
+      if (results.size > 0) {
+        const gone = [...results.keys()];
+        results.clear();
+        for (const i of gone) tell(i);
+      }
       return;
     }
     if (await needs(hintNow.visible[0] ?? 0)) await startMemory();
@@ -253,7 +268,8 @@ export function createViewerOcr(d: ViewerOcrDeps): ViewerOcr {
 
   return {
     lookup,
-    reading: () => mode.kind === 'memory' || (mode.kind === 'saved' && (requested || stored.size > 0)) || results.size > 0,
+    // Until the save decision is known the scan is expected to be read (only the owner's "off" switch stops it).
+    reading: () => mode.kind !== 'off' || results.size > 0,
     has: (i) => results.has(i),
     recognised: () => [...results.keys()].sort((a, b) => a - b),
     onPageText(cb) {
@@ -267,11 +283,13 @@ export function createViewerOcr(d: ViewerOcrDeps): ViewerOcr {
     },
     hint(visible, direction) {
       hintNow = { visible: visible.filter((i) => i >= 0 && i < pages.length), direction };
-      if (mode.kind === 'memory') {
+      // Before the save decision is known (a few seconds for a scan) the page on screen is read in memory already: that writes
+      // nothing, and a saved reading takes it over (becomeSaved).
+      if (mode.kind === 'memory' || mode.kind === 'unknown') {
         if (service) service.hint(memoryId, hintNow);
         else
           void needs(hintNow.visible[0] ?? 0).then(async (n) => {
-            if (n && mode.kind === 'memory') await startMemory();
+            if (n && (mode.kind === 'memory' || mode.kind === 'unknown')) await startMemory();
           });
       } else if (mode.kind === 'saved') {
         const id = mode.id;

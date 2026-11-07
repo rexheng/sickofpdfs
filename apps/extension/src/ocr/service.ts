@@ -43,6 +43,8 @@ export interface OcrServiceImpl extends OcrService {
   progress(id: DocumentId): OcrProgress | null;
   /** True when no job has a page left to read and none is in flight. */
   idle(): boolean;
+  /** Starts no new page, and resolves once the page in flight (if any) is done or stopped: a tab hands its scan over. */
+  drain(): Promise<void>;
   /** Ends every job and closes the engine. */
   dispose(): void;
 }
@@ -92,6 +94,8 @@ export function createOcrService(deps: OcrServiceDeps): OcrServiceImpl {
   let pumping = false;
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
+  let draining = false;
+  const drained: (() => void)[] = [];
 
   const todo = (job: Job) => (i: number) => {
     const s = job.pages.get(i);
@@ -127,6 +131,7 @@ export function createOcrService(deps: OcrServiceDeps): OcrServiceImpl {
   };
 
   function choose(): { job: Job; page: number } | null {
+    if (draining) return null;
     const order = [...jobs.values()].filter((j) => j.ready && !j.paused && !j.stopped && j.error === null).sort((a, b) => b.hintedAt - a.hintedAt);
     for (const job of order) {
       const page = nextPage({ pageCount: job.source.pageCount, todo: todo(job), visible: job.visible, direction: job.direction });
@@ -143,20 +148,21 @@ export function createOcrService(deps: OcrServiceDeps): OcrServiceImpl {
 
   async function step(job: Job, i: number): Promise<void> {
     const before = job.pages.get(i);
-    if (before === undefined) {
-      const kind = await job.source.pageKind(i).catch(() => null);
-      if (job.stopped) return;
-      if (kind === null) return fail(job, i, 'the page could not be read');
-      if (!needsOcr(kind)) {
-        job.pages.set(i, 'text');
-        emit(job);
-        return;
-      }
-      job.pages.set(i, 'need');
-    }
+    // In flight from the start (its check too), so a page on screen can take its turn at once.
     const ctrl = new AbortController();
     inflight = { job, page: i, ctrl };
     try {
+      if (before === undefined) {
+        const kind = await job.source.pageKind(i).catch(() => null);
+        if (job.stopped || ctrl.signal.aborted) return;
+        if (kind === null) return fail(job, i, 'the page could not be read');
+        if (!needsOcr(kind)) {
+          job.pages.set(i, 'text');
+          emit(job);
+          return;
+        }
+        job.pages.set(i, 'need');
+      }
       const e = engineNow();
       const size = job.source.pageSize(i);
       const bitmap = await job.source.renderForOcr(i, dpi, ctrl.signal);
@@ -187,6 +193,7 @@ export function createOcrService(deps: OcrServiceDeps): OcrServiceImpl {
       fail(job, i, error instanceof Error ? error.message : 'the page could not be read');
     } finally {
       if (inflight?.ctrl === ctrl) inflight = null;
+      if (inflight === null) for (const done of drained.splice(0)) done();
     }
   }
 
@@ -270,7 +277,8 @@ export function createOcrService(deps: OcrServiceDeps): OcrServiceImpl {
         job.ready = true;
       }
       emit(job);
-      void pump();
+      // On the next task, so a hint given right after start (the pages on screen) decides the first page.
+      setTimeout(() => void pump(), 0);
     },
 
     hint(id, h) {
@@ -342,11 +350,18 @@ export function createOcrService(deps: OcrServiceDeps): OcrServiceImpl {
       return inflight === null && choose() === null;
     },
 
+    drain() {
+      draining = true;
+      if (inflight === null) return Promise.resolve();
+      return new Promise<void>((resolve) => drained.push(resolve));
+    },
+
     dispose() {
       disposed = true;
       for (const job of jobs.values()) job.stopped = true;
       jobs.clear();
       inflight?.ctrl.abort();
+      for (const done of drained.splice(0)) done();
       if (idleTimer !== null) clearTimeout(idleTimer);
       engine?.dispose();
       engine = null;
