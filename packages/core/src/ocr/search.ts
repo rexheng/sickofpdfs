@@ -14,7 +14,7 @@ function searchable(text: string, matchCase: boolean): { s: string; from: number
   let s = '';
   const from: number[] = [];
   for (let i = 0; i < text.length; i++) {
-    const c = text[i]!;
+    const c = text[i];
     if (c === JOINED_HYPHEN) continue;
     if (c === '\r' || c === '\n') {
       if (s.endsWith(' ')) continue; // '\r\n' (and a space before it) is one space
@@ -38,9 +38,9 @@ export function searchOcr(r: OcrPageResult, query: string, o: { matchCase: boole
   const hits: SearchHit[] = [];
   for (let at = s.indexOf(q); at >= 0; at = s.indexOf(q, at + 1)) {
     const endAt = at + q.length;
-    if (o.wholeWord && ((at > 0 && WORD_CHAR.test(s[at - 1]!)) || (endAt < s.length && WORD_CHAR.test(s[endAt]!)))) continue;
-    const start = from[at]!;
-    const last = from[endAt - 1]!;
+    if (o.wholeWord && ((at > 0 && WORD_CHAR.test(s[at - 1])) || (endAt < s.length && WORD_CHAR.test(s[endAt])))) continue;
+    const start = from[at];
+    const last = from[endAt - 1];
     const count = last + 1 - start;
     hits.push({ pageIndex: r.pageIndex, start, count, rects: ocrRects(r, start, count, rotation) });
   }

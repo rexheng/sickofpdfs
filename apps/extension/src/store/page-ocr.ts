@@ -69,6 +69,7 @@ function attempt<T>(f: () => T): Promise<T> {
 }
 
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 function checkId(documentId: unknown): asserts documentId is DocumentId {
   if (typeof documentId !== 'string' || !HEX64.test(documentId)) throw new PageOcrError('bad-input', 'a reading id is 64 lower-case hex');
@@ -172,7 +173,7 @@ export function createPageOcrApi(db: SqlDb, deps: { now(): number; hlc: { tick()
         let langs: string[] = [];
         try {
           words = cleanWords(JSON.parse(row.words));
-          const l: unknown = JSON.parse(String(row.langs ?? '[]'));
+          const l: unknown = JSON.parse(typeof row.langs === 'string' ? row.langs : '[]');
           if (Array.isArray(l)) langs = l.filter((x): x is string => typeof x === 'string');
         } catch {
           return null; // unreadable: the page is simply read again
@@ -180,8 +181,8 @@ export function createPageOcrApi(db: SqlDb, deps: { now(): number; hlc: { tick()
         return {
           documentId,
           pageIndex,
-          engine: String(row.engine),
-          engineVersion: String(row.engine_version),
+          engine: str(row.engine),
+          engineVersion: str(row.engine_version),
           langs,
           words,
           text: ocrText(words),
@@ -194,7 +195,7 @@ export function createPageOcrApi(db: SqlDb, deps: { now(): number; hlc: { tick()
         checkId(documentId);
         return db
           .selectObjects('SELECT page_index, engine, engine_version, created_at FROM page_ocr WHERE document_id = ? ORDER BY page_index', [documentId])
-          .map((r) => ({ pageIndex: Number(r.page_index), engine: String(r.engine), engineVersion: String(r.engine_version), createdAt: Number(r.created_at) }));
+          .map((r) => ({ pageIndex: Number(r.page_index), engine: str(r.engine), engineVersion: str(r.engine_version), createdAt: Number(r.created_at) }));
       }),
 
     deletePageOcr: (documentId, pageIndexes) =>

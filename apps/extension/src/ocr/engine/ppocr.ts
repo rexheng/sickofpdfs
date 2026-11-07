@@ -134,10 +134,10 @@ export class PpOcr {
     const scale = Math.min(1, this.o.detMaxSide / Math.max(image.width, image.height));
     const dw = Math.max(32, Math.round((image.width * scale) / 32) * 32);
     const dh = Math.max(32, Math.round((image.height * scale) / 32) * 32);
-    const detOut = await this.det.run({ [this.det.inputNames[0]!]: new ort.Tensor('float32', detInput(image, dw, dh), [1, 3, dh, dw]) });
+    const detOut = await this.det.run({ [this.det.inputNames[0]]: new ort.Tensor('float32', detInput(image, dw, dh), [1, 3, dh, dw]) });
     lap('det');
     if (shouldStop()) throw new OcrStopped();
-    const prob = detOut[this.det.outputNames[0]!]!.data as Float32Array;
+    const prob = detOut[this.det.outputNames[0]].data as Float32Array;
     const rects = dbRects(prob, dh, dw, this.thresh, this.boxThresh, this.unclip, image.width / dw, image.height / dh);
 
     // 2. line crops at height 48
@@ -149,16 +149,16 @@ export class PpOcr {
     lap('crops');
 
     // 3. recognition in width-sorted batches
-    const order = crops.map((_, i) => i).sort((a, b) => crops[a]!.w - crops[b]!.w);
-    const lines: (RecLine | null)[] = new Array(crops.length).fill(null);
+    const order = crops.map((_, i) => i).sort((a, b) => crops[a].w - crops[b].w);
+    const lines: (RecLine | null)[] = crops.map(() => null);
     for (let i = 0; i < order.length; i += this.o.recBatch) {
       if (shouldStop()) throw new OcrStopped();
       const idx = order.slice(i, i + this.o.recBatch);
-      const maxW = Math.max(...idx.map((k) => crops[k]!.w));
+      const maxW = Math.max(...idx.map((k) => crops[k].w));
       const padW = Math.min(REC_MAX_W, Math.max(this.o.widthBucket, Math.ceil(maxW / this.o.widthBucket) * this.o.widthBucket));
       const batch = new Float32Array(idx.length * 3 * REC_H * padW);
       idx.forEach((k, j) => {
-        const c = crops[k]!;
+        const c = crops[k];
         for (let ch = 0; ch < 3; ch++) {
           for (let y = 0; y < REC_H; y++) {
             const src = c.data.subarray((ch * REC_H + y) * c.w, (ch * REC_H + y + 1) * c.w);
@@ -166,13 +166,13 @@ export class PpOcr {
           }
         }
       });
-      const out = await this.rec.run({ [this.rec.inputNames[0]!]: new ort.Tensor('float32', batch, [idx.length, 3, REC_H, padW]) });
-      const o = out[this.rec.outputNames[0]!]!;
+      const out = await this.rec.run({ [this.rec.inputNames[0]]: new ort.Tensor('float32', batch, [idx.length, 3, REC_H, padW]) });
+      const o = out[this.rec.outputNames[0]];
       const [, steps, classes] = o.dims as number[];
       const probs = o.data as Float32Array;
       idx.forEach((k, j) => {
-        const c = crops[k]!;
-        lines[k] = this.decode(probs.subarray(j * steps! * classes!, (j + 1) * steps! * classes!), steps!, classes!, c, Math.min(c.w, padW), padW / steps!);
+        const c = crops[k];
+        lines[k] = this.decode(probs.subarray(j * steps * classes, (j + 1) * steps * classes), steps, classes, c, Math.min(c.w, padW), padW / steps);
       });
       lap('rec');
     }
@@ -198,15 +198,15 @@ export class PpOcr {
       let best = 0;
       let bv = -Infinity;
       for (let c = 0; c < classes; c++) {
-        const v = p[s * classes + c]!;
+        const v = p[s * classes + c];
         if (v > bv) {
           bv = v;
           best = c;
         }
       }
       // Class 0 is the CTC blank; a class past the dictionary is the space PaddleOCR appends.
-      if (best !== 0 && best !== prev) chars.push({ ch: best - 1 < this.dict.length ? this.dict[best - 1]! : ' ', t0: s, t1: s, p: bv });
-      else if (best !== 0 && best === prev && chars.length) chars[chars.length - 1]!.t1 = s;
+      if (best !== 0 && best !== prev) chars.push({ ch: best - 1 < this.dict.length ? this.dict[best - 1] : ' ', t0: s, t1: s, p: bv });
+      else if (best !== 0 && best === prev && chars.length) chars[chars.length - 1].t1 = s;
       prev = best;
     }
     const text = chars.map((c) => c.ch).join('');
@@ -222,18 +222,18 @@ function splitWords(line: RecLine): Omit<PxWord, 'line' | 'block'>[] {
   const groups: { ch: string; t0: number; t1: number; p: number }[][] = [[]];
   for (const c of chars) {
     if (c.ch === ' ' || c.ch === '　') groups.push([]);
-    else groups[groups.length - 1]!.push(c);
+    else groups[groups.length - 1].push(c);
   }
   const lineW = rect.w;
   const toLineX = (t: number) => Math.max(0, Math.min(lineW, ((t * stepPx) / recW) * lineW));
   const all = chars.filter((c) => c.ch !== ' ');
   const centre = (c: { t0: number; t1: number }) => (c.t0 + c.t1 + 1) / 2;
-  const pitch = all.length > 1 ? (centre(all[all.length - 1]!) - centre(all[0]!)) / (all.length - 1) : 2;
+  const pitch = all.length > 1 ? (centre(all[all.length - 1]) - centre(all[0])) / (all.length - 1) : 2;
   const out: Omit<PxWord, 'line' | 'block'>[] = [];
   for (const g of groups) {
     if (!g.length) continue;
-    const first = g[0]!;
-    const last = g[g.length - 1]!;
+    const first = g[0];
+    const last = g[g.length - 1];
     const wordPitch = g.length > 1 ? (centre(last) - centre(first)) / (g.length - 1) : pitch;
     const half = Math.min(wordPitch, pitch * 1.6) / 2;
     const x0 = toLineX(centre(first) - half);
@@ -244,8 +244,8 @@ function splitWords(line: RecLine): Omit<PxWord, 'line' | 'block'>[] {
       [x1, rect.h],
       [x0, rect.h],
     ].map(([u, v]) => ({
-      x: rect.cx + (u! - rect.w / 2) * rect.ux + (v! - rect.h / 2) * rect.vx,
-      y: rect.cy + (u! - rect.w / 2) * rect.uy + (v! - rect.h / 2) * rect.vy,
+      x: rect.cx + (u - rect.w / 2) * rect.ux + (v - rect.h / 2) * rect.vx,
+      y: rect.cy + (u - rect.w / 2) * rect.uy + (v - rect.h / 2) * rect.vy,
     }));
     const xs = pts.map((q) => q.x);
     const ys = pts.map((q) => q.y);

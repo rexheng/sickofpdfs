@@ -72,7 +72,7 @@ function lay(words: readonly OcrWord[], rotation: Rotation): Laid {
   for (const w of words) {
     if (codePoints(w.text.trim()).length === 0) continue;
     const last = grouped[grouped.length - 1];
-    if (last && last[0]!.line === w.line) last.push(w);
+    if (last && last[0].line === w.line) last.push(w);
     else grouped.push([w]);
   }
 
@@ -85,12 +85,12 @@ function lay(words: readonly OcrWord[], rotation: Rotation): Laid {
       const boxes = splitBox(w.box, letters.map(charAdvance), angle);
       const lastWordOfLine = wi === line.length - 1;
       const nextLine = grouped[li + 1];
-      const nextStartsLower = nextLine !== undefined && /^\p{Ll}/u.test(nextLine[0]!.text.trim());
+      const nextStartsLower = nextLine !== undefined && /^\p{Ll}/u.test(nextLine[0].text.trim());
       letters.forEach((ch, k) => {
         const joined = lastWordOfLine && k === letters.length - 1 && letters.length >= 3 && LINE_END_HYPHENS.has(ch) && nextStartsLower;
         const text = joined ? JOINED_HYPHEN : ch;
         // An astral char is two UTF-16 units: two glyphs that share its box, as PDFium has them.
-        for (const unit of text.length > 1 ? [text[0]!, text[1]!] : [text]) push(unit, boxes[k]!, fontSize, false);
+        for (const unit of text.length > 1 ? [text[0], text[1]] : [text]) push(unit, boxes[k], fontSize, false);
       });
     });
     lines.push({ start, end: glyphs.length });
@@ -103,7 +103,7 @@ function lay(words: readonly OcrWord[], rotation: Rotation): Laid {
   });
 
   const laid: Laid = { text: glyphs.map((g) => g.text).join(''), glyphs, lines };
-  if (!byRotation) cache.set(words, (byRotation = new Map()));
+  if (!byRotation) cache.set(words, (byRotation = new Map<number, Laid>()));
   byRotation.set(rotation, laid);
   return laid;
 }

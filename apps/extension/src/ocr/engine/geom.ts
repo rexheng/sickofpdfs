@@ -32,23 +32,23 @@ export function convexHull(xs: number[], ys: number[]): Pt[] {
   const n = xs.length;
   const order = new Array<number>(n);
   for (let i = 0; i < n; i++) order[i] = i;
-  order.sort((a, b) => xs[a]! - xs[b]! || ys[a]! - ys[b]!);
+  order.sort((a, b) => xs[a] - xs[b] || ys[a] - ys[b]);
   const pts: Pt[] = [];
   for (const i of order) {
     const last = pts[pts.length - 1];
-    if (!last || last.x !== xs[i] || last.y !== ys[i]) pts.push({ x: xs[i]!, y: ys[i]! });
+    if (!last || last.x !== xs[i] || last.y !== ys[i]) pts.push({ x: xs[i], y: ys[i] });
   }
   if (pts.length <= 2) return pts;
   const cross = (o: Pt, a: Pt, b: Pt) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
   const lower: Pt[] = [];
   for (const p of pts) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2]!, lower[lower.length - 1]!, p) <= 0) lower.pop();
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
     lower.push(p);
   }
   const upper: Pt[] = [];
   for (let i = pts.length - 1; i >= 0; i--) {
-    const p = pts[i]!;
-    while (upper.length >= 2 && cross(upper[upper.length - 2]!, upper[upper.length - 1]!, p) <= 0) upper.pop();
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
     upper.push(p);
   }
   lower.pop();
@@ -71,8 +71,8 @@ export function minAreaRect(hull: Pt[]): RotRect | null {
   let best: RotRect | null = null;
   let bestArea = Infinity;
   for (let i = 0; i < hull.length; i++) {
-    const a = hull[i]!;
-    const b = hull[(i + 1) % hull.length]!;
+    const a = hull[i];
+    const b = hull[(i + 1) % hull.length];
     let ex = b.x - a.x;
     let ey = b.y - a.y;
     const len = Math.hypot(ex, ey);
@@ -156,12 +156,12 @@ export function readingOrder<T extends LineItem>(items: T[], pageW: number): { i
     const lo = (it: T) => (axis === 'x' ? it.box.x : it.box.y);
     const hi = (it: T) => (axis === 'x' ? it.box.x + it.box.width : it.box.y + it.box.height);
     const sorted = [...list].sort((a, b) => lo(a) - lo(b));
-    let reach = hi(sorted[0]!);
+    let reach = hi(sorted[0]);
     let best = { size: 0, at: -1 };
     for (let i = 1; i < sorted.length; i++) {
-      const gap = lo(sorted[i]!) - reach;
+      const gap = lo(sorted[i]) - reach;
       if (gap > best.size) best = { size: gap, at: i };
-      reach = Math.max(reach, hi(sorted[i]!));
+      reach = Math.max(reach, hi(sorted[i]));
     }
     return { sorted, best };
   };
@@ -174,7 +174,7 @@ export function readingOrder<T extends LineItem>(items: T[], pageW: number): { i
   const cut = (list: T[], depth: number): void => {
     if (list.length <= 1 || depth > 14) return leaf(list);
     const heights = list.map((l) => l.h ?? l.box.height).sort((a, b) => a - b);
-    const medianH = heights[list.length >> 1]!;
+    const medianH = heights[list.length >> 1];
     const cols = gaps(list, 'x');
     if (cols.best.size > minColGap && list.length >= 4 && cols.best.at >= 2 && list.length - cols.best.at >= 2) {
       cut(cols.sorted.slice(0, cols.best.at), depth + 1);

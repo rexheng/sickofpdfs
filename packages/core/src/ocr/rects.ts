@@ -19,8 +19,8 @@ export function ocrRects(r: OcrPageResult, start: number, count: number, rotatio
     let x1 = -Infinity;
     let y1 = -Infinity;
     for (let i = from; i < to; i++) {
-      const b = glyphs[i]!.box;
-      if (glyphs[i]!.generated || b.width <= 0 || b.height <= 0) continue;
+      const b = glyphs[i].box;
+      if (glyphs[i].generated || b.width <= 0 || b.height <= 0) continue;
       x0 = Math.min(x0, b.x);
       y0 = Math.min(y0, b.y);
       x1 = Math.max(x1, b.x + b.width);

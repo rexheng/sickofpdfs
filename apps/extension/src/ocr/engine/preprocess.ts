@@ -45,8 +45,8 @@ export function detInput(img: RgbaImage, dw: number, dh: number): Float32Array {
       for (let c = 0; c < 3; c++) {
         // BGR: channel 0 of the tensor is blue (RGBA offset 2)
         const k = 2 - c;
-        const v = (d[i00 + k]! * (1 - wx) + d[i01 + k]! * wx) * (1 - wy) + (d[i10 + k]! * (1 - wx) + d[i11 + k]! * wx) * wy;
-        out[c * plane + o] = (v / 255 - mean[c]!) / std[c]!;
+        const v = (d[i00 + k] * (1 - wx) + d[i01 + k] * wx) * (1 - wy) + (d[i10 + k] * (1 - wx) + d[i11 + k] * wx) * wy;
+        out[c * plane + o] = (v / 255 - mean[c]) / std[c];
       }
     }
   }
@@ -64,7 +64,7 @@ export interface DbRect {
  */
 export function dbRects(prob: Float32Array, H: number, W: number, thresh: number, boxThresh: number, unclip: number, sx: number, sy: number): DbRect[] {
   const bit = new Uint8Array(H * W);
-  for (let i = 0; i < bit.length; i++) bit[i] = prob[i]! > thresh ? 1 : 0;
+  for (let i = 0; i < bit.length; i++) bit[i] = prob[i] > thresh ? 1 : 0;
   const seen = new Uint8Array(H * W);
   const stack = new Int32Array(H * W);
   const rects: DbRect[] = [];
@@ -77,7 +77,7 @@ export function dbRects(prob: Float32Array, H: number, W: number, thresh: number
     const by: number[] = [];
     let area = 0;
     while (sp > 0) {
-      const p = stack[--sp]!;
+      const p = stack[--sp];
       const y = (p / W) | 0;
       const x = p - y * W;
       area++;
@@ -132,7 +132,7 @@ function rectScore(prob: Float32Array, H: number, W: number, r: RotRect): number
       const u = (x + 0.5 - r.cx) * r.ux + (y + 0.5 - r.cy) * r.uy;
       const v = (x + 0.5 - r.cx) * r.vx + (y + 0.5 - r.cy) * r.vy;
       if (Math.abs(u) <= r.w / 2 && Math.abs(v) <= r.h / 2) {
-        sum += prob[y * W + x]!;
+        sum += prob[y * W + x];
         n++;
       }
     }
@@ -169,7 +169,7 @@ export function cropLine(img: RgbaImage, r: RotRect): { w: number; data: Float32
       const i11 = (y1 * W + x1) * 4;
       for (let c = 0; c < 3; c++) {
         const k = 2 - c;
-        const val = (d[i00 + k]! * (1 - wx) + d[i01 + k]! * wx) * (1 - wy) + (d[i10 + k]! * (1 - wx) + d[i11 + k]! * wx) * wy;
+        const val = (d[i00 + k] * (1 - wx) + d[i01 + k] * wx) * (1 - wy) + (d[i10 + k] * (1 - wx) + d[i11 + k] * wx) * wy;
         data[c * plane + y * w + x] = (val / 255 - 0.5) / 0.5;
       }
     }

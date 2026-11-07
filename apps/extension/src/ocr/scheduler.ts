@@ -22,7 +22,7 @@ export function nextPage(s: ScheduleInput): number | null {
   const d = s.direction;
   const lead = shown.length === 0 ? 0 : d === 1 ? Math.max(...shown) : Math.min(...shown);
   for (let k = 1; k <= NEAR_AHEAD; k++) if (ok(lead + d * k)) return lead + d * k;
-  const centre = shown.length === 0 ? 0 : shown[0]!;
+  const centre = shown.length === 0 ? 0 : shown[0];
   if (ok(centre)) return centre;
   for (let k = 1; k < s.pageCount; k++) {
     if (ok(centre + d * k)) return centre + d * k;

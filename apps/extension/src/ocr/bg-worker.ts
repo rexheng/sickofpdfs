@@ -87,7 +87,7 @@ async function startJob(id: DocumentId, hint: OcrHint): Promise<void> {
 // A reading that leaves the library (Forget, the Trash purge) is stopped at once.
 store.onChange((c) => {
   if (c.table !== 'documents' || c.op !== 'delete') return;
-  for (const id of c.ids) if (isSha(id)) finish(id as DocumentId);
+  for (const id of c.ids) if (isSha(id)) finish(id);
 });
 
 channel.onmessage = (e: MessageEvent) => {
@@ -112,5 +112,5 @@ self.onmessage = (e: MessageEvent) => {
   const m = e.data as { documentId?: unknown; visible?: unknown; direction?: unknown };
   if (!isSha(m.documentId)) return;
   const visible = Array.isArray(m.visible) ? m.visible.filter((i): i is number => Number.isSafeInteger(i) && i >= 0).slice(0, 16) : [];
-  void startJob(m.documentId as DocumentId, { visible, direction: m.direction === -1 ? -1 : 1 });
+  void startJob(m.documentId, { visible, direction: m.direction === -1 ? -1 : 1 });
 };
