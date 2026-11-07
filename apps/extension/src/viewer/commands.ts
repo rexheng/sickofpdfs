@@ -32,6 +32,7 @@ export { linkForCopy } from './actions/copy-link';
 
 export type ViewerCommandId =
   | 'file.openInChrome' | 'file.openOriginal' | 'file.download' | 'file.copyLink' | 'file.print' | 'file.saveToLibrary'
+  | 'file.downloadWithNotes' // Phase 8 (slice 8.3): export/feature.tsx
   | 'file.forget' | 'file.reportDecision' // Phase 3 (S11): save/save-commands.ts
   | 'file.about' // Phase 3 (S18, R92): About this PDF, viewer/about/
   | 'file.startOver' // TB5: "Start from page 1" while a resume stands (history/use-reading-history.ts)
@@ -164,7 +165,9 @@ export const SPECS: [ViewerCommandId, CommandSpec][] = [
   ['file.openInChrome', { label: 'Open in Chrome’s viewer', icon: 'open_in_new', keys: [] }],
   // Phase 3 (S15): only for a reading opened from its saved copy (`?doc=`).
   ['file.openOriginal', { label: 'Open original link', icon: 'link', keys: [] }],
-  // The original file, as it came: until "Download with marks" (Release 3) the label says the marks are not in it (TB4).
+  // Phase 8 (slice 8.3): a copy with the marks and comments in it, as PDF annotations other apps show. Not in Incognito.
+  ['file.downloadWithNotes', { label: 'Download with notes', icon: 'export_notes', keys: [] }],
+  // The original file, as it came: the label says the marks are not in it (TB4), beside "Download with notes".
   ['file.download', { label: 'Download original file, without your marks', icon: 'download', keys: ['Ctrl+S'] }],
   ['file.copyLink', { label: 'Copy link', icon: 'link', keys: [] }],
   ['file.print', { label: 'Print', icon: 'print', keys: ['Ctrl+P'] }],

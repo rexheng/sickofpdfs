@@ -104,6 +104,7 @@ import { CommentButton } from './notes/CommentButton';
 import { commentsFeature } from './notes/feature';
 import { AreaToolButton } from './figures/AreaToolButton';
 import { figuresFeature } from './figures/feature';
+import { exportPdfFeature } from './export/feature';
 import { LoadErrorCard } from './ui/LoadErrorCard';
 import { LocalFileCard } from './ui/LocalFileCard';
 import { PasswordDialog } from './ui/PasswordDialog';
@@ -122,6 +123,8 @@ const backend = createEmbedPdfBackend(engineAssets((p) => chrome.runtime.getURL(
 registerViewerFeature(commentsFeature);
 registerViewerFeature(notesPanelFeature);
 registerViewerFeature(figuresFeature);
+// Phase 8 (slice 8.3): File → Download with notes, and the toolbar's download menu.
+registerViewerFeature(exportPdfFeature);
 // Phase 3 (S15): the words a search jump landed on, picked out for a moment.
 registerViewerFeature(hitFlashFeature);
 // Phase 4 (slice F): Claude in the thread: its chips, the @Claude suggestion, the confirm dialog and the Ask Claude items.

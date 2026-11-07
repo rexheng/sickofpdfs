@@ -122,6 +122,8 @@ export const ICON_NAMES = [
   'psychology',
   'refresh',
   'insert_chart',
+  // Phase 8 (slice 8.3): File → Download with notes
+  'export_notes',
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

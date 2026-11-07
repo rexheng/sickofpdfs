@@ -33,8 +33,8 @@ export interface ToolbarProps {
 const IDLE_STORE = createViewerStore();
 
 /**
- * Drive's toolbar pill (02 section 4.10), 16 px in, in a 40 px row under the header (compact since TB6): "Page [n] / N", Download and
- * Print, then zoom out, the zoom level (a menu of fit modes and presets) and zoom in, then Find (Ctrl+F).
+ * Drive's toolbar pill (02 section 4.10), 16 px in, in a 40 px row under the header (compact since TB6): "Page [n] / N", Download (a
+ * menu: with notes, or the original) and Print, then zoom out, the zoom level (a menu of fit modes and presets) and zoom in, then Find (Ctrl+F).
  * In a narrow window (compact.ts) Download and Print move into the "More" menu at the end, with Area note.
  */
 export function Toolbar({ commands, view, returnFocus, end }: ToolbarProps) {
@@ -60,7 +60,7 @@ export function Toolbar({ commands, view, returnFocus, end }: ToolbarProps) {
         {!compact && (
           <>
             <span className={styles.fileGroup}>
-              {button('file.download')}
+              <DownloadButton commands={commands} returnFocus={returnFocus} />
               {button('file.print')}
             </span>
             <ToolbarSeparator />
@@ -115,34 +115,46 @@ function CommandButton({ cmd }: { cmd: ViewerCommand | undefined }) {
   );
 }
 
+/** A command as a row of the dark viewer menu: its icon and key, greyed out with its reason when it is off. */
+function menuItemOf(id: ViewerCommandId, cmd: ViewerCommand | undefined): MenuItemDef[] {
+  if (cmd === undefined || !cmd.built) return [];
+  const enabled = cmd.enabled();
+  const why = enabled ? undefined : cmd.disabledReason?.();
+  const key = cmd.keys[0];
+  return [
+    {
+      kind: 'item',
+      id,
+      label: cmd.label,
+      ...(cmd.icon !== undefined ? { icon: cmd.icon } : {}),
+      ...(key !== undefined ? { shortcut: formatCombo(key) } : {}),
+      disabled: !enabled,
+      ...(why !== undefined ? { disabledReason: why } : {}),
+      onSelect: () => cmd.enabled() && cmd.run(),
+    },
+  ];
+}
+
+/**
+ * Download: with notes on this PDF's tab (not in Incognito), a menu of the two downloads, "Download with notes" first
+ * and "Download original file, without your marks" (Ctrl+S) under it (slice 8.3); otherwise the one button.
+ */
+function DownloadButton({ commands, returnFocus }: { commands: ViewerCommands; returnFocus: (() => void) | undefined }) {
+  const withNotes = commands.get('file.downloadWithNotes');
+  if (withNotes === undefined || !withNotes.built) return <CommandButton cmd={commands.get('file.download')} />;
+  const items: MenuItemDef[] = (['file.downloadWithNotes', 'file.download'] as const).flatMap((id) => menuItemOf(id, commands.get(id)));
+  return <DropdownMenu trigger={<IconButton icon="download" label="Download" />} items={items} {...(returnFocus !== undefined ? { returnFocus } : {})} />;
+}
+
 /** What the compact pill's "More" menu holds, in this order. */
-const MORE: (ViewerCommandId | '-')[] = ['file.download', 'file.print', '-', 'tools.area'];
+const MORE: (ViewerCommandId | '-')[] = ['file.downloadWithNotes', 'file.download', 'file.print', '-', 'tools.area'];
 
 /**
  * "More" (⋮) at the end of the compact pill: the controls that had no room, as rows of the dark viewer menu, each with
  * its icon and its key, greyed out with its reason when it is off.
  */
 function MoreMenu({ commands, returnFocus }: { commands: ViewerCommands; returnFocus: (() => void) | undefined }) {
-  const items: MenuItemDef[] = MORE.flatMap((id): MenuItemDef[] => {
-    if (id === '-') return [{ kind: 'separator' }];
-    const cmd = commands.get(id);
-    if (cmd === undefined || !cmd.built) return [];
-    const enabled = cmd.enabled();
-    const why = enabled ? undefined : cmd.disabledReason?.();
-    const key = cmd.keys[0];
-    return [
-      {
-        kind: 'item',
-        id,
-        label: cmd.label,
-        ...(cmd.icon !== undefined ? { icon: cmd.icon } : {}),
-        ...(key !== undefined ? { shortcut: formatCombo(key) } : {}),
-        disabled: !enabled,
-        ...(why !== undefined ? { disabledReason: why } : {}),
-        onSelect: () => cmd.enabled() && cmd.run(),
-      },
-    ];
-  });
+  const items: MenuItemDef[] = MORE.flatMap((id): MenuItemDef[] => (id === '-' ? [{ kind: 'separator' }] : menuItemOf(id, commands.get(id))));
   return (
     <DropdownMenu
       trigger={<IconButton icon="more_vert" label="More" />}

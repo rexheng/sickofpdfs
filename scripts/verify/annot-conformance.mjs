@@ -4,7 +4,8 @@
 //       Writes the Foxit and Acrobat hand-check files (docs/checklists/release3-foxit-acrobat.md) into
 //       test-assets/export-samples/ (git-ignored): the same notes on a copy of test-assets/paper-50.pdf, made exactly as
 //       the extension makes them (planPdfExport, synthetic bold, PdfBackend.writeAnnotations' writer in the viewer's
-//       PDFium), then checks each one as `check` does.
+//       PDFium), then checks each one as `check` does. D is the same kind of notes on pages turned 0, 90, 180 and 270
+//       degrees, with crop boxes that do not start at 0 (its input is written beside it).
 //   node scripts/verify/annot-conformance.mjs check <original.pdf> <copy.pdf> [--json <file>]
 //       Checks a copy against its original: the original's bytes are an exact prefix of the copy and unchanged; qpdf
 //       --check finds nothing new; the annotations are listed twice, by our PDFium and by pdf-lib (an independent parser),
@@ -300,6 +301,71 @@ async function makeSamples(env, outDir) {
     made.push({ path, plan: plan.annotations });
   }
   native.closeDoc('v');
+
+  // D: turned and trimmed pages (rule R3, Acrobat's quad order on a page shown turned). Page 1 of tl-two-column.pdf, four
+  // times: /Rotate 0, 90, 180 and 270, each with a crop box that does not start at 0. On each: a yellow highlight on three
+  // words, a bold phrase and a pin.
+  const { PDFDocument, degrees } = rootRequire('pdf-lib');
+  const base = await PDFDocument.load(readFileSync(join(repoRoot, 'test-assets/tl-two-column.pdf')));
+  const turned = await PDFDocument.create();
+  const copies = await turned.copyPages(base, [0, 0, 0, 0]);
+  copies.forEach((pg, k) => {
+    pg.setRotation(degrees(90 * k));
+    pg.setCropBox(20 + 6 * k, 30 + 4 * k, 560, 720);
+    turned.addPage(pg);
+  });
+  const dSrc = join(outDir, 'sample-D-input-rotated-and-cropped.pdf');
+  writeFileSync(dSrc, await turned.save());
+  const dOrig = readFileSync(dSrc);
+  const dOpen = native.openDocument('v', ab(dOrig));
+  const dGeo = dOpen.pages.map((_, p) => native.getPageBoxes('v', p));
+  const dMarks = [];
+  const dThreads = [];
+  const dComments = [];
+  const dText = (p) => native.getPageChars('v', p);
+  /** The chars of `phrase` on page p. PDFium reads a page turned 180 degrees back to front, so it is looked for reversed there too (spaces aside). */
+  const findPhrase = (t, phrase) => {
+    const at = t.indexOf(phrase);
+    if (at >= 0) return { start: at, end: at + phrase.length };
+    const keep = [];
+    for (let i = 0; i < t.length; i++) if (!/\s/.test(t[i])) keep.push(i);
+    const squeezed = keep.map((i) => t[i]).join('');
+    const back = [...phrase.replace(/\s/g, '')].reverse().join('');
+    const k = squeezed.indexOf(back);
+    return k < 0 ? null : { start: keep[k], end: keep[k + back.length - 1] + 1 };
+  };
+  const dSpan = (p, phrase) => {
+    const found = findPhrase(dText(p), phrase);
+    if (!found) throw new Error(`"${phrase}" is not on page ${p + 1} of D`);
+    const sz = dOpen.pages[p];
+    const rects = native.getTextRangeRects('v', p, found.start, found.end - found.start).map((r) => [r.x / sz.width, r.y / sz.height, (r.x + r.width) / sz.width, (r.y + r.height) / sz.height]);
+    return buildTextAnchor({ text: dText, start: { page: p, index: found.start }, end: { page: p, index: found.end }, rects: [{ page: p, rects }] });
+  };
+  for (let p = 0; p < 4; p++) {
+    const hl = dSpan(p, 'measured the depth');
+    dMarks.push({ ...sync, id: id(), documentId: 'd', style: 'highlight', color: 1, anchor: hl, pageIndex: p, sortKey: 0.1, author: 'me', createdAt: at(20 + p), updatedAt: at(20 + p) });
+    const bd = dSpan(p, 'steel rule');
+    dMarks.push({ ...sync, id: id(), documentId: 'd', style: 'bold', color: null, anchor: bd, pageIndex: p, sortKey: 0.2, author: 'me', createdAt: at(30 + p), updatedAt: at(30 + p) });
+    const t = { ...sync, id: id(), documentId: 'd', anchor: { kind: 'point', page: p, point: [0.8, 0.2] }, pageIndex: p, sortKey: 0.2, placement: 'placed', draftOfTab: null, createdAt: at(40 + p), updatedAt: at(40 + p) };
+    dThreads.push(t);
+    dComments.push({ ...sync, id: id(), threadId: t.id, documentId: 'd', author: 'me', body: `A pin on page ${p + 1} (turned ${90 * p}°).`, draftOfTab: null, meta: {}, createdAt: at(40 + p), editedAt: null });
+  }
+  const dPlan = planPdfExport({ marks: dMarks, threads: dThreads, comments: dComments, geometry: dGeo, place }, { replies: 'threaded', ...colours, ownerName: 'Rex Heng', replyAppearance: 'empty' });
+  const dFills = {};
+  for (const p of dPlan.annotations) {
+    if (p.ap.kind !== 'bold-outlines' || !p.ap.chars) continue;
+    const { start, count } = p.ap.chars;
+    const from = Math.max(0, start - 2);
+    const set = native.getGlyphShapes('v', p.pageIndex, from, count + (start - from) + 2);
+    const g = dGeo[p.pageIndex];
+    dFills[p.nm] = boldVectorFills(set, { start, end: start + count }).map((f) => ({ rgb: [f.fill[0], f.fill[1], f.fill[2]], path: f.path.map((v, k) => (k % 4 === 1 ? g.crop[0] + v : k % 4 === 2 ? g.crop[3] - v : v)) }));
+  }
+  const dTail = await native.writeAnnotsCopy('samples', ab(dOrig), dPlan.annotations, { save: 'tail', boldFills: dFills });
+  native.closeDoc('v');
+  const dPath = join(outDir, 'sample-D-rotated-and-cropped-pages.pdf');
+  writeFileSync(dPath, Buffer.concat([dOrig, Buffer.from(dTail)]));
+  console.log(`D: ${basename(dPath)}  ${dPlan.annotations.length} annotations, tail ${dTail.length} bytes`);
+  made.push({ path: dPath, plan: dPlan.annotations, src: dSrc });
   return { src, made };
 }
 
@@ -311,7 +377,7 @@ if (mode === 'samples') {
   try {
     const { src, made } = await makeSamples(env, resolve(opt('out', join(repoRoot, 'test-assets/export-samples'))));
     for (const m of made) {
-      const r = await checkCopy(env.native, src, m.path, m.plan);
+      const r = await checkCopy(env.native, m.src ?? src, m.path, m.plan);
       ok = report(basename(m.path), r) && ok;
       if (m === made[0]) printListing(r.listing);
     }
