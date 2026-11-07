@@ -1,6 +1,6 @@
 // The owner's name on exported notes (/T: Foxit and Acrobat show it beside each note). Kept in the synced setting
 // `export.authorName` (plan section 9's settings keys), so it is asked once, on the first "Download with notes", and
-// Settings → Download with notes changes it. The value belongs to no PDF: asking for it, or keeping it, says nothing about what was
+// Settings → Downloads changes it. The value belongs to no PDF: asking for it, or keeping it, says nothing about what was
 // opened. Without a library (it could not be reached) the name lives in this tab only.
 import type { StoreClient } from '../../store/client';
 

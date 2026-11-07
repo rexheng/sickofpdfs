@@ -46,7 +46,7 @@ function NameStep({ onAnswer }: Pick<ExportDialogProps, 'onAnswer'>) {
         <TextField id={id} label="Your name" value={name} onChange={(v) => setName(v.slice(0, AUTHOR_NAME_MAX))} onEnter={go} autoFocus aria-describedby={hint} className={styles.fullWidth} />
       </div>
       <p id={hint} className={saveStyles.small}>
-        You can leave it empty. To change it later, open Settings, then Download with notes.
+        You can leave it empty. To change it later, open Settings, then Downloads.
       </p>
     </Dialog>
   );

@@ -1,4 +1,4 @@
-// Settings → Download with notes (slice 8.3): the name on the owner's notes in a downloaded copy (the synced setting
+// Settings → Downloads (slice 8.3): the name on the owner's notes in a downloaded copy (the synced setting
 // `export.authorName`, viewer/export/author-name.ts). The viewer asks for it once, on the first "Download with notes".
 import { TextField } from '@sop/ui';
 import { useEffect, useState } from 'react';
@@ -36,7 +36,7 @@ export function DownloadWithNotesSection() {
   };
 
   return (
-    <SettingsSection id="downloads" title="Download with notes" intro="In the viewer, File → Download with notes gives you a copy of the PDF with your marks and comments in it. Your original file never changes.">
+    <SettingsSection id="downloads" title="Downloads" intro="In the viewer, File → Download with notes gives you a copy of the PDF with your marks and comments in it. Your original file never changes.">
       <SettingsGroup id="downloads-name" title="Your notes in other PDF apps">
         <SettingsRow
           label="Your name on the notes"
