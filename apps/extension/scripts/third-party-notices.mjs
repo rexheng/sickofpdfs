@@ -320,13 +320,17 @@ async function manualEntries() {
       version: `revision ${m.commit.slice(0, 7)}`,
       licence: 'Apache-2.0',
       what:
-        m.dir.endsWith('_det')
+        m.kind === 'layout'
+          ? 'Finds the figures, tables and charts on a scanned page, so they can be outlined and commented on (models/ocr/PP-DocLayout-S/). It runs on this computer only.'
+          : m.dir.endsWith('_det')
           ? 'Finds the lines of text on a scanned page (models/ocr/). It runs on this computer only.'
           : 'Reads the text of each line found on a scanned page, in English, French, German and other Latin-script languages (models/ocr/). It runs on this computer only.',
       source: `https://huggingface.co/${m.repo}/tree/${m.commit}`,
       notes: [
         `Repository: ${m.repo}, revision ${m.commit}.`,
-        'PaddleOCR PP-OCRv6 tiny, exported to ONNX by PaddlePaddle. The model card and the PaddleOCR repository state Apache-2.0. The character list ships inside inference.yml under the same licence.',
+        m.kind === 'layout'
+          ? 'PaddlePaddle PP-DocLayout-S, exported to ONNX with paddle2onnx by the repository above (PaddlePaddle publishes it as Paddle files only). Both model cards state Apache-2.0.'
+          : 'PaddleOCR PP-OCRv6 tiny, exported to ONNX by PaddlePaddle. The model card and the PaddleOCR repository state Apache-2.0. The character list ships inside inference.yml under the same licence.',
         `Files: ${m.files.map((f) => `${m.dir}/${f.name} (sha256 ${f.sha256})`).join('; ')}.`,
       ],
       texts: [{ label: 'Apache License 2.0', body: apache }],

@@ -38,15 +38,24 @@ export const OCR_MODELS = [
       { name: 'inference.yml', bytes: 55571, sha256: '66170210bad538e83fff3c4a3867e547d6bf20b50d64b20347c4b913f3034ea1' },
     ],
   },
+  // The layout model (Phase 7.4): finds figures, tables and charts on a scanned page. PaddlePaddle publishes PP-DocLayout-S only
+  // as Paddle files; this is a paddle2onnx export of it (Apache-2.0, 4.7 MiB), the smallest layout model that works.
+  {
+    dir: 'PP-DocLayout-S',
+    kind: 'layout',
+    repo: 'stefanj0/PP-DocLayout-S-ONNX',
+    commit: '7e851b9e5ad66613d7318a3213ab3336ebe0a514',
+    files: [{ name: 'pp_doclayout_s.onnx', bytes: 4917852, sha256: '33688dbee1c23e34b81777e97cb428eb40f24b242c02b5f623484959e830aec8' }],
+  },
 ];
 
 const out = fileURLToPath(new URL('../public/models/ocr/', import.meta.url));
 const RETRIES = 3;
 
-const NOTICE = `PP-OCRv6 tiny (text detection and text line recognition), ONNX exports by PaddlePaddle
+const NOTICE = `PP-OCRv6 tiny (text detection and text line recognition) and PP-DocLayout-S (figure, table and chart finding), ONNX exports
 Licence: Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0).
 ${OCR_MODELS.map((m) => `Source: https://huggingface.co/${m.repo}/tree/${m.commit}\nFiles: ${m.files.map((f) => `${m.dir}/${f.name} (sha256 ${f.sha256})`).join('; ')}`).join('\n')}
-Used for: reading the text of scanned pages. It runs on this computer only; nothing is sent anywhere.
+Used for: reading the text of scanned pages and finding their figures. It runs on this computer only; nothing is sent anywhere.
 `;
 
 async function sha256Of(path) {

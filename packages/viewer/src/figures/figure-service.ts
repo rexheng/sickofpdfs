@@ -12,7 +12,7 @@
 //   A result cut short by a time budget is detected again, up to twice (MAX_RETRIES): at once when a caller is waiting
 //   for it (figures()), otherwise at idle after the other queued pages, the cut result being served meanwhile.
 // - imageSha256: the largest image object among a figure's objects, hashed in the engine (hashImageObject).
-import type { DocumentId, NormRect, PageFigure } from '@sop/core';
+import type { DetectedFigure, DocumentId, NormRect, PageFigure } from '@sop/core';
 import type { DocHandle, PageSize, PdfBackend } from '../backend/types';
 import { analysePage, DETECTOR_VERSION, FIND_FIGURES_BUDGET_MS } from './find-figures';
 import { regionGrey9x8 } from './region-dhash';
@@ -57,6 +57,14 @@ export interface FigureServiceOptions {
   savedDocumentId?: () => DocumentId | null;
   /** Runs `task` when the main thread is idle; returns a cancel. Default requestIdleCallback (2 s timeout). */
   idle?: (task: () => void) => () => void;
+  /**
+   * Phase 7.4: the figures of a scanned page, found by a layout model (nothing in a scan's objects says where its figures are).
+   * Returns null for a page that is not a scan, which is then found from its objects as always. A scan's figures are kept in
+   * memory only: they are not written to page_figures (a model change must not leave old boxes behind).
+   */
+  scanFigures?: (pageIndex: number) => Promise<DetectedFigure[] | null>;
+  /** Phase 7.4: `cb(pageIndex)` when a scan's figures can be named better (its recognised words arrived): they are found again. */
+  onScanFiguresNamed?: (cb: (pageIndex: number) => void) => () => void;
 }
 
 export interface FigureService {
@@ -121,7 +129,15 @@ export function createFigureService(o: FigureServiceOptions): FigureService {
     const saved = o.store ? (o.savedDocumentId?.() ?? null) : null;
     if (saved && o.store) {
       const stored = await o.store.getPageFigures(saved, pageIndex, DETECTOR_VERSION).catch(() => null);
-      if (stored) return { figures: stored, retry: false };
+      // An empty cached result may be a scan from before scans were read by the layout model: look again.
+      if (stored && !(stored.length === 0 && o.scanFigures)) return { figures: stored, retry: false };
+    }
+    if (o.scanFigures) {
+      const found = await o.scanFigures(pageIndex).catch(() => null);
+      if (found !== null) {
+        await whenIdle(urgent);
+        return { figures: found.map((f, index) => ({ ...f, index, objectIndices: [], caption: (f as Partial<PageFigure>).caption ?? null, imageSha256: null })), retry: false };
+      }
     }
     // One engine call at a time, so renders asked for in between are not held up behind all three.
     const list = await backend.listPageObjects(doc, pageIndex, { recurseForms: true });
@@ -206,6 +222,10 @@ export function createFigureService(o: FigureServiceOptions): FigureService {
     });
   };
 
+  const offNamed = o.onScanFiguresNamed?.((pageIndex) => {
+    if (!disposed && known.has(pageIndex) && !pending.has(pageIndex)) void run(pageIndex, false, true).catch(() => {});
+  });
+
   return {
     figures: (pageIndex) => run(pageIndex, true),
     async dHash(pageIndex, rect) {
@@ -230,6 +250,7 @@ export function createFigureService(o: FigureServiceOptions): FigureService {
       cancelIdle = null;
       for (const done of [...waiting]) done();
       listeners.clear();
+      offNamed?.();
     },
   };
 }

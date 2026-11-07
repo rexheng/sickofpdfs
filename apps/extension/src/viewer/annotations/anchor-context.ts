@@ -8,7 +8,7 @@
 //
 // Positions are PDFium char indices. Anchors are built on `rawText` (one UTF-16 unit per char, chars that are not text
 // kept), never on getPageText, whose offsets drift after the first joined hyphen (S3 report, contract defect 1).
-import { buildTextAnchor, dHash64, type Anchor, type AnchorContext, type NormRect } from '@sop/core';
+import { buildTextAnchor, dHash64, type Anchor, type AnchorContext, type DetectedFigure, type NormRect } from '@sop/core';
 import {
   type CharRange,
   createFigureService,
@@ -87,8 +87,15 @@ function alignedText(p: PageTextProviderImpl): PageTextProvider {
 }
 
 /** Figure detection for this document (S12). Nothing is written to the store while the PDF is not saved. */
-export function createDocumentFigures(o: { backend: PdfBackend; doc: DocHandle; pages: readonly PageSize[] }): FigureService {
-  return createFigureService({ backend: o.backend, doc: o.doc, pages: o.pages, dHash64, store: null, savedDocumentId: () => null });
+export function createDocumentFigures(o: {
+  backend: PdfBackend;
+  doc: DocHandle;
+  pages: readonly PageSize[];
+  /** Phase 7.4: the layout model's figures for a scanned page (null for any other page). */
+  scanFigures?: (pageIndex: number) => Promise<DetectedFigure[] | null>;
+  onScanFiguresNamed?: (cb: (pageIndex: number) => void) => () => void;
+}): FigureService {
+  return createFigureService({ backend: o.backend, doc: o.doc, pages: o.pages, dHash64, store: null, savedDocumentId: () => null, scanFigures: o.scanFigures, onScanFiguresNamed: o.onScanFiguresNamed });
 }
 
 /**

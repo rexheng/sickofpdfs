@@ -9,7 +9,7 @@
 // - `marks.lastColor`: the colour H and the menu use next. A comment adds no highlight (ruling R68).
 //
 // Incognito: no notes at all. `createNotes` returns null, so there are no marks, no menu and no features (spec).
-import { type Anchor, type CharPos, type DocumentId, type MarkColor, type NormRect, planStyle, resolveAnchor } from '@sop/core';
+import { type Anchor, type CharPos, type DetectedFigure, type DocumentId, type MarkColor, type NormRect, planStyle, resolveAnchor } from '@sop/core';
 import type { CharRange, DocHandle, FigureService, JumpHistory, PageBox, PageSize, PageTextProviderImpl, PdfBackend, SaveController, ViewerStore } from '@sop/viewer';
 import type { MarkLayerItem, MarkLayerPage, MarkLayerSource, PageLayerContext, PageListApi, TextSelectionSource } from '@sop/viewer/react';
 import type { IconName } from '@sop/ui';
@@ -522,6 +522,9 @@ export interface NotesDeps {
   showNote(text: string): void;
   /** ViewerContext.save: Task 30's controller. The notes are made once it exists (one render after the PDF is ready). */
   save: SaveController;
+  /** Phase 7.4: the figures of a scanned page (ocr/layout-wire.ts); null for a page that is not a scan. */
+  scanFigures?: (pageIndex: number) => Promise<DetectedFigure[] | null>;
+  onScanFiguresNamed?: (cb: (pageIndex: number) => void) => () => void;
 }
 
 export interface Notes {
@@ -550,7 +553,7 @@ export function createNotes(d: NotesDeps): Notes | null {
     journal: localDraftJournal(),
   });
   const text: DocumentText = { pageText: d.pageText, pages };
-  const figures = createDocumentFigures({ backend: d.backend, doc, pages });
+  const figures = createDocumentFigures({ backend: d.backend, doc, pages, scanFigures: d.scanFigures, onScanFiguresNamed: d.onScanFiguresNamed });
   const textAnchor = createTextAnchorMaker(text);
   const session = createAnnotationSession({
     store,

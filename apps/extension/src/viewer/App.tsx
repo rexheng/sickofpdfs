@@ -62,6 +62,7 @@ import { commandShortcuts, createCommands, createIdleCommands, type ViewerComman
 import { useReaderFind } from './find';
 import { FormBanner, useFormBounce } from './forms/FormBanner';
 import { NotesMovedBanner, useNotesMoved } from './about/NotesMovedBanner';
+import { createScanFigures } from './ocr/layout-wire';
 import { createViewerOcr, type ViewerOcr } from './ocr/wire';
 import { maybeLeaveFrame, mayOfferNewTab, openInNewTab, wantsFullTab } from './frame-escape';
 import { railStartsOpen, useOutline, useRailFitsWindow, useReaderNavigation } from './navigation';
@@ -619,6 +620,8 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   const [pageText] = useState(() => withOcr(pdfiumText, ocr.lookup));
   useEffect(() => ocr.attach(save), [ocr, save]);
   useEffect(() => () => ocr.dispose(), [ocr]);
+  const [scanFigures] = useState(() => createScanFigures({ backend, opened: doc, ocr }));
+  useEffect(() => () => scanFigures.dispose(), [scanFigures]);
   useOcrHints(ocr, store);
   // The scan hint ("open it in Chrome's viewer to select its text") and Find's scan note step aside while the scan is being read.
   const ocrScans = useMemo(() => ({ isScannedPage: (i: number) => scans.isScannedPage(i).then((scan) => scan && !ocr.reading()) }), [scans, ocr]);
@@ -663,7 +666,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
     [ocr, textLayers, findController],
   );
   // The document's notes: marks, comments and drafts (Phase 2). Null in Incognito, which has none.
-  const notes = useNotes(doc, pageText, store, api, textLayers, save, nav.jumps, ui);
+  const notes = useNotes(doc, pageText, store, api, textLayers, save, nav.jumps, ui, scanFigures);
   // Reading time, the last spot and the pages visited (kept once the PDF is saved), and the return to the last spot.
   // TB5: "Start from page 1" in the File menu as well as on the note, while the resume stands.
   const [startOver, setStartOver] = useState<StartOverOffer | null>(null);
@@ -830,11 +833,12 @@ function useNotes(
   save: SaveControllerImpl | null,
   jumps: JumpHistory,
   ui: ViewerUi,
+  scanFigures: ReturnType<typeof createScanFigures>,
 ): Notes | null {
   const [notes, setNotes] = useState<Notes | null>(null);
   useEffect(() => {
     if (save === null) return;
-    const made = createNotes({ backend, opened: doc, pageText, view, pageList, jumps, textSelection: textLayers.textSelection, showNote: (text) => ui.showNote(text), save });
+    const made = createNotes({ backend, opened: doc, pageText, view, pageList, jumps, textSelection: textLayers.textSelection, showNote: (text) => ui.showNote(text), save, scanFigures: (i) => scanFigures.figures(i), onScanFiguresNamed: (cb) => scanFigures.onNamed(cb) });
     setNotes(made);
     publishRuntime({ annotations: made?.host.session ?? null });
     return () => {
@@ -842,7 +846,7 @@ function useNotes(
       setNotes(null);
       publishRuntime({ annotations: null });
     };
-  }, [doc, pageText, view, pageList, textLayers, save, jumps, ui]);
+  }, [doc, pageText, view, pageList, textLayers, save, jumps, ui, scanFigures]);
   return notes;
 }
 

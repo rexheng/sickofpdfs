@@ -124,6 +124,7 @@ This file is written by `node scripts/release/notices.mjs` from the same generat
 | pdf-lib 1.17.1 | MIT |
 | pdf.js: Chromium extension helpers | Apache-2.0 |
 | pdf.js: text layer commit 743102c | Apache-2.0 |
+| PP-DocLayout-S (ONNX model) revision 7e851b9 | Apache-2.0 |
 | PP-OCRv6 tiny det (ONNX model) revision 2ba1506 | Apache-2.0 |
 | PP-OCRv6 tiny rec (ONNX model) revision 2612ab3 | Apache-2.0 |
 | radix-ui 1.8.1 | MIT |

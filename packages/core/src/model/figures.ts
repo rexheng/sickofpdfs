@@ -10,6 +10,8 @@ export interface DetectedFigure {
   captionRect: PdfRect | null;
   /** high: tagged, caption-linked, or one large image or form XObject. medium: an uncaptioned vector cluster. */
   confidence: 'high' | 'medium';
+  /** Set when a model found it (a scanned page: Phase 7.4's layout model); absent for the object-and-caption detector. */
+  detector?: string;
 }
 
 /** The JSON stored in page_figures.figures. A derived cache: never synced or backed up. */
