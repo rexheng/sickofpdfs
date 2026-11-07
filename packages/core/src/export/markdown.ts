@@ -2,7 +2,7 @@
 // Pure: no clock, no engine, no randomness, so the same rows always give the same text.
 //
 // Layout
-//   ---                              front matter: title, authors, doi, arxiv, source, sickofpdfs { documentId, format }
+//   ---                              front matter: title, authors, doi, arxiv, source, course, recognised_text, sickofpdfs { documentId, format }
 //   # Title
 //   ## Document notes                notes on the whole document, first
 //   ## Page N                        one section for each page that has notes, in page order; inside, top to bottom
@@ -254,6 +254,8 @@ interface Item {
   strike: boolean;
   labels: string[];
   comments: ExportComment[];
+  /** The quote is recognised text from a scan. */
+  scan: boolean;
 }
 
 const cmpText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
@@ -275,6 +277,18 @@ const rangeKey = (a: Anchor | undefined): string | null =>
   a && a.kind === 'text' && a.start && a.end ? `${a.start.page}:${a.start.index}-${a.end.page}:${a.end.index}` : null;
 
 const textQuote = (a: Anchor | undefined): string | null => (a && a.kind === 'text' && typeof a.quote?.quote === 'string' && a.quote.quote.trim() !== '' ? a.quote.quote : null);
+
+/** True when the quote was read off a scan (the anchor's text source is 'ocr:<engine>@<version>'). */
+const fromScan = (a: Anchor | undefined): boolean => a !== undefined && a.kind === 'text' && typeof a.textSource === 'string' && a.textSource.startsWith('ocr:') && textQuote(a) !== null;
+
+/** The label on a note that came from the PDF's own annotations. */
+export const IMPORTED_LABEL = 'Imported from the PDF';
+/** The label on a quote that is recognised text. */
+export const RECOGNISED_LABEL = 'Recognised text';
+/** The front matter note when any quote is recognised text. */
+export const RECOGNISED_NOTE = 'Some quotes are recognised text from a scan, so a word may be misread. Check them against the page.';
+
+const isImportedComment = (c: ExportComment): boolean => (typeof c.meta === 'object' && c.meta !== null ? (c.meta as { kind?: unknown }).kind === 'pdf-import' : false);
 
 const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -304,7 +318,7 @@ function placeLabel(a: Anchor | undefined): string | null {
   }
 }
 
-function itemsOf(marks: readonly ExportMark[], threads: readonly ExportThread[], comments: readonly ExportComment[]): Item[] {
+function itemsOf(marks: readonly ExportMark[], threads: readonly ExportThread[], comments: readonly ExportComment[], imported: ReadonlySet<string>): Item[] {
   // comments of each thread, oldest first; a draft, a deleted one, one with nothing in it and a Claude reply still being written are left out
   const byThread = new Map<string, ExportComment[]>();
   for (const c of comments) {
@@ -360,8 +374,9 @@ function itemsOf(marks: readonly ExportMark[], threads: readonly ExportThread[],
       id: t.id,
       quote: textQuote(t.anchor),
       ...d,
-      labels: place !== null ? [place, ...d.labels] : d.labels,
+      labels: [...(place !== null ? [place] : []), ...d.labels, ...(fromScan(t.anchor) ? [RECOGNISED_LABEL] : []), ...(imported.has(t.id) || cs.some(isImportedComment) || (group ?? []).some((m) => imported.has(m.id)) ? [IMPORTED_LABEL] : [])],
       comments: cs,
+      scan: fromScan(t.anchor),
     });
   }
 
@@ -378,8 +393,9 @@ function itemsOf(marks: readonly ExportMark[], threads: readonly ExportThread[],
       id: first.id,
       quote: textQuote(a),
       ...d,
-      labels: place !== null ? [place, ...d.labels] : d.labels,
+      labels: [...(place !== null ? [place] : []), ...d.labels, ...(fromScan(a) ? [RECOGNISED_LABEL] : []), ...(group.some((m) => imported.has(m.id)) ? [IMPORTED_LABEL] : [])],
       comments: [],
+      scan: fromScan(a),
     });
   }
   return items;
@@ -433,7 +449,7 @@ function itemLines(item: Item, doc: ExportDocument): string[] {
 
 // ---- the document ----------------------------------------------------------------------------------------------------
 
-function frontMatter(doc: ExportDocument, title: string): string[] {
+function frontMatter(doc: ExportDocument, title: string, scan: boolean): string[] {
   const lines = ['---', `title: ${yamlString(title)}`];
   const authors = (Array.isArray(doc.authors) ? doc.authors : []).map(oneLine).filter((a) => a !== '');
   if (authors.length > 0) {
@@ -447,6 +463,13 @@ function frontMatter(doc: ExportDocument, title: string): string[] {
   const arxiv = oneLine(doc.arxivId);
   if (arxiv !== '') lines.push(`arxiv: ${yamlString(arxiv)}`);
   if (isHttp(doc.sourceLink)) lines.push(`source: ${yamlString(oneLine(doc.sourceLink))}`);
+  const courses = [...new Set((Array.isArray(doc.courses) ? doc.courses : []).map(oneLine).filter((c) => c !== ''))].sort(cmpText);
+  if (courses.length === 1) lines.push(`course: ${yamlString(courses[0])}`);
+  else if (courses.length > 1) {
+    lines.push('course:');
+    for (const c of courses) lines.push(`  - ${yamlString(c)}`);
+  }
+  if (scan) lines.push(`recognised_text: ${yamlString(RECOGNISED_NOTE)}`);
   lines.push('sickofpdfs:', `  documentId: ${yamlString(String(doc.id))}`, `  format: ${MARKDOWN_FORMAT}`, '---');
   return lines;
 }
@@ -462,9 +485,9 @@ export function exportMarkdown(
   comments: readonly ExportComment[],
 ): string {
   const title = oneLine(doc.title) || UNTITLED;
-  const items = itemsOf(marks ?? [], threads ?? [], comments ?? []);
+  const items = itemsOf(marks ?? [], threads ?? [], comments ?? [], doc.importedRowIds ?? new Set<string>());
 
-  const out: string[] = [...frontMatter(doc, title), '', `# ${escapeInline(title)}`];
+  const out: string[] = [...frontMatter(doc, title, items.some((i) => i.scan)), '', `# ${escapeInline(title)}`];
 
   const whole = items.filter((i) => i.page === null).sort(byReading);
   if (whole.length > 0) {

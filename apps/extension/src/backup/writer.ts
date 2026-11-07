@@ -2,6 +2,7 @@
 // owner chose, inside a `sickofpdfs-backup` folder:
 //
 //   manifest.json   library.json   snapshots/library-<day>.json (the newest 7)   pdf/<sha[0..2]>/<sha>.pdf   notes/<title>-<sha8>.md
+//   ocr/<sha[0..2]>/<sha>.json (scan text)   imports/<sha[0..2]>/<sha>.json (import refs)
 //
 // Rules this file keeps:
 // - Every file is written through `createWritable()` (fs.ts), so a half-written file never replaces a good one, and the manifest
@@ -43,6 +44,7 @@ import {
 } from '@sop/core';
 import type { BlobStore } from '../store/blob-store';
 import type { StoreApi } from '../store/store-api';
+import { extraFiles, removeStaleExtras, writeExtras, type ExtrasStore } from './extras';
 import { assertReachable, fileSize, list, openDir, PART_SUFFIX, readText, removeDirIfEmpty, removeFile, removeLeftovers, writeFile, writeFileViaPart } from './fs';
 import type { HandleStore, KnownReadings } from './handle-store';
 import { documentIds, documentsWithCopy, noteCounts, notesDocumentId, notesFiles, notesTag } from './layout';
@@ -52,7 +54,7 @@ import { classifyFailure, type FailureKind, type HeldReason } from './status';
 import type { BackupTarget } from './target';
 
 export interface RunDeps {
-  store: Pick<StoreApi, 'exportLibrary' | 'exportChunk' | 'schemaVersion' | 'forgottenAmong'>;
+  store: Pick<StoreApi, 'exportLibrary' | 'exportChunk' | 'schemaVersion' | 'forgottenAmong'> & ExtrasStore;
   blobs: Pick<BlobStore, 'get'>;
   handles: Pick<HandleStore, 'getKnown' | 'setKnown' | 'listScrubs'>;
   /** Removes readings that left the library for good from the folder (R82): queues them and cleans the folder, under the caller's lock. */
@@ -286,7 +288,11 @@ export async function runBackup(target: BackupTarget, deps: RunDeps, options: Ru
     for (const [sha, size] of copies) if (!have.has(sha) && !onPurpose.has(sha) && size > 0 && !(sha in present)) present[sha] = size;
 
     // 5. Notes as Markdown, one file for each reading that has notes. A file that is already right is left alone.
-    const notes = notesFiles(dump, { viewerBase: deps.viewerBase });
+    const extras = await extraFiles(
+      deps.store,
+      dump.tables.documents.filter((d) => d.deletedAt == null).map((d) => d.id),
+    );
+    const notes = notesFiles(dump, { viewerBase: deps.viewerBase }, extras.imported);
     let wroteNotes = 0;
     let notesBytes = 0;
     for (const n of notes) {
@@ -296,6 +302,9 @@ export async function runBackup(target: BackupTarget, deps: RunDeps, options: Ru
       }
       notesBytes += byteLength(n.markdown);
     }
+
+    // 5b. Scan text and import refs (Release 3), one small file each for the saved readings that have any.
+    notesBytes += await writeExtras(root, extras.files);
 
     // 6. The library, and today's snapshot of it.
     const json = JSON.stringify(dump);
@@ -318,6 +327,7 @@ export async function runBackup(target: BackupTarget, deps: RunDeps, options: Ru
       onPurpose,
       have,
     );
+    await removeStaleExtras(root, new Set(extras.files.map((e) => e.path)), onPurpose, have);
     for (const old of plan.remove) await removeFile(root, `${SNAPSHOT_DIR}/${old}`);
 
     let snapshotsBytes = 0;

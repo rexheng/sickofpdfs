@@ -24,6 +24,7 @@ import {
   SNAPSHOT_DIR,
   type LibraryDump,
 } from '@sop/core';
+import { removeExtrasOf } from './extras';
 import { assertReachable, list, openDir, PART_SUFFIX, readText, removeDirIfEmpty, removeFile, writeFile } from './fs';
 import type { HandleStore } from './handle-store';
 import { notesDocumentId, notesTag } from './layout';
@@ -151,6 +152,7 @@ export async function scrubFolder(target: BackupTarget, documentIds: readonly st
         await removeFile(root, `${pdfPath(id)}${PART_SUFFIX}`);
         await removeDirIfEmpty(root, `${PDF_DIR}/${id.slice(0, 2)}`);
       }
+      await removeExtrasOf(root, ids); // scan text and import refs
       for (const entry of await list(root, NOTES_DIR)) {
         const tag = notesTag(entry.name);
         if (entry.kind !== 'file' || tag === null || ![...ids].some((id) => id.startsWith(tag))) continue;

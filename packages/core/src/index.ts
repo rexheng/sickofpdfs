@@ -44,9 +44,11 @@ export type { DocumentKind, KindInput } from './metadata/kind';
 export { cleanTitle, isJunkTitle, titleFromFileName } from './metadata/titles';
 export {
   BACKUP_DIR, BACKUP_FORMAT, BACKUP_VERSION, BackupFormatError, DUMP_TABLES, LIBRARY_PATH, MANIFEST_PATH, NOTES_DIR, PDF_DIR, SNAPSHOT_DIR, SNAPSHOT_KEEP, TOO_NEW_MESSAGE,
+  IMPORTS_DIR, IMPORT_REFS_FORMAT, OCR_DIR, OCR_FILE_FORMAT, importsPath, isNewerEngineVersion, ocrPath, parseImportRefsFile, parseOcrFile,
   buildManifest, countDump, describeBackup, emptyDump, emptyTables, isDraftRow, isSha, notesPath, parseLibraryDump, parseManifest, pathSegments, pdfPath, snapshotPath,
 } from './backup/format';
 export type {
+  ImportRefBackup, ImportRefsBackupFile, OcrBackupFile, OcrBackupPage,
   AliasRow, BackupCounts, BackupErrorCode, BackupManifest, DumpLocation, DumpTable, HistoryRow, LibraryDump, LibraryTables, ManifestInput, SettingRow,
 } from './backup/format';
 export { dayOf, parseSnapshotName, planSnapshots, snapshotName } from './backup/rotate';

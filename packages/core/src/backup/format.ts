@@ -8,6 +8,8 @@
 //     snapshots/library-<YYYY-MM-DD>.json    the last 7 nightly copies of library.json (rotate.ts)
 //     pdf/<sha[0..2]>/<sha>.pdf              saved copies, once per fingerprint
 //     notes/<title-slug>-<sha[0..8]>.md      the Markdown export of each document with notes (export/markdown.ts)
+//     ocr/<sha[0..2]>/<sha>.json             the recognised text of a scan's pages (Release 3): saved, live, searchable readings only
+//     imports/<sha[0..2]>/<sha>.json         which of the file's own annotations were already imported as notes (Release 3)
 //
 // A backup never holds: the key and tokens (`sop-local`), `sop-device`, drafts, the search tables, page text and figures, the
 // outbox, or anything from a PDF that was not saved. The dump has drafts out; `parseLibraryDump` drops any that come back.
@@ -16,6 +18,7 @@
 // fingerprints (a path is never built from anything else), and a dump's rows must carry the keys the merge relies on.
 import type { HlcStamp } from '../hlc';
 import type { DocumentId, Sha256 } from '../ids';
+import type { OcrWord } from '../ocr/types';
 import type { AutoTagRemovedRow, CommentRow, DocumentRow, LocationRow, MarkRow, ReadingTagRow, TagRow, ThreadRow } from '../model/rows';
 import { notesFileName } from '../export/markdown';
 
@@ -32,6 +35,8 @@ export const LIBRARY_PATH = 'library.json';
 export const SNAPSHOT_DIR = 'snapshots';
 export const PDF_DIR = 'pdf';
 export const NOTES_DIR = 'notes';
+export const OCR_DIR = 'ocr';
+export const IMPORTS_DIR = 'imports';
 
 // ---- the tables ------------------------------------------------------------------------------------------------------
 
@@ -334,3 +339,119 @@ export function notesPath(title: string | null | undefined, sha: string): string
 
 /** The parts of a path made here, for walking a folder handle one name at a time. */
 export const pathSegments = (path: string): string[] => path.split('/').filter((s) => s !== '');
+
+// ---- scan text and import refs (Release 3) -----------------------------------------------------------------------------
+// Two small per-reading files beside `library.json`. They are not in the dump: `library.json` stays as it was, so an older
+// version reads a newer backup fine and just skips them. Never backed up: `passage_vectors`, `source_pages`, the Claude Send
+// consent store (all local to one computer).
+
+export const OCR_FILE_FORMAT = 'sop-ocr';
+export const IMPORT_REFS_FORMAT = 'sop-import-refs';
+
+/** `ocr/<sha[0..2]>/<sha>.json` */
+export function ocrPath(sha: string): string {
+  if (!isSha(sha)) throw new RangeError('a scan text file is named by its fingerprint');
+  return `${OCR_DIR}/${sha.slice(0, 2)}/${sha}.json`;
+}
+
+/** `imports/<sha[0..2]>/<sha>.json` */
+export function importsPath(sha: string): string {
+  if (!isSha(sha)) throw new RangeError('an import list is named by its fingerprint');
+  return `${IMPORTS_DIR}/${sha.slice(0, 2)}/${sha}.json`;
+}
+
+export interface OcrBackupPage {
+  pageIndex: number;
+  engine: string;
+  engineVersion: string;
+  langs: string[];
+  words: OcrWord[];
+  createdAt: number;
+}
+
+export interface OcrBackupFile {
+  format: typeof OCR_FILE_FORMAT;
+  version: 1;
+  documentId: DocumentId;
+  pages: OcrBackupPage[];
+}
+
+export interface ImportRefBackup {
+  pdfRef: string;
+  rowTable: 'marks' | 'threads' | 'comments';
+  rowId: string;
+  createdAt: number;
+}
+
+export interface ImportRefsBackupFile {
+  format: typeof IMPORT_REFS_FORMAT;
+  version: 1;
+  documentId: DocumentId;
+  refs: ImportRefBackup[];
+}
+
+const parseJson = (input: unknown): unknown => {
+  if (typeof input !== 'string') return input;
+  try {
+    return JSON.parse(input);
+  } catch {
+    return null;
+  }
+};
+
+/** A scan text file as read back, or null when it is not one (wrong format, a newer version, damaged). Pages that are not whole are dropped; the store checks the words. */
+export function parseOcrFile(input: unknown): OcrBackupFile | null {
+  const raw = parseJson(input);
+  if (!isRecord(raw) || raw.format !== OCR_FILE_FORMAT || raw.version !== 1 || !isSha(raw.documentId) || !Array.isArray(raw.pages)) return null;
+  const pages: OcrBackupPage[] = [];
+  const seen = new Set<number>();
+  for (const p of raw.pages as unknown[]) {
+    if (!isRecord(p)) continue;
+    const { pageIndex, engine, engineVersion, langs, words, createdAt } = p;
+    if (typeof pageIndex !== 'number' || !Number.isSafeInteger(pageIndex) || pageIndex < 0 || seen.has(pageIndex)) continue;
+    if (typeof engine !== 'string' || engine === '' || typeof engineVersion !== 'string' || engineVersion === '' || !Array.isArray(words)) continue;
+    seen.add(pageIndex);
+    pages.push({
+      pageIndex,
+      engine,
+      engineVersion,
+      langs: Array.isArray(langs) ? langs.filter((l): l is string => typeof l === 'string') : [],
+      words: words as OcrWord[],
+      createdAt: typeof createdAt === 'number' && Number.isFinite(createdAt) ? createdAt : 0,
+    });
+  }
+  return { format: OCR_FILE_FORMAT, version: 1, documentId: raw.documentId, pages };
+}
+
+/** An import list as read back, or null when it is not one. Entries that are not whole are dropped. */
+export function parseImportRefsFile(input: unknown): ImportRefsBackupFile | null {
+  const raw = parseJson(input);
+  if (!isRecord(raw) || raw.format !== IMPORT_REFS_FORMAT || raw.version !== 1 || !isSha(raw.documentId) || !Array.isArray(raw.refs)) return null;
+  const refs: ImportRefBackup[] = [];
+  for (const r of raw.refs as unknown[]) {
+    if (!isRecord(r)) continue;
+    const { pdfRef, rowTable, rowId, createdAt } = r;
+    if (typeof pdfRef !== 'string' || pdfRef.length < 1 || pdfRef.length > 600) continue;
+    if (rowTable !== 'marks' && rowTable !== 'threads' && rowTable !== 'comments') continue;
+    if (typeof rowId !== 'string') continue;
+    refs.push({ pdfRef, rowTable, rowId, createdAt: typeof createdAt === 'number' && Number.isFinite(createdAt) ? createdAt : 0 });
+  }
+  return { format: IMPORT_REFS_FORMAT, version: 1, documentId: raw.documentId, refs };
+}
+
+/** True when engine version `a` is newer than `b` (same engine). Numbers in the version compare as numbers: "6-tiny.10" is newer than "6-tiny.9". */
+export function isNewerEngineVersion(a: string, b: string): boolean {
+  const parts = (v: string): (number | string)[] => v.match(/\d+|[^\d]+/g)?.map((x) => (/^\d+$/.test(x) ? Number(x) : x)) ?? [];
+  const pa = parts(a);
+  const pb = parts(b);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i];
+    const y = pb[i];
+    if (x === undefined) return false;
+    if (y === undefined) return true;
+    if (x === y) continue;
+    if (typeof x === 'number' && typeof y === 'number') return x > y;
+    return String(x) > String(y);
+  }
+  return false;
+}

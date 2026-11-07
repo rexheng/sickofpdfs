@@ -34,16 +34,31 @@ function sourceLinkOf(locations: readonly LocationRow[] | undefined): string | n
   return best?.canonical ?? null;
 }
 
+/** The names of each reading's course tags (live tags of kind `course` that are on the reading). */
+function coursesOf(dump: LibraryDump): Map<string, string[]> {
+  const names = new Map(dump.tables.tags.filter((t) => t.kind === 'course' && t.deletedAt == null).map((t) => [t.id, t.name]));
+  const out = new Map<string, string[]>();
+  for (const rt of dump.tables.reading_tags) {
+    const name = names.get(rt.tagId);
+    if (name === undefined) continue;
+    const list = out.get(rt.documentId);
+    if (list) list.push(name);
+    else out.set(rt.documentId, [name]);
+  }
+  return out;
+}
+
 /**
  * The Markdown files for the documents that have notes. A document in Trash has none (its notes are in `library.json`, and
  * come back with it); a document whose notes are all deleted has none either. Drafts are not in a dump, and the export
  * leaves deleted rows out.
  */
-export function notesFiles(dump: LibraryDump, o: LayoutOptions): NotesFile[] {
+export function notesFiles(dump: LibraryDump, o: LayoutOptions, imported?: ReadonlyMap<string, ReadonlySet<string>>): NotesFile[] {
   const marks = groupBy(dump.tables.marks.filter(live));
   const threads = groupBy(dump.tables.threads.filter(live));
   const comments = groupBy(dump.tables.comments);
   const locations = groupBy(dump.tables.locations);
+  const courses = coursesOf(dump);
   const out: NotesFile[] = [];
   for (const doc of dump.tables.documents) {
     if (!isSha(doc.id) || !live(doc)) continue;
@@ -54,7 +69,7 @@ export function notesFiles(dump: LibraryDump, o: LayoutOptions): NotesFile[] {
       documentId: doc.id,
       path: notesPath(doc.title, doc.id),
       markdown: exportMarkdown(
-        { id: doc.id, title: doc.title, authors: doc.authors, doi: doc.doi, arxivId: doc.arxivId, sourceLink: sourceLinkOf(locations.get(doc.id)), viewerBase: o.viewerBase },
+        { id: doc.id, title: doc.title, authors: doc.authors, doi: doc.doi, arxivId: doc.arxivId, sourceLink: sourceLinkOf(locations.get(doc.id)), viewerBase: o.viewerBase, courses: courses.get(doc.id), importedRowIds: imported?.get(doc.id) },
         m,
         t,
         comments.get(doc.id) ?? [],

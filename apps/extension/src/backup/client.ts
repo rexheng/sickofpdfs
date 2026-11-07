@@ -76,6 +76,7 @@ export async function exportZipTo(sink: WritableStream<Uint8Array>): Promise<voi
     const zip = libraryZip({
       dump,
       blobs,
+      store,
       schemaVersion,
       appVersion: chrome.runtime.getManifest().version,
       viewerBase: chrome.runtime.getURL(VIEWER_PATH),

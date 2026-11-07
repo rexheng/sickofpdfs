@@ -1,17 +1,20 @@
 // "Export library" (spec: "saves the same as a zip at any time"): the backup's layout as one zip, written as a stream.
 //
 // The zip holds `sickofpdfs-backup/` with `manifest.json`, `library.json`, `pdf/<sha[0..2]>/<sha>.pdf` and `notes/<title>-<sha8>.md`
-// (the folder's layout, less the snapshots), so an unzipped export can be restored from like a backup folder. The pinned zip
+// (the folder's layout, less the snapshots), plus `ocr/` and `imports/` (scan text and import refs), so an unzipped export can be restored from like a backup folder. The pinned zip
 // library (`client-zip`) stores the files as they are: PDFs are already compressed. It reads each PDF as a stream and writes the
 // bytes out as it goes, so the library is never held in memory; the manifest is the last entry.
 import { BACKUP_DIR, buildManifest, LIBRARY_PATH, MANIFEST_PATH, pdfPath, type LibraryDump } from '@sop/core';
 import { makeZip } from 'client-zip';
 import type { BlobStore } from '../store/blob-store';
+import { extraFiles, type ExtrasStore } from './extras';
 import { documentsWithCopy, notesFiles } from './layout';
 
 export interface ZipDeps {
   dump: LibraryDump;
   blobs: Pick<BlobStore, 'get'>;
+  /** For the scan text and import refs. */
+  store: ExtrasStore;
   schemaVersion: number;
   appVersion: string;
   viewerBase: string;
@@ -40,7 +43,9 @@ async function* entries(d: ZipDeps): AsyncGenerator<Entry> {
   }
 
   yield { name: inFolder(LIBRARY_PATH), lastModified: at, input: JSON.stringify(d.dump) };
-  for (const n of notesFiles(d.dump, { viewerBase: d.viewerBase })) yield { name: inFolder(n.path), lastModified: at, input: n.markdown };
+  const extras = await extraFiles(d.store, d.dump.tables.documents.filter((x) => x.deletedAt == null).map((x) => x.id));
+  for (const n of notesFiles(d.dump, { viewerBase: d.viewerBase }, extras.imported)) yield { name: inFolder(n.path), lastModified: at, input: n.markdown };
+  for (const e of extras.files) yield { name: inFolder(e.path), lastModified: at, input: e.text };
   for (const c of copies) yield { name: inFolder(pdfPath(c.id)), lastModified: new Date(c.file.lastModified), input: c.file, size: c.file.size };
 
   const manifest = buildManifest({ createdAt: d.now(), schemaVersion: d.schemaVersion, appVersion: d.appVersion, dump: d.dump, pdfs: present });

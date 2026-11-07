@@ -23,6 +23,13 @@ export interface ExportDocument {
    * file-only document is `<viewerBase>?doc=<id>#page=N`. Defaults to `viewer.html`.
    */
   viewerBase?: string | null;
+  /** The reading's course codes (its live `course` tags). One goes in the front matter as `course: "EC1A1"`, several as a list. */
+  courses?: readonly string[];
+  /**
+   * Ids of marks and threads that "Import on open" made from the PDF's own annotations (`pdf_import_refs`). A comment that carries
+   * the import's own meta is found without this; a bare mark or a thread is found with it.
+   */
+  importedRowIds?: ReadonlySet<string>;
 }
 
 export type ExportMark = Pick<MarkRow, 'id' | 'style' | 'color' | 'anchor' | 'pageIndex' | 'sortKey' | 'createdAt' | 'deletedAt'>;

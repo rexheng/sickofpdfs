@@ -11,7 +11,7 @@
 //   the bytes as it stores them (S17).
 // - Paths are built from fingerprints only (`pdfPath`), so nothing in the folder can point the reader elsewhere.
 // Then `store.applyRestorePlan(dump)` plans and writes the merge in one transaction, leaving out forgotten readings (backup-api.ts).
-import { BACKUP_DIR, BackupFormatError, isSha, LIBRARY_PATH, MANIFEST_PATH, parseLibraryDump, parseManifest, pdfPath, type BackupManifest, type LibraryDump } from '@sop/core';
+import { BACKUP_DIR, BackupFormatError, importsPath, isSha, ocrPath, LIBRARY_PATH, MANIFEST_PATH, parseLibraryDump, parseManifest, pdfPath, type BackupManifest, type LibraryDump } from '@sop/core';
 import { openDir, openFile } from './fs';
 
 /** The biggest `manifest.json` read. It holds one size per PDF, so even 100,000 PDFs fit easily. */
@@ -81,4 +81,21 @@ export async function openBackupPdf(root: FileSystemDirectoryHandle, sha: string
   if (expected === undefined || expected > MAX_PDF_BYTES) return null;
   const file = await openFile(root, pdfPath(sha));
   return file !== null && file.size === expected ? file : null;
+}
+
+/** The biggest scan text or import file taken from a backup. A 600-page scan comes to a few tens of megabytes. */
+export const MAX_EXTRA_BYTES = 256 * 1024 * 1024;
+
+/** A reading's scan text file (`ocr/…`) as text, or null when it is not there, the name is not a fingerprint, or it is too big. */
+export async function readBackupOcr(root: FileSystemDirectoryHandle, sha: string): Promise<string | null> {
+  if (!isSha(sha)) return null;
+  const file = await openFile(root, ocrPath(sha));
+  return file !== null && file.size <= MAX_EXTRA_BYTES ? await file.text() : null;
+}
+
+/** A reading's import refs file (`imports/…`) as text, or null as above. */
+export async function readBackupImports(root: FileSystemDirectoryHandle, sha: string): Promise<string | null> {
+  if (!isSha(sha)) return null;
+  const file = await openFile(root, importsPath(sha));
+  return file !== null && file.size <= MAX_EXTRA_BYTES ? await file.text() : null;
 }

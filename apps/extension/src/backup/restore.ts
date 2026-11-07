@@ -18,7 +18,7 @@
 import { countDump, describeBackup, isSha, type DocumentId, type LibraryDump, type RestoreSummary, TOO_NEW_MESSAGE } from '@sop/core';
 import { BlobHashMismatchError, type BlobStore } from '../store/blob-store';
 import type { StoreApi } from '../store/store-api';
-import { openBackupPdf, readBackupFolder, type BackupRead } from './restore-read';
+import { openBackupPdf, readBackupFolder, readBackupImports, readBackupOcr, type BackupRead } from './restore-read';
 
 /** A backup that was read and can be restored. */
 export type ReadBackup = Extract<BackupRead, { ok: true }>;
@@ -111,13 +111,16 @@ export interface RestoreOutcome {
     /** Could not be copied (the folder went away, the disk is full). Restoring again tries them again. */
     failed: number;
   };
+  /** Scan pages brought back (added, or replaced by a newer engine's), and import refs added. Never counted in "changed nothing". */
+  scanPages?: number;
+  importRefs?: number;
   /** The readings whose page text is read again in the background, most recently read first. */
   reindex: DocumentId[];
 }
 
 /** True when the restore wrote nothing and copied nothing: the library held everything already. */
-export const changedNothing = (o: Pick<RestoreOutcome, 'added' | 'updated' | 'pdfs'>): boolean =>
-  o.added.readings + o.added.notes + o.added.marks + o.added.comments + o.updated + o.pdfs.copied === 0;
+export const changedNothing = (o: Pick<RestoreOutcome, 'added' | 'updated' | 'pdfs' | 'scanPages'>): boolean =>
+  o.added.readings + o.added.notes + o.added.marks + o.added.comments + o.updated + o.pdfs.copied + (o.scanPages ?? 0) === 0;
 
 const sum = (counts: RestoreSummary['updated']): number => Object.values(counts).reduce((n, v) => n + v, 0);
 
@@ -131,7 +134,7 @@ export function readingOrder(dump: LibraryDump): DocumentId[] {
 }
 
 export interface ApplyDeps {
-  store: Pick<StoreApi, 'applyRestorePlan' | 'getDocument' | 'markCopyRestored'>;
+  store: Pick<StoreApi, 'applyRestorePlan' | 'getDocument' | 'markCopyRestored' | 'restoreOcrFile' | 'restoreImportRefs'>;
   blobs: BlobStore;
   onProgress(p: RestoreProgress): void;
   now(): number;
@@ -166,6 +169,19 @@ export async function applyBackup(read: ReadBackup, deps: ApplyDeps): Promise<Re
     }
   }
   deps.onProgress({ step: 'copying', done: wanted.length, total: wanted.length });
+  // Scan text and import refs (Release 3). The store takes them only for readings it holds, so a reading forgotten here gets nothing.
+  let scanPages = 0;
+  let importRefs = 0;
+  for (const id of readingOrder(read.dump)) {
+    try {
+      const ocr = await readBackupOcr(read.root, id);
+      if (ocr !== null) scanPages += await deps.store.restoreOcrFile(ocr);
+      const imports = await readBackupImports(read.root, id);
+      if (imports !== null) importRefs += await deps.store.restoreImportRefs(imports);
+    } catch {
+      // A file that cannot be used is skipped; the page is simply read again.
+    }
+  }
   const a = result.summary.added;
   return {
     at: deps.now(),
@@ -174,6 +190,8 @@ export async function applyBackup(read: ReadBackup, deps: ApplyDeps): Promise<Re
     forgotten: result.forgotten,
     skipped: result.skipped,
     pdfs,
+    scanPages,
+    importRefs,
     reindex: readingOrder(read.dump),
   };
 }
@@ -203,6 +221,7 @@ export function outcomeLines(o: Omit<RestoreOutcome, 'reindex'>): string[] {
     if (back.length > 0) lines.push(`${back.length === 1 ? back[0] : `${back.slice(0, -1).join(', ')} and ${back.at(-1)}`} came back.`);
     if (o.updated > 0) lines.push(`${count(o.updated, 'item', 'items')} in your library ${o.updated === 1 ? 'was' : 'were'} brought up to date.`);
     if (o.pdfs.copied > 0) lines.push(`${count(o.pdfs.copied, 'PDF was', 'PDFs were')} copied back.`);
+    if ((o.scanPages ?? 0) > 0) lines.push(`${count(o.scanPages ?? 0, 'scanned page', 'scanned pages')} came back with ${o.scanPages === 1 ? 'its' : 'their'} text.`);
   }
   if (o.forgotten > 0) lines.push(leftOutLine(o.forgotten));
   if (o.pdfs.missing > 0) lines.push(`${count(o.pdfs.missing, 'PDF isn’t', 'PDFs aren’t')} in the backup. ${o.pdfs.missing === 1 ? 'Its reading and notes' : 'Their readings and notes'} came back without ${o.pdfs.missing === 1 ? 'it' : 'them'}.`);
