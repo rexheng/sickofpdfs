@@ -424,24 +424,23 @@ test('Find: no results, Esc, selecting a hit, Back from a jump, a scan, and a 70
     await expect.poll(async () => (await where(page)).page, { message: 'Forward returns to the last hit', timeout: 10_000 }).toBe(last.page);
     expect(errors).toEqual([]);
   }, 120_000);
-  await step('on a scan with no text, the bar says so instead of "No results"', async ({ openViewer, server }) => {
+  await step('on a scan, Find finds words once its pages are read, and never just says "No results"', async ({ openViewer, server }) => {
+    // Phase 7.5: scans get their text read now (on this computer), so the old "no text, nothing to count" guess no longer holds.
     const page = await openViewer(server.url(SCAN));
     const errors = watchErrors(page);
     await waitReady(page, 60_000);
     await openFind(page);
     await page.keyboard.type('the');
-    const scanMessage = /\b(scan|scanned|no text|no searchable text|not searchable|can.?t search|cannot search|isn.?t searchable|text recognition|ocr)\b/i;
     await expect
-      .poll(async () => scanMessage.test((await readBar(page)).text), {
-        message: 'the bar should say that this PDF is a scan / has no text to search (any wording about scans or missing text)',
+      .poll(async () => (await readBar(page)).count?.total ?? 0, {
+        message: 'once the page in view is read, the bar counts hits on the scan',
         timeout: 60_000,
         intervals: [200, 400, 800],
       })
-      .toBe(true);
+      .toBeGreaterThan(0);
     const shown = await readBar(page);
-    expect(shown.noResults, `a scan must not just say "No results" (it said: "${shown.text}")`).toBe(false);
-    expect(shown.count, 'there is nothing to count on a scan').toBeNull();
-    expect((await paintedRects(page)).length, 'nothing is painted on a scan').toBe(0);
+    expect(shown.noResults, `a scan being read must not say "No results" (it said: "${shown.text}")`).toBe(false);
+    await expect.poll(async () => (await paintedRects(page)).length, { message: 'the hits are painted on the scan', timeout: 10_000 }).toBeGreaterThan(0);
     await snap(page, testInfo, '15-scan-message');
 
     // The bar still works as a bar: Esc closes it.
