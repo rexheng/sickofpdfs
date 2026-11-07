@@ -23,7 +23,7 @@ export { ENGINE_WORKERS, type EngineAssets } from './backend/engine-config';
 export { engineAssets } from './backend/embedpdf/assets';
 export { createEmbedPdfBackend, type EmbedPdfBackendOptions } from './backend/embedpdf/backend';
 export { createPageTextProvider, type PageTextProvider, type PageTextProviderImpl } from './text/page-text';
-export { type OcrLookup, withOcr } from './text/ocr-source';
+export { type OcrLookup, type OcrRefine, withOcr } from './text/ocr-source';
 export * from './marks/geometry';
 export * from './marks/card-layout';
 export { boldLetterCount, type WordStartChunk, wordStartChunks, wordStartRanges } from './marks/word-starts';

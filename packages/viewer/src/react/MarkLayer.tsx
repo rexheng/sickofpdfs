@@ -63,7 +63,7 @@ export interface MarkLayerProps {
   /** The page's unrotated size and /Rotate (OpenResult.pages[box.index]). */
   page: PageSize;
   /** What BoldLayer needs to read glyph outlines. Without it bold is not drawn. */
-  bold?: Pick<BoldLayerProps, 'backend' | 'doc' | 'text'>;
+  bold?: Pick<BoldLayerProps, 'backend' | 'doc' | 'text' | 'scanInk'>;
   /** BoldLayer's look: while bold word starts are on, a bold mark takes their weight when it is heavier (R90). */
   boldLook?: BoldLook;
 }
@@ -190,6 +190,7 @@ export const MarkLayer = memo(function MarkLayer({ source, box, ctx, page, bold,
           backend={bold.backend}
           doc={bold.doc}
           text={bold.text}
+          {...(bold.scanInk ? { scanInk: bold.scanInk } : {})}
           pageIndex={index}
           page={page}
           viewRotation={(((rotation - page.rotation) % 360) + 360) % 360 as PageSize['rotation']}

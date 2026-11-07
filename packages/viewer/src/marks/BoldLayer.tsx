@@ -14,6 +14,7 @@ import { useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react';
 import type { DocHandle, Glyph, PageGlyphs, PageSize, PdfBackend, PdfRect, Rotation } from '../backend/types';
 import { type BoldLook, devicePxPerPt, PLAIN_LOOK, useBoldCanvas } from '../react/BoldCanvas';
 import type { PageLayerContext } from '../react/PageView';
+import type { ScanInkPages } from '../react/scan-ink-pages';
 import { pageTransform, totalRotation } from '../view/page-transform';
 import { type BoldGlyph, boldGlyphs, type BoldRange, prepareGlyphs } from './bold-painter';
 import { type InkWord, inkWordsOf } from './scan-ink';
@@ -57,6 +58,8 @@ export interface BoldLayerProps {
    * look when it is heavier, so a word the owner made bold reads as bold all through (R90).
    */
   look?: BoldLook;
+  /** A scan's words read ahead (scan-ink-pages): a bold mark on them only copies their grown letters. */
+  scanInk?: ScanInkPages;
   /** Runs once the bold for the current `ranges` is drawn (S13 records its perf mark here). */
   onDrawn?: () => void;
 }
@@ -138,7 +141,8 @@ export async function drawBoldRange(p: { backend: Pick<PdfBackend, 'getGlyphShap
 
 /** The bold marks of one page. See the file comment. */
 export function BoldLayer(props: BoldLayerProps): JSX.Element {
-  const { backend, doc, pageIndex, page, viewRotation, ranges, text, ctx, onDrawn, look = PLAIN_LOOK } = props;
+  const { backend, doc, pageIndex, page, viewRotation, ranges, text, ctx, onDrawn, look = PLAIN_LOOK, scanInk } = props;
+  const ahead = useMemo(() => (scanInk ? { pages: scanInk, index: pageIndex } : undefined), [scanInk, pageIndex]);
   // What is shown, for this document and page only.
   const [state, setState] = useState<{ doc: DocHandle; pageIndex: number; drawn: ReadonlyMap<string, DrawnRange> }>(() => ({ doc, pageIndex, drawn: new Map() }));
   const drawn = state.doc === doc && state.pageIndex === pageIndex ? state.drawn : NOTHING_DRAWN;
@@ -189,7 +193,7 @@ export function BoldLayer(props: BoldLayerProps): JSX.Element {
   const glyphs = useMemo(() => keys.flatMap((k) => drawn.get(k)?.glyphs ?? []), [keys, drawn]);
   const ink = useMemo(() => keys.map((k) => drawn.get(k)?.ink ?? NO_WORDS), [keys, drawn]);
   // The svg says when the canvas was drawn (data-sop-bold-drawn), so the bold shows as a change of the mark layer too.
-  useBoldCanvas(ctx, page, glyphs.length > 0 ? glyphs : null, 'sop-bold-canvas', (n) => svg.current?.setAttribute('data-sop-bold-drawn', String(n)), look, false, ink);
+  useBoldCanvas(ctx, page, glyphs.length > 0 ? glyphs : null, 'sop-bold-canvas', (n) => svg.current?.setAttribute('data-sop-bold-drawn', String(n)), look, false, ink, ahead);
 
   const complete = keys.every((k) => drawn.has(k));
   useLayoutEffect(() => {

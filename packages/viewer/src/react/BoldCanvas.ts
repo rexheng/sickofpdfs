@@ -17,6 +17,8 @@ import { pageToDevice } from '../marks/synthetic-bold';
 import type { TurnMatrix } from '../view/page-transform';
 import type { PagePaint } from './page-driver';
 import type { PageLayerContext } from './PageView';
+import type { GrownLetter } from '../marks/scan-ink';
+import type { GrownPage, ScanInkPages } from './scan-ink-pages';
 
 /** How heavy a bold is drawn: the gain on each face's own bold, and the edge darkening (paintBold). */
 export interface BoldLook {
@@ -45,17 +47,14 @@ const rectKey = (p: PagePaint) => (p.rect ? `${p.rect.x},${p.rect.y},${p.rect.wi
 const NO_INK: readonly (readonly InkWord[])[] = [];
 
 /** Pictures sharper than this many device px a point are planned from a copy this sharp: plenty to tell letters apart. */
-const PLAN_PX_PER_PT = 3;
+export const PLAN_PX_PER_PT = 3;
 
 const sameLists = (a: readonly (readonly InkWord[])[], b: readonly (readonly InkWord[])[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 
-/** One canvas to read pictures' pixels through, and one to blend ink patches from (grown as needed). */
-let scratch: { read: OffscreenCanvasRenderingContext2D; patch: OffscreenCanvasRenderingContext2D } | null = null;
+/** One canvas to read pictures' pixels through (grown as needed). */
+let scratch: { read: OffscreenCanvasRenderingContext2D } | null = null;
 function scratchOf(): NonNullable<typeof scratch> {
-  return (scratch ??= {
-    read: new OffscreenCanvas(1, 1).getContext('2d', { willReadFrequently: true })!,
-    patch: new OffscreenCanvas(1, 1).getContext('2d')!,
-  });
+  return (scratch ??= { read: new OffscreenCanvas(1, 1).getContext('2d', { willReadFrequently: true })! });
 }
 
 const fit = (c: OffscreenCanvasRenderingContext2D, w: number, h: number) => {
@@ -71,7 +70,7 @@ const fit = (c: OffscreenCanvasRenderingContext2D, w: number, h: number) => {
  * `offset` where `paint` sits on it. The pixels round the ink words are read once, on the first read: reading a
  * picture back from the screen costs about the same for a word as for a page.
  */
-function inkSourceOf(page: PageSize, paint: PagePaint, all: readonly PagePaint[], words: readonly InkWord[], scale = 1): { src: InkSource; device: TurnMatrix; offset: { x: number; y: number } } {
+export function inkSourceOf(page: PageSize, paint: PagePaint, all: readonly PagePaint[], words: readonly InkWord[], scale = 1): { src: InkSource; device: TurnMatrix; offset: { x: number; y: number } } {
   const gridW = Math.round(paint.width / paint.box.width);
   const gridH = Math.round(paint.height / paint.box.height);
   const device = pageToDevice(page, paint.viewRotation, gridW * scale, gridH * scale);
@@ -142,10 +141,7 @@ function wordsBox(device: TurnMatrix, words: readonly InkWord[]): { x0: number; 
  */
 class ToneLayer {
   readonly container: HTMLDivElement;
-  /**
-   * By picture: its canvas, what it was drawn for, and, when only ink patches are on it, their boxes (so the next
-   * drawing clears just those: clearing a whole page's canvas costs more than the bold).
-   */
+  /** By picture: its canvas, what it was drawn for, and with only ink on it, the boxes of its patches (else null). */
   readonly canvases = new Map<string, { canvas: HTMLCanvasElement; drawn: string; inkOnly: { x: number; y: number; w: number; h: number }[] | null }>();
 
   constructor(
@@ -177,6 +173,9 @@ export class BoldCanvas {
   /** Each picture's patches of each plan, by what the picture is (its size, turn, part, the tiles round it) and the look. */
   private patches = new Map<string, WeakMap<InkPlan, { patches: InkPatch[]; letters: number }>>();
   private hasLight = false;
+  /** The page's words read ahead (null: none), and for each range the words that were not, for those letters. */
+  private fast: { pages: ScanInkPages; index: number } | null = null;
+  private missing = new WeakMap<readonly InkWord[], Map<string, { grown: GrownPage; version: number; words: InkWord[] }>>();
   private gain = 1;
   private boost = 0;
   private version = 0;
@@ -185,7 +184,7 @@ export class BoldCanvas {
   constructor(
     parents: { dark: HTMLElement; light: HTMLElement | null },
     private readonly page: PageSize,
-    private readonly ctx: Pick<PageLayerContext, 'paints' | 'onPaint'>,
+    private readonly ctx: Pick<PageLayerContext, 'paints' | 'onPaint' | 'dpr'>,
     name: string,
     private readonly onDrawn?: (glyphs: number) => void,
   ) {
@@ -213,20 +212,51 @@ export class BoldCanvas {
     this.sync();
   }
 
+  /** Reads ahead from `pages` (page `index`): see sync. */
+  setAhead(pages: ScanInkPages | null, index: number): void {
+    if (this.fast?.pages === pages && this.fast?.index === index) return;
+    this.stopAhead?.();
+    this.stopAhead = null;
+    this.fast = pages ? { pages, index } : null;
+    // Once the page is read ahead, its canvas is made (sync keeps it warm).
+    if (pages) this.stopAhead = pages.onAhead((i) => i === index && this.sync());
+  }
+
+  private stopAhead: (() => void) | null = null;
+
+  /** The words of range `list` that `grown` does not hold (the same array while that holds). */
+  private missingOf(list: readonly InkWord[], grown: GrownPage): readonly InkWord[] {
+    let byPicture = this.missing.get(list);
+    if (!byPicture) this.missing.set(list, (byPicture = new Map<string, { grown: GrownPage; version: number; words: InkWord[] }>()));
+    const had = byPicture.get(grown.key);
+    if (had?.grown === grown && had.version === grown.version) return had.words;
+    const words = list.filter((w) => !grown.words.has(w.start));
+    // The same array while the same words are missing, so their plan is kept.
+    const same = had && had.words.length === words.length && had.words.every((w, k) => w === words[k]);
+    const kept = same ? had.words : words.length === list.length ? (list as InkWord[]) : words;
+    byPicture.set(grown.key, { grown, version: grown.version, words: kept });
+    return kept;
+  }
+
   /**
    * Each range's plan, made from the page's full render (or base) and made again when that picture changes. A range is
    * left out while no such picture is shown yet.
    */
-  private plansNow(paints: readonly PagePaint[]): InkPlan[] {
-    if (this.ink.length === 0) return [];
+  private plansNow(paints: readonly PagePaint[], lists: readonly (readonly InkWord[])[]): InkPlan[] {
+    if (lists.length === 0) return [];
     const from = paints.find((p) => p.rect === undefined);
     const key = from ? `${from.width}x${from.height}|${from.viewRotation}` : '';
     const out: InkPlan[] = [];
     // A sharp picture is planned from a smaller copy (the plan is in points; the letters are grown on the picture itself).
     const scale = from ? Math.min(1, PLAN_PX_PER_PT / devicePxPerPt({ paints: () => [from] }, this.page)!) : 1;
-    for (const words of this.ink) {
+    for (const words of lists) {
       let made = this.plans.get(words);
-      if (from && made?.key !== key) {
+      // The page's own plan, read ahead, serves as it is (each word's letters bold as the mark covers them).
+      const ahead = this.fast && made?.key !== 'ahead' ? this.fast.pages.plannedWords(this.fast.index, words) : null;
+      if (ahead) {
+        this.plans.set(words, (made = { key: 'ahead', plan: { words: ahead.filter((pw) => pw.letters.some((l) => l.bold)) } }));
+        this.planGen++;
+      } else if (from && made?.key !== key && made?.key !== 'ahead') {
         const { src, device } = inkSourceOf(this.page, from, paints, words, scale);
         const plan = planInk(src, device, words, scale === 1);
         this.plans.set(words, (made = { key, plan }));
@@ -342,15 +372,35 @@ export class BoldCanvas {
     let drew = 0;
     let any = false;
     const all = this.ctx.paints();
-    const plans = this.plansNow(all);
-    const inkLight = plans.some((p) => p.words.some((w) => w.light && w.letters.some((l) => l.bold)));
-    const hasInk = plans.some((p) => p.words.length > 0);
+    // The page's words read ahead (scan-ink-pages), on its full render and on its tiles' grid: a mark only copies its
+    // letters' grown px. The words not read ahead yet are planned and grown now.
+    const full = all.find((p) => p.rect === undefined);
+    const tile = all.find((p) => p.rect !== undefined);
+    const look = { gain: this.gain, boost: this.boost };
+    const readAhead = (paint: PagePaint | undefined) => {
+      const grown = paint && this.fast && this.ink.length > 0 ? this.fast.pages.grown(this.fast.index, paint, look) : null;
+      const missing = grown ? this.ink.map((l) => this.missingOf(l, grown)).filter((l) => l.length > 0) : this.ink;
+      const letters = grown ? fastLetters(grown, this.ink) : null;
+      const width = paint ? Math.round(paint.width / paint.box.width) : 0;
+      // One patch a tone for the whole mark, on that grid (a tile draws its part of it).
+      const patches = letters ? { dark: aheadPatch(letters.dark, 'dark', width), light: aheadPatch(letters.light, 'light', width) } : null;
+      return { missing, letters, patches, plans: this.plansNow(all, missing) };
+    };
+    const onFull = readAhead(full);
+    const onTiles = tile ? readAhead(tile) : null;
+    const fullPlans = onFull.plans;
+    const tilePlans = onTiles?.plans ?? [];
+    const isLight = (plans: readonly InkPlan[]) => plans.some((p) => p.words.some((w) => w.light && w.letters.some((l) => l.bold)));
+    const inkLight = isLight(fullPlans) || isLight(tilePlans) || (onFull.patches?.light ?? null) !== null || (onTiles?.patches?.light ?? null) !== null;
+    const hasInk = this.ink.length > 0;
 
     const drawnPatches = new Map<string, ReturnType<BoldCanvas['inkPatches']>>();
     const used = new Set<string>();
     for (const layer of this.layers) {
       const wanted = (this.glyphs.length > 0 || hasInk) && (layer.tone === 'dark' || this.hasLight || inkLight);
-      const paints = wanted ? all : [];
+      // A page read ahead keeps its dark canvases made and white (warm), so the first mark does not pay for making them.
+      const warm = !wanted && layer.tone === 'dark' && this.fast !== null ? all.filter((p) => this.fast!.pages.hasAhead(this.fast!.index, p)) : [];
+      const paints = wanted ? all : warm;
       const keep = new Set(paints.map((p) => p.key));
       for (const [key, c] of layer.canvases) {
         if (keep.has(key)) continue;
@@ -368,15 +418,35 @@ export class BoldCanvas {
         }
         const { canvas } = entry;
         const pct = (v: number) => `${v * 100}%`;
-        Object.assign(canvas.style, { left: pct(paint.box.left), top: pct(paint.box.top), width: pct(paint.box.width), height: pct(paint.box.height) });
         // A tile redraws when another of its lines can be read (the tiles under it are all shown).
+        const here = paint.rect !== undefined ? onTiles! : onFull;
+        const plans = here.plans;
         const lines = hasInk && paint.rect !== undefined ? this.tileLines(paint, all, plans, used).map((l) => (l.ready ? 1 : 0)).join('') : '';
         const picture = this.pictureKey(paint, lines);
-        const want = `${this.version}|${this.planGen}|${picture}`;
+        const want = `${this.version}|${this.planGen}|${picture}${here.letters ? `|ahead${here.letters.letters}|${here.missing.length}` : ''}`;
         if (entry.drawn === want) {
           if (hasInk) used.add(`${picture}|${this.gain}|${this.boost}`);
           continue;
         }
+        // The ink patches of this picture, in its px: grown now (the plans), and read ahead.
+        const inkHere: InkPatch[] = [];
+        if (hasInk) {
+          let got = drawnPatches.get(paint.key);
+          if (!got) {
+            drawnPatches.set(paint.key, (got = this.inkPatches(paint, all, plans, picture, used)));
+            drew += got.letters;
+            drew += here.letters?.letters ?? 0;
+          }
+          const offset = got.offset;
+          for (const p of got.patches) if (p.tone === layer.tone) inkHere.push({ ...p, x: p.x - offset.x, y: p.y - offset.y });
+          const p = here.patches?.[layer.tone];
+          if (p) inkHere.push({ ...p, x: p.x - offset.x, y: p.y - offset.y });
+        }
+        // Every canvas is the picture's size and opaque (see ToneLayer: a smaller one, laid over part of the page, showed
+        // seams down the stems). With only ink on it, a drawing clears just the last one's patches: filling a whole
+        // page's canvas costs more than the bold. A page read ahead keeps its canvas made and white (warm), so the first
+        // mark does not pay for making it.
+        Object.assign(canvas.style, { left: pct(paint.box.left), top: pct(paint.box.top), width: pct(paint.box.width), height: pct(paint.box.height) });
         let fresh = false;
         if (canvas.width !== paint.width || canvas.height !== paint.height) {
           canvas.width = paint.width;
@@ -386,21 +456,15 @@ export class BoldCanvas {
         const context = canvas.getContext('2d');
         if (!context) continue;
         context.fillStyle = layer.ground;
-        if (!fresh && entry.drawn !== '' && entry.inkOnly !== null && this.glyphs.length === 0) for (const r of entry.inkOnly) context.fillRect(r.x, r.y, r.w, r.h);
+        const inkAlone = this.glyphs.length === 0;
+        if (inkAlone && !fresh && entry.inkOnly !== null) for (const r of entry.inkOnly) context.fillRect(r.x, r.y, r.w, r.h);
         else context.fillRect(0, 0, canvas.width, canvas.height);
-        const device = pageToDevice(this.page, paint.viewRotation, paint.width, paint.height, paint.rect);
-        drew += paintBold(context, this.glyphs, device, { clip: { x0: 0, y0: 0, x1: paint.width, y1: paint.height }, gain: this.gain, boost: this.boost, tone: layer.tone });
-        const inkBoxes: { x: number; y: number; w: number; h: number }[] = [];
-        if (hasInk) {
-          let got = drawnPatches.get(paint.key);
-          if (!got) {
-            drawnPatches.set(paint.key, (got = this.inkPatches(paint, all, plans, picture, used)));
-            drew += got.letters;
-          }
-          drawPatches(context, got.patches, layer.tone, got.offset);
-          for (const p of got.patches) if (p.tone === layer.tone) inkBoxes.push({ x: p.x - got.offset.x, y: p.y - got.offset.y, w: p.w, h: p.h });
+        if (!inkAlone) {
+          const device = pageToDevice(this.page, paint.viewRotation, paint.width, paint.height, paint.rect);
+          drew += paintBold(context, this.glyphs, device, { clip: { x0: 0, y0: 0, x1: paint.width, y1: paint.height }, gain: this.gain, boost: this.boost, tone: layer.tone });
         }
-        entry.inkOnly = this.glyphs.length === 0 ? inkBoxes : null;
+        drawPatches(context, inkHere, layer.tone, { x: 0, y: 0 });
+        entry.inkOnly = inkAlone ? inkHere.map((p) => ({ x: p.x, y: p.y, w: p.w, h: p.h })) : null;
         entry.drawn = want;
         any = true;
       }
@@ -431,6 +495,7 @@ export class BoldCanvas {
 
   dispose(): void {
     this.stop();
+    this.stopAhead?.();
     for (const layer of this.layers) {
       layer.container.remove();
       layer.canvases.clear();
@@ -438,18 +503,85 @@ export class BoldCanvas {
   }
 }
 
+/** The marked letters of words read ahead, of one tone. */
+type AheadPx = GrownLetter[];
+
+/** Every letter `lists` mark, from the page's words read ahead (a letter mostly inside the mark), by tone. */
+function fastLetters(grown: GrownPage, lists: readonly (readonly InkWord[])[]): { dark: AheadPx; light: AheadPx; letters: number } {
+  const out = { dark: [] as GrownLetter[], light: [] as GrownLetter[], letters: 0 };
+  for (const list of lists)
+    for (const w of list) {
+      const letters = grown.words.get(w.start);
+      if (!letters) continue;
+      for (const l of letters) {
+        const inside = Math.max(0, Math.min(w.to, l.chars[1]) - Math.max(w.from, l.chars[0]));
+        if (2 * inside <= l.chars[1] - l.chars[0] || l.px.length === 0) continue;
+        out[l.tone].push(l);
+        out.letters++;
+      }
+    }
+  return out;
+}
+
+/** Letters read ahead as one patch of their tone (`width`: the picture's), or null when there are none. */
+function aheadPatch(letters: AheadPx, tone: 'dark' | 'light', width: number): InkPatch | null {
+  if (letters.length === 0) return null;
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const l of letters) {
+    x0 = Math.min(x0, l.box.x0);
+    x1 = Math.max(x1, l.box.x1);
+    y0 = Math.min(y0, l.box.y0);
+    y1 = Math.max(y1, l.box.y1);
+  }
+  const w = x1 - x0;
+  const h = y1 - y0;
+  const rgba = new Uint8ClampedArray(4 * w * h);
+  new Uint32Array(rgba.buffer).fill(tone === 'dark' ? 0xffffffff : 0xff000000);
+  const dark = tone === 'dark';
+  for (const l of letters) {
+    const { px, rgb } = l;
+    for (let k = 0; k < px.length; k++) {
+      const i = px[k];
+      const x = i % width;
+      const q = 4 * (((i - x) / width - y0) * w + (x - x0));
+      // Where two letters' px meet, the darker (lighter) stays.
+      for (let c = 0; c < 3; c++) {
+        const v = rgb[3 * k + c];
+        if (dark ? v < rgba[q + c] : v > rgba[q + c]) rgba[q + c] = v;
+      }
+    }
+  }
+  return { x: x0, y: y0, w, h, rgba, tone };
+}
+
 /** Blends the patches of one tone onto a canvas of that tone (darken for dark ink, lighten for light), at `offset`. */
 function drawPatches(context: CanvasRenderingContext2D, patches: readonly InkPatch[], tone: 'dark' | 'light', offset: { x: number; y: number }): void {
-  const p = scratchOf().patch;
   context.save();
   context.globalCompositeOperation = tone === 'dark' ? 'darken' : 'lighten';
   for (const patch of patches) {
     if (patch.tone !== tone) continue;
-    fit(p, patch.w, patch.h);
-    p.putImageData(new ImageData(patch.rgba as Uint8ClampedArray<ArrayBuffer>, patch.w, patch.h), 0, 0);
-    context.drawImage(p.canvas, 0, 0, patch.w, patch.h, patch.x - offset.x, patch.y - offset.y, patch.w, patch.h);
+    const x = patch.x - offset.x;
+    const y = patch.y - offset.y;
+    // Only what falls on this canvas (a tile shows a part of the page).
+    if (x >= context.canvas.width || y >= context.canvas.height || x + patch.w <= 0 || y + patch.h <= 0) continue;
+    context.drawImage(patchCanvas(patch), 0, 0, patch.w, patch.h, x, y, patch.w, patch.h);
   }
   context.restore();
+}
+
+/** A patch put on a canvas of its own once, so the tiles it spans each copy it without putting it again. */
+const patchCanvases = new WeakMap<Uint8ClampedArray, OffscreenCanvas>();
+function patchCanvas(patch: InkPatch): OffscreenCanvas {
+  let c = patchCanvases.get(patch.rgba);
+  if (!c) {
+    c = new OffscreenCanvas(patch.w, patch.h);
+    c.getContext('2d')!.putImageData(new ImageData(patch.rgba as Uint8ClampedArray<ArrayBuffer>, patch.w, patch.h), 0, 0);
+    patchCanvases.set(patch.rgba, c);
+  }
+  return c;
 }
 
 /**
@@ -466,6 +598,7 @@ export function useBoldCanvas(
   look: BoldLook = PLAIN_LOOK,
   fadeIn = false,
   ink: readonly (readonly InkWord[])[] = NO_INK,
+  ahead?: { pages: ScanInkPages; index: number },
 ): void {
   const painter = useRef<BoldCanvas | null>(null);
   const drawnRef = useRef(onDrawn);
@@ -489,6 +622,7 @@ export function useBoldCanvas(
   }, [ctx, page, name, retry]);
   const { gain, boost } = look;
   useLayoutEffect(() => {
+    painter.current?.setAhead(ahead?.pages ?? null, ahead?.index ?? 0);
     painter.current?.setGlyphs(glyphs ?? [], gain, boost, fadeIn, ink);
-  }, [glyphs, gain, boost, fadeIn, ink, ctx, page, name, retry]);
+  }, [glyphs, gain, boost, fadeIn, ink, ahead?.pages, ahead?.index, ctx, page, name, retry]);
 }

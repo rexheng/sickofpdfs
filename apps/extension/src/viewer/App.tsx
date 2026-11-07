@@ -37,8 +37,10 @@ import {
   TextLayerController,
   WordStartsController,
   WordStartsLayer,
-  warmInkSoon,
+  ScanInkPages,
+  ScanInkWatch,
 } from '@sop/viewer/react';
+import { ocrToPageGlyphs } from '@sop/core';
 import { memo, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { sendRuntimeMessage } from '../shared/send-message';
 import { parseViewerUrl, type ViewerParams } from '../shared/viewer-url';
@@ -636,7 +638,22 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   // page answers with its recognised text (withOcr), read in this tab or in the background (ocr/wire.ts).
   const [pdfiumText] = useState(() => createPageTextProvider(backend, doc.open.doc));
   const [ocr] = useState(() => createViewerOcr({ backend, opened: doc, base: pdfiumText }));
-  const [pageText] = useState(() => withOcr(pdfiumText, ocr.lookup));
+  // A scan's words read ahead from the page's own ink (R106): their char boxes follow the real letters, and bold on them
+  // is ready before the key press.
+  const [scanInk] = useState(
+    () =>
+      new ScanInkPages(
+        {
+          rawGlyphs: async (i) => {
+            const r = await ocr.lookup.page(i);
+            return r === null ? null : ocrToPageGlyphs(r, { rotation: ocr.lookup.rotation(i) });
+          },
+        },
+        doc.open.pages,
+      ),
+  );
+  useEffect(() => () => scanInk.dispose(), [scanInk]);
+  const [pageText] = useState(() => withOcr(pdfiumText, ocr.lookup, { cuts: (i) => scanInk.cuts(i) }));
   useEffect(() => ocr.attach(save), [ocr, save]);
   useEffect(() => () => ocr.dispose(), [ocr]);
   const [scanFigures] = useState(() => createScanFigures({ backend, opened: doc, ocr }));
@@ -683,10 +700,39 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       ocr.onPageText((i) => {
         textLayers.refreshPage(i);
         findController?.refreshPage?.(i);
-        // A bold mark on recognised text thickens the scan's own ink (R106): its code is warmed up while idle.
-        warmInkSoon();
+        scanInk.pageTextChanged(i);
       }),
-    [ocr, textLayers, findController],
+    [ocr, textLayers, findController, scanInk],
+  );
+  // The words being selected on a scan are read ahead first: a bold mark on them is likely next.
+  // Once the pointer is up (or the keys made the selection), they are grown at once.
+  useEffect(() => {
+    const ranges = () => textLayers.selectionRanges().map((r) => ({ pageIndex: r.pageIndex, start: r.start, end: r.end }));
+    let down = false;
+    const onSelect = () => scanInk.prefer(ranges(), !down);
+    const onDown = () => (down = true);
+    const onUp = () => {
+      down = false;
+      // after the browser has settled the selection
+      setTimeout(() => scanInk.prefer(ranges(), true), 0);
+    };
+    document.addEventListener('selectionchange', onSelect);
+    document.addEventListener('pointerdown', onDown, true);
+    document.addEventListener('pointerup', onUp, true);
+    return () => {
+      document.removeEventListener('selectionchange', onSelect);
+      document.removeEventListener('pointerdown', onDown, true);
+      document.removeEventListener('pointerup', onUp, true);
+    };
+  }, [scanInk, textLayers]);
+  // A scan's char boxes, once they follow its letters' ink, are read again by the text layer and Find.
+  useEffect(
+    () =>
+      scanInk.onRefined((i) => {
+        textLayers.refreshPage(i);
+        findController?.refreshPage?.(i);
+      }),
+    [scanInk, textLayers, findController],
   );
   // The document's notes: marks, comments and drafts (Phase 2). Null in Incognito, which has none.
   const notes = useNotes(doc, pageText, store, api, textLayers, save, nav.jumps, ui, scanFigures);
@@ -760,11 +806,12 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   // find's highlights (Task 25), the selection and the text layer, then the links (Task 24).
   const findLayer = find.pageLayer;
   const linksFor = nav.renderPage;
-  const bold = useMemo(() => ({ backend, doc: doc.open.doc, text: pageText }), [doc, pageText]);
+  const bold = useMemo(() => ({ backend, doc: doc.open.doc, text: pageText, scanInk }), [doc, pageText, scanInk]);
   const renderPage = useCallback(
     (box: PageBox, ctx: PageLayerContext) => (
       <>
         <WordStartsLayer controller={wordStarts} box={box} ctx={ctx} page={doc.open.pages[box.index]} />
+        <ScanInkWatch pages={scanInk} index={box.index} ctx={ctx} />
         {notes !== null && (
           <MarkLayer
             source={notes.layer}
@@ -781,7 +828,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
         {linksFor(box)}
       </>
     ),
-    [textLayers, findLayer, linksFor, notes, doc, bold, wordStarts, markBoldLook],
+    [textLayers, findLayer, linksFor, notes, doc, bold, wordStarts, markBoldLook, scanInk],
   );
   // Every render still waiting fails at once when the engine stops: the first one tells the viewer, the rest are quiet.
   const stopped = useRef(false);

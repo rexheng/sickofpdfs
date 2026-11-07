@@ -27,6 +27,8 @@ import { COUNTER_KEEP } from './synthetic-bold';
 
 /** One word of text with no outline: its chars' boxes (unrotated page points, reading order), and which are bold. */
 export interface InkWord {
+  /** The page char index of its first char: who it is, whatever its boxes. */
+  start: number;
   chars: PdfRect[];
   /** Chars [from, to) are bold. */
   from: number;
@@ -61,7 +63,8 @@ export interface PlannedWord {
   ground: Rgb;
   ink: Rgb;
   stroke: number;
-  letters: { box: PdfRect; bold: boolean }[];
+  /** Its letters in reading order: their ink's box, whether bold, and the word's chars [c0, c1) each one is. */
+  letters: { box: PdfRect; bold: boolean; chars: readonly [number, number] }[];
 }
 
 export interface InkPlan {
@@ -123,7 +126,7 @@ export function inkWordsOf(glyphs: readonly Glyph[], runs: readonly BoldRange[])
       while (isInk(glyphs[s - 1]) && sameLine(glyphs[s - 1].box, glyphs[s].box, g.angle)) s--;
       let e = i + 1;
       while (isInk(glyphs[e]) && sameLine(glyphs[e - 1].box, glyphs[e].box, g.angle)) e++;
-      out.push({ chars: glyphs.slice(s, e).map((c) => c.box), from: i - s, to: Math.min(e, run.end) - s, angle: g.angle });
+      out.push({ start: s, chars: glyphs.slice(s, e).map((c) => c.box), from: i - s, to: Math.min(e, run.end) - s, angle: g.angle });
       i = e - 1;
     }
   }
@@ -540,6 +543,61 @@ function shareOut(letters: readonly Letter[], cells: readonly (readonly [number,
   return out;
 }
 
+/** The chars [c0, c1) whose cells' centres are within a letter (the nearest one if none is). */
+function charsOf(l: Letter, cells: readonly (readonly [number, number])[]): readonly [number, number] {
+  let c0 = -1;
+  let c1 = -1;
+  cells.forEach(([a, b], k) => {
+    const m = (a + b) / 2;
+    if (m >= l.u0 && m <= l.u1 + 1) {
+      if (c0 < 0) c0 = k;
+      c1 = k + 1;
+    }
+  });
+  if (c0 >= 0) return [c0, c1];
+  let best = 0;
+  cells.forEach(([a, b], k) => {
+    const [x, y] = cells[best];
+    if (Math.abs((a + b) / 2 - (l.u0 + l.u1) / 2) < Math.abs((x + y) / 2 - (l.u0 + l.u1) / 2)) best = k;
+  });
+  return [best, best + 1];
+}
+
+/**
+ * A planned word with its letters bold for chars [from, to) of it: each letter whose chars are mostly marked (so a
+ * letter is never half bold). What a page's plan, made with every letter bold, gives a mark that covers part of a word.
+ */
+export function markedWord(pw: PlannedWord, from: number, to: number): PlannedWord {
+  return {
+    ...pw,
+    word: { ...pw.word, from, to },
+    letters: pw.letters.map((l) => {
+      const inside = Math.max(0, Math.min(to, l.chars[1]) - Math.max(from, l.chars[0]));
+      return { ...l, bold: 2 * inside > l.chars[1] - l.chars[0] };
+    }),
+  };
+}
+
+/**
+ * Where a planned word's chars meet, along its text (page points: x for upright text, y for text turned a quarter):
+ * halfway between each letter's ink and the next one's. Null unless it has one letter a char. A selection or a mark
+ * cut there starts and ends on whole letters (R106).
+ */
+export function letterCuts(pw: PlannedWord): number[] | null {
+  const n = pw.word.chars.length;
+  if (pw.letters.length !== n || pw.letters.some((l, k) => l.chars[0] !== k)) return null;
+  const turned = sideways(pw.word.angle);
+  const back = pw.word.angle >= 135 && pw.word.angle < 315; // reading towards −x (180) or −y (270)
+  const span = (b: PdfRect) => (turned ? [b.y, b.y + b.height] : [b.x, b.x + b.width]);
+  const cuts: number[] = [];
+  for (let k = 0; k + 1 < n; k++) {
+    const [a0, a1] = span(pw.letters[k].box);
+    const [b0, b1] = span(pw.letters[k + 1].box);
+    cuts.push(back ? (a0 + b1) / 2 : (a1 + b0) / 2);
+  }
+  return cuts;
+}
+
 /** How many of a letter's ink px have their centre in [a, b) across (region px). */
 function massWithin(l: Letter, W: number, a: number, b: number): number {
   let inside = 0;
@@ -612,7 +670,7 @@ function invert(m: TurnMatrix): TurnMatrix {
 }
 
 /** Words in a row on one line, for one frame each. */
-function linesOf(words: readonly InkWord[]): InkWord[][] {
+export function linesOf(words: readonly InkWord[]): InkWord[][] {
   const lines: InkWord[][] = [];
   for (const w of words) {
     const line = lines[lines.length - 1];
@@ -715,7 +773,7 @@ export function planInk(pic: InkSource, device: TurnMatrix, words: readonly InkW
         letters: letters.map((l, k) => {
           const [ax, ay] = toPage(f, inverse, r.x0 + l.u0, r.y0 + l.v0);
           const [bx, by] = toPage(f, inverse, r.x0 + l.u1 + 1, r.y0 + l.v1 + 1);
-          return { box: { x: Math.min(ax, bx), y: Math.min(ay, by), width: Math.abs(bx - ax), height: Math.abs(by - ay) }, bold: bold[k] };
+          return { box: { x: Math.min(ax, bx), y: Math.min(ay, by), width: Math.abs(bx - ax), height: Math.abs(by - ay) }, bold: bold[k], chars: oneEach ? ([k, k + 1] as const) : charsOf(l, cells) };
         }),
       });
       if (runs.length === 0) runs.push(0.06 * lh); // no clean stroke to measure: a typical stem for its size
@@ -1231,61 +1289,66 @@ export function paintInk(pic: InkSource, device: TurnMatrix, plan: InkPlan, look
   return { patches, letters: grown };
 }
 
-// ---- warming up ----
+// ---- a word grown ahead, letter by letter ----
 
-let warmed = false;
+/** One letter of a word, grown ahead of any mark: the px of the picture it changes, and their colour. */
+export interface GrownLetter {
+  /** The word's chars [c0, c1) it is (PlannedWord's letters). */
+  chars: readonly [number, number];
+  tone: 'dark' | 'light';
+  /** Device px of the picture (y · width + x) and each one's RGB, and the box they are in (x1, y1 exclusive). */
+  px: Int32Array;
+  rgb: Uint8Array;
+  box: { x0: number; y0: number; x1: number; y1: number };
+}
 
 /**
- * Runs planInk and paintInk a few times on a small made-up line of letters, once a tab, when the browser is idle: the
- * first bold on a scan then takes a few ms instead of the hundred or more that code run for the first time costs.
- * Called when a page's recognised text arrives. Touches nothing on screen.
+ * Grows every letter of planned word `pw` on `pic` (made with `device`, `width` px wide), and shares the changed px out
+ * among the letters by where their chars meet (letterCuts: growth never reaches past half a gap, so each px is one
+ * letter's). Null when the word cannot be cut into its letters. A mark on any of its letters then draws those letters'
+ * px, with no reading or growing at the key press.
  */
-export function warmInkSoon(): void {
-  if (warmed) return;
-  warmed = true;
-  // A line of made-up letters (stems and rings with soft edges) on cream paper, at a fractional scale with fractional
-  // boxes: the same kinds of numbers as a real page, so the code is warmed up for them. `m`: how large (1 and 2: a page
-  // at about 100% and 200% on a 2× screen).
-  const line = (m: number) => {
-    const k = 2.6667 * m;
-    const W = 420 * m;
-    const H = 60 * m;
-    const paper = [238, 230, 205] as const;
-    const px = new Uint8ClampedArray(4 * W * H);
-    for (let i = 0; i < W * H; i++) px.set([...paper, 255], 4 * i);
-    const ink = (x: number, y: number, c: number) => {
-      const p = 4 * (y * W + x);
-      for (let ch = 0; ch < 3; ch++) px[p + ch] = Math.min(px[p + ch], paper[ch] - c * (paper[ch] - [40, 32, 28][ch]));
-    };
-    for (let n = 0; n < 16; n++) {
-      const x0 = m * (14 + n * 24.5);
-      for (let y = 14 * m; y < 46 * m; y++) for (let x = Math.floor(x0); x < x0 + 4 * m; x++) ink(x, y, x === Math.floor(x0) ? 0.45 : x >= x0 + 4 * m - 1 ? 0.6 : 1);
-      for (let y = 26 * m; y < 48 * m; y++)
-        for (let x = Math.floor(x0 + 6 * m); x < x0 + 22 * m; x++) {
-          const d = Math.abs(Math.hypot(x - x0 - 13.5 * m, y - 37 * m) - 7.5 * m);
-          if (d < 2.2 * m) ink(x, y, Math.min(1, 2.2 * m - d));
-        }
-    }
-    const src: InkSource = { read: (x, y, w, h) => copyBlock(px, W, H, x, y, w, h) };
-    const chars = Array.from({ length: 16 }, (_, n) => ({ x: (12.3 + n * 24.5) / 2.6667, y: 9.7 / 2.6667, width: 24.5 / 2.6667, height: 42.1 / 2.6667 }));
-    const words: InkWord[] = [
-      { chars: chars.slice(0, 8), from: 2, to: 8, angle: 0 },
-      { chars: chars.slice(8), from: 0, to: 8, angle: 0 },
-    ];
-    return { src, device: [k, 0, 0, k, 0.25, 0.25] as TurnMatrix, words };
-  };
-  const run = () => {
-    for (const m of [1, 2]) {
-      const { src, device, words } = line(m);
-      for (let n = 0; n < 4; n++) {
-        const plan = planInk(src, device, words, true);
-        paintInk(src, device, plan, { gain: 1, boost: 0.8 }, undefined, true);
-        paintInk(src, device, plan, { gain: 1.4, boost: 0 });
+export function growLetters(pic: InkSource, device: TurnMatrix, pw: PlannedWord, look: InkLook, width: number): GrownLetter[] | null {
+  const cuts = letterCuts(pw);
+  if (cuts === null) return null;
+  const all = markedWord(pw, 0, pw.word.chars.length);
+  const { patches } = paintInk(pic, device, { words: [all] }, look);
+  const inverse = invert(device);
+  const turned = sideways(pw.word.angle);
+  const back = pw.word.angle >= 135 && pw.word.angle < 315;
+  const lists: { px: number[]; rgb: number[]; tone: 'dark' | 'light' }[] = pw.letters.map(() => ({ px: [], rgb: [], tone: 'dark' }));
+  for (const patch of patches) {
+    const ground = patch.tone === 'dark' ? 255 : 0;
+    for (let y = 0; y < patch.h; y++)
+      for (let x = 0; x < patch.w; x++) {
+        const q = 4 * (y * patch.w + x);
+        if (patch.rgba[q] === ground && patch.rgba[q + 1] === ground && patch.rgba[q + 2] === ground) continue;
+        const dx = patch.x + x;
+        const dy = patch.y + y;
+        if (dx < 0 || dy < 0 || dx >= width) continue;
+        const px = inverse[0] * (dx + 0.5) + inverse[2] * (dy + 0.5) + inverse[4];
+        const py = inverse[1] * (dx + 0.5) + inverse[3] * (dy + 0.5) + inverse[5];
+        const along = turned ? py : px;
+        let k = 0;
+        while (k < cuts.length && (back ? along < cuts[k] : along >= cuts[k])) k++;
+        const l = lists[k];
+        l.px.push(dy * width + dx);
+        l.rgb.push(patch.rgba[q], patch.rgba[q + 1], patch.rgba[q + 2]);
+        l.tone = patch.tone;
       }
+  }
+  return lists.map((l, k) => {
+    const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    for (const i of l.px) {
+      const x = i % width;
+      const y = (i - x) / width;
+      box.x0 = Math.min(box.x0, x);
+      box.x1 = Math.max(box.x1, x + 1);
+      box.y0 = Math.min(box.y0, y);
+      box.y1 = Math.max(box.y1, y + 1);
     }
-  };
-  if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 2000 });
-  else setTimeout(run, 50);
+    return { chars: pw.letters[k].chars, tone: pw.light ? 'light' : l.tone, px: Int32Array.from(l.px), rgb: Uint8Array.from(l.rgb), box };
+  });
 }
 
 /** Px [x, x + w) × [y, y + h) of an RGBA picture `W` × `H` (row by row) as a block of their own; px off it are alpha 0. */
