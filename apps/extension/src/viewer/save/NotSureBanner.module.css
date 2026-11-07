@@ -8,6 +8,8 @@
  */
 .place {
   position: fixed;
+  /* Above the page area (.content in App.module.css), which comes later in the DOM and would otherwise cover the buttons. */
+  z-index: 3;
   inset-block-start: calc(var(--viewer-header-h) + var(--viewer-pill-h) + var(--space-4));
   display: flex;
   justify-content: center;
