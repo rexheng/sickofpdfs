@@ -32,7 +32,7 @@ import { SortMenu } from './SortMenu';
 import { useLayoutPreference } from './use-layout';
 // S18 (R92): tags on rows and cards, several readings at once, Group by, a tag's own list, and About this PDF.
 import { AboutPanel } from '../about/AboutPanel';
-import { groupEntries, groupOfKey, useGrouping, useGroups } from '../tags/grouping';
+import { chipsUnder, groupEntries, groupOfKey, useGrouping, useGroups } from '../tags/grouping';
 import { GroupByMenu } from '../tags/GroupByMenu';
 import { RowTags } from '../tags/RowTags';
 import { sayWith } from '../tags/say';
@@ -104,7 +104,7 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
     if (needAll && state.kind === 'ready' && state.nextCursor !== null) loadMore();
   }, [needAll, state, loadMore]);
 
-  const groups = useGroups(tags, grouping, state);
+  const groups = useGroups(tags, grouping, state, data.courses ?? null);
   const entries = useMemo<CollectionEntry<LibraryItem>[]>(() => {
     if (grouping !== 'none') return groups === null ? [] : groupEntries(groups, new Map(shown.map((i) => [i.doc.id, i])), groupingState.collapsed);
     if (!groupByDate) return shown.map((item) => ({ kind: 'item', key: keyOf(item), item }));
@@ -306,7 +306,7 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
           <CellText title={readingTitle(i)}>{readingTitle(i)}</CellText>
           <Badges item={i} narrow={aboutOpen} older={olderVersions.has(i.doc.id)} />
           {tags !== null && (
-            <RowTags documentId={i.doc.id} list={readingTags.get(i.doc.id) ?? []} tags={tags} say={say} max={1} tabbable={false} except={saidAbove(key)} onMore={() => tagsFor(i)} />
+            <RowTags documentId={i.doc.id} list={chipsUnder(grouping, readingTags.get(i.doc.id) ?? [])} tags={tags} say={say} max={1} tabbable={false} except={saidAbove(key)} onMore={() => tagsFor(i)} />
           )}
         </>
       ),
@@ -420,7 +420,7 @@ export function ReadingsView({ title, view, defaultSort, sortable, groupByDate =
               more: more(item, active),
               thumbnail: <CardThumbnail id={item.doc.id} stored={item.doc.blobStored} />,
               ...(cardTags
-                ? { footer: tags !== null && <RowTags documentId={item.doc.id} list={readingTags.get(item.doc.id) ?? []} tags={tags} say={say} max={1} tabbable={false} except={saidAbove(key)} onMore={() => tagsFor(item)} /> }
+                ? { footer: tags !== null && <RowTags documentId={item.doc.id} list={chipsUnder(grouping, readingTags.get(item.doc.id) ?? [])} tags={tags} say={say} max={1} tabbable={false} except={saidAbove(key)} onMore={() => tagsFor(item)} /> }
                 : {}),
             })}
             onOpen={open}
