@@ -51,6 +51,7 @@ import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MINILM_COMMIT, MINILM_FILES, MINILM_REPO } from './fetch-minilm.mjs';
+import { OCR_MODELS } from './fetch-ocr-models.mjs';
 
 const extensionDir = fileURLToPath(new URL('..', import.meta.url));
 const repoDir = join(extensionDir, '../..');
@@ -91,7 +92,7 @@ const WHAT = {
   '@fontsource-variable/google-sans-flex': 'Google Sans Flex font, for the interface.',
   'material-symbols': 'The Material Symbols icon font, for the interface. Its menu_book icon is also drawn into the extension icon.',
   '@sqlite.org/sqlite-wasm': 'SQLite as WebAssembly: keeps your notes and library on this computer.',
-  'onnxruntime-web': 'ONNX Runtime for the web: runs the learning filter\'s model on this computer (the files in ort/).',
+  'onnxruntime-web': 'ONNX Runtime for the web: runs the learning filter\'s model and the scanned-page text models on this computer (the files in ort/).',
   'onnxruntime-common': 'Part of ONNX Runtime for the web; it is built into ort/ort.wasm.min.mjs.',
   'hash-wasm': 'Computes the fingerprint of a PDF file.',
   'diff-match-patch': 'Compares text, so a note finds its place again when the text around it changes.',
@@ -313,6 +314,23 @@ async function manualEntries() {
       ],
       texts: [{ label: 'microsoft/unilm LICENSE', body: await thirdParty('microsoft-unilm-LICENSE') }],
     },
+    // ── The text recognition models for scanned pages (Phase 7)
+    ...OCR_MODELS.map((m) => ({
+      name: `${m.dir.replaceAll('_', ' ')} (ONNX model)`,
+      version: `revision ${m.commit.slice(0, 7)}`,
+      licence: 'Apache-2.0',
+      what:
+        m.dir.endsWith('_det')
+          ? 'Finds the lines of text on a scanned page (models/ocr/). It runs on this computer only.'
+          : 'Reads the text of each line found on a scanned page, in English, French, German and other Latin-script languages (models/ocr/). It runs on this computer only.',
+      source: `https://huggingface.co/${m.repo}/tree/${m.commit}`,
+      notes: [
+        `Repository: ${m.repo}, revision ${m.commit}.`,
+        'PaddleOCR PP-OCRv6 tiny, exported to ONNX by PaddlePaddle. The model card and the PaddleOCR repository state Apache-2.0. The character list ships inside inference.yml under the same licence.',
+        `Files: ${m.files.map((f) => `${m.dir}/${f.name} (sha256 ${f.sha256})`).join('; ')}.`,
+      ],
+      texts: [{ label: 'Apache License 2.0', body: apache }],
+    })),
     // ── SQLite
     {
       name: 'SQLite',

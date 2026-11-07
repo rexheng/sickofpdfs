@@ -1,6 +1,6 @@
 # Third-party notices
 
-sickofpdfs is built on other people's open-source work. This is the short list: 132 items, each with its licence.
+sickofpdfs is built on other people's open-source work. This is the short list: 134 items, each with its licence.
 
 The full licence text of every item is inside the extension. Open the library, then Help → About → Open-source licences.
 The release zip also holds it as `THIRD_PARTY_NOTICES.txt`. Nothing here is sent anywhere.
@@ -124,6 +124,8 @@ This file is written by `node scripts/release/notices.mjs` from the same generat
 | pdf-lib 1.17.1 | MIT |
 | pdf.js: Chromium extension helpers | Apache-2.0 |
 | pdf.js: text layer commit 743102c | Apache-2.0 |
+| PP-OCRv6 tiny det (ONNX model) revision 2ba1506 | Apache-2.0 |
+| PP-OCRv6 tiny rec (ONNX model) revision 2612ab3 | Apache-2.0 |
 | radix-ui 1.8.1 | MIT |
 | react 19.3.1 | MIT |
 | react-dom 19.3.1 | MIT |
