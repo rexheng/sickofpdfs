@@ -135,6 +135,8 @@ async function boldFillsOf(host: NotesHost, plan: readonly PdfAnnotationPlan[], 
 }
 
 export interface ExportOptions {
+  /** Rows an import made from the file's own annotations, with when (`importContext().refs`). Unchanged ones are not written again: the file holds them. */
+  imported?: readonly { rowTable: 'marks' | 'threads' | 'comments'; rowId: string; createdAt: number }[];
   /** The owner's name on their notes (/T); blank leaves it out. Claude's notes say "Claude". */
   authorName: string;
   /** The reading's tags (spec: written into the copy's Keywords), when it is in the library. */
@@ -150,8 +152,14 @@ export async function exportWithNotes(host: NotesHost, o: ExportOptions): Promis
   };
   // Each row as it is drawn in these bytes: its anchor re-placed for them (so a moved note exports where it is drawn).
   // A row with no placement keeps its stored anchor and is not placed (a mark is left out, a comment goes to its page).
-  const marks = state.marks.filter((m) => m.deletedAt === null).map((m) => ({ ...m, anchor: placedAnchor(m.id) ?? m.anchor }));
-  const threads = state.threads.filter((t) => t.deletedAt === null && t.draftOfTab === null).map((t) => ({ ...t, anchor: placedAnchor(t.id) ?? t.anchor }));
+  // Notes that came from the file's own annotations and are unchanged since the import are already in these bytes.
+  const importedAt = new Map((o.imported ?? []).map((r) => [r.rowId, r.createdAt]));
+  const unchanged = (id: string, changedAt: number): boolean => (importedAt.get(id) ?? -1) >= changedAt;
+  const commentsOf = (threadId: string) => state.comments.filter((c) => c.threadId === threadId);
+  const marks = state.marks.filter((m) => m.deletedAt === null && !unchanged(m.id, m.updatedAt)).map((m) => ({ ...m, anchor: placedAnchor(m.id) ?? m.anchor }));
+  const threads = state.threads
+    .filter((t) => t.deletedAt === null && t.draftOfTab === null && !(unchanged(t.id, t.updatedAt) && commentsOf(t.id).every((c) => unchanged(c.id, c.editedAt ?? c.createdAt))))
+    .map((t) => ({ ...t, anchor: placedAnchor(t.id) ?? t.anchor }));
   const placedRects = new Map<Anchor, NormRectsByPage | null>();
   const pages = new Set<number>([0]);
   for (const row of [...marks, ...threads]) {

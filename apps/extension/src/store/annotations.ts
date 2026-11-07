@@ -58,7 +58,7 @@ export interface ImportContext {
   /** Ids asked that other documents' rows already use: an import gives its rows other ids. */
   elsewhere: string[];
   /** `pdf_import_refs` of the document: the annotations imported before. */
-  refs: { pdfRef: string; rowTable: AnnotationTable; rowId: string }[];
+  refs: { pdfRef: string; rowTable: AnnotationTable; rowId: string; createdAt: number }[];
 }
 
 /** The rows an import adds, as `planPdfImport` makes them, and the refs that go with them. */
@@ -587,8 +587,8 @@ export function createAnnotationsApi(db: SqlDb, deps: AnnotationDeps): Annotatio
           }
         }
         const refs = db
-          .selectObjects('SELECT pdf_ref, row_table, row_id FROM pdf_import_refs WHERE document_id = ?', [documentId])
-          .map((r) => ({ pdfRef: text(r, 'pdf_ref'), rowTable: text(r, 'row_table') as AnnotationTable, rowId: text(r, 'row_id') }));
+          .selectObjects('SELECT pdf_ref, row_table, row_id, created_at FROM pdf_import_refs WHERE document_id = ?', [documentId])
+          .map((r) => ({ pdfRef: text(r, 'pdf_ref'), rowTable: text(r, 'row_table') as AnnotationTable, rowId: text(r, 'row_id'), createdAt: num(r, 'created_at') }));
         return { own, elsewhere, refs };
       }),
 

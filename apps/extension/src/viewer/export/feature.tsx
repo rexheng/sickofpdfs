@@ -68,7 +68,9 @@ export async function downloadWithNotes(host: NotesHost): Promise<void> {
     // the tags of a reading in the library (spec: they go in the copy's Keywords); an unsaved PDF has none
     const saved = host.save?.state.kind === 'saved' ? host.save.state.documentId : null;
     const tags = saved !== null && store !== null ? await store.tagsOf(saved).then((t) => t.map((x) => x.name), () => []) : [];
-    const result = await exportWithNotes(host, { authorName: name, tags });
+    // notes imported from the file's own annotations are already in it: only new or changed ones are written
+    const imported = saved !== null && store !== null ? await store.importContext(saved, []).then((c) => c.refs.filter((r) => r.pdfRef !== 'declined'), () => []) : [];
+    const result = await exportWithNotes(host, { authorName: name, tags, imported });
     downloadOriginal(result.blob, result.fileName);
     host.showNote(doneText(result));
   } catch (e) {
