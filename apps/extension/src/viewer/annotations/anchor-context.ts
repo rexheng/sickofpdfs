@@ -56,11 +56,14 @@ export function createTextAnchorMaker(t: DocumentText): (ranges: CharRange[]) =>
       Promise.all(ranges.map(async (r) => ({ page: r.pageIndex, rects: await markNormRects(t, r.pageIndex, r.start, r.end - r.start) }))),
     ]);
     const raw = new Map(texts);
+    // Phase 7: a passage on a scanned page records whose text its positions are in ('ocr:<engine>@<version>', contracts §2).
+    const source = t.pageText.source(first.pageIndex);
     return buildTextAnchor({
       text: (p) => raw.get(p) ?? '',
       start: { page: first.pageIndex, index: first.start },
       end: { page: last.pageIndex, index: last.end },
       rects: rects.filter((r) => r.rects.length > 0),
+      ...(source !== 'pdfium' ? { textSource: source } : {}),
     });
   };
 }

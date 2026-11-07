@@ -2,7 +2,7 @@
  * What the viewer publishes about itself for tests to read. Production code writes here with `publishRuntime`;
  * nothing in this file is global, and nothing in production reads it. Later tasks add fields.
  */
-import type { DocumentId, FilterDecision, SaveState } from '@sop/core';
+import type { DocumentId, FilterDecision, OcrProgress, SaveState } from '@sop/core';
 import type { CaretPos, CharRange, PageBox, PagePoint, PdfBackend, ViewerSnapshot } from '@sop/viewer';
 import type { BlobStore } from '../store/blob-store';
 import type { StoreClient } from '../store/client';
@@ -58,6 +58,13 @@ export interface ViewerRuntime {
   annotations: AnnotationSession | null;
   /** Phase 4 (plan §8 A3): how @Claude is asked in this tab, while a PDF with notes is open; null otherwise. */
   claude: ClaudeEntryHost | null;
+  /** Phase 7: the open PDF's scanned pages: how far their reading is, which pages have recognised text, and the page text as read. */
+  ocr: {
+    progress(): OcrProgress | null;
+    recognised(): number[];
+    text(pageIndex: number): Promise<string>;
+    source(pageIndex: number): string;
+  } | null;
 }
 
 /** The save controller as tests (and Phase 2's first mark) drive it. */

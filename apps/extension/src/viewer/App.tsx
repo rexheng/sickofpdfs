@@ -22,6 +22,7 @@ import {
   RenderScheduler,
   ScanDetector,
   START_ZOOM,
+  withOcr,
   useViewerState,
   type ViewerSnapshot,
   type ViewerStore,
@@ -59,6 +60,7 @@ import { commandShortcuts, createCommands, createIdleCommands, type ViewerComman
 import { useReaderFind } from './find';
 import { FormBanner, useFormBounce } from './forms/FormBanner';
 import { NotesMovedBanner, useNotesMoved } from './about/NotesMovedBanner';
+import { createViewerOcr, type ViewerOcr } from './ocr/wire';
 import { maybeLeaveFrame, mayOfferNewTab, openInNewTab, wantsFullTab } from './frame-escape';
 import { railStartsOpen, useOutline, useRailFitsWindow, useReaderNavigation } from './navigation';
 import {
@@ -592,9 +594,18 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
     () => new RenderScheduler(backend, doc.open.doc, { concurrency: ENGINE_WORKERS, previewWidthPx: 160, previewCache: 300 }),
   );
   const [scans] = useState(() => new ScanDetector(backend, doc.open.doc, doc.open.pages));
-  // The page text everything reads (the text layer now; marks and find later): one glyph cache for the document.
-  const [pageText] = useState(() => createPageTextProvider(backend, doc.open.doc));
-  const wordStarts = useWordStartsController(doc, pageText, scans, scheduler, ui);
+  // The page text everything reads (the text layer, marks, find, Claude): one glyph cache for the document. Phase 7: a scanned
+  // page answers with its recognised text (withOcr), read in this tab or in the background (ocr/wire.ts).
+  const [pdfiumText] = useState(() => createPageTextProvider(backend, doc.open.doc));
+  const [ocr] = useState(() => createViewerOcr({ backend, opened: doc, base: pdfiumText }));
+  const [pageText] = useState(() => withOcr(pdfiumText, ocr.lookup));
+  useEffect(() => ocr.attach(save), [ocr, save]);
+  useEffect(() => () => ocr.dispose(), [ocr]);
+  useOcrHints(ocr, store);
+  // The scan hint ("open it in Chrome's viewer to select its text") and Find's scan note step aside while the scan is being read.
+  const ocrScans = useMemo(() => ({ isScannedPage: (i: number) => scans.isScannedPage(i).then((scan) => scan && !ocr.reading()) }), [scans, ocr]);
+  // Bold word starts draw over the PDF's own glyphs, so they read PDFium's text, never the recognised text.
+  const wordStarts = useWordStartsController(doc, pdfiumText, scans, scheduler, ui);
   // With word starts on, a bold mark takes their weight when it is heavier (Strong), so a word the owner made bold reads
   // as bold all through instead of heavier at its start (R90).
   const wordStartsOn = useWordStarts();
@@ -622,7 +633,17 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   const outline = useOutline(backend, doc);
   useRailFitsWindow(store);
   // Find jumps through the same history as links, so Back returns from each jump to a hit (Task 25).
-  const find = useReaderFind({ backend, doc, store, api, pageText, textLayers, jumps: nav.jumps, root: rootRef, scans });
+  const find = useReaderFind({ backend, doc, store, api, pageText, textLayers, jumps: nav.jumps, root: rootRef, scans: ocrScans });
+  // A page whose recognised text arrives (or goes) is read again by the text layer and Find.
+  const findController = find.controller;
+  useEffect(
+    () =>
+      ocr.onPageText((i) => {
+        textLayers.refreshPage(i);
+        findController?.refreshPage?.(i);
+      }),
+    [ocr, textLayers, findController],
+  );
   // The document's notes: marks, comments and drafts (Phase 2). Null in Incognito, which has none.
   const notes = useNotes(doc, pageText, store, api, textLayers, save, nav.jumps, ui);
   // Reading time, the last spot and the pages visited (kept once the PDF is saved), and the return to the last spot.
@@ -685,10 +706,11 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       publishRuntime({
         viewer: viewerHooks(api, store, scans, textLayers),
         selectionRanges: () => textLayers.selectionRanges(),
+        ocr: { progress: () => ocr.progress(), recognised: () => ocr.recognised(), text: (i: number) => pageText.text(i), source: (i: number) => pageText.source(i) },
         glyphCenter: (pageIndex, charIndex) => textLayers.glyphCenter(pageIndex, charIndex),
         caret: () => ({ on: textLayers.caret.enabled, position: textLayers.caret.position() }),
       }),
-    [store, scans, textLayers],
+    [store, scans, textLayers, ocr, pageText],
   );
   // Each page, bottom to top: the bold word starts (R90), its marks (and bold) and the features' page layers (Phase 2),
   // find's highlights (Task 25), the selection and the text layer, then the links (Task 24).
@@ -754,7 +776,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
         view={toolbarView}
         returnFocus={returnFocus}
         // In the compact pill (a narrow window) Area note is a row of its "More" menu instead (chrome/compact.ts).
-        end={<><CurrentPageExtras store={store} scans={scans} source={doc.loaded.sourceUrl} onOpenInChrome={(url, page) => ui.openInChrome(url, page)} />{!compact && <AreaToolButton commands={commands} />}<CommentButton /></>}
+        end={<><CurrentPageExtras store={store} scans={ocrScans} source={doc.loaded.sourceUrl} onOpenInChrome={(url, page) => ui.openInChrome(url, page)} />{!compact && <AreaToolButton commands={commands} />}<CommentButton /></>}
       />
       <NavRail
         store={store}
@@ -863,7 +885,7 @@ const TEXT_LAYER_FONT = 'pdf/NotoSans-Regular.ttf';
  * What follows the page in view: `#page=N` in the address, and the scan hint, whose "open in Chrome" keeps the page.
  * Kept apart so the page list does not re-render.
  */
-function CurrentPageExtras(p: { store: ViewerStore; scans: ScanDetector; source: string | null; onOpenInChrome: (url: string, page: number) => void }) {
+function CurrentPageExtras(p: { store: ViewerStore; scans: Pick<ScanDetector, 'isScannedPage'>; source: string | null; onOpenInChrome: (url: string, page: number) => void }) {
   const currentPage = useViewerState(p.store, (s) => s.currentPage);
   const scanned = useScannedPage(p.scans, currentPage);
   usePageHash(currentPage);
@@ -875,7 +897,7 @@ function CurrentPageExtras(p: { store: ViewerStore; scans: ScanDetector; source:
 const SCAN_CHECK_DELAY_MS = 400;
 
 /** Whether page `index` is a scan, checked once the reader has stayed on it for a moment. */
-function useScannedPage(scans: ScanDetector, index: number): boolean {
+function useScannedPage(scans: Pick<ScanDetector, 'isScannedPage'>, index: number): boolean {
   const [scanned, setScanned] = useState<{ index: number; scan: boolean } | null>(null);
   useEffect(() => {
     let live = true;
@@ -957,6 +979,26 @@ function readerShortcuts(api: RefObject<PageListApi | null>, caretKeys: () => bo
     pageNotCaret('scroll.left', ['ArrowLeft'], (a) => a.scrollSideways(-1)),
     pageNotCaret('scroll.right', ['ArrowRight'], (a) => a.scrollSideways(1)),
   ];
+}
+
+/**
+ * Tells the scan reader which pages are on screen (the page in view and the next one) and which way the reader is going, so they
+ * are read first. Follows the view store without re-rendering the Reader.
+ */
+function useOcrHints(ocr: ViewerOcr, store: ViewerStore): void {
+  useEffect(() => {
+    let last = store.get().currentPage;
+    let direction: 1 | -1 = 1;
+    const send = () => ocr.hint(direction === 1 ? [last, last + 1, last - 1] : [last, last - 1, last + 1], direction);
+    send();
+    return store.subscribe(() => {
+      const now = store.get().currentPage;
+      if (now === last) return;
+      direction = now > last ? 1 : -1;
+      last = now;
+      send();
+    });
+  }, [ocr, store]);
 }
 
 /** How long viewer.scrollTo waits for the page's full render before giving up. */

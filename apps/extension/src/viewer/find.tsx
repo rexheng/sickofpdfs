@@ -55,7 +55,7 @@ interface FindDeps {
   jumps: JumpHistory | null;
   root: RefObject<HTMLElement | null>;
   /** The scan check: when the document is a scan, the bar says so as it opens (not after searching every page). */
-  scans: ScanDetector;
+  scans: Pick<ScanDetector, 'isScannedPage'>;
 }
 
 /** The union of rects. */
@@ -194,13 +194,14 @@ export function useReaderFind({ backend, doc, store, api, pageText, textLayers, 
 
   const openBar = useCallback(() => {
     if (made.current === null) {
-      made.current = createFindController(backend, doc.open.doc, doc.open.pageCount, () => store.get().currentPage);
+      // The chars come from the page text, so a scanned page is searched in its recognised text (Phase 7).
+      made.current = createFindController(backend, doc.open.doc, doc.open.pageCount, () => store.get().currentPage, { chars: (i) => pageText.rawText(i) });
       setController(made.current);
     }
     setLinger(null);
     setOpen(true);
     setFocusRequest((n) => n + 1);
-  }, [backend, doc, store]);
+  }, [backend, doc, store, pageText]);
 
   const selectMatch = useCallback(
     (hit: SearchHit) => {
