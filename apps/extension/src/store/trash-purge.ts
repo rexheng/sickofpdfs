@@ -16,6 +16,7 @@
 // - It runs inside the store worker's own request queue (see `startDailyPurge`), so a restore cannot slip in between steps.
 import type { DocumentId, HlcStamp } from '@sop/core';
 import type { StoreChange } from './change-bus';
+import { forgetCoursePlacements } from './courses-api';
 import { forgottenHashes, recordForgotten } from './forgotten';
 import { FTS_TABLES } from './schema';
 import type { SqlDb } from './schema-v2';
@@ -127,6 +128,7 @@ export async function purgeTrashRows(db: SqlDb, deps: TrashDeps, olderThan: numb
         );
         forgotten.push(...still);
         clearTagOutbox(tx, still);
+        forgetCoursePlacements(tx, still);
         // A topic or course tag only these readings kept alive goes too (R92).
         orphaned.push(...dropOrphanAutoTags(tx));
       }

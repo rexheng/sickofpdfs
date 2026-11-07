@@ -124,6 +124,8 @@ export const ICON_NAMES = [
   'insert_chart',
   // Phase 8 (slice 8.3): File → Download with notes
   'export_notes',
+  // Phase 8 (slice 8.5b): Courses: move a reading to another course
+  'drive_file_move',
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

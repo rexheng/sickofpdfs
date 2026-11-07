@@ -4,6 +4,7 @@ import type { DocumentId } from '@sop/core';
 import type { PaletteStore } from '../../shared/palette';
 import type { LibraryApi, LibraryQuery } from '../../store/library-api';
 import type { AboutData } from '../about/about-data';
+import type { CoursesData } from '../courses/courses-data';
 import type { TagsData } from '../tags/tags-data';
 import type { PagesData } from './pages-data';
 
@@ -48,4 +49,6 @@ export interface LibraryData extends PagesData {
   tags?: TagsData;
   /** About this PDF (S18, R92). Absent in the sample library. */
   about?: AboutData;
+  /** The Courses page (8.5b). Absent in the sample library, which has no courses. */
+  courses?: CoursesData;
 }

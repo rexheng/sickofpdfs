@@ -1,0 +1,101 @@
+/* The Courses page's dialogs: the Tags dialogs' layout (a short note, a field or a list of choices, 12 px apart). */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  inline-size: var(--sop-tag-dialog-w);
+  max-inline-size: 100%;
+}
+
+.note {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+/* The reading being moved: its icon and title on one line, as a row of the list shows it. */
+.reading {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-row-name);
+  font-variation-settings: "opsz" 17;
+}
+
+.readingTitle {
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.fieldLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-row-name);
+  font-variation-settings: "opsz" 17;
+}
+
+.choices {
+  display: flex;
+  flex-direction: column;
+  max-block-size: var(--sop-tag-dialog-min-h);
+  overflow-y: auto;
+}
+
+.choice {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  min-block-size: var(--sop-action-row-h);
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--shape-chip);
+  background: transparent;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+  text-align: start;
+  cursor: pointer;
+}
+
+.choice:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.choice:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.chosen {
+  color: var(--gm3-sys-color-primary);
+}
+
+.choiceText {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.choiceName {
+  overflow: hidden;
+  color: var(--gm3-sys-color-on-surface);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.choiceMeta {
+  overflow: hidden;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-lib-second-line);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

@@ -491,6 +491,17 @@
   /* The "Web page" kind beside a reading's title in the library */
   --type-kind-badge: 500 12px/16px var(--font-text);
 
+  /* ===== Phase 8: the Courses page (8.5b). A course is Drive's file card grown into a list: the tonal card, a header strip,
+     and a white box (here its readings, there the page thumbnail) ===== */
+  /* Cards stretch to fill a row and are never narrower than this: two side by side beside the nav at 1280 px */
+  --sop-course-card-min: 400px;
+  /* A second line under a name, as Drive Home's folder cards ("In My Drive"): Google Sans Text 12/16 400 [img] */
+  --type-lib-second-line: 400 12px/16px var(--font-text);
+  /* A reading in a course: two lines (the title, then the authors) in a 56 px row */
+  --sop-course-row-h: 56px;
+  /* The white box that holds a course's readings, inset in the tonal card as the grid's thumbnail is */
+  --shape-course-list: 8px;
+
   /* ===== Part 3: component roles that change with the theme. tokens-dark.css declares each one again. ===== */
   --menu-bg: var(--gm3-sys-color-surface-container);           /* #f0f4f9 light context menu [live] */
   --menu-row-h: var(--menu-item-h);                            /* 32px light library menu */

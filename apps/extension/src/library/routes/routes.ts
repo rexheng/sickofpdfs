@@ -1,8 +1,8 @@
 // The library's pages and their places in the navigation (spec "Library pages": Home, My library, Recent, Starred,
-// Notes, Trash, Settings). The address is `library.html#/<id>`, so Back, a reload and a bookmark keep the page.
+// Notes, Trash, Settings; Courses in Release 3). The address is `library.html#/<id>`, so Back, a reload and a bookmark keep the page.
 import type { IconName } from '@sop/ui';
 
-export type RouteId = 'home' | 'library' | 'recent' | 'starred' | 'notes' | 'trash' | 'settings';
+export type RouteId = 'home' | 'library' | 'courses' | 'recent' | 'starred' | 'notes' | 'trash' | 'settings';
 
 export interface RouteDef {
   id: RouteId;
@@ -16,6 +16,7 @@ export interface RouteDef {
 export const ROUTES: readonly RouteDef[] = [
   { id: 'home', label: 'Home', icon: 'home', group: 1 },
   { id: 'library', label: 'My library', icon: 'library_books', group: 1 },
+  { id: 'courses', label: 'Courses', icon: 'school', group: 1 },
   { id: 'recent', label: 'Recent', icon: 'schedule', group: 2 },
   { id: 'starred', label: 'Starred', icon: 'star', group: 2 },
   { id: 'notes', label: 'Notes', icon: 'comment', group: 2 },

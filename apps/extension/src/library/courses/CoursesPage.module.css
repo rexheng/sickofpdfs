@@ -1,0 +1,103 @@
+/*
+ * The Courses page: a quiet line on how courses are found; the course cards in Drive's grid (cards stretch to fill a row,
+ * 16 px apart, and the cards of one row are as tall as each other); then "Not in a course", folded under a chevron as
+ * Home's sections fold (02 section 4.8).
+ */
+.lead {
+  margin: 0;
+  padding: 0 var(--space-2) var(--space-4);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--sop-course-card-min), 100%), 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.slot {
+  display: flex;
+  min-inline-size: 0;
+}
+
+.slot > * {
+  flex: 1 1 auto;
+}
+
+.loose {
+  display: flex;
+  flex-direction: column;
+  padding-block: var(--space-6) var(--space-4);
+}
+
+.looseTitle {
+  display: flex;
+  align-items: center;
+  block-size: var(--header-row-h);
+  margin: 0;
+  font: var(--type-lib-subhead);
+  font-variation-settings: "opsz" 18;
+}
+
+.fold {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  block-size: var(--btn-h);
+  margin: 0 0 0 calc(-1 * var(--space-2));
+  padding: 0 var(--space-3) 0 var(--space-2);
+  border: 0;
+  border-radius: var(--shape-full);
+  background: transparent;
+  color: var(--gm3-sys-color-on-surface);
+  font: inherit;
+  cursor: pointer;
+}
+
+.fold:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.fold:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.chevron {
+  color: var(--gm3-sys-color-on-surface-variant);
+  transition: transform 150ms ease-out;
+}
+
+.chevronFolded {
+  transform: rotate(-90deg);
+}
+
+.looseCount {
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+.looseList {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  border-block-start: 1px solid var(--gm3-sys-color-outline-variant);
+  list-style: none;
+}
+
+.looseList[hidden] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
+}

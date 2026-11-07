@@ -6,6 +6,7 @@ import type { BlobStore } from '../../store/blob-store';
 import type { StoreChange } from '../../store/change-bus';
 import type { StoreClient } from '../../store/client';
 import { createStoreAboutData } from '../about/about-data';
+import { createStoreCoursesData } from '../courses/courses-data';
 import { createStoreTagsData } from '../tags/tags-data';
 import { createStorePagesData } from './pages-data';
 import type { LibraryData } from './types';
@@ -50,5 +51,6 @@ export function createStoreLibraryData(client: StoreClient, blobs: BlobStore | n
     palette: client,
     tags: createStoreTagsData(client),
     about: createStoreAboutData(client),
+    courses: createStoreCoursesData(client),
   };
 }

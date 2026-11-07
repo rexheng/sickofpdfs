@@ -35,6 +35,7 @@ import { type AnnotationsApi, createAnnotationsApi } from './annotations';
 import { type BackupApi, createBackupApi } from './backup-api';
 import type { StoreChange } from './change-bus';
 import { ftsQuery } from './fts-query';
+import { createCoursesApi, type CoursesApi, forgetCoursePlacements } from './courses-api';
 import { createLibraryApi, type LibraryApi } from './library-api';
 import { createRestoreApi, type RestoreApi } from './restore-api';
 import { createLookupsApi, type LookupsApi } from './lookups-api';
@@ -113,7 +114,7 @@ export interface TouchLocationInput {
   at: number;
 }
 
-export interface StoreApi extends AnnotationsApi, PageFiguresApi, PageOcrApi, LibraryApi, BackupApi, RestoreApi, SettingsApi, TagsApi, LookupsApi, PassageVectorsApi {
+export interface StoreApi extends AnnotationsApi, PageFiguresApi, PageOcrApi, LibraryApi, BackupApi, RestoreApi, SettingsApi, TagsApi, LookupsApi, PassageVectorsApi, CoursesApi {
   schemaVersion(): Promise<number>;
   stats(): Promise<StoreStats>;
   /** The library document these bytes are: `documents.id`, or the document an alias (a stamped copy) points to. */
@@ -845,6 +846,8 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
         // 3. Every outbox row naming any of them, including the delete rows the cascade itself just queued.
         run('DELETE FROM outbox WHERE row_id IN (SELECT value FROM json_each(?))', [JSON.stringify([...ids])]);
         clearTagOutbox(db, [documentId]);
+        // Where the owner put it on the Courses page: a settings row named by its fingerprint (8.5b).
+        forgetCoursePlacements(db, [documentId]);
         // A topic or course tag that only this reading kept alive is deleted too (its name came from this reading's words).
         if (existed) orphaned = dropOrphanAutoTags(db);
         // 4. Merge each index into one fresh segment, so the deleted words are gone from the index files too (R13).
@@ -874,5 +877,6 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
     ...createTagsApi(db, deps),
     ...createLookupsApi(db, deps),
     ...createPassageVectorsApi(db),
+    ...createCoursesApi(db, deps),
   };
 }
