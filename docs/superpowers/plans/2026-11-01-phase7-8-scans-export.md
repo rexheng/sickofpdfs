@@ -288,3 +288,17 @@ export function planPdfImport(read: PdfAnnotation[], known: { refs: { pdfRef: st
 
 **Carried from Phase 3 S10 (Nov 1):** onnxruntime-web 1.31.1 is already bundled, as plain wasm with one thread, in `apps/extension/public/ort/`, copied by `apps/extension/scripts/copy-ort-assets.mjs`. OCR reuses that folder and that version. Don't add a second copy. If OCR needs WebGPU or threads, extend the same script.
 - **Carried from R90b (2 Nov):** "Download with notes" writes bold marks with the same synthetic bold as the screen (`marks/synthetic-bold.ts`, strength from `marks/bold-faces.ts`), not the old 0.03 em stroke described in `packages/core/src/export/pdf-mapping.ts`. Update that mapping when the exporter is built.
+
+## Built: 7.1 + 7.2 + 7.3 as one slice (7 Nov 2026, branch `wt/ocr`)
+
+Names that differ from §4 (rule 5):
+- **Schema v7**, not v8: Release 2's sync was never built, so OCR took the next free step. Export is v8, sync v9 (contracts §4). `page_ocr` also has `langs`; the page's chars are rebuilt from `words` (`ocrText`), not stored.
+- `listPageOcr` answers summaries (`pageIndex`, `engine`, `engineVersion`, `createdAt`); a page is read with `getPageOcr`. `putPageOcr(r, { index, rotation? })` answers false and writes nothing for a reading the library does not hold. PDFium's `putPageText` never overwrites a page whose text came from OCR.
+- Models: `apps/extension/scripts/fetch-ocr-models.mjs` (pinned commits and sha256, as `fetch-minilm.mjs`) into `public/models/ocr/` (gitignored), not `scripts/models/` and `public/ocr/`. No copy script: the fetch writes there directly. ORT is the existing `public/ort/` build.
+- Engine id `ppocr`, version `6-tiny.1` (source `ocr:ppocr@6-tiny.1`). The engine reports words in pixels of the page as displayed; `engine.ts` turns them into unrotated points.
+- Hosts: `apps/extension/src/ocr/host.ts` (offscreen page) and `bg-worker.ts` (its worker, own PdfBackend over the saved copy, `persist: true`); the tab side is `apps/extension/src/viewer/ocr/wire.ts` (memory job for unsaved PDFs; asks the background for saved ones; reads results back on `page_ocr` change events). Channel `sop-ocr` (`progress.ts`) carries ids, page numbers and counts of saved readings only.
+- `ocrToPageGlyphs(r, { rotation })` takes an optional rotation; `needsOcr` takes an optional `textWords`.
+- **Upgrade rule, simplified:** a page read by an older engine version is read again last, and replaced only when no mark or thread sits on it; a page with notes keeps its old text (`keptOld`). Re-anchoring notes onto new text is left for when a second engine version ships.
+- Viewer touch-ups needed to see it work: `TextLayerController.refreshPage`, the find controller's `chars` option and `refreshPage`, anchors record `textSource`, the "Scanned page" hint and Find's scan note step aside while a scan is being read, bold word starts keep reading PDFium's text.
+
+Left for 7.5: the "Reading text · N of M" chip and popover (Pause/Resume exist in the service and on the channel), Settings for `ocr.enabled` and `ocr.unsavedInMemory` (read, defaults true), Find's "still reading N pages". Walkthrough 1a's two scan steps (no caret on a scan; a scanned page skipped) describe Release 1 and need updating to scans that have text.

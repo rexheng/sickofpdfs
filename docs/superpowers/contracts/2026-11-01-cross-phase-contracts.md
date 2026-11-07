@@ -557,7 +557,7 @@ export function ocrToPageGlyphs(r: OcrPageResult): PageGlyphs;   // one Glyph pe
   - For an OCR page, `source()` is `ocr:<engine>@<version>`. `text()` is `r.text`, `glyphs()` is `ocrToPageGlyphs(r)`, and `rects` and `search` run on the word boxes.
   - So selection, marks, find, search and Claude treat a scan like text. The same text goes into `page_text` with that `source`.
   - Anchors on OCR text record `textSource`. An engine upgrade re-runs recognition and re-anchors by quote.
-  - OCR runs only for saved PDFs. `page_ocr` is backed up, because it is costly to redo, but never synced; the cloud gets the text through `PUT /api/text`.
+  - OCR results are stored only for saved PDFs. A PDF that is not saved is read in its tab's memory only (D7.1, `ocr.unsavedInMemory`): nothing is written, posted or indexed, and a later save writes what the tab read. `page_ocr` is backed up, because it is costly to redo, but never synced; the cloud gets the text through `PUT /api/text`.
 - **The PDF export mapping (Phase 8).** It uses PDFium incremental save through `PdfBackend.writeAnnotations`; the original file is never modified.
   - Every annotation gets `/NM` = `sop:<row id>` and `/T` = the owner's name or "Claude".
   - `/M` and `/CreationDate` come from the row. `/C` is the token colour's RGB, read from the same token file.
