@@ -52,11 +52,13 @@ The owner has learning disabilities and is highly intelligent. Write to them pla
    - Implementers prove their work with typecheck, lint, a quick run of the feature, and screenshots. They run only the existing walkthroughs that touch their files.
    - At the end of each phase: the full suite (gates 1–3), the four critics, and one short security read of any privacy, network or notes-safety work in that phase.
    - The walkthrough suite (gate 1) stays at 250 tests or fewer (owner, 2026-11-06). Before adding one, merge it into an existing test as a step.
-11. **Less time testing, more building** (owner, 2026-11-07). This overrides rules 6, 8 and 10 where they ask for more.
-   - Implementers run typecheck, lint, one quick run of the feature, and at most the walkthrough files they touch, once.
-   - No flake hunts or repeat runs, except for a possible lost note or privacy leak, and then at most 5 runs.
-   - The four critics run on the release candidate only, not on every test build. Test builds still pass the upgrade check before they ship.
-   - The full suite runs once at the end of a phase or release. A failure there is fixed. The whole suite is not re-run for it, only the failing file.
+11. **Build first; checking is part of building** (owner, 2026-11-07). This overrides rules 6, 7, 8 and 10.
+   - Time goes into building features and making them good to use, not into test rounds.
+   - A builder checks its own work while building: typecheck, lint, one quick run of the feature in the real extension, and screenshots to judge how it looks and feels. That is all.
+   - There are no separate test rounds, no critic rounds, no full-suite runs, no flake hunts and no new tests, unless the owner asks for them.
+   - Two exceptions stay:
+     - a test build must pass the upgrade check before it ships (no lost library);
+     - a suspected lost note or privacy leak is fixed at once, with at most 3 runs to show the fix.
 
 ## Standing constraints
 
