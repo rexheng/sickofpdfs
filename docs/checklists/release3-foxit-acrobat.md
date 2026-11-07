@@ -6,9 +6,17 @@ The question: when you open a PDF we exported, do our notes and replies show up 
 
 We cannot run Foxit or Acrobat in the build container. So we made three files. They hold the same notes. They differ only in how the **replies** are written. You tell us which one looks best.
 
+The files are made by the same code as **File → Download with notes** in the viewer (7 Nov 2026). There is also one real download from the viewer, `attention-with-notes.pdf` (see the end).
+
 ## The files
 
-They are in `test-assets/export-samples/`. They are copies of the NBER paper (pages 1 and 2 have notes).
+They are in `test-assets/export-samples/`. That folder is not in git. If it is empty, make the files again with this command, run in the repo folder:
+
+```
+node scripts/verify/annot-conformance.mjs samples
+```
+
+It also checks each file and prints "all checks passed". A, B and C are copies of the NBER paper (pages 1 and 2 have notes).
 
 | File | How replies are written |
 | --- | --- |
@@ -36,7 +44,7 @@ Same in all three. The author is "Rex Heng" unless it says Claude.
 
 **Page 2**
 
-9. The words "idiosyncratic and exogenous changes" in bold.
+9. The words "idiosyncratic and exogenous changes" in bold. The bold is drawn the same way as on our screen: each letter a little thicker, in the text's own colour.
 10. A gold box with no comment, near the addresses.
 11. A blue highlight over "event-study design". It has a comment, "TD root", and three replies. They should read in this order: reply 1 (you), reply 2 (Claude), reply 3 (you).
 
@@ -66,7 +74,24 @@ Write your answer in the table at the bottom. A word or a tick is enough.
 
 ## Optional: file D, a turned page
 
-Open `sample-D-rotated-and-cropped-pages.pdf`. On each of the 4 pages, the yellow highlight should cover exactly three words. One other phrase should be bold. A note icon should sit upright. Tell us if a highlight sits in the wrong place or on the wrong words.
+Open `sample-D-rotated-and-cropped-pages.pdf`. Its 4 pages are turned 0, 90, 180 and 270 degrees, and trimmed. On each page:
+
+- a yellow highlight covers exactly "measured the depth";
+- "steel rule" is bold;
+- a note icon says "A pin on page N".
+
+Tell us if a highlight sits in the wrong place or on the wrong words. That would mean Acrobat or Foxit reads the corners of a highlight in a different order on a turned page.
+
+## Also: a real download from the viewer
+
+`attention-with-notes.pdf` was made in the viewer itself, with **File → Download with notes**, on "Attention Is All You Need". The author is "Rex Heng".
+
+- **Page 1:** a yellow highlight on the abstract's first line; an underline, a strikethrough and a bold line further down the abstract; a dotted underline with the comment "Why attention only? …" and one reply, "Table 3 answers it …"; a gold box over the footnote with the comment "This box: the authors list …". That box is drawn twice in the same place (the box mark and its comment), so it may look a little darker. In the comments list it is two entries: the box, and the box with its comment.
+- **Page 3:** a gold box round Figure 1 with the comment "The whole model in one figure."
+
+Check the same things as for A: it opens without a message, everything above shows, the reply is under its comment, and closing does not ask to save.
+
+If you open it in **our own viewer**, the marks may look drawn twice until "Import on open" (slice 8.4) arrives. That is known.
 
 ## Optional: help the import check
 
