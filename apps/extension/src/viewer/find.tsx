@@ -22,8 +22,8 @@ import {
   type ViewerStore,
   viewPosition,
 } from '@sop/viewer';
-import { FindBar, FindHighlights, type PageLayerContext, type PageListApi, type TextLayerController } from '@sop/viewer/react';
-import { type ReactNode, type RefObject, useCallback, useEffect, useRef, useState } from 'react';
+import { FindBar, FindHighlights, type FindBarProps, type PageLayerContext, type PageListApi, type TextLayerController } from '@sop/viewer/react';
+import { type ReactNode, type RefObject, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Snackbar } from './chrome/Snackbar';
 import type { OpenedDocument } from './open-document';
 
@@ -56,6 +56,22 @@ interface FindDeps {
   root: RefObject<HTMLElement | null>;
   /** The scan check: when the document is a scan, the bar says so as it opens (not after searching every page). */
   scans: Pick<ScanDetector, 'isScannedPage'>;
+  /** Phase 7.5: while a scan is still being read, the bar's note says which pages are left (ocr/use-ocr.ts). */
+  reading?: FindNoteSource;
+}
+
+/** The note while a scan's pages are still being read ("Still reading pages 21–120. Results may be missing."), followed live. */
+export interface FindNoteSource {
+  note(this: void): string | null;
+  subscribe(this: void, cb: () => void): () => void;
+}
+
+const NO_NOTE: FindNoteSource = { note: () => null, subscribe: () => () => {} };
+
+/** The bar, with the scan's reading note followed live here, so a page read re-renders the bar only. */
+function ReadingFindBar({ source, ...props }: FindBarProps & { source: FindNoteSource }) {
+  const note = useSyncExternalStore(source.subscribe, source.note);
+  return <FindBar {...props} reading={note} />;
 }
 
 /** The union of rects. */
@@ -100,7 +116,7 @@ function scrollFor(scroller: HTMLElement, box: PageBox, page: PageSize, r: PdfRe
 }
 
 /** The find bar, its highlights and its moves, for one open document. */
-export function useReaderFind({ backend, doc, store, api, pageText, textLayers, jumps, root, scans }: FindDeps): ReaderFind {
+export function useReaderFind({ backend, doc, store, api, pageText, textLayers, jumps, root, scans, reading = NO_NOTE }: FindDeps): ReaderFind {
   const pages = doc.open.pages;
   const [controller, setController] = useState<FindController | null>(null);
   const made = useRef<FindController | null>(null);
@@ -239,7 +255,8 @@ export function useReaderFind({ backend, doc, store, api, pageText, textLayers, 
   const view = (
     <>
       {open && controller !== null && (
-        <FindBar
+        <ReadingFindBar
+          source={reading}
           controller={controller}
           initialQuery={lastQuery.current}
           focusRequest={focusRequest}

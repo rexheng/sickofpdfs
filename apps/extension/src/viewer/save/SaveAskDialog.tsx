@@ -193,6 +193,8 @@ export function whyAsking(reason: string | undefined, privateNumbers: boolean): 
   if (privateNumbers || reason === HARD_BLOCK_REASON) return 'It has card, bank or ID numbers, so it isn’t in your library. If you save it, its text won’t be searchable.';
   if (reason === NEVER_SAVE_REASON) return 'You chose never to save this file. Saving it now changes that.';
   if (reason === FORGOTTEN_REASON) return 'You removed it from your library.';
+  // A scan the filter did not save: it gets text now (Phase 7), so "with no text" is not said.
+  if (reason === 'looks like a scan with no text') return 'It’s a scan, and nothing says it’s for learning, so it isn’t in your library yet.';
   if (reason !== undefined && reason.startsWith('looks like ')) return `It ${reason}, so it isn’t in your library yet.`;
   return 'It doesn’t look like a learning PDF, so it isn’t in your library yet.';
 }

@@ -22,7 +22,8 @@
 // "GUESS" below.
 import type { Page } from '@playwright/test';
 import type { Glyph } from '../../packages/viewer/src/backend/types';
-import { expect, test, type FixtureServer } from '../support/test';
+import { expect, hooks, test, type FixtureServer } from '../support/test';
+import { waitForStore } from '../support/store-probe.spec-blind';
 import { collapse, squash } from '../support/tl-copy.spec-blind';
 import {
   copySelection,
@@ -125,6 +126,15 @@ interface Doc {
   /** Lines of the whole page, left column first when there are two. */
   lines: ReturnType<typeof linesOf>;
   cols: ReturnType<typeof columnsOf>;
+}
+
+/** Phase 7.5: turns "Read text on scanned PDFs" off for this browser (Settings → Reading's switch), so a scan has no text again. */
+async function readingOff(openViewer: OpenViewer, server: FixtureServer): Promise<void> {
+  const tab = await openViewer(server.url(SCAN_URL));
+  await waitReady(tab);
+  await waitForStore(tab);
+  await hooks(tab).eval((h) => h.store!.setSetting('ocr.enabled', false));
+  await tab.close();
 }
 
 async function open(openViewer: OpenViewer, server: FixtureServer, fx: TlFixture, o: { viewport?: { width: number; height: number } } = {}): Promise<Doc> {
@@ -919,6 +929,7 @@ test('Caret browsing elsewhere: turned pages, two-page view, Find, scans, a scre
   // Scanned pages
   // =================================================================================================================
   await step('on a scanned PDF there is no cursor, and a quiet note says why, once for the tab', async ({ openViewer, server, context }) => {
+    await readingOff(openViewer, server); // Phase 7.5: scans are read now and then take the cursor; this checks a scan with reading off
     await watchScanNotes(context);
     const page = await openViewer(server.url(SCAN_URL));
     await waitReady(page);
@@ -966,6 +977,7 @@ test('Caret browsing elsewhere: turned pages, two-page view, Find, scans, a scre
     await snap(other, testInfo, '1a-scan-note-second-tab');
   }, 180_000);
   await step('a scanned page between two text pages is skipped: Down and Up go straight across it', async ({ openViewer, server, context }) => {
+    await readingOff(openViewer, server); // Phase 7.5: with reading on, page 2 may get text; this checks a scanned page with no text
     await watchScanNotes(context);
     const d = await open(openViewer, server, MIXED);
     await setCaret(d.page, true);

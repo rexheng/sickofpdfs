@@ -63,6 +63,8 @@ import { useReaderFind } from './find';
 import { FormBanner, useFormBounce } from './forms/FormBanner';
 import { NotesMovedBanner, useNotesMoved } from './about/NotesMovedBanner';
 import { createScanFigures } from './ocr/layout-wire';
+import { OcrChip } from './ocr/OcrChip';
+import { findNoteSource } from './ocr/use-ocr';
 import { createViewerOcr, type ViewerOcr } from './ocr/wire';
 import { maybeLeaveFrame, mayOfferNewTab, openInNewTab, wantsFullTab } from './frame-escape';
 import { railStartsOpen, useOutline, useRailFitsWindow, useReaderNavigation } from './navigation';
@@ -371,15 +373,22 @@ function TabViewer({ params }: { params: ViewerParams }) {
   // "Hide the menus": the header is folded away, so the status chip and "Back to page" move into the toolbar pill.
   const menusHidden = useMenusHidden();
   const copyLinkCmd = commands.get('file.copyLink');
+  // Phase 7.5: while a scan's text is being read, a quiet chip says so, before the status chip (in the pill too).
+  const liveOcr = live?.ocr ?? null;
   const toolbarExtras = useMemo<ToolbarExtras>(
     () => ({
-      chip: save === null ? null : <StatusChip save={save} returnFocus={focusPages} ui={ui} compact />,
+      chip: (
+        <>
+          <OcrChip ocr={liveOcr} compact />
+          {save !== null && <StatusChip save={save} returnFocus={focusPages} ui={ui} compact />}
+        </>
+      ),
       moreRows:
         back === null
           ? []
           : [{ kind: 'item', id: 'back', label: 'Back to page', icon: 'arrow_back', onSelect: () => void goBackToPage(back) }],
     }),
-    [save, focusPages, ui, back],
+    [save, focusPages, ui, back, liveOcr],
   );
 
   return (
@@ -399,7 +408,12 @@ function TabViewer({ params }: { params: ViewerParams }) {
         // The error and stopped cards carry their own "Open in Chrome's viewer"; one is enough on screen.
         onOpenInChrome={!canEscape || view.kind === 'error' || view.kind === 'stopped' ? null : () => escape(source, (live?.store.get().currentPage ?? 0) + 1)}
         chromeRefused={chromeRefused}
-        status={save !== null && <StatusChip save={save} returnFocus={focusPages} ui={ui} />}
+        status={
+          <>
+            {!menusHidden && <OcrChip ocr={liveOcr} />}
+            {save !== null && <StatusChip save={save} returnFocus={focusPages} ui={ui} />}
+          </>
+        }
         returnFocus={focusPages}
       />
       {/* Drawn at the bottom left, but early in the Tab order (TB5): its button ("Start from page 1", "Undo") is reached
@@ -558,6 +572,8 @@ interface ReaderChrome {
   store: ViewerStore;
   /** Shows a search hit in this document (S15). */
   jumper: HitJumper;
+  /** Phase 7.5: the reading of the document's scanned pages, for the header's chip. */
+  ocr: ViewerOcr;
 }
 
 /** The view state while no document is open: it never changes. */
@@ -625,8 +641,10 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   const [scanFigures] = useState(() => createScanFigures({ backend, opened: doc, ocr }));
   useEffect(() => () => scanFigures.dispose(), [scanFigures]);
   useOcrHints(ocr, store);
-  // The scan hint ("open it in Chrome's viewer to select its text") and Find's scan note step aside while the scan is being read.
+  // The scan hint (reading is off: "open it in Chrome's viewer") and Find's scan note step aside while the scan is being read;
+  // Find says which pages are still to read instead (Phase 7.5).
   const ocrScans = useMemo(() => ({ isScannedPage: (i: number) => scans.isScannedPage(i).then((scan) => scan && !ocr.reading()) }), [scans, ocr]);
+  const findReading = useMemo(() => findNoteSource(ocr), [ocr]);
   // Bold word starts draw over the PDF's own glyphs, so they read PDFium's text, never the recognised text.
   const wordStarts = useWordStartsController(doc, pdfiumText, scans, scheduler, ui);
   // With word starts on, a bold mark takes their weight when it is heavier (Strong), so a word the owner made bold reads
@@ -656,7 +674,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   const outline = useOutline(backend, doc);
   useRailFitsWindow(store);
   // Find jumps through the same history as links, so Back returns from each jump to a hit (Task 25).
-  const find = useReaderFind({ backend, doc, store, api, pageText, textLayers, jumps: nav.jumps, root: rootRef, scans: ocrScans });
+  const find = useReaderFind({ backend, doc, store, api, pageText, textLayers, jumps: nav.jumps, root: rootRef, scans: ocrScans, reading: findReading });
   // A page whose recognised text arrives (or goes) is read again by the text layer and Find.
   const findController = find.controller;
   useEffect(
@@ -719,9 +737,9 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   const say = useCallback((text: string) => ui.showNote(text), [ui]);
   useOpenTarget({ params, jumper, api, settled, say });
   useEffect(() => {
-    onChrome({ commands, store, jumper });
+    onChrome({ commands, store, jumper, ocr });
     return () => onChrome(null);
-  }, [commands, store, jumper, onChrome]);
+  }, [commands, store, jumper, ocr, onChrome]);
   useEffect(() => installShortcuts(readerShortcuts(api, () => textLayers.caret.takesKeys())), [textLayers]);
   useEffect(() => () => textLayers.dispose(), [textLayers]);
   useEffect(
@@ -799,7 +817,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
         view={toolbarView}
         returnFocus={returnFocus}
         // In the compact pill (a narrow window) Area note is a row of its "More" menu instead (chrome/compact.ts).
-        end={<><CurrentPageExtras store={store} scans={ocrScans} source={doc.loaded.sourceUrl} onOpenInChrome={(url, page) => ui.openInChrome(url, page)} />{!compact && <AreaToolButton commands={commands} />}<CommentButton /></>}
+        end={<><CurrentPageExtras store={store} scans={ocrScans} why={() => (ocr.status().phase === 'error' ? 'failed' : 'off')} source={doc.loaded.sourceUrl} onOpenInChrome={(url, page) => ui.openInChrome(url, page)} />{!compact && <AreaToolButton commands={commands} />}<CommentButton /></>}
       />
       <NavRail
         store={store}
@@ -909,12 +927,12 @@ const TEXT_LAYER_FONT = 'pdf/NotoSans-Regular.ttf';
  * What follows the page in view: `#page=N` in the address, and the scan hint, whose "open in Chrome" keeps the page.
  * Kept apart so the page list does not re-render.
  */
-function CurrentPageExtras(p: { store: ViewerStore; scans: Pick<ScanDetector, 'isScannedPage'>; source: string | null; onOpenInChrome: (url: string, page: number) => void }) {
+function CurrentPageExtras(p: { store: ViewerStore; scans: Pick<ScanDetector, 'isScannedPage'>; why: () => 'off' | 'failed'; source: string | null; onOpenInChrome: (url: string, page: number) => void }) {
   const currentPage = useViewerState(p.store, (s) => s.currentPage);
   const scanned = useScannedPage(p.scans, currentPage);
   usePageHash(currentPage);
   const { source, onOpenInChrome } = p;
-  return <ScanHint shown={scanned && source !== null} onOpenInChrome={() => source !== null && onOpenInChrome(source, currentPage + 1)} />;
+  return <ScanHint shown={scanned && source !== null} why={p.why()} onOpenInChrome={() => source !== null && onOpenInChrome(source, currentPage + 1)} />;
 }
 
 /** How long the reader stays on a page before it is checked for being a scan (the check shares the engine). */

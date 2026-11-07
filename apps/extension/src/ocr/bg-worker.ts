@@ -4,7 +4,7 @@
 // OCR channel for the pages a tab has on screen, and tells every tab how far it is. A worker has no `chrome.*`: the port to the
 // store worker comes from the offscreen document, and the engine's and the models' files are this worker's own origin.
 //
-// Only readings the library holds, with a saved copy here, are read, and only while "Read text in scanned pages" (ocr.enabled)
+// Only readings the library holds, with a saved copy here, are read, and only while "Read text on scanned PDFs" (ocr.enabled)
 // is on. Nothing is sent anywhere: the recogniser and the PDF engine run here, from the extension's own files.
 import { type DocumentId, isSha } from '@sop/core';
 import { createEmbedPdfBackend, type DocHandle, engineAssets, MAX_OPEN_BYTES, type PdfBackend } from '@sop/viewer';
@@ -84,8 +84,18 @@ async function startJob(id: DocumentId, hint: OcrHint): Promise<void> {
   }
 }
 
-// A reading that leaves the library (Forget, the Trash purge) is stopped at once.
+// A reading that leaves the library (Forget, the Trash purge) is stopped at once. So is every reading when the owner turns
+// "Read text on scanned PDFs" off in Settings → Reading (a later start checks the switch again).
 store.onChange((c) => {
+  if (c.table === 'settings' && c.ids.includes('ocr.enabled')) {
+    store.getSetting('ocr.enabled').then(
+      (on) => {
+        if (on === false) for (const id of [...open.keys()]) finish(id);
+      },
+      () => {},
+    );
+    return;
+  }
   if (c.table !== 'documents' || c.op !== 'delete') return;
   for (const id of c.ids) if (isSha(id)) finish(id);
 });

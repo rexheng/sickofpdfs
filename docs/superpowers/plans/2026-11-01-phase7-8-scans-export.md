@@ -302,3 +302,13 @@ Names that differ from §4 (rule 5):
 - Viewer touch-ups needed to see it work: `TextLayerController.refreshPage`, the find controller's `chars` option and `refreshPage`, anchors record `textSource`, the "Scanned page" hint and Find's scan note step aside while a scan is being read, bold word starts keep reading PDFium's text.
 
 Left for 7.5: the "Reading text · N of M" chip and popover (Pause/Resume exist in the service and on the channel), Settings for `ocr.enabled` and `ocr.unsavedInMemory` (read, defaults true), Find's "still reading N pages". Walkthrough 1a's two scan steps (no caret on a scan; a scanned page skipped) describe Release 1 and need updating to scans that have text.
+
+## Built: 7.5 (7 Nov 2026, branch `wt/ocrui`)
+
+Names that differ from §4 (rule 5):
+- The card is in `viewer/ocr/OcrChip.tsx` (no `OcrPopover.tsx`); `use-ocr.ts` holds the chip's look, Find's note and their words. `ViewerOcr` (wire.ts) gained `status()`/`onStatus`, `pause()`/`resume()` and `unread()`.
+- The chip says "Reading text · 3 of 120 pages", "Reading paused · …", then "Text ready · 120 pages" once for 6 s (only when the tab saw the reading under way). It sits before the status chip in the header, and in the pill while the menus are hidden. Its hover says the text is kept in this tab only on a PDF that is not saved.
+- Find: "Still reading pages 21–120. Results may be missing." (`FindBar`'s `reading` prop); "None yet" replaces "No results" until the last page is read.
+- Settings: a "Scanned PDFs" group in Settings → Reading (`library/settings/OcrSection.tsx`), not a section of its own: `ocr.enabled`, `ocr.unsavedInMemory` (inset) and the ready languages. Both switches are followed live: off stops the tab's reading and the background's at once, and nothing is read before the switches are known.
+- "Better recognition available" is not built: no second engine version exists yet. The upgrade shows as "Updating text".
+- The scan hint now shows only when reading is off or failed, and says so. The filter's "looks like a scan with no text" is worded "it's a scan, and nothing says it's for learning" in the chip's hover and the save questions (the filter's reason string is unchanged).

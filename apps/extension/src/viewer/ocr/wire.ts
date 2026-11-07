@@ -7,7 +7,8 @@
 //   engine of its own. Nothing is written, posted or kept: it is gone when the tab closes. When the owner saves it (Save, or a
 //   first mark), what was read is written to the library then, and the background takes over for the rest.
 //
-// The viewer chrome for it (the "Reading text" chip, Pause, Settings) is Phase 7.5's; this file only gives it what it needs.
+// The viewer chrome (Phase 7.5: the "Reading text" chip, Pause, Find's note) reads `status()`; Settings → Reading's two switches
+// (`ocr.enabled`, `ocr.unsavedInMemory`) are followed live: turned off, the reading stops at once.
 import { countWords, type DocumentId, needsOcr, OCR_MAX_WORDS, type OcrPageResult, type OcrProgress } from '@sop/core';
 import type { OcrLookup, PageTextProviderImpl, PdfBackend } from '@sop/viewer';
 import { writeHeldPages } from '../../ocr/adopt';
@@ -21,9 +22,27 @@ import type { OpenedDocument } from '../open-document';
 import type { SaveControllerImpl } from '../save/save-controller';
 import { libraryStore } from '../use-store';
 
+/** What the viewer chrome shows about the scan's reading (OcrChip, Find's note). */
+export interface OcrTabStatus {
+  /**
+   * none: nothing to read (not a scan, or not known yet). starting: the page on screen is a scan and its reading is on its way
+   * (the engine loads before the first page). off: the owner turned reading off (Settings → Reading).
+   */
+  phase: 'none' | 'starting' | 'running' | 'paused' | 'done' | 'error' | 'off';
+  /** Pages read, and pages to read in all (pages with their own text are not counted). 0 of 0 before the first count. */
+  done: number;
+  total: number;
+  /** The PDF is not saved: what is read stays in this tab, and goes when it closes (D7.1). */
+  inTabOnly: boolean;
+  /** A newer engine is reading the pages again (the upgrade rule). */
+  upgrading: boolean;
+  /** The document's page count (a one-page scan is worded as one). */
+  pages: number;
+}
+
 export interface ViewerOcr {
   lookup: OcrLookup;
-  /** Whether the tab expects recognised text for its scanned pages (so "open it in Chrome's viewer" is not needed). */
+  /** Whether the tab expects recognised text for its scanned pages (so the scan hint's "open it in Chrome's viewer" is not needed). */
   reading(): boolean;
   /** The page has recognised text now. */
   has(pageIndex: number): boolean;
@@ -32,6 +51,17 @@ export interface ViewerOcr {
   /** How far the reading is (this tab's, or the background's for a saved reading); null before anything started. */
   progress(): OcrProgress | null;
   onProgress(cb: (p: OcrProgress) => void): () => void;
+  /** The chrome's view of the reading; `onStatus` calls back whenever it may have changed. */
+  status(): OcrTabStatus;
+  onStatus(cb: () => void): () => void;
+  /** The owner's Pause and Resume (the chip's card): this tab's reading, or the background's for a saved reading. */
+  pause(): void;
+  resume(): void;
+  /**
+   * The pages still to read, in order, when they are known exactly (each page left is a scanned page not read yet); null when
+   * only their number is known (the background has not said which pages it found text on).
+   */
+  unread(): number[] | null;
   /** The pages that have recognised text now, in order (the test hooks read it). */
   recognised(): number[];
   /** The pages on screen, and the way the reader is scrolling. */
@@ -67,12 +97,22 @@ export function createViewerOcr(d: ViewerOcrDeps): ViewerOcr {
   const kinds = new Map<number, Promise<boolean>>();
   const textListeners = new Set<(i: number) => void>();
   const progressListeners = new Set<(p: OcrProgress) => void>();
+  const statusListeners = new Set<() => void>();
   let mode: Mode = { kind: 'unknown' };
+  /** The owner's switches (Settings → Reading), read once the library is known and followed from then on. Both default on. */
+  let enabled = true;
+  let unsavedToo = true;
+  /** A reading was started for this PDF (here, or asked of the background): the chip shows at once, before the first count. */
+  let asked = false;
+  /** Pages found to have their own text (never read). */
+  const textPages = new Set<number>();
   let stored = new Set<number>();
   let store: StoreClient | null = null;
   let service: OcrServiceImpl | null = null;
   let requested = false;
   let lastProgress: OcrProgress | null = null;
+  /** The background's progress for the saved reading, while asked for. */
+  let listening: (() => void) | null = null;
   let hintNow: { visible: number[]; direction: 1 | -1 } = { visible: [0], direction: 1 };
   let disposed = false;
   const offs: (() => void)[] = [];
@@ -86,9 +126,13 @@ export function createViewerOcr(d: ViewerOcrDeps): ViewerOcr {
   const tell = (i: number) => {
     for (const cb of [...textListeners]) cb(i);
   };
+  const changed = () => {
+    for (const cb of [...statusListeners]) cb();
+  };
   const setProgress = (p: OcrProgress) => {
     lastProgress = p;
     for (const cb of [...progressListeners]) cb(p);
+    changed();
   };
 
   /** Whether page i is a scanned page the recogniser reads (asked once a page). */
@@ -96,6 +140,7 @@ export function createViewerOcr(d: ViewerOcrDeps): ViewerOcr {
     let k = kinds.get(i);
     if (!k) {
       k = source.pageKind(i).then(needsOcr, () => false);
+      void k.then((n) => !n && textPages.add(i));
       kinds.set(i, k);
     }
     return k;
@@ -108,11 +153,19 @@ export function createViewerOcr(d: ViewerOcrDeps): ViewerOcr {
       return true;
     }
   };
+  const readSettings = async (): Promise<void> => {
+    [enabled, unsavedToo] = await Promise.all([setting('ocr.enabled'), setting('ocr.unsavedInMemory')]);
+  };
 
   // ---- the memory job (a PDF that is not saved) ----
 
   const startMemory = async (): Promise<void> => {
     if (service !== null || disposed) return;
+    // The owner's switches are known first: with reading off, not one page is read (not even before the save decision).
+    await storeReady;
+    if (service !== null || disposed || !enabled || !unsavedToo || mode.kind === 'off' || mode.kind === 'saved') return;
+    asked = true;
+    changed();
     const made = createOcrService({ engine: () => createOcrEngine({ base: chrome.runtime.getURL('') }), store: null, now: () => Date.now() });
     service = made;
     made.onResult((r) => {
@@ -133,9 +186,12 @@ export function createViewerOcr(d: ViewerOcrDeps): ViewerOcr {
   // ---- a saved reading (the background reads it) ----
 
   const askBackground = (id: DocumentId): void => {
-    if (requested) return;
+    if (requested || !enabled) return;
     requested = true;
-    offs.push(onOcrProgress(id, setProgress));
+    asked = true;
+    changed();
+    listening?.();
+    listening = onOcrProgress(id, setProgress);
     postOcr({ type: 'ocr:start', documentId: id, ...hintNow });
   };
 
@@ -181,16 +237,18 @@ export function createViewerOcr(d: ViewerOcrDeps): ViewerOcr {
       await writeHeldPages(store, held, (i) => pages[i]?.rotation ?? 0);
       for (const r of held) stored.add(r.pageIndex);
     }
-    if (!(await setting('ocr.enabled'))) return;
+    changed();
+    if (!enabled) return;
     if (stored.size > 0 || wasMemory || (await needs(hintNow.visible[0] ?? 0))) askBackground(id);
   }
-
 
   async function becomeUnsaved(): Promise<void> {
     mode = { kind: 'memory' };
     settle();
-    if (!(await setting('ocr.enabled')) || !(await setting('ocr.unsavedInMemory'))) {
+    changed();
+    if (!enabled || !unsavedToo) {
       mode = { kind: 'off' };
+      changed();
       stopMemory();
       if (results.size > 0) {
         const gone = [...results.keys()];
@@ -213,16 +271,58 @@ export function createViewerOcr(d: ViewerOcrDeps): ViewerOcr {
     }
   };
 
+  /**
+   * A switch in Settings → Reading changed. Off: this tab's reading stops at once (what it read stays until the tab closes; it
+   * was never written anywhere), and the background stops its own (bg-worker.ts follows the same switch). On again: the
+   * reading starts from the page on screen.
+   */
+  function followSettings(): void {
+    if (disposed) return;
+    const memoryAllowed = enabled && unsavedToo;
+    if (!enabled || (mode.kind !== 'saved' && !memoryAllowed)) {
+      stopMemory();
+      requested = false;
+      if (mode.kind === 'memory') mode = { kind: 'off' };
+    } else if (mode.kind === 'off') {
+      mode = { kind: 'memory' };
+    }
+    changed();
+    if (enabled) kick();
+  }
+
+  /** Starts the reading the page on screen asks for, if it is a scan (hint() without new pages). */
+  function kick(): void {
+    if (mode.kind === 'memory' || mode.kind === 'unknown') {
+      if (service) service.hint(memoryId, hintNow);
+      else
+        void needs(hintNow.visible[0] ?? 0).then(async (n) => {
+          if (n && (mode.kind === 'memory' || mode.kind === 'unknown')) await startMemory();
+        });
+    } else if (mode.kind === 'saved') {
+      const id = mode.id;
+      if (requested) postOcr({ type: 'ocr:hint', documentId: id, ...hintNow });
+      else
+        void needs(hintNow.visible[0] ?? 0).then((n) => {
+          if (n && mode.kind === 'saved' && mode.id === id) askBackground(id);
+        });
+    }
+  }
+
   let storeKnown: () => void = () => {};
   const storeReady = new Promise<void>((resolve) => {
     storeKnown = resolve;
   });
-  void libraryStore().then((client) => {
+  void libraryStore().then(async (client) => {
     if (disposed) return;
     store = client;
+    await readSettings();
     if (client !== null) {
       offs.push(
         client.onChange((c) => {
+          if (c.table === 'settings' && c.ids.some((k) => k === 'ocr.enabled' || k === 'ocr.unsavedInMemory')) {
+            void readSettings().then(followSettings);
+            return;
+          }
           if (mode.kind !== 'saved' || c.documentId !== mode.id || c.table !== 'page_ocr') return;
           const id = mode.id;
           for (const key of c.ids) {
@@ -268,8 +368,9 @@ export function createViewerOcr(d: ViewerOcrDeps): ViewerOcr {
 
   return {
     lookup,
-    // Until the save decision is known the scan is expected to be read (only the owner's "off" switch stops it).
-    reading: () => mode.kind !== 'off' || results.size > 0,
+    // Until the save decision is known the scan is expected to be read (only the owner's "off" switch stops it). A reader that
+    // failed (the engine cannot run here) is not reading: the scan hint offers Chrome's viewer again.
+    reading: () => (enabled && mode.kind !== 'off' && lastProgress?.state !== 'error') || results.size > 0,
     has: (i) => results.has(i),
     recognised: () => [...results.keys()].sort((a, b) => a - b),
     onPageText(cb) {
@@ -281,24 +382,39 @@ export function createViewerOcr(d: ViewerOcrDeps): ViewerOcr {
       progressListeners.add(cb);
       return () => progressListeners.delete(cb);
     },
+    status(): OcrTabStatus {
+      const inTabOnly = mode.kind !== 'saved';
+      const p = lastProgress;
+      const base = { inTabOnly, done: p?.done ?? 0, total: p?.total ?? 0, upgrading: p?.upgrading ?? false, pages: pages.length };
+      if (!enabled || mode.kind === 'off') return { ...base, phase: 'off' };
+      if (p === null || p.state === 'idle' || p.state === 'off') return { ...base, phase: asked ? 'starting' : 'none' };
+      return { ...base, phase: p.state };
+    },
+    onStatus(cb) {
+      statusListeners.add(cb);
+      return () => statusListeners.delete(cb);
+    },
+    pause() {
+      if (service !== null) service.pause(memoryId);
+      else if (mode.kind === 'saved' && requested) postOcr({ type: 'ocr:pause', documentId: mode.id });
+    },
+    resume() {
+      if (service !== null) service.resume(memoryId);
+      else if (mode.kind === 'saved' && requested) postOcr({ type: 'ocr:resume', documentId: mode.id });
+    },
+    unread() {
+      const p = lastProgress;
+      if (p === null) return null;
+      const left: number[] = [];
+      for (let i = 0; i < pages.length; i++) if (!results.has(i) && !stored.has(i) && !textPages.has(i)) left.push(i);
+      // Exact only when the pages left here are the ones the reader has left (it found no text page this tab does not know of).
+      return left.length === Math.max(0, p.total - p.done) ? left : null;
+    },
     hint(visible, direction) {
       hintNow = { visible: visible.filter((i) => i >= 0 && i < pages.length), direction };
       // Before the save decision is known (a few seconds for a scan) the page on screen is read in memory already: that writes
       // nothing, and a saved reading takes it over (becomeSaved).
-      if (mode.kind === 'memory' || mode.kind === 'unknown') {
-        if (service) service.hint(memoryId, hintNow);
-        else
-          void needs(hintNow.visible[0] ?? 0).then(async (n) => {
-            if (n && (mode.kind === 'memory' || mode.kind === 'unknown')) await startMemory();
-          });
-      } else if (mode.kind === 'saved') {
-        const id = mode.id;
-        if (requested) postOcr({ type: 'ocr:hint', documentId: id, ...hintNow });
-        else
-          void needs(hintNow.visible[0] ?? 0).then(async (n) => {
-            if (n && mode.kind === 'saved' && (await setting('ocr.enabled'))) askBackground(id);
-          });
-      }
+      kick();
     },
     attach(save) {
       if (save === null) return () => {};
@@ -317,10 +433,12 @@ export function createViewerOcr(d: ViewerOcrDeps): ViewerOcr {
     dispose() {
       disposed = true;
       stopMemory();
+      listening?.();
       for (const off of offs) off();
       results.clear();
       textListeners.clear();
       progressListeners.clear();
+      statusListeners.clear();
     },
   };
 }

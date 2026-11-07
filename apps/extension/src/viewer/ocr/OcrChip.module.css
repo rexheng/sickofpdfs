@@ -1,0 +1,133 @@
+/*
+ * The scan's reading chip (OcrChip.tsx), in the dark viewer header before the library status chip, or in the toolbar pill while
+ * the menus are hidden. Quiet on purpose: no border and no fill (a GM3 chip's 32 px box, radius 8, its hover layer), the header's
+ * muted text in Google Sans Text 14/20 400, and the count in figures that do not jiggle. The ring is Drive's progress ring in
+ * miniature: a 16 px circle, a 2 px track in outline-variant and the arc in the primary colour (#a8c7fa on the dark chrome).
+ */
+.slot {
+  display: contents;
+}
+
+.chip {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-2);
+  align-items: center;
+  box-sizing: border-box;
+  block-size: var(--chip-h);
+  margin: 0;
+  padding: 0 var(--space-3) 0 var(--space-2);
+  border: 0;
+  border-radius: var(--shape-chip);
+  background-color: transparent;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+  white-space: nowrap;
+  cursor: pointer;
+  animation: appear 200ms ease-out;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chip:hover {
+  background-color: color-mix(in srgb, currentColor calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.chip:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.label {
+  font-variant-numeric: tabular-nums;
+}
+
+/* "Text ready" fades out over its last half second (it is unmounted at OCR_DONE_SHOWN_MS, use-ocr.ts). */
+.chip[data-kind="done"] {
+  animation:
+    appear 200ms ease-out,
+    leave 500ms ease-in 5500ms forwards;
+}
+
+.tick {
+  color: var(--gm3-sys-color-primary);
+}
+
+.ring {
+  flex: none;
+  fill: none;
+  stroke-width: 2;
+}
+
+.track {
+  stroke: var(--gm3-sys-color-outline-variant);
+}
+
+.arc {
+  stroke: var(--gm3-sys-color-primary);
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  transition: stroke-dashoffset 400ms ease-out;
+}
+
+/* Paused: the arc keeps its place, in the muted text colour. */
+.ring[data-paused] .arc {
+  stroke: currentColor;
+}
+
+/* No count yet: a quarter arc turns. */
+.ring[data-spinning] {
+  animation: spin 1100ms linear infinite;
+}
+
+/* A narrower window keeps the state only; the count is in the hover. */
+@media (width < 900px) {
+  :global(header) .detail {
+    display: none;
+  }
+}
+
+/* In the pill: 8 px from what follows, as the scan hint keeps. */
+.slot[data-compact] .chip {
+  margin-inline-end: var(--space-1);
+}
+
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes leave {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chip,
+  .chip[data-kind="done"],
+  .ring[data-spinning] {
+    animation: none;
+  }
+
+  .arc {
+    transition: none;
+  }
+}

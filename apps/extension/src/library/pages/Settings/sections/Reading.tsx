@@ -3,8 +3,10 @@
 // - `view.boldWordStarts`: R90 Bold word starts, true or false (the View menu's switch, word-starts.ts);
 // - `view.boldWordStartsStrength`: R90's strength, 'light', 'medium' (the rule as written) or 'strong'; missing means medium;
 // - `view.caretBrowsing`: R93 Caret browsing, true or false.
+// Phase 7.5 adds "Scanned PDFs" (library/settings/OcrSection.tsx): reading the text of scans, kept in the library's settings.
 import { Switch } from '@sop/ui/library';
 import { type KeyboardEvent, useEffect, useState } from 'react';
+import { ScanReadingGroup } from '../../../settings/OcrSection';
 import { SettingsGroup, SettingsRow, SettingsSection } from '../SettingsSection';
 import styles from './sections.module.css';
 
@@ -78,6 +80,7 @@ export function ReadingSection() {
           actions={<Switch checked={caret === true} disabled={caret === null} aria-labelledby="reading-caret" onChange={setCaret} />}
         />
       </SettingsGroup>
+      <ScanReadingGroup />
     </SettingsSection>
   );
 }

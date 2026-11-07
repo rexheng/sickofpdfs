@@ -126,6 +126,15 @@ const REASON_WORDS: ReadonlyMap<string, string> = new Map([
   [FILTER_FAILED, 'couldn’t check'],
 ]);
 
+/**
+ * The filter's reason for a scan it does not save (rule 'no-text'). It was decided before the scan's text was read, and the scan
+ * gets text now (Phase 7), so "with no text" is not said: the sentences below say it is a scan, and nothing says it is for learning.
+ */
+const SCAN_REASON = 'looks like a scan with no text';
+const SCAN_SENTENCE = 'it’s a scan, and nothing says it’s for learning';
+/** The "not sure" reason of a scan from a scholarly or course page, in the hover's words. */
+const SCAN_UNSURE: ReadonlyMap<string, string> = new Map([['a page with no text to check', 'a scan']]);
+
 /** A reason with no short form goes on the chip as it is when it is this many words long or shorter. */
 const CHIP_WORDS_MAX = 3;
 
@@ -191,7 +200,7 @@ export function chipFor(state: SaveState, busy: SaveControllerImpl['busy'], save
       if (state.reasons.includes(SCAN_TITLE_REASON)) {
         return { ...stateFirst('Not sure · scanned pages', 'Not sure'), icon: 'library_add', tone: 'attention', tooltip: `${SCAN_TITLE_REASON} ${NOT_IN_LIBRARY}`, saves: true, choices: menu };
       }
-      const why = reasonsLine(state.reasons.filter((r) => !QUIET_REASONS.has(r)).slice(0, 2));
+      const why = reasonsLine(state.reasons.filter((r) => !QUIET_REASONS.has(r)).slice(0, 2).map((r) => SCAN_UNSURE.get(r) ?? r));
       return {
         // The plan's "Not sure: Save?" with R73's plain "Save to library": the filter really is not sure now, and says so.
         ...stateFirst('Not sure: Save to library', 'Not sure'),
@@ -239,6 +248,7 @@ const NOT_SAVED_HAS: Readonly<Record<string, string>> = {
 export function notSavedSentence(reasons: readonly string[], privateNumbers = false): string {
   if (privateNumbers) return `Not saved because it has card, bank or ID numbers. ${SAVE_ANYWAY} ${SAVE_ANYWAY_PRIVATE}`;
   const [first, ...rest] = reasons;
+  if (first === SCAN_REASON) return `Not saved because ${SCAN_SENTENCE}. ${SAVE_ANYWAY}`;
   const madeBy = rest.includes('Made by invoice or report software');
   const has = rest
     .filter((r) => r !== 'Made by invoice or report software')
@@ -342,6 +352,7 @@ export function saveAnywayLine(reason: string | null, privateNumbers: boolean): 
   if (reason === NEVER_SAVE_REASON) return 'You chose never to save this file. Saving it now changes that.';
   if (reason === FORGOTTEN_REASON) return 'You removed this PDF from your library.';
   if (reason === CHOICES_UNREAD || reason === FILTER_FAILED) return 'This PDF couldn’t be checked, so it isn’t in your library.';
+  if (reason === SCAN_REASON) return 'This is a scan, and nothing says it’s for learning.';
   if (reason !== null && reason.startsWith('looks like ')) return `This ${reason}.`;
   return 'This doesn’t look like a learning PDF.';
 }

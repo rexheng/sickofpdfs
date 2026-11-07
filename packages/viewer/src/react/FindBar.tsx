@@ -30,18 +30,25 @@ export interface FindBarProps {
    * searched. If the search does find text, its count takes over.
    */
   scanned?: boolean;
+  /**
+   * Phase 7.5: the scan's pages are still being read, so a search may miss words on the pages left. The note under the box
+   * says so ("Still reading pages 21–120. Results may be missing."); the count goes on growing as pages are read, and says
+   * "None yet" rather than "No results" until the last page is read. Null or absent once every page is read.
+   */
+  reading?: string | null;
 }
 
-/** What the count says: "3 of 12", "No results", or nothing while there is nothing to say. */
-function countText(s: FindState, query: string): string {
+/** What the count says: "3 of 12", "No results" ("None yet" while pages are still being read), or nothing. */
+function countText(s: FindState, query: string, reading: boolean): string {
   if (query.trim() === '') return '';
   if (s.hits.length > 0) return s.current >= 0 ? `${s.current + 1} of ${s.hits.length}` : '';
+  if (reading) return s.complete ? 'None yet' : '';
   return s.complete && !s.noText ? 'No results' : '';
 }
 
 const hitKey = (s: FindState, h: SearchHit) => `${s.query}\u0000${h.pageIndex}:${h.start}:${h.count}`;
 
-export function FindBar({ controller, onJump, onSelectMatch, onClose, initialQuery = '', focusRequest = 0, onWrap, scanned = false }: FindBarProps): JSX.Element {
+export function FindBar({ controller, onJump, onSelectMatch, onClose, initialQuery = '', focusRequest = 0, onWrap, scanned = false, reading = null }: FindBarProps): JSX.Element {
   const subscribe = useCallback((cb: () => void) => controller.subscribe(cb), [controller]);
   const state = useSyncExternalStore(subscribe, () => controller.state);
   const [query, setQuery] = useState(initialQuery);
@@ -100,11 +107,12 @@ export function FindBar({ controller, onJump, onSelectMatch, onClose, initialQue
     }
   };
 
-  const count = countText(state, query);
+  const count = countText(state, query, reading !== null);
   const none = state.hits.length === 0;
   const typed = query.trim() !== '';
-  // A finished search knows for sure; until then (or before anything is typed) the scan check speaks for it.
-  const scanNote = typed && state.complete ? state.noText === true : scanned && none;
+  // A finished search knows for sure; until then (or before anything is typed) the scan check speaks for it. While a scan is
+  // still being read, its reading note says more than either.
+  const scanNote = reading === null && (typed && state.complete ? state.noText === true : scanned && none);
   const searching = typed && count === '' && !state.complete && !scanNote;
   return (
     // Esc anywhere in the bar (the box or a button) closes it.
@@ -134,7 +142,7 @@ export function FindBar({ controller, onJump, onSelectMatch, onClose, initialQue
         <IconButton icon="close" label="Close" shortcut="Esc" onClick={onClose} />
       </div>
       <p role="status" className={styles.note}>
-        {scanNote ? SCAN_NOTE : null}
+        {reading ?? (scanNote ? SCAN_NOTE : null)}
       </p>
     </div>
   );
