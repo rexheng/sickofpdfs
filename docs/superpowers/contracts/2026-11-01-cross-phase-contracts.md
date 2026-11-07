@@ -240,12 +240,13 @@ CREATE INDEX comment_edits_owner ON comment_edits(document_id, draft_of_tab);
 | 4 | Phase 3 (backup, N5, 2 Nov) | `forgotten(hash TEXT PRIMARY KEY, forgotten_at INTEGER NOT NULL)` and `local_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)`, both `WITHOUT ROWID`, `IF NOT EXISTS` (a v3 database may already have them). Local only (R88) |
 | 5 | Tags and the auto categoriser (R92, 2 Nov) | `tags`, `reading_tags`, `auto_tag_removed` (synced: outbox triggers, in the backup, `SYNCED_TABLES`) and `embeddings` (local only: never in a backup, an export or the outbox). See "Tags and the categoriser" below |
 | 6 | Phase 4 (slice D, 6 Nov) | `passage_vectors(document_id, text_hash, model, dim, vector, created_at, PRIMARY KEY (document_id, text_hash)) WITHOUT ROWID`: @Claude's paragraph vectors of a saved reading (the SHA-256 of each window's text, never the text). Local only: no outbox triggers, not a dump table. Cascades from `documents`, so Forget, the Trash purge and an Undo of a save remove it |
-| 7 | Phase 5 | `sync_state(key TEXT PRIMARY KEY, value TEXT)`: cursor, device registration. Local only |
-| 8 | Phase 7 | `page_ocr` (§9) |
-| 9 | Phase 8 | `pdf_import_refs(document_id, pdf_ref, row_table, row_id, PRIMARY KEY (document_id, pdf_ref))` |
+| 7 | Phase 7 (7 Nov) | `page_ocr` (§9). Local only: no outbox triggers. Cascades from `documents` |
+| 8 | Phase 8 | `pdf_import_refs(document_id, pdf_ref, row_table, row_id, PRIMARY KEY (document_id, pdf_ref))` |
+| 9 | Phase 5 | `sync_state(key TEXT PRIMARY KEY, value TEXT)`: cursor, device registration. Local only |
 
   The backup re-check took v4 (ruling N5, 2 Nov) and R92's tags took v5 the same day, so the reserved steps after them moved up: Phase 5 is v6, Phase 7 v7, Phase 8 v8.
   @Claude's passage vectors took v6 (Phase 4 slice D, 6 Nov), so the reserved steps moved up once more: Phase 5 is v7, Phase 7 v8, Phase 8 v9.
+  Release 2's sync was not built before Phase 7, so OCR took the next free step (7 Nov): Phase 7 is v7, Phase 8 v8, Phase 5 v9.
 
 - **Tags and the categoriser (v5, R92).**
   - `tags(id, name, kind 'topic'|'course'|'tag', topic_key, renamed, created_at, updated_at, deleted_at, rev, hlc)`. A live tag's name is unique, ignoring case. A tag the owner deletes keeps its row (`deleted_at`), so a deleted course or topic tag is not made again.
@@ -548,7 +549,8 @@ export interface OcrWord { text: string; box: PdfRect /* pt, unrotated page spac
 export interface OcrPageResult { documentId: DocumentId; pageIndex: number; engine: string; engineVersion: string; langs: string[];
   words: OcrWord[]; text: string /* words in reading order; offsets into it are this page's char indices */; createdAt: number }
 export function ocrToPageGlyphs(r: OcrPageResult): PageGlyphs;   // one Glyph per char, boxes split across each word, so the text layer needs no change
-// v8 table (was v5 before the 2 Nov ladder moves, v7 before the 6 Nov one): page_ocr(document_id, page_index, engine, engine_version, words TEXT /* JSON OcrWord[] */, created_at, PRIMARY KEY (document_id, page_index))
+// v7 table (7 Nov; it was v8 after the 6 Nov ladder move): page_ocr(document_id, page_index, engine, engine_version, langs TEXT /* JSON string[] */,
+//   words TEXT /* JSON OcrWord[] */, created_at, PRIMARY KEY (document_id, page_index)) WITHOUT ROWID. `text` is not stored: it is rebuilt from the words (ocrText)
 ```
 
 - **OCR results merge at `PageTextProvider`.**

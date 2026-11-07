@@ -368,8 +368,8 @@ describe('reload: only what was committed survives, and it survives whole', () =
 
     const db2 = await reopen(env.db);
     // Ruling N5 (backup re-check, 2 Nov): schema v4 adds the local forgotten list; v5 the tags (R92); v6 @Claude's passage vectors (6 Nov).
-    expect(migrate(db2 as never)).toBe(6);
-    expect(userVersion(db2)).toBe(6);
+    expect(migrate(db2 as never)).toBe(7);
+    expect(userVersion(db2)).toBe(7);
     const { api } = wrapStore(db2);
 
     const notes = await api.listAnnotations(DOC);

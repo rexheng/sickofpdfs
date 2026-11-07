@@ -1,7 +1,8 @@
 // Store schema v6 (Phase 4 slice D, Nov 6): the paragraph vectors @Claude's passage search keeps for saved readings. Additive only:
 // one new table. Nothing in an existing table or trigger changes.
 //
-// The ladder moved for this step: sync is v7 (`sync_state`), OCR v8 (`page_ocr`), export v9 (`pdf_import_refs`).
+// The ladder moved for this step: sync is v7 (`sync_state`), OCR v8 (`page_ocr`), export v9 (`pdf_import_refs`). It moved again on
+// Nov 7: OCR took v7 (schema-v7.ts), export is v8 and sync v9.
 //
 // `passage_vectors (document_id, text_hash, model, dim, vector, created_at)`: the meaning vector (bundled MiniLM) of one three-sentence
 // window of a reading's text, so a second question on the same reading does not have to make them again. The text is NOT kept: the

@@ -42,6 +42,7 @@ import { createPassageVectorsApi, type PassageVectorsApi } from './passage-vecto
 import { createSettingsApi, type SettingsApi } from './settings-api';
 import { clearTagOutbox, createTagsApi, dropOrphanAutoTags, tagRowIds, type TagsApi } from './tags-api';
 import { createPageFiguresApi, type PageFiguresApi } from './page-figures';
+import { createPageOcrApi, type PageOcrApi } from './page-ocr';
 import { forgottenHashes, recordForgotten } from './forgotten';
 import { FTS_TABLES } from './schema';
 import { isReadOnly, type SqlValue, userVersion } from './schema-v2';
@@ -112,7 +113,7 @@ export interface TouchLocationInput {
   at: number;
 }
 
-export interface StoreApi extends AnnotationsApi, PageFiguresApi, LibraryApi, BackupApi, RestoreApi, SettingsApi, TagsApi, LookupsApi, PassageVectorsApi {
+export interface StoreApi extends AnnotationsApi, PageFiguresApi, PageOcrApi, LibraryApi, BackupApi, RestoreApi, SettingsApi, TagsApi, LookupsApi, PassageVectorsApi {
   schemaVersion(): Promise<number>;
   stats(): Promise<StoreStats>;
   /** The library document these bytes are: `documents.id`, or the document an alias (a stamped copy) points to. */
@@ -617,8 +618,11 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
           for (const p of pages) {
             if (p.pageIndex >= pageCount) fail('bad-input', 'a page index is past the last page');
             const n = run(
+              // A page whose text was recognised (Phase 7, source 'ocr:…') keeps it: PDFium's text of a scanned page is (next to)
+              // nothing, and a later save or re-index must not wipe what the recogniser read.
               `INSERT INTO page_text (document_id, page_index, text) VALUES (?, ?, ?)
-               ON CONFLICT (document_id, page_index) DO UPDATE SET text = excluded.text WHERE page_text.text IS NOT excluded.text`,
+               ON CONFLICT (document_id, page_index) DO UPDATE SET text = excluded.text
+               WHERE page_text.text IS NOT excluded.text AND page_text.source NOT LIKE 'ocr:%'`,
               [documentId, p.pageIndex, p.text],
             );
             if (n > 0) changed.add(p.pageIndex);
@@ -862,6 +866,7 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
     ...base,
     ...createAnnotationsApi(db, deps),
     ...createPageFiguresApi(db, deps),
+    ...createPageOcrApi(db, deps),
     ...createLibraryApi(db, deps, { document: documentFromRow, location: locationFromRow }),
     ...createBackupApi(db, deps),
     ...createRestoreApi(db, deps),
