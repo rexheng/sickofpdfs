@@ -20,8 +20,8 @@
 //   "unsure" alone, so a hard block, a list, a force save and the owner's own choice are never touched by the model.
 // - It never keeps or reports the text. The worker turns it into numbers and forgets it; nothing is logged.
 //
-// It runs in the viewer tab only (never in the store or the offscreen page), on one thread (extension pages are not
-// cross-origin isolated), and is ended after use.
+// It runs in the viewer tab only (never in the store or the offscreen page), on one thread (it is small, and the cores are
+// left to the reading tab and the OCR), and is ended after use.
 import type { Similarities } from '@sop/core';
 
 export type { Similarities };

@@ -312,3 +312,10 @@ Names that differ from §4 (rule 5):
 - Settings: a "Scanned PDFs" group in Settings → Reading (`library/settings/OcrSection.tsx`), not a section of its own: `ocr.enabled`, `ocr.unsavedInMemory` (inset) and the ready languages. Both switches are followed live: off stops the tab's reading and the background's at once, and nothing is read before the switches are known.
 - "Better recognition available" is not built: no second engine version exists yet. The upgrade shows as "Updating text".
 - The scan hint now shows only when reading is off or failed, and says so. The filter's "looks like a scan with no text" is worded "it's a scan, and nothing says it's for learning" in the chip's hover and the save questions (the filter's reason string is unchanged).
+
+## Built: OCR speed (7 Nov 2026, branch `wt/ocrspeed`)
+
+- **Threads, not WebGPU.** The manifest makes every extension page cross-origin isolated (`cross_origin_embedder_policy: require-corp`, `cross_origin_opener_policy: same-origin`). The OCR worker runs onnxruntime-web on `ocrThreads()` threads (`ocr/engine/models.ts`): cores − 1, 1 to 4, and 1 where the page is not isolated. The filter's tie-breaker and the layout model stay on one thread. The words and boxes are identical at 1–4 threads, so the engine version stays `6-tiny.1`.
+- The store turns off SQLite's own "opfs" and "opfs-wl" file systems, which SharedArrayBuffer would otherwise start. The library uses only the SAH pool, as before.
+- Kept as they were (measured, no gain or changed text): recognition batch 8, detector side 1280. WebGPU is not shipped: +3.2 MiB zipped for the filter too, and no GPU here to prove it faster or the text the same.
+- Speed on 4 shared cores (3 threads): a dense page 2.1 s (p95 2.3 s), 29 pages a minute alone; in the viewer about 2–3 s for the page on screen, 36 pages a minute in the tab and 32 in the background. Numbers: `.superpowers/sdd/2026-10-31-release1-phase0-1/ocrspeed-report.md`.

@@ -1,6 +1,6 @@
 // PP-OCR (PaddleOCR) text detection and recognition on onnxruntime-web, ported from the Phase 7.0 bake-off
-// (spikes/phase7-ocr/src/ocr/ppocr.ts; the engine and settings are its Decision: PP-OCRv6 tiny, wasm, one thread, detector side
-// 1280). No SDK and no network: the model bytes and the runtime module are handed in by the worker (ocr.worker.ts).
+// (spikes/phase7-ocr/src/ocr/ppocr.ts; the engine and settings are its Decision: PP-OCRv6 tiny, wasm, detector side 1280; the
+// worker sets the threads). No SDK and no network: the model bytes and the runtime module are handed in by the worker (ocr.worker.ts).
 //   det: DB detector → probability map → rotated line rectangles (preprocess.ts)
 //   rec: CTC recogniser on 48 px line crops, in width-sorted batches → greedy CTC decode with the model's own dictionary
 // Word boxes come from the CTC time steps of each character. Lines are put in reading order by an XY-cut (geom.ts).
@@ -108,7 +108,9 @@ export class PpOcr {
   }
 
   async init(): Promise<void> {
-    const so = { executionProviders: ['wasm'], graphOptimizationLevel: 'all' } as import('onnxruntime-web').InferenceSession.SessionOptions;
+    // logSeverityLevel 3 (errors only): the sessions log at warning level whatever env.logLevel says, and these models make the
+    // runtime warn about unused initialisers on every load, in the console of the tab and the offscreen page.
+    const so = { executionProviders: ['wasm'], graphOptimizationLevel: 'all', logSeverityLevel: 3 } as import('onnxruntime-web').InferenceSession.SessionOptions;
     this.det = await this.o.ort.InferenceSession.create(this.o.detModel, so);
     this.rec = await this.o.ort.InferenceSession.create(this.o.recModel, so);
     this.dict = parseCharacterDict(this.o.recYml);

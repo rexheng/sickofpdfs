@@ -88,6 +88,10 @@ async function deleteBlob(id: DocumentId): Promise<void> {
 
 async function openStore(): Promise<StoreApi> {
   await becomeOwner();
+  // The extension pages are cross-origin isolated (for the OCR threads), so SharedArrayBuffer exists here. SQLite would then
+  // also start its "opfs" and "opfs-wl" file systems, each with a worker of its own. The library uses only the SAH pool
+  // (openPool), so those two stay off and the store starts as it always has.
+  (globalThis as { sqlite3ApiConfig?: unknown }).sqlite3ApiConfig = { disable: { vfs: { opfs: true, 'opfs-wl': true } } };
   const sqlite3 = await sqlite3InitModule();
   const pool = await openPool(sqlite3);
   const db = new pool.OpfsSAHPoolDb(DB_FILE);

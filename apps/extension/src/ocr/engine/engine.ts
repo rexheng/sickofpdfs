@@ -13,9 +13,11 @@ export interface OcrAssets {
   base: string;
   /** For tests and the offscreen page: how to start the worker. */
   createWorker?: () => Worker;
+  /** For the speed checks: the threads to use (held to 1–4, and 1 where the page is not isolated). Default: ocrThreads(). */
+  threads?: number;
 }
 
-/** Times of the last page, in ms (det, crops, rec, words, load, total): the speed checks read them. */
+/** Times of the last page, in ms (det, crops, rec, words, load, total), and the threads it ran on: the speed checks read them. */
 export interface OcrTimings {
   [stage: string]: number;
 }
@@ -102,7 +104,7 @@ export function createOcrEngine(assets: OcrAssets): OcrEngineImpl {
             reject(e);
           },
         });
-        w.postMessage({ id, cmd: 'recognize', bitmap: img, base: assets.base }, [img]);
+        w.postMessage({ id, cmd: 'recognize', bitmap: img, base: assets.base, ...(assets.threads !== undefined ? { threads: assets.threads } : {}) }, [img]);
       });
     },
     dispose() {

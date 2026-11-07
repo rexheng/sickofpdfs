@@ -77,6 +77,13 @@ export default defineConfig({
     // the content script need no other (no ws, wss or ftp).
     host_permissions: ['http://*/*', 'https://*/*', 'file:///*'],
     content_security_policy: { extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'" },
+    // Cross-origin isolation for every extension page, so text recognition can use several threads (it needs
+    // SharedArrayBuffer; ocr/engine/ocr.worker.ts). Extension pages load only their own files and blob:/data: URLs, and each
+    // request they send out is CORS mode (the PDF, a file:// PDF, Claude, the online lookups), which the embedder policy does
+    // not block.
+    // The viewer inside a page's frame is not isolated; it never reads there (it asks for the whole tab).
+    cross_origin_embedder_policy: { value: 'require-corp' },
+    cross_origin_opener_policy: { value: 'same-origin' },
     web_accessible_resources: [{ resources: ['viewer.html'], matches: ['<all_urls>'] }],
   },
   // WXT bakes the build mode into `process.env.NODE_ENV`, which would give the test build React's development build.

@@ -30,7 +30,7 @@ async function load(base: string): Promise<Loaded> {
   ort.env.wasm.wasmPaths = `${folder}ort/`;
   const res = await fetch(`${folder}models/ocr/${LAYOUT_MODEL_DIR}/${LAYOUT_MODEL_FILE}`);
   if (!res.ok) throw new Error(`cannot read the layout model (HTTP ${res.status})`);
-  const session = await ort.InferenceSession.create(new Uint8Array(await res.arrayBuffer()));
+  const session = await ort.InferenceSession.create(new Uint8Array(await res.arrayBuffer()), { logSeverityLevel: 3 }); // errors only (as ppocr.ts)
   return { ort, session };
 }
 

@@ -4,8 +4,9 @@
 // (`env.wasm.wasmPaths`); nothing is downloaded when the extension runs.
 //
 // This is the one onnxruntime-web build in the extension, shared by the learning filter's tie-breaker (Phase 3) and the
-// OCR engine (Phase 7): plain wasm, run on one thread, so the extension pages need no cross-origin isolation. The WebGPU
-// build is a different, larger file and is not copied.
+// OCR engine (Phase 7): plain wasm. The same file runs on one thread or several; the OCR uses several, which needs the
+// extension pages to be cross-origin isolated (the manifest's keys in wxt.config.ts). The WebGPU build is a different, larger
+// file and is not copied.
 import { copyFile, mkdir, stat } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';

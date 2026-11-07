@@ -1,14 +1,19 @@
 // The OCR engine's worker (module worker, started by engine.ts in a viewer tab or in the offscreen page's OCR worker). It loads
-// onnxruntime-web (plain wasm, one thread: the build the learning filter already ships, ort/) and the PP-OCRv6 tiny models from
-// the extension's own files on the first page, then reads one page at a time.
+// onnxruntime-web (plain wasm: the build the learning filter already ships, ort/) and the PP-OCRv6 tiny models from the
+// extension's own files on the first page, then reads one page at a time.
+//
+// Threads: the runtime runs on ocrThreads() threads (models.ts): one core fewer than the computer has, at most 4, so the reading
+// tab keeps a core of its own. Threads need a cross-origin isolated page (the manifest's keys, wxt.config.ts); where the page is
+// not isolated it runs on one. The number of threads does not change the words read, only how fast they come.
 //
 // No network: it imports and fetches addresses under its own origin only (the extension's), and the files are put there at build
 // time (scripts/copy-ort-assets.mjs, scripts/fetch-ocr-models.mjs). It logs nothing about a page, and an error it reports names
 // the stage that failed, never the text.
 //
-//   → { id, cmd: 'recognize', bitmap, base }   (the bitmap is transferred)   ← { id, ok, words, ms } | { id, ok: false, error, stopped }
-//   → { id, cmd: 'stop' }                      stops page `id` at the next batch
-import { DET_MODEL, OCR_DET_MAX_SIDE, OCR_MODELS_DIR, OCR_REC_BATCH, OCR_WIDTH_BUCKET, REC_MODEL } from './models';
+//   → { id, cmd: 'recognize', bitmap, base, threads? }   (the bitmap is transferred; `threads` is read on the first page only)
+//                                                        ← { id, ok, words, ms } | { id, ok: false, error, stopped }
+//   → { id, cmd: 'stop' }                                stops page `id` at the next batch
+import { DET_MODEL, OCR_DET_MAX_SIDE, OCR_MODELS_DIR, OCR_REC_BATCH, OCR_WIDTH_BUCKET, ocrThreads, REC_MODEL } from './models';
 import { OcrStopped, PpOcr } from './ppocr';
 
 type Ort = typeof import('onnxruntime-web');
@@ -29,11 +34,15 @@ async function bytesOf(url: string): Promise<Uint8Array> {
   return new Uint8Array(await res.arrayBuffer());
 }
 
-async function load(base: string): Promise<PpOcr> {
+/** The threads the runtime was started with (the speed checks read it in `ms`). */
+let threads = 1;
+
+async function load(base: string, asked: number | undefined): Promise<PpOcr> {
   const folder = ownFolder(base);
   const ort = (await import(/* @vite-ignore */ `${folder}ort/ort.wasm.min.mjs`)) as Ort;
   ort.env.logLevel = 'error'; // the models make the runtime warn about unused initialisers on every load
-  ort.env.wasm.numThreads = 1;
+  threads = ocrThreads(navigator.hardwareConcurrency, self.crossOriginIsolated, asked);
+  ort.env.wasm.numThreads = threads;
   ort.env.wasm.proxy = false;
   ort.env.wasm.wasmPaths = `${folder}ort/`;
   const dir = (m: string) => `${folder}${OCR_MODELS_DIR}${m}/`;
@@ -62,7 +71,7 @@ function pixels(bitmap: ImageBitmap): { data: Uint8ClampedArray; width: number; 
 let queue: Promise<void> = Promise.resolve();
 
 self.onmessage = (e: MessageEvent) => {
-  const m = e.data as { id: number; cmd: string; bitmap?: ImageBitmap; base?: string };
+  const m = e.data as { id: number; cmd: string; bitmap?: ImageBitmap; base?: string; threads?: unknown };
   if (m.cmd === 'stop') {
     stopped.add(m.id);
     return;
@@ -73,12 +82,12 @@ self.onmessage = (e: MessageEvent) => {
     try {
       if (stopped.has(id)) throw new OcrStopped();
       const t0 = performance.now();
-      engine ??= load(base);
+      engine ??= load(base, typeof m.threads === 'number' ? m.threads : undefined);
       const ready = await engine;
       const t1 = performance.now();
       const image = pixels(bitmap);
       const { words, ms } = await ready.recognize(image, () => stopped.has(id));
-      self.postMessage({ id, ok: true, words, ms: { ...ms, load: t1 - t0, total: performance.now() - t0 } });
+      self.postMessage({ id, ok: true, words, ms: { ...ms, load: t1 - t0, total: performance.now() - t0, threads } });
     } catch (error) {
       if (!(error instanceof OcrStopped)) engine = null; // a failed start may be tried again by the next page
       bitmap.close();
