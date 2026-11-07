@@ -18,6 +18,14 @@
 // - R105b: it says what started the save (`cause`), so a save finished on the next open keeps that reason. "Your first note saved
 //   it" stays a first note's save, and Claude still asks first on it. A record that does not say (one written before this field)
 //   is never taken as the owner's own Save.
+// - A second copy in IndexedDB (crashsave, Nov 7). Until the save lands, this record is the only copy of the note's words. When
+//   the renderer crashes, Chrome terminates the extension, and the owner reloads it, Chrome sometimes drops every localStorage
+//   write the crashed pages made in their last seconds (measured: 2 crashes in 16 during a first note's save; the page never
+//   removed the record, it was simply not there after the reload). An IndexedDB write that has committed is kept. So every write
+//   and removal of a record is copied there too, a few ms behind (`PendingMirror`), and the next open of the file puts back into
+//   localStorage the copy of a tab that has gone before it looks for records (`recover`). The copy follows the record exactly:
+//   it is removed with it, and Undo and Forget clear both. Same origin as localStorage, so web pages and content scripts cannot
+//   read it either; it never syncs, is never searched and is not in backups.
 import type { CommentRow, TabId } from '@sop/core';
 import type { AnnotationOp } from './boundary';
 import type { KeyValueStorage } from './draft-journal';
@@ -64,6 +72,21 @@ export interface PendingSaves {
   clear(fingerprint: string): void;
   /** Runs `fn` holding the one lock all tabs use for these records, so two tabs never take the same one. */
   locked<T>(fn: () => Promise<T>): Promise<T>;
+  /**
+   * Puts back into localStorage the IndexedDB copy of each record for this fingerprint (every fingerprint when null) that
+   * localStorage lost or holds an older version of, unless `skip` says its tab still owns it. Call it before `list`. Never rejects.
+   */
+  recover?(fingerprint: string | null, skip: (rec: PendingSave) => boolean): Promise<void>;
+}
+
+/** The second copy of the records (see the rules above). Writes are queued and never throw; reads give [] when they cannot read. */
+export interface PendingMirror {
+  put(key: string, value: string): void;
+  remove(key: string): void;
+  /** Removes every copy whose key starts with `prefix`. */
+  clear(prefix: string): void;
+  /** Every copy whose key starts with `prefix`, after the writes queued before this call. */
+  read(prefix: string): Promise<[string, string][]>;
 }
 
 const keyOf = (p: Pick<PendingSave, 'fingerprint' | 'tab' | 'life'>): string => `${PENDING_PREFIX}${p.fingerprint}:${p.tab}:${p.life}`;
@@ -83,7 +106,7 @@ function parse(raw: string | null): PendingSave | null {
   }
 }
 
-export function createPendingSaves(storage: KeyValueStorage): PendingSaves {
+export function createPendingSaves(storage: KeyValueStorage, mirror: PendingMirror | null = null): PendingSaves {
   const keys = (fingerprint: string): string[] => {
     const out: string[] = [];
     const prefix = `${PENDING_PREFIX}${fingerprint}:`;
@@ -103,18 +126,21 @@ export function createPendingSaves(storage: KeyValueStorage): PendingSaves {
     } catch {
       // nothing more can be done
     }
+    mirror?.remove(k);
   };
   return {
     put(p) {
       if (!isId(p.fingerprint)) return false; // never a record without its file
       const k = keyOf(p);
+      const raw = JSON.stringify(p);
       try {
-        storage.setItem(k, JSON.stringify(p));
-        return true;
+        storage.setItem(k, raw);
       } catch {
         removeKey(k); // full: an older copy must not outlive newer text
         return false;
       }
+      mirror?.put(k, raw);
+      return true;
     },
     remove: (p) => removeKey(keyOf(p)),
     list(fingerprint) {
@@ -132,12 +158,143 @@ export function createPendingSaves(storage: KeyValueStorage): PendingSaves {
     },
     clear(fingerprint) {
       for (const k of keys(fingerprint)) removeKey(k);
+      if (isId(fingerprint)) mirror?.clear(`${PENDING_PREFIX}${fingerprint}:`);
     },
     locked(fn) {
       const locks = typeof navigator !== 'undefined' && 'locks' in navigator ? navigator.locks : null;
       return locks ? locks.request('sop-pending-saves', () => fn()) : fn();
     },
+    async recover(fingerprint, skip) {
+      if (!mirror || (fingerprint !== null && !isId(fingerprint))) return;
+      const copies = await mirror.read(fingerprint === null ? PENDING_PREFIX : `${PENDING_PREFIX}${fingerprint}:`).catch(() => []);
+      for (const [k, raw] of copies) {
+        const copy = parse(raw);
+        if (!copy || k !== keyOf(copy) || skip(copy)) continue;
+        let here: PendingSave | null;
+        try {
+          here = parse(storage.getItem(k));
+        } catch {
+          here = null;
+        }
+        if (here !== null && here.at >= copy.at) continue; // localStorage has it, as new or newer
+        try {
+          storage.setItem(k, raw);
+        } catch {
+          // full: the copy stays in IndexedDB, and the next open tries again
+        }
+      }
+    },
   };
+}
+
+const MIRROR_DB = 'sop-pending-copies';
+const MIRROR_STORE = 'records';
+
+/** The records' copy in this origin's IndexedDB. Writes go in order, one transaction at a time; a key's newer write replaces one still waiting. */
+export function createPendingMirror(factory: IDBFactory): PendingMirror {
+  let db: Promise<IDBDatabase | null> | null = null;
+  const open = (): Promise<IDBDatabase | null> =>
+    (db ??= new Promise((resolve) => {
+      try {
+        const req = factory.open(MIRROR_DB, 1);
+        req.onupgradeneeded = () => req.result.createObjectStore(MIRROR_STORE);
+        req.onsuccess = () => {
+          const d = req.result;
+          d.onversionchange = () => d.close();
+          resolve(d);
+        };
+        req.onerror = () => resolve(null);
+        req.onblocked = () => resolve(null);
+      } catch {
+        resolve(null); // no IndexedDB here: localStorage alone keeps the records
+      }
+    }));
+  type Op = { key: string; value: string | null } | { prefix: string };
+  let queue: Op[] = [];
+  let drained: Promise<void> = Promise.resolve();
+  let running = false;
+  const range = (prefix: string): IDBKeyRange => IDBKeyRange.bound(prefix, `${prefix}￿`);
+  const write = (d: IDBDatabase, ops: Op[]): Promise<void> =>
+    new Promise((resolve) => {
+      try {
+        const tx = d.transaction(MIRROR_STORE, 'readwrite');
+        const s = tx.objectStore(MIRROR_STORE);
+        for (const op of ops) {
+          if ('prefix' in op) s.delete(range(op.prefix));
+          else if (op.value === null) s.delete(op.key);
+          else s.put(op.value, op.key);
+        }
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+        tx.onabort = () => resolve();
+      } catch {
+        resolve(); // the database went away: localStorage still has the record
+      }
+    });
+  const pump = (): void => {
+    if (running) return;
+    running = true;
+    drained = (async () => {
+      try {
+        while (queue.length > 0) {
+          const ops = queue;
+          queue = [];
+          const d = await open();
+          if (d) await write(d, ops);
+        }
+      } finally {
+        running = false;
+      }
+    })();
+  };
+  const enqueue = (op: Op): void => {
+    if (!('prefix' in op)) queue = queue.filter((o) => 'prefix' in o || o.key !== op.key);
+    queue.push(op);
+    pump();
+  };
+  void open(); // opened now, so the first letter's copy does not wait for it
+  return {
+    put: (key, value) => enqueue({ key, value }),
+    remove: (key) => enqueue({ key, value: null }),
+    clear: (prefix) => enqueue({ prefix }),
+    async read(prefix) {
+      await drained;
+      const d = await open();
+      if (!d) return [];
+      return new Promise((resolve) => {
+        try {
+          const s = d.transaction(MIRROR_STORE, 'readonly').objectStore(MIRROR_STORE);
+          const keys = s.getAllKeys(range(prefix));
+          const values = s.getAll(range(prefix));
+          values.onsuccess = () => {
+            const ks = keys.result as unknown[];
+            const vs = values.result as unknown[];
+            const out: [string, string][] = [];
+            ks.forEach((k, i) => {
+              const v = vs[i];
+              if (typeof k === 'string' && typeof v === 'string') out.push([k, v]);
+            });
+            resolve(out);
+          };
+          values.onerror = () => resolve([]);
+        } catch {
+          resolve([]);
+        }
+      });
+    },
+  };
+}
+
+let localMirror: PendingMirror | null | undefined;
+/** This page's copy of the records (one queue and one connection per page). Null where IndexedDB cannot be used. */
+export function localPendingMirror(): PendingMirror | null {
+  if (localMirror !== undefined) return localMirror;
+  try {
+    localMirror = typeof indexedDB === 'undefined' ? null : createPendingMirror(indexedDB);
+  } catch {
+    localMirror = null;
+  }
+  return localMirror;
 }
 
 /** The viewer's records: the extension's localStorage. Null in Incognito and where localStorage cannot be used. */
@@ -145,7 +302,7 @@ export function localPendingSaves(): PendingSaves | null {
   try {
     if (typeof chrome !== 'undefined' && chrome.extension?.inIncognitoContext) return null;
     if (typeof localStorage === 'undefined') return null;
-    return createPendingSaves(localStorage);
+    return createPendingSaves(localStorage, localPendingMirror());
   } catch {
     return null;
   }

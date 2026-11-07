@@ -5,6 +5,7 @@
 import { CommentAvatar, Dialog, formatCommentTime, formatCommentTimeFull, TextButton } from '@sop/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { deleteRecoveredNote, listRecoveredNotes, type RecoveredNote } from '../../../viewer/annotations/recovered-notes';
+import { localPendingSaves } from '../../../viewer/annotations/save-pending';
 import { tabsHoldingLocks } from '../../../viewer/annotations/tab-presence';
 import { useLibrary } from '../../app/context';
 import { copyText } from '../../components/reading-actions';
@@ -14,10 +15,10 @@ const KIND_WORDS: Record<RecoveredNote['kind'], string> = { note: 'Note', edit: 
 
 /** The recovered notes, without the ones a tab that is still open holds (they are recovered once that tab has gone). */
 async function recoveredNow(): Promise<RecoveredNote[]> {
-  const all = listRecoveredNotes();
-  if (!all.some((n) => n.heldBy !== undefined)) return all;
   const live = new Set(await tabsHoldingLocks());
-  return all.filter((n) => n.heldBy === undefined || !live.has(n.heldBy));
+  // A crash can take a waiting note out of localStorage: the copy of a tab that has gone goes back first (save-pending.ts).
+  await localPendingSaves()?.recover?.(null, (rec) => live.has(rec.tab));
+  return listRecoveredNotes().filter((n) => n.heldBy === undefined || !live.has(n.heldBy));
 }
 
 /** Read again when another tab changes the journal, and when the page comes back into view. */

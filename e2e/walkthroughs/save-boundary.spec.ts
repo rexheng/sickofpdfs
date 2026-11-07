@@ -25,7 +25,7 @@ import { forceVerdict, realVerdict } from '../support/filter-verdict';
 import { TEST_ASSETS } from '../support/server';
 import { settle, setZoom, waitForTextLayer } from '../support/tl-blind.spec-blind';
 import { store as storeOf, waitForStore, ZERO_STATS } from '../support/store-probe.spec-blind';
-import { expect, hooks, test, type FixtureServer } from '../support/test';
+import { EXTENSION_ID, expect, hooks, test, type FixtureServer } from '../support/test';
 import {
   ATTENTION,
   savePrompt,
@@ -160,10 +160,27 @@ test.describe('a note typed while the chip says "Saving…" (finding 2, R67 a)',
   const WAYS = [
     { name: 'the tab is closed', go: (p: Page) => p.close({ runBeforeUnload: true }) },
     { name: 'the renderer crashes', go: (p: Page) => crashRenderer(p) },
+    // crashsave (Nov 7): after a crash and the extension's reload, Chrome sometimes drops every localStorage write the crashed
+    // pages made (2 crashes in 16, about 150 ms after the last key). This step makes Chrome's loss happen every time: the note
+    // must come back from the save-pending record's IndexedDB copy.
+    {
+      name: 'the renderer crashes 150 ms after the last key and Chrome loses its localStorage writes',
+      go: async (p: Page) => {
+        const context = p.context();
+        await p.waitForTimeout(150);
+        await crashRenderer(p);
+        const peek = await context.newPage();
+        await peek.goto(`chrome-extension://${EXTENSION_ID}/HOW-TO-UPDATE.txt`);
+        await peek.evaluate(() => {
+          for (const k of Object.keys(localStorage)) if (k.startsWith('sop-pending:')) localStorage.removeItem(k);
+        });
+        await peek.close();
+      },
+    },
   ];
 
   test('A note typed while the chip says Saving… is back on the next open, however the tab went', async ({ step }, testInfo) => {
-    test.setTimeout(360_000);
+    test.setTimeout(540_000);
     for (const { name, go } of WAYS) {
       await step(`${name} mid-save: on the next open the save completes and the note is back`, async ({ openViewer, server, context }) => {
         await forceVerdict(context, 'unsure');

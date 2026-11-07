@@ -777,21 +777,24 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
       return;
     }
     const taken: PendingSave[] = [];
+    // This page's own record, or one of a tab that is open and still saving it: not ours to take.
+    const theirs = (rec: PendingSave): boolean => rec.life === life || (rec.tab !== tabId && live.has(rec.tab));
     await pj
-      .locked(() => {
+      .locked(async () => {
         const keys = new Set<string>([fp]);
         const id = currentDocId();
         if (id) keys.add(id);
+        // A crash can take a record out of localStorage (save-pending.ts): its IndexedDB copy goes back first.
+        for (const key of keys) await pj.recover?.(key, theirs);
         for (const key of keys) {
           for (const rec of pj.list(key)) {
-            if (disposed) return Promise.resolve();
-            if (rec.life === life) continue; // this page's own
-            if (rec.tab !== tabId && live.has(rec.tab)) continue; // that tab is open and still saving it
+            if (disposed) return;
+            if (theirs(rec)) continue;
             adoptPending(rec);
             taken.push(rec);
           }
         }
-        if (taken.length === 0) return Promise.resolve();
+        if (taken.length === 0) return;
         kickNoUndo = true; // R67 tightened (3): a save finished on reopen never offers Undo
         // This page's own record holds them before the old ones go, so a crash in between loses nothing.
         if (mode === 'stored') {
@@ -805,7 +808,6 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
           keepPending();
         }
         for (const rec of taken) pj.remove(rec);
-        return Promise.resolve();
       })
       .catch((e: unknown) => report(e, 'pending.restore'));
     if (taken.length === 0 || disposed) return;

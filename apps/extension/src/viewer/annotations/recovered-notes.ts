@@ -13,7 +13,7 @@
 // Only extension pages can read these (localStorage is per origin). Incognito keeps none.
 import type { KeyValueStorage } from './draft-journal';
 import { canPlace, JOURNAL_PREFIX } from './draft-journal';
-import { PENDING_PREFIX, type PendingSave } from './save-pending';
+import { localPendingMirror, PENDING_PREFIX, type PendingMirror, type PendingSave } from './save-pending';
 
 /** A save-pending record shows as recovered once its PDF has not been opened for this long. */
 export const RECOVER_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
@@ -100,8 +100,15 @@ export function listRecoveredNotes(now: number = Date.now(), storage: KeyValueSt
   return out.sort((a, b) => b.at - a.at);
 }
 
-/** Deletes one recovered note: the owner's own choice. A save-pending record with nothing left in it goes. */
-export function deleteRecoveredNote(key: string, storage: KeyValueStorage | null = localStorageOrNull()): void {
+/**
+ * Deletes one recovered note: the owner's own choice. A save-pending record with nothing left in it goes. Its IndexedDB copy
+ * follows (save-pending.ts), so a crash cannot bring the deleted note back.
+ */
+export function deleteRecoveredNote(
+  key: string,
+  storage: KeyValueStorage | null = localStorageOrNull(),
+  mirror: PendingMirror | null = storage !== null && storage === localStorageOrNull() ? localPendingMirror() : null,
+): void {
   if (!storage) return;
   const hash = key.indexOf('#');
   try {
@@ -127,8 +134,14 @@ export function deleteRecoveredNote(key: string, storage: KeyValueStorage | null
       edits: what === 'e' ? rec.edits.filter((e) => e.commentId !== id) : rec.edits,
       ops,
     };
-    if (next.drafts.length === 0 && next.edits.length === 0 && next.ops.length === 0) storage.removeItem(storageKey);
-    else storage.setItem(storageKey, JSON.stringify(next));
+    if (next.drafts.length === 0 && next.edits.length === 0 && next.ops.length === 0) {
+      storage.removeItem(storageKey);
+      mirror?.remove(storageKey);
+    } else {
+      const raw = JSON.stringify(next);
+      storage.setItem(storageKey, raw);
+      mirror?.put(storageKey, raw);
+    }
   } catch {
     // storage refused: the note stays, and shows again
   }

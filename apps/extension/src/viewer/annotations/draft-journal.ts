@@ -4,7 +4,10 @@
 // viewer tab's renderer dies, the offscreen store document and the store worker die with it, so a draft write that was on its
 // way to the store is lost. A localStorage write is different: `setItem` hands the change to the browser process before it
 // returns, and the browser keeps it there. Measured (crash-report.md): a setItem that has returned survives `kill -9` of the
-// renderer right after it, 8 times out of 8.
+// renderer right after it, 8 times out of 8. But not always once Chrome has terminated the extension and the owner reloads it:
+// then it sometimes drops every write of the crashed pages' last seconds (crashsave, 2 crashes in 16). Here the store's own copy
+// is at most DRAFT_MAX_MS behind, so that loses at most the last letters; a save-pending record, the only copy, has an
+// IndexedDB copy for this (save-pending.ts).
 //
 // Rules (contracts section 3, "no lost text"):
 // - One key per draft: `sop-draft:c:<comment id>` for a note or reply being typed, `sop-draft:e:<comment id>` for an unsent
