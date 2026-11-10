@@ -114,9 +114,9 @@ export function drainForgetsHere(): Promise<number> {
           return t.ok ? t.token : null;
         },
       });
-      return await drainForgets(async (sha) => {
+      return await drainForgets(async (sha, at) => {
         try {
-          await client.forget(sha);
+          await client.forget(sha, at);
           return 'done';
         } catch (e) {
           if (e instanceof SyncHttpError && e.failure === 'refused') return e.status === 404 ? 'done' : 'retry';
@@ -179,12 +179,16 @@ export async function connectionHere(): Promise<EngineConnection | null> {
     return null;
   }
   if (server === null || !serverAllowed(server)) return null;
+  // Signed out on purpose: sync is simply off, with no "Sync has stopped" (Settings → Cloud says "Signed out")
+  const auth = await cloudAuthState().catch(() => null);
+  if (auth !== null && !auth.signedIn && auth.signedOutByYou) return null;
   return {
     server,
     token: async (refresh = false) => {
       const t = await accessToken({ forceRefresh: refresh });
       if (!t.ok || t.server !== server) return null;
-      void drainForgetsHere();
+      // Queued Forgets go first, so a sync round never sends a reading's old rows before the cloud has forgotten them
+      if ((await queuedForgets().catch(() => [])).length > 0) await drainForgetsHere();
       return t.token;
     },
   };

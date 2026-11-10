@@ -113,7 +113,7 @@ async function saveWithFilter(loaded: LoadedPdf, h: UploadHooks): Promise<Saved>
     return { kind: 'stop', step: { kind: 'refused', why: 'This PDF looks damaged, so it can’t be added.' } };
   }
   const store = h.store;
-  // The owner's synced allow and deny lists. "Never save this file" is kept only on the computer it was chosen on.
+  // The owner's synced allow and deny lists, and "Never save this file" chosen in Chrome or on the phone (by sync).
   const rules = createRulesSource({ local: () => Promise.resolve(null), localExists: () => Promise.resolve(false), store: () => Promise.resolve(store) });
   const filter = createViewerFilter({ fingerprint: loaded.sha256, rules, tieBreaker: null });
   const save = createSaveController({

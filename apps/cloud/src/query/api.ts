@@ -20,7 +20,7 @@ const SNIPPET = `'', '', '…', 24`;
 /** The documents a caller may see. `d` is the documents table in the query. */
 export function visibleDocs(audience: Audience, trash = false): string {
   const live = trash ? 'd.deleted_at IS NOT NULL' : 'd.deleted_at IS NULL';
-  const base = `${live} AND NOT EXISTS (SELECT 1 FROM forgotten f WHERE f.document_id = d.id)`;
+  const base = `${live} AND NOT EXISTS (SELECT 1 FROM forgotten f WHERE f.document_id = d.id AND d.created_at <= f.at)`;
   if (audience === 'owner') return base;
   return trash ? '0' : `${base} AND d.index_text = 1 AND d.encrypted = 0`;
 }

@@ -65,6 +65,7 @@ import { buildFilterInput } from '../filter/sample-input';
 import { FORGOTTEN_BACKUP_PENDING, FORGOTTEN_LIBRARY_ONLY, type ForgetBackupResult } from '../../backup/forget';
 import { type IdentityResult, resolveIdentity } from '../identity/resolve-identity';
 import type { OpenedDocument } from '../open-document';
+import { requestCloudForget } from '../../shared/cloud-messages';
 
 /** What the viewer calls a PDF whose address gives no name (displayNameFor's fallback). Never a title. */
 const GENERIC_NAME = 'document.pdf';
@@ -617,6 +618,9 @@ export function createSaveController(d: SaveControllerDeps): SaveControllerImpl 
       throw error;
     }
     if (neverKept === 'kept') tellNever(neverKeys);
+    // D2, CA8: the cloud forgets it too (queued until it is sent; nothing at all when no server is connected). An Undo of a
+    // save goes too: a save the owner took back must not stay in the cloud. A new save later syncs again.
+    void requestCloudForget(id);
     // R67 (e): the drafts' crash-safe copies, the save-pending records and the margin hint go with the document.
     forgetLocalTraces(id, loaded.sha256);
     await blobs?.delete(id);

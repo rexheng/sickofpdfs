@@ -65,7 +65,7 @@ export function CloudSection() {
   const [problem, setProblem] = useState<string | null>(null);
 
   const look = useCallback(() => {
-    cloudStatusHere().then(setCloud, () => setCloud({ connected: false, server: null, signedIn: false, forgetsWaiting: 0 }));
+    cloudStatusHere().then(setCloud, () => setCloud({ connected: false, server: null, signedIn: false, signedOutByYou: false, forgetsWaiting: 0 }));
   }, []);
   useEffect(() => {
     look();
@@ -162,7 +162,12 @@ export function CloudSection() {
           <>
             <div className={styles.status} role="status">
               <span className={styles.statusLabel}>Sync</span>
-              <span className={styles.statusProblem}>You are signed out, so sync has stopped. Your changes are safe on this phone.</span>
+              {cloud.signedOutByYou ? (
+                // signed out on purpose: calm, not a problem
+                <span className={styles.statusText}>Signed out. Sync is off, and your changes are safe on this phone. Sign in to sync them again.</span>
+              ) : (
+                <span className={styles.statusProblem}>Sync has stopped: you were signed out. Your changes are safe on this phone. Sign in again to sync them.</span>
+              )}
             </div>
             {problem !== null && (
               <p className={styles.problem} role="alert">

@@ -24,6 +24,9 @@
 //   5. `author` never changes. The `claude` device writes only rows with `author = 'claude'` (and new threads) and edits
 //      nobody else's. Other devices may delete or restore a Claude row but not rewrite it.
 //   6. Drafts, forgotten documents, unlabelled documents, secret-looking settings and local folder paths never get in.
+//   7. A new save after Forget syncs again (owner, Nov 10). With `ctx.forgottenAt`, an entry made at or before the Forget
+//      (its `createdAt`, or its stamp for a table without one) is about the forgotten copy and is refused for good; a reading
+//      saved after it is a new reading. So a second computer that has not heard of the Forget can never bring old notes back.
 
 import type { HlcStamp } from '../hlc';
 import {
@@ -64,6 +67,14 @@ export interface MergeContext {
    * Left out, every document counts as known.
    */
   documentState?(documentId: string): 'known' | 'unknown' | 'forgotten';
+  /**
+   * When the document was forgotten (ms), or null when it never was. Set, it allows a new save after the Forget (rule 7):
+   * anything made at or before this time is refused as `forgotten`, whatever `documentState` says, and a `documents` entry
+   * made after it is accepted even while `documentState` is still `forgotten` (the server holds nothing of the old copy).
+   * The other rows of a reading that is forgotten and not saved again wait (`unknown_document`). Left out, `forgotten`
+   * refuses everything, as before.
+   */
+  forgottenAt?(documentId: string): number | null;
   /**
    * The newest stamp, exactly as the device sent it, of an entry from `ctx.device` for this row that the server has already
    * processed (applied, or judged and kept out), or null. After every `apply` or `noop` result the server records
@@ -315,13 +326,23 @@ export function mergeEntry(server: ServerRow | null, entry: ChangeEntry, ctx: Me
 
   // 3. What the server accepts at all
   const state = (id: string) => ctx.documentState?.(id) ?? 'known';
+  // Rule 7: when this entry was made, and whether that was before the Forget of its reading
+  const madeAt = typeof incoming.createdAt === 'number' ? incoming.createdAt : (parseHlc(entry.hlc)?.ms ?? 0);
+  const beforeForget = (id: string): boolean => {
+    const at = ctx.forgottenAt?.(id) ?? null;
+    return at !== null && madeAt <= at;
+  };
+  const saveAfterForget = (id: string): boolean => (ctx.forgottenAt?.(id) ?? null) !== null && !beforeForget(id);
   if (table === 'documents') {
     if (entry.label !== 'learning') return reject('not_learning', 'only documents labelled learning are accepted');
-    if (state(entry.id) === 'forgotten') return reject('forgotten', 'this document was forgotten');
+    if (beforeForget(entry.id)) return reject('forgotten', 'this document was forgotten');
+    if (state(entry.id) === 'forgotten' && !saveAfterForget(entry.id)) return reject('forgotten', 'this document was forgotten');
   } else if (spec.documentField !== null) {
     const documentId = str(incoming[spec.documentField]);
+    if (beforeForget(documentId)) return reject('forgotten', 'this document was forgotten');
     const s = state(documentId);
-    if (s === 'forgotten') return reject('forgotten', 'this document was forgotten');
+    if (s === 'forgotten' && !saveAfterForget(documentId)) return reject('forgotten', 'this document was forgotten');
+    if (s === 'forgotten') return reject('unknown_document', 'the reading was forgotten and is not saved again yet', true);
     if (s === 'unknown') return reject('unknown_document', 'the server does not hold this document yet', true);
   }
   if (table === 'settings' && !isSyncableSetting(entry.id)) return reject('setting_not_syncable', 'this setting stays on the computer');
@@ -329,8 +350,10 @@ export function mergeEntry(server: ServerRow | null, entry: ChangeEntry, ctx: Me
   // only once the server holds it (CL11), so a private reading's fingerprint never arrives in a setting's key.
   if (table === 'settings') {
     for (const d of documentIdsInKey(entry.id)) {
+      if (beforeForget(d)) return reject('forgotten', 'this setting is about a forgotten document');
       const s = state(d);
-      if (s === 'forgotten') return reject('forgotten', 'this setting is about a forgotten document');
+      if (s === 'forgotten' && !saveAfterForget(d)) return reject('forgotten', 'this setting is about a forgotten document');
+      if (s === 'forgotten') return reject('unknown_document', 'the reading was forgotten and is not saved again yet', true);
       if (s === 'unknown') return reject('unknown_document', 'the server does not hold this document yet', true);
     }
   }

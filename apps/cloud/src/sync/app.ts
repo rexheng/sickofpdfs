@@ -263,7 +263,9 @@ syncApp.get(`/api/thumbs${SHA}`, sync, async (c) => (await getThumb(c.env, c.req
 
 syncApp.delete(`/api/documents${SHA}`, sync, async (c) => {
   try {
-    await createSyncService(c.env).purgeDocument(c.req.param('sha') as Sha256);
+    // `?at=` is when the owner chose Forget on their device, so a save made after it, sent first, still syncs
+    const at = Number(c.req.query('at'));
+    await createSyncService(c.env).purgeDocument(c.req.param('sha') as Sha256, Number.isSafeInteger(at) && at > 0 ? at : undefined);
     return c.json({ ok: true, forgotten: true }, 200, noStore);
   } catch (e) {
     return failure(c, e);

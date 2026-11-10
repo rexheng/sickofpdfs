@@ -24,8 +24,11 @@ export interface SyncService {
   pull(since: number, limit: number): Promise<PullResponse>;
   /** `device` comes from the authenticated token, never from the body. The `claude` device is the connector. */
   push(device: string, entries: ChangeEntry[]): Promise<PushResponse>;
-  /** Hard delete: the blob, the text, the notes and every row of the document (Forget, and Trash after 30 days). */
-  purgeDocument(sha: Sha256): Promise<void>;
+  /**
+   * Hard delete: the blob, the text, the notes and every row of the document (Forget, and Trash after 30 days). `at` is when
+   * the owner chose Forget (ms, never later than now; default now): a new save after it syncs again.
+   */
+  purgeDocument(sha: Sha256, at?: number): Promise<void>;
 }
 
 // ─── Library queries (CL5). Inside the Worker `Author` is 'me' | 'claude' and pages are 0-based; 'user' and 1-based pages

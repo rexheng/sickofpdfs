@@ -2,13 +2,15 @@
 // token broker in the service worker (background/cloud-broker.ts), by message. The offscreen document never sees the refresh
 // token, and never opens `sop-local` (CA7).
 //
-// No server connected (or the broker cannot be reached): null, and the engine sends nothing.
+// No server connected (or the broker cannot be reached): null, and the engine sends nothing. Signed out on purpose: null too, so
+// sync is simply off (no "Sync has stopped", no badge); Settings → Cloud says "Signed out".
 import type { EngineConnection } from '@sop/core/sync-client';
 import { cloudStatus, cloudToken } from '../shared/cloud-messages';
 
 export async function extensionConnection(): Promise<EngineConnection | null> {
   const s = await cloudStatus();
   if (!s.ok || !s.status.connected || s.status.server === null) return null;
+  if (!s.status.signedIn && s.status.signedOutByYou) return null;
   const server = s.status.server;
   return {
     server,

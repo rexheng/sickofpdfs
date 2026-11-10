@@ -1,5 +1,8 @@
 // The owner's own rules for the learning filter, and the few records the filter keeps on this computer (contracts §5):
-// - "Never save this file": a salted fingerprint in the local-only store (`sop-local`), read before any page is read;
+// - "Never save this file": a salted fingerprint in the local-only store (`sop-local`), read before any page is read. It also
+//   goes to the owner's other devices (the web library's upload, the phone) as the synced setting `filter.never.<code>`. The
+//   code is a one-way scramble of the fingerprint, cut to 128 bits (`neverCode`): never the fingerprint itself, so the cloud
+//   cannot tell which file it is, or link it to a reading, unless it already holds that very file;
 // - the deny and allow lists: the synced settings `filter.deny` and `filter.allow` in the library store;
 // - "Report a wrong decision": the owner's label and a salted fingerprint, never the file.
 // The list of forgotten readings is not here: it is the library store's own, written with Forget's delete (R88, R89).
@@ -15,6 +18,18 @@ export const ALLOW_LIST_KEY = 'filter.allow';
 export const DENY_LIST_KEY = 'filter.deny';
 
 export type FilterLists = Pick<FilterRules, 'deny' | 'allow'>;
+
+/** The synced setting that says "Never save this file" for one file, on every device: `filter.never.<code>`, value true. */
+export const NEVER_SAVE_PREFIX = 'filter.never.';
+
+/**
+ * The code a "Never save this file" choice syncs under: SHA-256 of the fingerprint with this app's own label, cut to 128 bits
+ * (32 hex characters, so it can never be mistaken for a fingerprint). One way: it cannot be turned back into the fingerprint.
+ */
+export async function neverCode(sha: string): Promise<string> {
+  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`sickofpdfs never-save v1:${sha}`)));
+  return Array.from(bytes.slice(0, 16), (b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 export interface FilterRulesSource {
   /**
@@ -66,12 +81,32 @@ export function createRulesSource(d: RulesSourceDeps): FilterRulesSource {
     for (const sha of new Set(shas)) if (sha.length > 0) await f(sha);
   };
 
+  /** The synced "never save" choices (made on any device) for these fingerprints. False when the library cannot be reached. */
+  async function neverSynced(shas: readonly string[]): Promise<boolean> {
+    const s = await d.store();
+    if (s === null) return false;
+    for (const sha of shas) if ((await s.getSetting(`${NEVER_SAVE_PREFIX}${await neverCode(sha)}`)) === true) return true;
+    return false;
+  }
+  /** Keeps (true) or takes back (null) the synced choice for these fingerprints. */
+  async function setSynced(shas: readonly string[], on: boolean): Promise<void> {
+    const s = on ? await store() : await d.store();
+    if (s === null) return;
+    for (const sha of new Set(shas)) {
+      if (sha.length === 0) continue;
+      const key = `${NEVER_SAVE_PREFIX}${await neverCode(sha)}`;
+      // taking back a choice that was never synced writes nothing
+      if (on || (await s.getSetting(key)) === true) await s.setSetting(key, on ? true : null);
+    }
+  }
+
   return {
     async fileChoice(shas) {
+      const list = [...new Set(typeof shas === 'string' ? [shas] : shas)].filter((sha) => sha.length > 0);
       const l = await readable();
-      if (l === null) return null;
-      for (const sha of new Set(typeof shas === 'string' ? [shas] : shas)) if (sha.length > 0 && (await l.isNeverSave(sha))) return 'never';
-      return null;
+      if (l !== null) for (const sha of list) if (await l.isNeverSave(sha)) return 'never';
+      // chosen on another device (the setting came by sync)
+      return (await neverSynced(list)) ? 'never' : null;
     },
     async lists() {
       const s = await store();
@@ -85,8 +120,10 @@ export function createRulesSource(d: RulesSourceDeps): FilterRulesSource {
     async neverSave(shas) {
       const l = await local();
       await each(shas, (sha) => l.addNeverSave(sha));
+      await setSynced(shas, true);
     },
     async saved(shas) {
+      await setSynced(shas, false);
       const l = await readable();
       if (l === null) return; // nothing was ever kept, so there is nothing to take back
       await each(shas, (sha) => l.removeNeverSave(sha));

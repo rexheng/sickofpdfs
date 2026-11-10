@@ -59,7 +59,7 @@ import {
 } from '@sop/core/sync';
 import type { AckResult, ApplyResult, PushBatch, SentMark } from '@sop/core/sync-client';
 import type { StoreChange } from './change-bus';
-import { forgottenAmong } from './forgotten';
+import { backdateForgotten, forgottenSince, hashesOf } from './forgotten';
 import { SAVED_THOUGH_NOT_LEARNING } from './reading-flags';
 import { isReadOnly, type SqlDb, type SqlValue } from './schema-v2';
 import { APPLYING_KEY, LOCAL_SYNCED_TABLES } from './schema-v9';
@@ -435,14 +435,50 @@ export function createSyncStoreApi(db: SqlDb, deps: SyncStoreDeps, hooks: SyncSt
     run('DELETE FROM auto_tag_removed WHERE tag_id = ?', [from]);
   }
 
-  type Outcome = 'applied' | 'skipped' | 'parked' | 'forget';
+  type Outcome = 'applied' | 'skipped' | 'parked' | 'forget' | 'later';
+
+  /**
+   * Readings forgotten (merge.ts rule 7). `here`: forgotten on this computer earlier, and when. `cloud`: forgotten in the cloud
+   * in this pull, and when. `later`: rows of a reading saved again after a Forget in this pull, applied once it is forgotten here.
+   */
+  interface Gone {
+    here: ReadonlyMap<string, number>;
+    cloud: Map<string, number>;
+    later: Pulled[];
+  }
+  const noneGone = (): Gone => ({ here: new Map(), cloud: new Map(), later: [] });
+
+  /** When a pulled row was made: its `createdAt`, or its stamp's time for a table without one. */
+  const madeAt = (e: Pulled): number => {
+    const c = (e.row as { createdAt?: unknown } | null)?.createdAt;
+    return typeof c === 'number' ? c : (parseHlc(e.hlc)?.ms ?? 0);
+  };
+
+  /** A pulled row about a forgotten reading: skipped when it was made before the Forget, kept for later when after it. */
+  function forgottenFor(doc: string, e: Pulled, gone: Gone): Outcome | null {
+    const cloud = gone.cloud.get(doc);
+    if (cloud !== undefined) {
+      if (madeAt(e) <= cloud) return 'skipped';
+      gone.later.push(e);
+      return 'later';
+    }
+    const here = gone.here.get(doc);
+    if (here !== undefined && !exists('documents', doc) && madeAt(e) <= here) return 'skipped';
+    return null;
+  }
 
   /** One pulled row. Runs inside `applying`. */
-  function applyOne(e: Pulled, forgottenHere: ReadonlySet<string>, forgets: Set<string>): Outcome {
+  function applyOne(e: Pulled, gone: Gone): Outcome {
     const table = e.table;
     if (!(SYNCED_TABLES as readonly string[]).includes(table) || typeof e.id !== 'string') return 'skipped';
     if (table === 'documents' && (e.row as { forgotten?: unknown }).forgotten === true) {
-      if (HEX64.test(e.id)) forgets.add(e.id);
+      if (!HEX64.test(e.id)) return 'skipped';
+      const d = (e.row as { deletedAt?: unknown }).deletedAt;
+      const at = typeof d === 'number' && Number.isFinite(d) ? d : Number.MAX_SAFE_INTEGER;
+      // Saved again here after that Forget: a new reading, which stays (and goes to the cloud as one)
+      const mine = readRow('documents', e.id);
+      if (mine !== undefined && int(mine.created_at) > at) return 'skipped';
+      gone.cloud.set(e.id, at);
       return 'forget';
     }
     if (e.removed === true) {
@@ -450,15 +486,25 @@ export function createSyncStoreApi(db: SqlDb, deps: SyncStoreDeps, hooks: SyncSt
       if (!REMOVABLE_TABLES.has(table) || hasQueued(table, e.id)) return 'skipped';
       return removeHere(table, e.id) ? 'applied' : 'skipped';
     }
-    // A setting about a reading forgotten here or in this pull (`course.of.<sha>`, `pageOrder.of.<sha>`) never comes back
-    if (table === 'settings' && documentIdsInKey(e.id).some((d) => forgets.has(d) || (forgottenHere.has(d) && !exists('documents', d)))) return 'skipped';
+    // A setting about a reading forgotten here or in this pull (`course.of.<sha>`, `pageOrder.of.<sha>`) never comes back,
+    // unless it was made after the Forget, for the reading saved again
+    if (table === 'settings') {
+      for (const d of documentIdsInKey(e.id)) {
+        const f = forgottenFor(d, e, gone);
+        if (f !== null) return f;
+      }
+    }
     const norm = normalizeWireRow(table, e.row);
     if (!norm.ok) return 'skipped';
     const row = norm.row;
     const spec = TABLE_SPECS[table];
     const documentId = table === 'documents' ? e.id : spec.documentField !== null ? str(row[spec.documentField]) : null;
-    // Forgotten here (and not saved again since), or forgotten in the cloud in this same pull: never brought back.
-    if (documentId !== null && (forgets.has(documentId) || (forgottenHere.has(documentId) && !exists('documents', documentId)))) return 'skipped';
+    // Forgotten here (and not saved again since), or forgotten in the cloud in this same pull: never brought back. Only a
+    // reading saved again after the Forget, and what was made for it, comes in (merge.ts rule 7).
+    if (documentId !== null) {
+      const f = forgottenFor(documentId, e, gone);
+      if (f !== null) return f;
+    }
 
     // A reading's tag that names a folded tag goes to the tag that stayed, as a local edit.
     if ((table === 'reading_tags' || table === 'auto_tag_removed') && foldedTag(str(row.tagId)) !== str(row.tagId)) {
@@ -518,7 +564,7 @@ export function createSyncStoreApi(db: SqlDb, deps: SyncStoreDeps, hooks: SyncSt
   }
 
   /** Parked rows whose parents came, in apply order. Runs inside `applying`. */
-  function unpark(forgottenHere: ReadonlySet<string>, forgets: Set<string>): number {
+  function unpark(gone: Gone): number {
     let applied = 0;
     for (let pass = 0; pass < 4; pass++) {
       const rows = select('SELECT table_name, row_id, entry FROM sync_parked');
@@ -535,7 +581,7 @@ export function createSyncStoreApi(db: SqlDb, deps: SyncStoreDeps, hooks: SyncSt
       let moved = 0;
       for (const e of entries) {
         run('DELETE FROM sync_parked WHERE table_name = ? AND row_id = ?', [e.table, e.id]);
-        const r = applyOne(e, forgottenHere, forgets); // parks it again if its parent is still missing
+        const r = applyOne(e, gone); // parks it again if its parent is still missing
         if (r !== 'parked') moved++;
         if (r === 'applied') applied++;
       }
@@ -714,8 +760,7 @@ export function createSyncStoreApi(db: SqlDb, deps: SyncStoreDeps, hooks: SyncSt
         if (e?.table === 'settings' && typeof e.id === 'string') for (const k of documentIdsInKey(e.id)) docIds.add(k);
       }
       for (const r of select('SELECT DISTINCT document_id FROM sync_parked WHERE document_id IS NOT NULL')) docIds.add(str(r.document_id));
-      const forgottenHere = new Set(await forgottenAmong(db, [...docIds].filter((d) => HEX64.test(d))));
-      const forgets = new Set<string>();
+      const gone: Gone = { here: await forgottenSince(db, [...docIds].filter((d) => HEX64.test(d))), cloud: new Map(), later: [] };
       const result = await attempt((): ApplyResult => {
         assertWritable();
         const out: ApplyResult = { applied: 0, skipped: 0, parked: 0, forgotten: 0 };
@@ -723,25 +768,51 @@ export function createSyncStoreApi(db: SqlDb, deps: SyncStoreDeps, hooks: SyncSt
           applying(() => {
             const sorted = [...entries].sort((a, b) => SYNC_APPLY_ORDER.indexOf(a.table) - SYNC_APPLY_ORDER.indexOf(b.table) || a.seq - b.seq);
             for (const e of sorted) {
-              const r = applyOne(e, forgottenHere, forgets);
+              const r = applyOne(e, gone);
               if (r === 'applied') out.applied++;
               else if (r === 'parked') out.parked++;
               else if (r === 'skipped') out.skipped++;
             }
-            out.applied += unpark(forgottenHere, forgets);
-            for (const id of [...forgottenHere, ...forgets]) run('DELETE FROM sync_parked WHERE document_id = ?', [id]);
+            out.applied += unpark(gone);
+            for (const id of gone.cloud.keys()) run('DELETE FROM sync_parked WHERE document_id = ?', [id]);
+            for (const id of gone.here.keys()) if (!exists('documents', id)) run('DELETE FROM sync_parked WHERE document_id = ?', [id]);
             out.parked = Number(db.selectValue('SELECT count(*) FROM sync_parked') ?? 0);
-            putState('cursor', String(cursor));
+            // Rows waiting for a Forget to finish move the cursor only once they are in (a cut-off pull is pulled again)
+            if (gone.later.length === 0) putState('cursor', String(cursor));
           });
           reconcileDuplicates();
         });
         flush();
         return out;
       });
-      for (const id of forgets) {
+      for (const [id, at] of gone.cloud) {
         if (!exists('documents', id)) continue;
         await hooks.forget(id as DocumentId);
         result.forgotten++;
+        // The Forget's time here is the owner's, so a save after it, pulled later, still comes in
+        const hashes = await hashesOf(db, [id]);
+        if (at !== Number.MAX_SAFE_INTEGER) await attempt(() => backdateForgotten(db, hashes, at));
+      }
+      if (gone.later.length > 0) {
+        // The reading saved again after its Forget, and what was made for it since: in, now that the old copy is gone
+        const again = await attempt((): number => {
+          assertWritable();
+          let n = 0;
+          db.savepoint(() => {
+            applying(() => {
+              const fresh = noneGone();
+              const sorted = [...gone.later].sort((a, b) => SYNC_APPLY_ORDER.indexOf(a.table) - SYNC_APPLY_ORDER.indexOf(b.table) || a.seq - b.seq);
+              for (const e of sorted) if (applyOne(e, fresh) === 'applied') n++;
+              n += unpark(fresh);
+              putState('cursor', String(cursor));
+            });
+            reconcileDuplicates();
+          });
+          flush();
+          return n;
+        });
+        result.applied += again;
+        result.parked = await attempt(() => Number(db.selectValue('SELECT count(*) FROM sync_parked') ?? 0));
       }
       return result;
     },

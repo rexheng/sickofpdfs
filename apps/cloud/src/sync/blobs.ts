@@ -35,7 +35,8 @@ interface DocRow {
 export async function documentForFile(env: Env, sha: string): Promise<DocRow> {
   const [d, f] = await env.META.batch<Record<string, unknown>>([
     env.META.prepare('SELECT byte_size, blob_stored FROM documents WHERE id = ?').bind(sha),
-    env.META.prepare('SELECT 1 AS x FROM forgotten WHERE document_id = ?').bind(sha),
+    // forgotten, and not saved again since (a save after the Forget is a new reading)
+    env.META.prepare('SELECT 1 AS x FROM forgotten f WHERE f.document_id = ? AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.id = f.document_id AND d.created_at > f.at)').bind(sha),
   ]);
   if (f?.results.length) throw new BlobError(410, 'forgotten', 'This document was forgotten.');
   const doc = d?.results[0] as unknown as DocRow | undefined;

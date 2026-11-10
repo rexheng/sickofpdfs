@@ -69,8 +69,11 @@ export interface SyncClient {
   head(): Promise<number>;
   pull(since: number, limit?: number): Promise<PullResponse>;
   push(entries: readonly ChangeEntry[]): Promise<PushResponse>;
-  /** Forget (D2): the server drops the document, its PDF, text and notes. Idempotent. */
-  forget(sha: string): Promise<void>;
+  /**
+   * Forget (D2): the server drops the document, its PDF, text and notes. Idempotent. `at` is when the owner chose Forget
+   * (ms): a new save after that time syncs again, even when this call reaches the server after the save.
+   */
+  forget(sha: string, at?: number): Promise<void>;
 }
 
 /** The origin of a server address, or null when it is not one we may send to (http only for this computer). */
@@ -149,9 +152,10 @@ export function createSyncClient(o: SyncClientOptions): SyncClient {
       if (entries.length > MAX_PUSH_ENTRIES) throw new RangeError(`A push holds at most ${MAX_PUSH_ENTRIES} entries.`);
       return call<PushResponse>('POST', '/api/sync/push', { entries });
     },
-    forget: async (sha) => {
+    forget: async (sha, at) => {
       if (!/^[0-9a-f]{64}$/.test(sha)) throw new TypeError('A fingerprint is 64 lower-case hex characters.');
-      await call<unknown>('DELETE', `/api/documents/${sha}`);
+      const when = typeof at === 'number' && Number.isSafeInteger(at) && at > 0 ? `?at=${at}` : '';
+      await call<unknown>('DELETE', `/api/documents/${sha}${when}`);
     },
   };
 }

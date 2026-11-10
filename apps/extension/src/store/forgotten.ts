@@ -65,25 +65,51 @@ export function recordForgotten(tx: SqlDb, hashes: Iterable<string>, at: number)
 
 /** The fingerprints among `ids` that left the library for good and are not in it now (not a document, not an alias). Reads only. */
 export async function forgottenAmong(db: SqlDb, ids: readonly string[]): Promise<string[]> {
+  return [...(await forgottenSince(db, ids)).keys()].sort();
+}
+
+/**
+ * Like `forgottenAmong`, with when each one was forgotten (ms). A sync pull uses the time: a reading saved again on another
+ * computer after that time is a new reading, and it may come in (merge.ts rule 7). Reads only.
+ */
+export async function forgottenSince(db: SqlDb, ids: readonly string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
   const salt = readSalt(db);
-  if (salt === null || !hasTable(db, 'forgotten')) return [];
+  if (salt === null || !hasTable(db, 'forgotten')) return out;
   const hashes = await hashWith(salt, ids);
-  if (hashes.size === 0) return [];
-  const listed = new Set(
+  if (hashes.size === 0) return out;
+  const listed = new Map(
     db
-      .selectObjects('SELECT hash FROM forgotten WHERE hash IN (SELECT value FROM json_each(?))', [JSON.stringify([...hashes.values()])])
-      .map((r) => (typeof r.hash === 'string' ? r.hash : '')),
+      .selectObjects('SELECT hash, forgotten_at FROM forgotten WHERE hash IN (SELECT value FROM json_each(?))', [JSON.stringify([...hashes.values()])])
+      .map((r) => [typeof r.hash === 'string' ? r.hash : '', Number(r.forgotten_at ?? 0)] as const),
   );
-  const candidates = [...hashes].filter(([, h]) => listed.has(h)).map(([id]) => id);
-  if (candidates.length === 0) return [];
+  const candidates = [...hashes].filter(([, h]) => listed.has(h));
+  if (candidates.length === 0) return out;
   const here = new Set(
     db
       .selectObjects(
         `SELECT id FROM documents WHERE id IN (SELECT value FROM json_each(?1))
          UNION SELECT sha256 AS id FROM aliases WHERE sha256 IN (SELECT value FROM json_each(?1))`,
-        [JSON.stringify(candidates)],
+        [JSON.stringify(candidates.map(([id]) => id))],
       )
       .map((r) => (typeof r.id === 'string' ? r.id : '')),
   );
-  return candidates.filter((id) => !here.has(id)).sort();
+  for (const [id, h] of candidates) if (!here.has(id)) out.set(id, listed.get(h) ?? 0);
+  return out;
+}
+
+/**
+ * After a Forget that came from the cloud: the forgotten time becomes the cloud's (the owner's Forget), never later, so a
+ * reading saved again elsewhere after that Forget and pulled later still comes in. Hash first (`hashesOf`), then call this
+ * inside a write.
+ */
+export function backdateForgotten(tx: SqlDb, hashes: Iterable<string>, at: number): void {
+  if (!hasTable(tx, 'forgotten')) return;
+  for (const hash of hashes) tx.exec({ sql: 'UPDATE forgotten SET forgotten_at = min(forgotten_at, ?) WHERE hash = ?', bind: [at, hash] });
+}
+
+/** The salted hashes of these fingerprints, or none when nothing was ever forgotten here. Reads only. */
+export async function hashesOf(db: SqlDb, ids: readonly string[]): Promise<string[]> {
+  const salt = readSalt(db);
+  return salt === null ? [] : [...(await hashWith(salt, ids)).values()];
 }

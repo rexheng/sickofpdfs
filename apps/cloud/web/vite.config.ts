@@ -52,6 +52,8 @@ const SWAPS: Record<string, string> = {
   // @Claude needs the API key, which only the extension keeps: the web says where to ask instead.
   'viewer/claude/entry.ts': 'viewer/claude-entry.ts',
   'viewer/claude/ui/feature.tsx': 'viewer/claude-feature.tsx',
+  // No text recognition on the web (no models shipped): no "Reading text" chip either.
+  'viewer/ocr/OcrChip.tsx': 'viewer/ocr-chip.tsx',
   // No MiniLM on the web (plan CL15): a "not sure" PDF stays "not sure", and the owner is asked.
   'viewer/filter/tie-breaker.ts': 'viewer/tie-breaker.ts',
 };

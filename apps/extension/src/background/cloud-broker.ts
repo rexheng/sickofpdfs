@@ -120,9 +120,9 @@ function drain(): Promise<number> {
       const first = await accessToken();
       if (!first.ok) return (await queuedForgets()).length;
       const client = createSyncClient({ server, token: async () => { const t = await accessToken(); return t.ok ? t.token : null; } });
-      return await drainForgets(async (sha) => {
+      return await drainForgets(async (sha, at) => {
         try {
-          await client.forget(sha);
+          await client.forget(sha, at);
           return 'done';
         } catch (e) {
           if (e instanceof SyncHttpError && e.failure === 'refused') return e.status === 404 ? 'done' : 'retry';
@@ -152,7 +152,8 @@ async function handle(m: CloudMessage, sender: Sender): Promise<CloudReplies[Clo
       if (!fromOffscreen(sender)) return fail('not-allowed', 'Only the sync engine gets a token.');
       const t = await accessToken({ forceRefresh: m.refresh === true });
       if (!t.ok) return fail(t.reason, t.reason === 'offline' ? 'The server could not be reached.' : t.reason === 'signed-out' ? 'Signed out of the cloud.' : 'No cloud is connected.');
-      void drain();
+      // Queued Forgets go first, so a sync round never sends a reading's old rows before the cloud has forgotten them
+      if ((await queuedForgets().catch(() => [])).length > 0) await drain();
       return { ok: true, token: t.token, server: t.server, expiresAt: t.expiresAt };
     }
 

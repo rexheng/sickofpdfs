@@ -179,7 +179,7 @@ export function CourseCard({ card, now, canMerge, onOpen, onOpenNote, onRename, 
                         <span className={styles.noteReading}>{n.title}</span>
                         <span className={styles.noteTail}>
                           {' · '}
-                          {whereLabel(n.thread.anchor, n.thread.pageIndex)} · {formatDate(when, now)}
+                          {whereLabel(n.thread.anchor, n.thread.pageIndex, n.shownPage)} · {formatDate(when, now)}
                         </span>
                       </span>
                     </span>

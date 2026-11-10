@@ -64,8 +64,12 @@ export interface StatusLine {
 /** The status line for a connected server: what sync is doing, in one short label and one or two plain sentences. */
 export function statusLine(cloud: CloudStatus, s: SyncEngineStatus | null, now = Date.now()): StatusLine {
   const safe = 'Your changes are safe on this computer.';
+  // Signed out on purpose: calm, not a problem (no red, no badge). Sync is off until you sign in again.
+  if (!cloud.signedIn && cloud.signedOutByYou) {
+    return { icon: 'cloud_off', tone: 'busy', label: 'Signed out', detail: `Sync is off. ${safe} Sign in to sync them again.` };
+  }
   if (!cloud.signedIn || s?.state === 'signed-out') {
-    return { icon: 'error', tone: 'problem', label: 'Sync has stopped', detail: `You’re signed out. ${safe} Sign in to sync them.` };
+    return { icon: 'error', tone: 'problem', label: 'Sync has stopped', detail: `Your sign-in ended, so sync stopped. ${safe} Sign in to sync them.` };
   }
   if (s === null) return { icon: 'refresh', tone: 'busy', label: 'Connected', detail: 'Checking sync…' };
   const waiting = s.unsynced > 0 ? ` ${notYetSynced(s.unsynced)}.` : '';
@@ -119,7 +123,7 @@ function CloudSection() {
     if (r.ok) {
       setCloud(r.status);
       if (r.status.server !== null) setServer(r.status.server);
-    } else setCloud({ connected: false, server: null, signedIn: false, forgetsWaiting: 0 });
+    } else setCloud({ connected: false, server: null, signedIn: false, signedOutByYou: false, forgetsWaiting: 0 });
   }, []);
   useEffect(() => {
     void readStatus();
@@ -350,6 +354,7 @@ const SYNCS: readonly string[] = [
   'Your highlights, marks and comments',
   'Stars, tags, courses and page order',
   'Page text, so search works on every device',
+  '“Never save this file” choices, as a code that doesn’t show which file',
 ];
 const STAYS: readonly string[] = [
   'Receipts, bills and other private PDFs',

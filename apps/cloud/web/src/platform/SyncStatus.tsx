@@ -44,6 +44,14 @@ function describe(s: SyncStatus): { icon: IconName; text: string; short: string;
       return { icon: 'cloud_off', text: s.unsynced > 0 ? 'Not saved yet' : 'Can’t reach your cloud', short: 'Not saved', help: `${s.unsynced > 0 ? notSaved(s.unsynced) : ''} Your cloud is busy. It tries again soon. Click to try now.`, warn: s.unsynced > 0 };
     case 'refused':
       return { icon: 'error', text: 'A change wasn’t saved', short: 'Not saved', help: 'Your cloud refused a change. Reload the page to see what is saved.', warn: true };
+    case 'textFailed':
+      return {
+        icon: 'search_off',
+        text: 'Saved · Search not ready yet',
+        short: 'Search not ready',
+        help: `Your notes are saved. ${s.textProblem === 'quota' ? 'Your cloud reached its daily limit, so the words of a PDF weren’t sent.' : 'Sending the words of a PDF failed.'} Search can’t find them yet. Click to try again.`,
+        warn: true,
+      };
   }
 }
 
@@ -53,7 +61,7 @@ export function SyncStatusChip({ compact = false }: { compact?: boolean }) {
   const spinning = status.state === 'loading' || status.state === 'saving';
   const retry = () => {
     try {
-      webLibrary().sync.kick();
+      webLibrary().sync.retry();
     } catch {
       // not started
     }

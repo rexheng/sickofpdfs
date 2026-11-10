@@ -9,9 +9,13 @@ import { LibraryClaudeReply } from '../../../viewer/claude/ui/ClaudeReplyView';
 import type { NoteItem } from '../../data/pages-data';
 import styles from './NoteCard.module.css';
 
-/** Where a note is, in the words the viewer's notes panel uses (R74, "Page N" everywhere): "Whole document", "Page 4". */
-export function whereLabel(anchor: Anchor, pageIndex: number | null): string {
+/**
+ * Where a note is, in the words the viewer's notes panel uses (R74, "Page N" everywhere): "Whole document", "Page 4". `shown`
+ * (R108) is the page number in the reading's own page order, when the library knows it.
+ */
+export function whereLabel(anchor: Anchor, pageIndex: number | null, shown?: number | null): string {
   if (anchor.kind === 'document') return 'Whole document';
+  if (typeof shown === 'number') return `Page ${shown}`;
   const page = pageIndex ?? ('page' in anchor ? anchor.page : null);
   return page === null ? 'Whole document' : `Page ${page + 1}`;
 }
@@ -61,7 +65,7 @@ export function NoteCard({ note, now, compact = false, onOpen, onRestore }: Note
         </button>
       </div>
       <p className={styles.where}>
-        <span className={styles.page}>{whereLabel(thread.anchor, thread.pageIndex)}</span>
+        <span className={styles.page}>{whereLabel(thread.anchor, thread.pageIndex, note.shownPage)}</span>
         {what !== null && (
           <>
             <span aria-hidden="true">·</span>

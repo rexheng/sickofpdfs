@@ -23,6 +23,8 @@ export interface CloudStatus {
   connected: boolean;
   server: string | null;
   signedIn: boolean;
+  /** Signed out on purpose (Sign out): sync is off, calmly. False when the server ended the sign-in ("Sync has stopped"). */
+  signedOutByYou: boolean;
   /** Forgets still waiting to reach the cloud. */
   forgetsWaiting: number;
 }

@@ -78,6 +78,7 @@ const newLock = (): string => crypto.randomUUID();
 const serverStamp = (ms: number): string => formatHlc({ ms, counter: 0, device: 'server' });
 
 interface DocFacts {
+  createdAt: number;
   blobStored: boolean;
   hasText: boolean;
   indexText: boolean;
@@ -90,7 +91,7 @@ export function createSyncService(env: Env): SyncService {
     head: () => head(env),
     pull: (since, limit) => pull(env, since, limit),
     push: (device, entries) => push(env, device, entries),
-    purgeDocument: (sha) => purgeDocument(env, sha),
+    purgeDocument: (sha, at) => purgeDocument(env, sha, at),
   };
 }
 
@@ -208,9 +209,9 @@ async function tryPush(env: Env, device: string, raw: ChangeEntry[]): Promise<Pu
   }
   for (const part of chunk([...docIds])) {
     const q = part.map(() => '?').join(',');
-    reads.push(db.prepare(`SELECT id, blob_stored, has_text, index_text, encrypted, deleted_at FROM documents WHERE id IN (${q})`).bind(...part));
+    reads.push(db.prepare(`SELECT id, created_at, blob_stored, has_text, index_text, encrypted, deleted_at FROM documents WHERE id IN (${q})`).bind(...part));
     kinds.push({ kind: 'docs' });
-    reads.push(db.prepare(`SELECT document_id FROM forgotten WHERE document_id IN (${q})`).bind(...part));
+    reads.push(db.prepare(`SELECT document_id, at FROM forgotten WHERE document_id IN (${q})`).bind(...part));
     kinds.push({ kind: 'forgotten' });
     reads.push(db.prepare(`SELECT document_id, state FROM doc_text WHERE document_id IN (${q})`).bind(...part));
     kinds.push({ kind: 'doc_text' });
@@ -224,7 +225,8 @@ async function tryPush(env: Env, device: string, raw: ChangeEntry[]): Promise<Pu
   const seqOf = new Map<string, number>();
   const processed = new Map<string, string>();
   const docs = new Map<string, DocFacts>();
-  const forgotten = new Set<string>();
+  /** Forgotten readings and when (rule 7 of merge.ts: a save after the Forget is a new reading). */
+  const forgotten = new Map<string, number>();
   const textState = new Map<string, string>();
   const markers = new Map<string, RemovalMarker>();
   kinds.forEach((k, i) => {
@@ -237,8 +239,8 @@ async function tryPush(env: Env, device: string, raw: ChangeEntry[]): Promise<Pu
       }
     } else if (k.kind === 'applied') for (const r of rows) processed.set(`${str(r.table_name)}\u0000${str(r.row_id)}`, str(r.hlc));
     else if (k.kind === 'docs')
-      for (const r of rows) docs.set(str(r.id), { blobStored: r.blob_stored === 1, hasText: r.has_text === 1, indexText: r.index_text === 1, encrypted: r.encrypted === 1, deleted: r.deleted_at !== null });
-    else if (k.kind === 'forgotten') for (const r of rows) forgotten.add(str(r.document_id));
+      for (const r of rows) docs.set(str(r.id), { createdAt: Number(r.created_at ?? 0), blobStored: r.blob_stored === 1, hasText: r.has_text === 1, indexText: r.index_text === 1, encrypted: r.encrypted === 1, deleted: r.deleted_at !== null });
+    else if (k.kind === 'forgotten') for (const r of rows) forgotten.set(str(r.document_id), Number(r.at ?? 0));
     else if (k.kind === 'markers')
       for (const r of rows) markers.set(`${str(r.table_name)}\u0000${str(r.row_id)}`, { table: str(r.table_name) as SyncedTable, id: str(r.row_id), rev: Number(r.rev ?? 0), hlc: str(r.hlc), device: str(r.device) });
     else for (const r of rows) textState.set(str(r.document_id), str(r.state));
@@ -251,7 +253,14 @@ async function tryPush(env: Env, device: string, raw: ChangeEntry[]): Promise<Pu
   const ctx = {
     device,
     now,
-    documentState: (id: string) => (forgotten.has(id) ? 'forgotten' : docs.has(id) ? 'known' : 'unknown'),
+    // A reading saved again after its Forget is known again; until then it is forgotten
+    documentState: (id: string) => {
+      const d = docs.get(id);
+      const at = forgotten.get(id);
+      if (at !== undefined && (d === undefined || d.createdAt <= at)) return 'forgotten' as const;
+      return d !== undefined ? ('known' as const) : ('unknown' as const);
+    },
+    forgottenAt: (id: string) => forgotten.get(id) ?? null,
     processedUpTo: (table: SyncedTable, id: string) => processed.get(`${table}\u0000${id}`) ?? null,
   };
   const remember = (e: ChangeEntry) => {
@@ -338,7 +347,11 @@ async function tryPush(env: Env, device: string, raw: ChangeEntry[]): Promise<Pu
       const next: ServerRow = { table: e.table, id: e.id, rev: r.rev, hlc: r.hlc, device, row: r.row };
       stored.set(key, next);
       seqOf.set(key, seq);
-      if (e.table === 'documents' && !docs.has(e.id)) docs.set(e.id, { blobStored: false, hasText: false, indexText: false, encrypted: false, deleted: false });
+      if (e.table === 'documents') {
+        // its notes later in this push count it as known, and a reading saved again after its Forget counts as saved again
+        const prev = docs.get(e.id) ?? { createdAt: 0, blobStored: false, hasText: false, indexText: false, encrypted: false, deleted: false };
+        docs.set(e.id, { ...prev, createdAt: typeof r.row.createdAt === 'number' ? r.row.createdAt : now });
+      }
       response.applied.push({ table: e.table, id: e.id, rev: r.rev, seq });
       if (r.rebase) response.rebased.push({ table: e.table, id: e.id, baseRev: r.rev, hlc: r.hlc, row: r.row, ...(e.table === 'documents' ? { label: 'learning' as const } : {}), rev: r.rev, seq });
     } else {
@@ -391,18 +404,33 @@ const CHILDREN: readonly SyncedTable[] = ['comments', 'threads', 'marks', 'readi
 
 /**
  * Hard delete (Forget, and Trash after 30 days): the PDF and its thumbnail, the page text, every note and row of the document.
- * The document joins `forgotten` first, so nothing about it is accepted again, and other devices pull `{ forgotten: true }`.
- * Each step can run again: a Forget cut off halfway finishes on the next call.
+ * The document joins `forgotten` first, so nothing made before the Forget is accepted again, and other devices pull
+ * `{ forgotten: true }`. A new save after it syncs again (merge.ts rule 7).
+ *
+ * `asked` is when the owner chose Forget on their device (ms), so a Forget sent late, after the device was offline, still
+ * lets a save made after it through. It is never later than the server's clock. Left out, it is now.
+ *  - A later Forget of a reading saved again moves the time forward and is pulled again by every device.
+ *  - An older or repeated one changes nothing, but finishes a Forget that was cut off halfway.
+ *  - If the cloud already holds a save made after this Forget (the save got there first), only what was made before the
+ *    Forget is removed: the new save, its notes, the PDF and its text stay.
  */
-async function purgeDocument(env: Env, sha: Sha256): Promise<void> {
+async function purgeDocument(env: Env, sha: Sha256, asked?: number): Promise<void> {
   if (!/^[0-9a-f]{64}$/.test(sha)) throw new PushRequestError(400, 'bad_id', 'not a document id');
   const db = env.META;
   const now = Date.now();
-  // a. Mark it forgotten (one new seq the first time), and change the lock so a push in flight starts over
-  await db.batch([
-    db.prepare('UPDATE sync_counter SET seq = seq + (CASE WHEN EXISTS (SELECT 1 FROM forgotten WHERE document_id = ?) THEN 0 ELSE 1 END), lock = ? WHERE id = 1').bind(sha, newLock()),
-    db.prepare('INSERT INTO forgotten (document_id, at, seq) SELECT ?, ?, seq FROM sync_counter WHERE id = 1 AND NOT EXISTS (SELECT 1 FROM forgotten WHERE document_id = ?)').bind(sha, now, sha),
+  const when = typeof asked === 'number' && Number.isSafeInteger(asked) && asked > 0 ? Math.min(asked, now) : now;
+  // a. Mark it forgotten (one new seq each time the Forget time moves forward), and change the lock so a push in flight starts over
+  const [, , atR, docR] = await db.batch<DbRow>([
+    db.prepare('UPDATE sync_counter SET seq = seq + (CASE WHEN EXISTS (SELECT 1 FROM forgotten WHERE document_id = ? AND at >= ?) THEN 0 ELSE 1 END), lock = ? WHERE id = 1').bind(sha, when, newLock()),
+    db
+      .prepare('INSERT INTO forgotten (document_id, at, seq) SELECT ?, ?, seq FROM sync_counter WHERE id = 1 ON CONFLICT (document_id) DO UPDATE SET at = excluded.at, seq = excluded.seq WHERE excluded.at > forgotten.at')
+      .bind(sha, when),
+    db.prepare('SELECT at FROM forgotten WHERE document_id = ?').bind(sha),
+    db.prepare('SELECT created_at FROM documents WHERE id = ?').bind(sha),
   ]);
+  const at = Number(atR?.results[0]?.at ?? when);
+  const created = docR?.results[0]?.created_at;
+  if (typeof created === 'number' && created > at) return purgeBefore(env, sha, at, now);
   // b. The page text, in whichever shard holds it
   for (const shard of textShards(env)) {
     await shard.batch([
@@ -429,6 +457,30 @@ async function purgeDocument(env: Env, sha: Sha256): Promise<void> {
     db.prepare('DELETE FROM doc_text WHERE document_id = ?').bind(sha),
     db.prepare('DELETE FROM blob_upload WHERE sha256 = ?').bind(sha),
     // no document id in the audit: Forget leaves no trace beyond the forgotten list itself
+    db.prepare("INSERT INTO audit (at, actor, client_id, action, target) VALUES (?, 'owner', NULL, 'document.forget', NULL)").bind(now),
+  ]);
+}
+
+/** The tables of a reading whose rows have no `created_at`: their stamp says when they were made. */
+const STAMPED: readonly SyncedTable[] = ['locations', 'history', 'auto_tag_removed'];
+
+/** SQL for "this row's stamp is at or before ?" (a stamp starts with its time in ms, 13 digits). */
+const stampedBy = (col = 'hlc'): string => `CAST(substr(${col}, 1, 13) AS INTEGER) <= ?`;
+
+/**
+ * A Forget that is older than the save the cloud holds (merge.ts rule 7): only the rows made at or before `at` go, with their
+ * replay memory. The reading itself, its PDF, its text and everything made after the Forget stay.
+ */
+async function purgeBefore(env: Env, sha: Sha256, at: number, now: number): Promise<void> {
+  const db = env.META;
+  const made = (t: SyncedTable): string => (STAMPED.includes(t) ? stampedBy() : 'created_at <= ?');
+  await db.batch([
+    db.prepare('UPDATE sync_counter SET lock = ? WHERE id = 1').bind(newLock()),
+    ...CHILDREN.map((t) => db.prepare(`DELETE FROM applied_entry WHERE table_name = ? AND row_id IN (SELECT ${pkColumn(t)} FROM ${t} WHERE document_id = ? AND ${made(t)})`).bind(t, sha, at)),
+    ...CHILDREN.map((t) => db.prepare(`DELETE FROM ${t} WHERE document_id = ? AND ${made(t)}`).bind(sha, at)),
+    db.prepare(`DELETE FROM applied_entry WHERE table_name = 'settings' AND instr(row_id, ?) > 0 AND row_id IN (SELECT key FROM settings WHERE ${stampedBy()})`).bind(sha, at),
+    db.prepare(`DELETE FROM settings WHERE instr(key, ?) > 0 AND ${stampedBy()}`).bind(sha, at),
+    db.prepare(`DELETE FROM removed_row WHERE (document_id = ? OR instr(row_id, ?) > 0) AND ${stampedBy()}`).bind(sha, sha, at),
     db.prepare("INSERT INTO audit (at, actor, client_id, action, target) VALUES (?, 'owner', NULL, 'document.forget', NULL)").bind(now),
   ]);
 }

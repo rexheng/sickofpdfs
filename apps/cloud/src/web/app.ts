@@ -44,7 +44,7 @@ webApp.get('/api/web/overview', requireAuth({ cookieOnly: true }), async (c) => 
   const [usage, devices, docs, notes] = await db.batch([
     db.prepare('SELECT text_rows, note_rows FROM usage_day WHERE day = ?').bind(utcDay()),
     db.prepare("SELECT id, name, kind, created_at, last_seen_at FROM device WHERE kind <> 'claude' ORDER BY COALESCE(last_seen_at, created_at) DESC LIMIT 50"),
-    db.prepare('SELECT count(*) AS n, COALESCE(sum(byte_size), 0) AS bytes, COALESCE(sum(blob_stored), 0) AS stored FROM documents d WHERE d.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM forgotten f WHERE f.document_id = d.id)'),
+    db.prepare('SELECT count(*) AS n, COALESCE(sum(byte_size), 0) AS bytes, COALESCE(sum(blob_stored), 0) AS stored FROM documents d WHERE d.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM forgotten f WHERE f.document_id = d.id AND d.created_at <= f.at)'),
     db.prepare('SELECT count(*) AS n FROM comments WHERE deleted_at IS NULL AND draft_of_tab IS NULL'),
   ]);
   const u = (usage?.results[0] ?? null) as { text_rows: number; note_rows: number } | null;

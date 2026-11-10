@@ -24,12 +24,16 @@ interface CloudRecord {
   signedInAt: number | null;
   /** The app that signed in (contracts CA11): the extension, or the Android app, which shares this file. Refresh and sign-out use it. */
   clientId: string;
+  /** Signed out on purpose (Sign out), not by the server: sync is simply off, with no warning. */
+  signedOutByYou: boolean;
 }
 
 export interface CloudAuthState {
   connected: boolean;
   server: string | null;
   signedIn: boolean;
+  /** Signed out on purpose: a calm "Signed out", never "Sync has stopped". False while signed in, or when the server ended it. */
+  signedOutByYou: boolean;
 }
 
 export type AccessToken = { ok: true; token: string; server: string; expiresAt: number } | { ok: false; reason: 'not-connected' | 'signed-out' | 'offline' };
@@ -65,6 +69,7 @@ function parse(value: unknown): CloudRecord | null {
       accessExpiresAt: typeof r.accessExpiresAt === 'number' ? r.accessExpiresAt : 0,
       signedInAt: typeof r.signedInAt === 'number' ? r.signedInAt : null,
       clientId: typeof r.clientId === 'string' && r.clientId !== '' ? r.clientId : EXTENSION_CLIENT_ID,
+      signedOutByYou: r.signedOutByYou === true && typeof r.refreshToken !== 'string',
     };
   } catch {
     return null;
@@ -91,7 +96,7 @@ async function write(record: CloudRecord | null): Promise<void> {
 
 export async function cloudAuthState(): Promise<CloudAuthState> {
   const r = await read();
-  return { connected: r !== null, server: r?.server ?? null, signedIn: r?.refreshToken != null };
+  return { connected: r !== null, server: r?.server ?? null, signedIn: r?.refreshToken != null, signedOutByYou: r?.signedOutByYou === true };
 }
 
 /** The server the owner connected, or null. The network gate: no sync request goes anywhere else. */
@@ -102,7 +107,7 @@ export async function connectedServer(): Promise<string | null> {
 /** Keeps the tokens of a finished sign-in to `server` (an origin) by `clientId`. Replaces any earlier sign-in. */
 export async function saveSignIn(server: string, tokens: TokenSet, now = Date.now(), clientId: string = EXTENSION_CLIENT_ID): Promise<void> {
   refreshing = null;
-  await write({ v: 1, server, refreshToken: tokens.refreshToken, accessToken: tokens.accessToken, accessExpiresAt: tokens.accessExpiresAt, signedInAt: now, clientId });
+  await write({ v: 1, server, refreshToken: tokens.refreshToken, accessToken: tokens.accessToken, accessExpiresAt: tokens.accessExpiresAt, signedInAt: now, clientId, signedOutByYou: false });
 }
 
 /**
@@ -113,7 +118,7 @@ export async function signOut(o: { disconnect?: boolean; fetch?: typeof fetch } 
   const r = await read();
   if (r === null) return;
   refreshing = null;
-  await write(o.disconnect === true ? null : { ...r, refreshToken: null, accessToken: null, accessExpiresAt: 0, signedInAt: null });
+  await write(o.disconnect === true ? null : { ...r, refreshToken: null, accessToken: null, accessExpiresAt: 0, signedInAt: null, signedOutByYou: true });
   if (r.refreshToken !== null) await revokeToken(r.server, r.clientId, r.refreshToken, { fetch: o.fetch });
 }
 
@@ -139,7 +144,7 @@ export async function accessToken(o: { forceRefresh?: boolean; now?: () => numbe
       } catch (e) {
         if (e instanceof SignInError && e.reason === 'refused') {
           // The sign-in ended (revoked, expired, or no longer the owner): signed out, server kept.
-          await write({ ...cur, refreshToken: null, accessToken: null, accessExpiresAt: 0, signedInAt: null });
+          await write({ ...cur, refreshToken: null, accessToken: null, accessExpiresAt: 0, signedInAt: null, signedOutByYou: false });
           return { ok: false, reason: 'signed-out' };
         }
         return { ok: false, reason: 'offline' };

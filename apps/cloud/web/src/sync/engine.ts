@@ -8,11 +8,14 @@
 //
 // What the page is told (`SyncStatus`), in the words the top bar shows: "Saving…", "Saved", "Offline, not saved".
 // While a change is not in the cloud yet, closing the tab asks first.
-import { createSyncClient, runSyncRound, SyncHttpError } from '@sop/core/sync-client';
+//
+// Page text (so search finds a reading) goes up in each round too. If sending it fails, it is tried again a few times; then
+// the top bar says so plainly ("Saved · Search not ready yet"), and "Saving…" never sticks. A click tries again.
+import { createSyncClient, createTransfers, runSyncRound, SyncHttpError } from '@sop/core/sync-client';
 import type { StoreClient } from '@ext/store/client';
 import { goToSignIn, ownFetch } from './api';
 
-export type SyncState = 'loading' | 'saving' | 'saved' | 'offline' | 'busy' | 'refused';
+export type SyncState = 'loading' | 'saving' | 'saved' | 'offline' | 'busy' | 'refused' | 'textFailed';
 
 export interface SyncStatus {
   state: SyncState;
@@ -20,10 +23,15 @@ export interface SyncStatus {
   unsynced: number;
   /** When the last round finished well (Unix ms), or null. */
   lastSyncedAt: number | null;
+  /** `textFailed`: why the page text could not be sent ('quota': the cloud's daily limit). */
+  textProblem?: 'quota' | 'failed';
 }
 
 const EVERY_MS = 20_000;
 const AFTER_CHANGE_MS = 300;
+/** Sending a reading's page text is tried this many times in a row before the top bar says it failed. */
+const TEXT_TRIES = 3;
+const TEXT_RETRY_MS = 4_000;
 
 export interface WebSync {
   /** The first round: the library is filled from the cloud. Rejects when the cloud could not be reached. */
@@ -34,10 +42,13 @@ export interface WebSync {
   kick(): void;
   /** Runs a round now ("Try again"). */
   now(): Promise<void>;
+  /** "Try again" from the top bar: page text that failed is tried again too. */
+  retry(): void;
 }
 
 export function startWebSync(store: StoreClient): WebSync {
   const client = createSyncClient({ server: location.origin, token: () => Promise.resolve('cookie-session'), fetch: ownFetch });
+  const transfers = createTransfers({ server: location.origin, token: () => Promise.resolve('cookie-session'), fetch: ownFetch });
   let status: SyncStatus = { state: 'loading', unsynced: 0, lastSyncedAt: null };
   const listeners = new Set<() => void>();
   const set = (next: Partial<SyncStatus>) => {
@@ -53,23 +64,73 @@ export function startWebSync(store: StoreClient): WebSync {
    * Readings forgotten in this tab ("Forget this PDF", "Delete forever"): the cloud forgets them too, with their PDF, text and
    * notes (D2), at the start of the next round. Kept until the cloud says so, and counted as not saved until then.
    */
-  const forgetting = new Set<string>();
+  const forgetting = new Map<string, number>(); // fingerprint → when it was forgotten (a save after that syncs again)
+  /** Page text that failed: tries in a row, and the readings given up on until "Try again" (with why). */
+  const textTries = new Map<string, number>();
+  const textGaveUp = new Map<string, 'quota' | 'failed'>();
+
+  /**
+   * Sends the page text of readings that still need it. A reading whose text keeps failing is given up on after `TEXT_TRIES`
+   * (at once for the daily limit), so the top bar can say so instead of "Saving…". Offline or signed out stops the round.
+   */
+  async function sendText(): Promise<boolean> {
+    let retry = false;
+    for (const p of await store.pendingText()) {
+      const id = p.documentId;
+      if (textGaveUp.has(id)) continue;
+      try {
+        const text = await store.textForSync(id);
+        if (text === null) continue;
+        await transfers.putText(id, text.extractor, text.pages);
+        await store.setSyncState(`textSent:${id}`, text.source);
+        textTries.delete(id);
+      } catch (e) {
+        const h = e instanceof SyncHttpError ? e : null;
+        // The cloud keeps no text for this reading (card or bank numbers, a password-protected PDF): it is done
+        if (h?.code === 'text_stays_local') {
+          await store.setSyncState(`textSent:${id}`, p.source);
+          continue;
+        }
+        if (h?.failure === 'offline' || h?.failure === 'signed-out') throw e;
+        const n = (textTries.get(id) ?? 0) + 1;
+        textTries.set(id, n);
+        if (h?.failure === 'quota' || n >= TEXT_TRIES) textGaveUp.set(id, h?.failure === 'quota' ? 'quota' : 'failed');
+        else retry = true;
+      }
+    }
+    return retry;
+  }
+
+  /** What is not in the cloud yet, leaving out page text given up on (the top bar says that on its own). */
+  async function notSaved(): Promise<number> {
+    const n = (await store.unsyncedCount().catch(() => 0)) + forgetting.size;
+    if (textGaveUp.size === 0) return n;
+    const pending = await store.pendingText().catch(() => []);
+    return Math.max(0, n - pending.filter((p) => textGaveUp.has(p.documentId)).length);
+  }
 
   async function round(): Promise<void> {
-    const before = await store.unsyncedCount().catch(() => 0);
+    const before = await notSaved();
     if (status.state !== 'loading') set({ state: before > 0 ? 'saving' : status.state === 'saved' ? 'saved' : status.state, unsynced: before });
     try {
       if (!registered) {
         await client.registerDevice({});
         registered = true;
       }
-      for (const sha of [...forgetting]) {
-        await client.forget(sha);
+      for (const [sha, at] of [...forgetting]) {
+        await client.forget(sha, at);
         forgetting.delete(sha);
       }
       await runSyncRound(store, client);
-      const unsynced = (await store.unsyncedCount().catch(() => 0)) + forgetting.size;
-      set({ state: unsynced > 0 ? 'saving' : 'saved', unsynced, lastSyncedAt: Date.now() });
+      const textAgain = await sendText();
+      const unsynced = await notSaved();
+      const gaveUp = [...textGaveUp.values()];
+      const textProblem = gaveUp.length === 0 ? undefined : gaveUp.includes('quota') ? ('quota' as const) : ('failed' as const);
+      set({ state: unsynced > 0 ? 'saving' : textProblem !== undefined ? 'textFailed' : 'saved', unsynced, lastSyncedAt: Date.now(), textProblem });
+      if (textAgain) {
+        schedule(TEXT_RETRY_MS);
+        return;
+      }
       // A batch waited on its reading: once more, but only while rounds still make progress (a PDF or its page text being
       // uploaded counts as not saved yet, and must not start a round every moment until it is done).
       if (unsynced > 0 && unsynced < before) again = true;
@@ -117,7 +178,7 @@ export function startWebSync(store: StoreClient): WebSync {
   // A change made in this tab (not one the sync itself applied): send it.
   store.onChange((c) => {
     if (c.origin === 'sync') return;
-    if (c.table === 'documents' && c.op === 'delete') for (const id of c.ids) if (/^[0-9a-f]{64}$/.test(id)) forgetting.add(id);
+    if (c.table === 'documents' && c.op === 'delete') for (const id of c.ids) if (/^[0-9a-f]{64}$/.test(id)) forgetting.set(id, Date.now());
     set({ unsynced: status.unsynced + 1, state: status.state === 'loading' ? 'loading' : 'saving' });
     schedule(AFTER_CHANGE_MS);
   });
@@ -146,6 +207,11 @@ export function startWebSync(store: StoreClient): WebSync {
     },
     kick: () => schedule(0),
     now: run,
+    retry() {
+      textGaveUp.clear();
+      textTries.clear();
+      schedule(0);
+    },
   };
 }
 

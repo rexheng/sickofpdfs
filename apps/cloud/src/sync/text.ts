@@ -51,7 +51,8 @@ export async function putText(env: Env, sha: string, put: TextPut): Promise<{ pa
   const now = Date.now();
   const [docR, forgotR, textR, usageR, shardsR] = await db.batch<Record<string, unknown>>([
     db.prepare('SELECT page_count, has_text, index_text, encrypted FROM documents WHERE id = ?').bind(sha),
-    db.prepare('SELECT 1 AS x FROM forgotten WHERE document_id = ?').bind(sha),
+    // forgotten, and not saved again since (a save after the Forget is a new reading)
+    db.prepare('SELECT 1 AS x FROM forgotten f WHERE f.document_id = ? AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.id = f.document_id AND d.created_at > f.at)').bind(sha),
     db.prepare('SELECT shard, extractor FROM doc_text WHERE document_id = ?').bind(sha),
     usageStatement(env, now),
     db.prepare('SELECT shard, SUM(pages) AS pages FROM doc_text GROUP BY shard'),

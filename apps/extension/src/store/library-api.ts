@@ -10,7 +10,8 @@
 // - Every write is one transaction, and its change event is published only after it commits.
 // - The store stamps `hlc` on every synced write and leaves `rev` alone (sync owns it).
 // - Errors are rejections whose message starts with a code (`bad-input: …`), so the code survives a message port.
-import type { Author, CommentId, CommentRow, DocumentId, DocumentRow, HlcStamp, LocationRow, PageHit, ThreadId, ThreadRow } from '@sop/core';
+import type { Author, CommentId, CommentRow, DocumentId, DocumentRow, HlcStamp, LocationRow, PageHit, PageOrder, ThreadId, ThreadRow } from '@sop/core';
+import { cleanPageOrder, pageOrderKey, shownPageNumber } from '@sop/core';
 import { compareTitles, shownTitle } from '../shared/shown-title';
 import { commentFromRow, threadFromRow } from './annotations';
 import type { StoreChange } from './change-bus';
@@ -58,8 +59,8 @@ export type SearchKind = 'reading' | 'page' | 'note';
 
 export type SearchHit =
   | { kind: 'reading'; documentId: DocumentId; title: string; snippet: string; rank: number }
-  | ({ kind: 'page' } & PageHit)
-  | { kind: 'note'; documentId: DocumentId; threadId: ThreadId; commentId: CommentId; author: Author; pageIndex: number | null; snippet: string; rank: number };
+  | ({ kind: 'page'; shownPage?: number } & PageHit)
+  | { kind: 'note'; documentId: DocumentId; threadId: ThreadId; commentId: CommentId; author: Author; pageIndex: number | null; snippet: string; rank: number; shownPage?: number | null };
 
 export interface SearchQuery {
   text: string;
@@ -79,6 +80,11 @@ export interface NoteItem {
   comments: CommentRow[];
   /** The reading's title, or a readable stand-in when it has none. */
   title: string;
+  /**
+   * R108: the page number the owner sees for the thread's page, in the reading's own page order (1-based), or null for a
+   * note on the whole document. `thread.pageIndex` stays the file's page, for opening it.
+   */
+  shownPage?: number | null;
 }
 
 /**
@@ -358,6 +364,32 @@ export function createLibraryApi(db: SqlDb, deps: LibraryDeps, readers: RowReade
   const binding = (bind: readonly SqlValue[]): SqlValue[] | undefined => (bind.length > 0 ? [...bind] : undefined);
   const select = (sql: string, bind: readonly SqlValue[] = []): Row[] => db.selectObjects(sql, binding(bind));
   const one = (sql: string, bind: readonly SqlValue[] = []): Row | undefined => select(sql, bind)[0];
+
+  /**
+   * R108: the page numbers the owner sees, in each reading's own page order (`pageOrder.of.<sha>`). One per call: each
+   * reading's order is read once, then kept for the rest of the list.
+   */
+  /** The file's page a thread is on, as the notes say it (`whereLabel`): null for the whole document. */
+  const notePage = (t: ThreadRow): number | null => (t.anchor.kind === 'document' ? null : (t.pageIndex ?? ('page' in t.anchor ? t.anchor.page : null)));
+
+  const shownNumbers = (): ((documentId: string, pageIndex: number) => number) => {
+    const orders = new Map<string, PageOrder>();
+    return (documentId, pageIndex) => {
+      let order = orders.get(documentId);
+      if (order === undefined) {
+        const r = one('SELECT d.page_count AS n, s.value AS v FROM documents d LEFT JOIN settings s ON s.key = ? WHERE d.id = ?', [pageOrderKey(documentId), documentId]);
+        let v: unknown;
+        try {
+          v = typeof r?.v === 'string' ? (JSON.parse(r.v) as unknown) : null;
+        } catch {
+          v = null;
+        }
+        order = r === undefined ? null : cleanPageOrder(v, num(r, 'n'));
+        orders.set(documentId, order);
+      }
+      return shownPageNumber(order, pageIndex);
+    };
+  };
   const run = (sql: string, bind: readonly SqlValue[] = []): void => void db.exec({ sql, bind: binding(bind) });
 
   const assertWritable = (): void => {
@@ -600,6 +632,7 @@ export function createLibraryApi(db: SqlDb, deps: LibraryDeps, readers: RowReade
           [match, ...bind, limit],
         );
         const snippets = snippetsFor('comments_fts', 2, top.map((r) => num(r, 'rid')));
+        const shown = shownNumbers();
         return top.map((r) => ({
           kind: 'note',
           documentId: text(r, 'document_id') as DocumentId,
@@ -609,6 +642,7 @@ export function createLibraryApi(db: SqlDb, deps: LibraryDeps, readers: RowReade
           pageIndex: numOrNull(r, 'page_index'),
           snippet: plainSnippet(snippets.get(num(r, 'rid')) ?? ''),
           rank: num(r, 'rank'),
+          shownPage: numOrNull(r, 'page_index') === null ? null : shown(text(r, 'document_id'), num(r, 'page_index')),
         }));
       };
 
@@ -658,10 +692,12 @@ export function createLibraryApi(db: SqlDb, deps: LibraryDeps, readers: RowReade
       const pages = (): SearchHit[] => {
         const top = rankedPages();
         const snippets = snippetsFor('page_text_fts', 0, top.map((r) => r.rid));
+        const shown = shownNumbers();
         return top.map((r) => ({
           kind: 'page',
           documentId: r.documentId as DocumentId,
           pageIndex: r.pageIndex,
+          shownPage: shown(r.documentId, r.pageIndex),
           snippet: snippets.get(r.rid) ?? '',
           rank: r.rank,
         }));
@@ -745,12 +781,15 @@ export function createLibraryApi(db: SqlDb, deps: LibraryDeps, readers: RowReade
         }
       }
       const items: NoteItem[] = [];
+      const shown = shownNumbers();
       for (const r of page) {
         try {
+          const thread = threadFromRow(r);
           items.push({
-            thread: threadFromRow(r),
+            thread,
             comments: byThread.get(text(r, 'id')) ?? [],
             title: readableTitle(textOrNull(r, 'doc_title'), textOrNull(r, 'doc_link')),
+            shownPage: notePage(thread) === null ? null : shown(thread.documentId, notePage(thread) ?? 0),
           });
         } catch {
           // As above, for a thread.

@@ -17,6 +17,9 @@ import own from './Header.module.css';
 
 export type { HeaderProps } from '@ext/viewer/chrome/Header';
 
+/** ⋮ → Download on a phone: the cloud's copy, saved by the browser. */
+const download = (): void => downloadPdf();
+
 export function Header(p: HeaderProps) {
   const status = (
     <span className={own.status}>
@@ -26,7 +29,7 @@ export function Header(p: HeaderProps) {
       </span>
     </span>
   );
-  if (PHONE_LAYOUT) return <PhoneHeader {...p} status={status} />;
+  if (PHONE_LAYOUT) return <PhoneHeader {...p} status={status} onDownload={download} />;
   return <WebHeader {...p} status={status} />;
 }
 

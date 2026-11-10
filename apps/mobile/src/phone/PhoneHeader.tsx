@@ -3,7 +3,8 @@
 // library status as a small chip, the Notes button with its count, and ⋮. Every control is at least 48 px for a thumb.
 //
 // The ⋮ menu holds what makes sense on a phone, taken from the viewer's own menus (so each row's state and wording are the
-// extension's), without keyboard shortcuts, plus "Listen with ElevenReader" (R112), which shares the open PDF to that app.
+// extension's), without keyboard shortcuts, plus "Listen with ElevenReader" (R112), which shares the open PDF to that app. The web
+// library's phone viewer adds "Download" (`onDownload`), which saves the cloud's copy.
 import type { HeaderProps } from '@ext/viewer/chrome/Header';
 import { useNotesButton } from '@ext/viewer/notes-panel/panel-state';
 import { DropdownMenu, Icon, type MenuItemDef } from '@sop/ui';
@@ -28,6 +29,7 @@ const PHONE_ROWS: string[] = [
   'claude.wholeDocument',
   'tools.elevenReader',
   '-',
+  'web.download',
   'file.saveToLibrary',
   'file.reportDecision',
   'file.forget',
@@ -49,12 +51,16 @@ function noKeys<T extends { shortcut?: string }>(row: T): T {
 }
 
 /** The phone's ⋮ rows, picked from the viewer's menus. A radio heading brings its choices with it. */
-export function phoneRows(menus: HeaderProps['menus']): MenuItemDef[] {
+export function phoneRows(menus: HeaderProps['menus'], onDownload?: () => void): MenuItemDef[] {
   const all = menus.flatMap((m) => m.items);
   const rows: MenuItemDef[] = [];
   for (const id of PHONE_ROWS) {
     if (id === '-') {
       if (rows.length > 0 && rows.at(-1)?.kind !== 'separator') rows.push({ kind: 'separator' });
+      continue;
+    }
+    if (id === 'web.download') {
+      if (onDownload !== undefined) rows.push({ kind: 'item', id, label: 'Download', icon: 'download', onSelect: onDownload });
       continue;
     }
     if (id === 'tools.elevenReader') {
@@ -80,8 +86,8 @@ export function phoneRows(menus: HeaderProps['menus']): MenuItemDef[] {
   return rows;
 }
 
-export function Header({ name, hint = name, menus, status, menusHidden = false }: HeaderProps) {
-  const rows = useMemo(() => phoneRows(menus), [menus]);
+export function Header({ name, hint = name, menus, status, menusHidden = false, onDownload }: HeaderProps & { onDownload?: () => void }) {
+  const rows = useMemo(() => phoneRows(menus, onDownload), [menus, onDownload]);
   const notes = useNotesButton();
   return (
     <header className={styles.header} data-theme="dark" data-viewer-chrome="" data-phone-header="" data-menus-hidden={menusHidden ? '' : undefined}>

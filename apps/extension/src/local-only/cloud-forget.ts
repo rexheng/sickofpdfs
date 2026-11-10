@@ -52,6 +52,10 @@ async function update(change: (q: Entry[]) => Entry[]): Promise<Entry[]> {
 }
 
 export async function queuedForgets(): Promise<string[]> {
+  return (await queued()).map((e) => e.sha);
+}
+
+async function queued(): Promise<Entry[]> {
   try {
     if (!(await indexedDB.databases()).some((db) => db.name === LOCAL_ONLY_DB)) return [];
   } catch {
@@ -62,7 +66,7 @@ export async function queuedForgets(): Promise<string[]> {
     const r = store.get(KEY);
     r.onsuccess = () => answer((r.result as { value?: unknown } | undefined)?.value);
   });
-  return parse(raw).map((e) => e.sha);
+  return parse(raw);
 }
 
 export async function enqueueForget(sha: string, now = Date.now()): Promise<void> {
@@ -71,14 +75,14 @@ export async function enqueueForget(sha: string, now = Date.now()): Promise<void
 }
 
 /**
- * Sends each queued Forget with `forget` (the sync client's `DELETE /api/documents/:sha`). An entry leaves the queue once it
+ * Sends each queued Forget with `forget`, with the time the owner chose it (a new save after that time syncs again) (the sync client's `DELETE /api/documents/:sha`). An entry leaves the queue once it
  * succeeds; one that fails stays for the next try. Stops at the first failure that is not about that one reading (offline,
  * signed out). Answers how many are still waiting.
  */
-export async function drainForgets(forget: (sha: string) => Promise<'done' | 'retry' | 'stop'>): Promise<number> {
-  const list = await queuedForgets();
-  for (const sha of list) {
-    const r = await forget(sha);
+export async function drainForgets(forget: (sha: string, at: number) => Promise<'done' | 'retry' | 'stop'>): Promise<number> {
+  const list = await queued();
+  for (const { sha, at } of list) {
+    const r = await forget(sha, at);
     if (r === 'done') await update((q) => q.filter((e) => e.sha !== sha));
     else {
       await update((q) => q.map((e) => (e.sha === sha ? { ...e, tries: e.tries + 1 } : e)));
