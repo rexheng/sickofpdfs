@@ -41,6 +41,17 @@
                 <data android:mimeType="application/pdf" />
             </intent-filter>
 
+            <!--
+              The cloud sign-in's answer (contracts CA11, RFC 8252): the owner's server sends the browser to
+              com.sickofpdfs.reader:/oauth?code=…, which comes back here. SopPlatformPlugin hands it to the page that asked.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.sickofpdfs.reader" android:path="/oauth" />
+            </intent-filter>
+
             <!-- The share sheet: "Share" a PDF to the app. -->
             <intent-filter android:label="@string/open_pdf_label">
                 <action android:name="android.intent.action.SEND" />
@@ -68,6 +79,9 @@
         <package android:name="io.elevenlabs.readerapp" />
     </queries>
 
-    <!-- The WebView needs it to load even the app's own pages; the pages' rules allow no other host (see viewer.html). -->
+    <!--
+      The WebView needs it to load even the app's own pages. The pages' rules allow two other hosts only (see viewer.html):
+      Anthropic, once the owner saves a key and asks Claude, and the owner's own sync server, once they tap Connect.
+    -->
     <uses-permission android:name="android.permission.INTERNET" />
 </manifest>

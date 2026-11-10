@@ -15,6 +15,7 @@ import android.view.Window;
 import android.webkit.WebView;
 import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResult;
+import androidx.browser.customtabs.CustomTabsIntent;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 import androidx.core.view.WindowCompat;
@@ -42,7 +43,10 @@ import java.util.concurrent.Executors;
  *
  * A PDF arrives as a content:// link that may stop working once the sending app is gone, so it is copied into the app's cache
  * (cache/incoming/<id>/<name>.pdf). The viewer reads it, then calls release(), which deletes the copy. Copies left by a run that
- * ended early are deleted the next time the app starts. Nothing here touches the network.
+ * ended early are deleted the next time the app starts.
+ *
+ * The cloud sign-in (contracts CA11) opens the owner's server in a Custom Tab; the server's answer comes back as an intent to
+ * com.sickofpdfs.reader:/oauth and is handed to the page ("oauth"). Nothing here touches the network itself.
  */
 @CapacitorPlugin(name = "SopPlatform")
 public class SopPlatformPlugin extends Plugin {
@@ -81,9 +85,21 @@ public class SopPlatformPlugin extends Plugin {
         accept(intent);
     }
 
-    /** Takes the PDF an "Open with" or Share intent carries, once. */
+    /** The cloud sign-in's answer comes back to this address (MainActivity's intent filter). */
+    private static final String OAUTH_SCHEME = "com.sickofpdfs.reader";
+
+    /** Takes the PDF an "Open with" or Share intent carries, once. A sign-in answer goes to the page that is waiting for it. */
     private void accept(Intent intent) {
         if (intent == null || intent.getBooleanExtra(HANDLED, false)) return;
+        Uri data = intent.getData();
+        if (Intent.ACTION_VIEW.equals(intent.getAction()) && data != null && OAUTH_SCHEME.equals(data.getScheme())) {
+            intent.putExtra(HANDLED, true);
+            // Only the page that opened the sign-in listens; it checks the answer's state, issuer and PKCE before using it.
+            JSObject event = new JSObject();
+            event.put("url", data.toString());
+            notifyListeners("oauth", event);
+            return;
+        }
         Uri uri = null;
         if (Intent.ACTION_VIEW.equals(intent.getAction())) {
             uri = intent.getData();
@@ -237,6 +253,34 @@ public class SopPlatformPlugin extends Plugin {
         } catch (ActivityNotFoundException e) {
             call.reject("No app opens web links");
         }
+    }
+
+    /** The app is in front again (back from the browser, another app or the home screen): the page syncs, a sign-in looks. */
+    @Override
+    protected void handleOnResume() {
+        super.handleOnResume();
+        notifyListeners("resume", new JSObject());
+    }
+
+    /** Settings → Cloud, "Connect": the owner's server's sign-in page in a Custom Tab. */
+    @PluginMethod
+    public void openSignIn(PluginCall call) {
+        String url = call.getString("url", "");
+        Uri uri = Uri.parse(url);
+        String host = uri.getHost() == null ? "" : uri.getHost();
+        boolean local = host.equals("localhost") || host.equals("127.0.0.1");
+        if (!"https".equals(uri.getScheme()) && !("http".equals(uri.getScheme()) && local)) {
+            call.reject("The sign-in page must be https");
+            return;
+        }
+        getActivity().runOnUiThread(() -> {
+            try {
+                new CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(getActivity(), uri);
+                call.resolve();
+            } catch (ActivityNotFoundException e) {
+                call.reject("No browser opens the sign-in page");
+            }
+        });
     }
 
     private void goBackOrLeave() {

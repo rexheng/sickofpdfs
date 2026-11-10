@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-    <!-- The app talks to nothing but its own files: no network, no analytics. The one other host is Anthropic, for @Claude: reached only when the owner has saved an API key and asks Claude (after the ask-first rules). -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self' blob: data:; connect-src 'self' blob: data: https://api.anthropic.com; media-src 'self' blob:; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'" />
+    <!-- The app talks to nothing but its own files: no network, no analytics. Two other hosts: Anthropic, for @Claude, reached only when the owner has saved an API key and asks Claude (after the ask-first rules); and the owner's own sync server (written in by vite.config.ts), reached only after the owner taps Connect in Settings → Cloud. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self' blob: data:; connect-src 'self' blob: data: https://api.anthropic.com %SOP_SYNC_ORIGINS%; media-src 'self' blob:; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'" />
     <meta name="theme-color" content="#ffffff" />
     <title>Library - sickofpdfs</title>
   </head>

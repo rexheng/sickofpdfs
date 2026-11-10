@@ -126,7 +126,10 @@ export function NoteBox({
     // An input method is composing (Japanese, Chinese, Korean): Enter commits the composition, it does not send.
     if (native.isComposing || native.keyCode === 229) return;
 
-    if (event.key === 'Enter' && !event.shiftKey && !event.altKey) {
+    // On the phone (the app marks its pages `data-note-enter="newline"`), the keyboard's Enter makes a new line and only the
+    // button sends. An Enter sent by the page itself (Ask Claude sends that way) still sends.
+    const newline = native.isTrusted && event.currentTarget.closest('[data-note-enter="newline"]') !== null;
+    if (event.key === 'Enter' && !event.shiftKey && !event.altKey && !newline) {
       event.preventDefault();
       send();
       return;

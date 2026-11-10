@@ -37,6 +37,8 @@ dependencies {
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation "androidx.webkit:webkit:$androidxWebkitVersion"
     implementation "androidx.activity:activity:$androidxActivityVersion"
+    // The cloud sign-in opens in a Custom Tab (contracts CA11: the system browser, never a web view).
+    implementation "androidx.browser:browser:$androidxBrowserVersion"
     implementation project(':capacitor-android')
     implementation project(':capacitor-cordova-android-plugins')
 }

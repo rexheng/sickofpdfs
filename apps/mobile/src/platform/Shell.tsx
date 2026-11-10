@@ -1,12 +1,13 @@
 // The app's version of apps/extension/src/library/shell/Shell.tsx (swapped in by vite.config.ts): the library's frame on a phone.
-// The same pages, data and dialogs as in Chrome; only the frame changes: a top bar with the page's name, search and the other
-// pages, a bottom bar with Home, My library and Recent, and an "Open a PDF" button that opens Android's file picker.
+// The same pages, data and dialogs as in Chrome; only the frame changes: a top bar with the page's name, the sync chip, search and
+// the other pages, a bottom bar with Home, My library and Recent, and an "Open a PDF" button that opens Android's file picker.
 import { DropdownMenu, Icon, IconButton } from '@sop/ui';
 import { type ReactNode, type Ref, useCallback, useImperativeHandle } from 'react';
 import { palette } from '@ext/shared/palette';
 import type { UploadOutcome } from '@ext/library/data/types';
 import { ROUTES, type RouteId, routeHref } from '@ext/library/routes/routes';
 import type { NewMenuHandle } from '@ext/library/shell/NewMenu';
+import { SyncChip } from '@ext/sync/ui/SyncChip';
 import { navigate } from './chrome-shim';
 import { incomingViewerUrl } from './app-events';
 import { isNativeApp, SopPlatform } from './native';
@@ -47,6 +48,8 @@ export function Shell({ route, onNotify, newMenu, children }: ShellProps) {
     <div className={styles.shell}>
       <header className={styles.top}>
         <p className={styles.title}>sickofpdfs</p>
+        {/* Only when there is something to say: "2 not yet synced", "Restoring 3 of 12", "Sync has stopped" (R109). */}
+        <SyncChip />
         <IconButton icon="search" label="Search in library" size={40} onClick={() => palette.open()} />
         <DropdownMenu
           trigger={<IconButton icon="more_vert" label="More pages" size={40} />}

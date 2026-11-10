@@ -33,7 +33,33 @@ const PLATFORM_SWAPS: Record<string, string> = {
   'viewer/chrome/Toolbar.tsx': 'phone/PhoneToolbar.tsx',
   'viewer/annotations/MarkupMenu.tsx': 'phone/SelectionBar.tsx',
   'viewer/notes-panel/PanelEdge.tsx': 'phone/SheetGrip.tsx',
+  // Settings on a phone (round 3): the phone's own Cloud section (sync sign-in through a Custom Tab), and no keyboard Shortcuts.
+  'library/settings/sections.ts': 'phone/settings-sections.ts',
 };
+
+/**
+ * The servers the app may sync with (R109): the owner's own, unless a build names others in SOP_SYNC_ORIGINS (space separated;
+ * a test build adds a local server). The pages' Content-Security-Policy allows these in connect-src and no other host, and
+ * Settings → Cloud connects only to these.
+ */
+const OWNER_SYNC_ORIGIN = 'https://sickofpdfs.rexheng-policy.workers.dev';
+const syncOrigins = (process.env.SOP_SYNC_ORIGINS ?? OWNER_SYNC_ORIGIN)
+  .split(/\s+/)
+  .filter(Boolean)
+  .map((o) => {
+    const u = new URL(o);
+    const local = u.hostname === 'localhost' || u.hostname === '127.0.0.1';
+    if (u.protocol !== 'https:' && !(u.protocol === 'http:' && local)) throw new Error(`SOP_SYNC_ORIGINS: ${o} must be https (or http on this computer)`);
+    return u.origin;
+  });
+
+/** Writes the sync servers into the pages' Content-Security-Policy (the %SOP_SYNC_ORIGINS% mark in connect-src). */
+function syncCsp(): Plugin {
+  return {
+    name: 'sop-sync-csp',
+    transformIndexHtml: (html) => html.replaceAll('%SOP_SYNC_ORIGINS%', syncOrigins.join(' ')),
+  };
+}
 
 /** Resolves an import of a swapped extension module to the app's version, unless the app's own code is the importer. */
 function platformSwaps(): Plugin {
@@ -56,8 +82,8 @@ export default defineConfig({
   base: '/',
   // The engine (pdf/), the text recognition runtime (ort/) and models (models/), the icons and the notices: the extension's own files.
   publicDir: fileURLToPath(new URL('../extension/public/', import.meta.url)),
-  plugins: [platformSwaps(), react()],
-  define: { __SOP_APP_VERSION__: JSON.stringify(appVersion) },
+  plugins: [platformSwaps(), syncCsp(), react()],
+  define: { __SOP_APP_VERSION__: JSON.stringify(appVersion), __SOP_SYNC_ORIGINS__: JSON.stringify(syncOrigins) },
   resolve: {
     alias: { '@ext': extensionSrc.replace(/\/$/, '') },
     dedupe: ['react', 'react-dom'],

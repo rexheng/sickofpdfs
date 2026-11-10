@@ -162,6 +162,26 @@ function answer(message: unknown): unknown {
   }
 }
 
+/**
+ * In-page answers to messages the extension sends its service worker, set by the app's own modules (the cloud sign-in and sync
+ * host, sync-host.ts). A handler answers undefined for a message that is not its own.
+ */
+type AppMessageHandler = (message: unknown) => Promise<unknown> | undefined;
+const handlers: AppMessageHandler[] = [];
+
+/** Adds an in-page answer to `chrome.runtime.sendMessage`. */
+export function onAppMessage(h: AppMessageHandler): void {
+  handlers.push(h);
+}
+
+function sendMessage(message: unknown): Promise<unknown> {
+  for (const h of handlers) {
+    const r = h(message);
+    if (r !== undefined) return r;
+  }
+  return Promise.resolve(answer(message));
+}
+
 const manifest = { manifest_version: 3, name: 'sickofpdfs', version: __SOP_APP_VERSION__, description: 'A PDF reader with highlights and comments.' };
 
 const shim = {
@@ -169,7 +189,7 @@ const shim = {
     id: 'com.sickofpdfs.reader',
     getURL: appUrl,
     getManifest: () => ({ ...manifest }),
-    sendMessage: (message: unknown) => Promise.resolve(answer(message)),
+    sendMessage,
     onMessage: event(),
     onStartup: event(),
     onInstalled: event(),

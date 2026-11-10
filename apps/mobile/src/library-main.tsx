@@ -10,8 +10,13 @@ import { openBlobStore } from '@ext/store/blob-store';
 import { connectStore } from '@ext/store/client';
 import { listenForAppEvents, openWaitingPdf } from './platform/app-events';
 import { isNativeApp, SopPlatform } from './platform/native';
+import { startSync } from './platform/sync-host';
 
 listenForAppEvents();
+// The owner's decision (round 3): in a note box on the phone, Enter makes a new line; only the Comment or Reply button sends.
+document.documentElement.dataset.noteEnter = 'newline';
+// Sync with the owner's own server, once they connected one (Settings → Cloud). Until then it sends nothing.
+startSync();
 // A phone is too narrow for the list's columns: the library starts in grid view (the owner can still switch).
 try {
   if (localStorage.getItem('library.layout') === null) localStorage.setItem('library.layout', 'grid');

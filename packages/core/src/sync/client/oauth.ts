@@ -81,7 +81,9 @@ export function readRedirect(p: PendingSignIn, returned: string): string {
   } catch {
     throw new SignInError('bad-answer', 'The sign-in came back to an address that cannot be read.');
   }
-  if (!`${u.origin}${u.pathname}`.startsWith(p.redirectUri.replace(/[?#].*$/, ''))) throw new SignInError('bad-answer', 'The sign-in came back to another address.');
+  // The address without its query: `u.origin` is "null" for the Android app's own scheme (`com.sickofpdfs.reader:/oauth`), so
+  // the address itself is compared.
+  if (!u.href.replace(/[?#].*$/, '').startsWith(p.redirectUri.replace(/[?#].*$/, ''))) throw new SignInError('bad-answer', 'The sign-in came back to another address.');
   if (u.searchParams.get('state') !== p.state) throw new SignInError('bad-answer', 'The sign-in answer was not for this sign-in.');
   const iss = u.searchParams.get('iss');
   if (iss !== null && serverOrigin(iss) !== p.server) throw new SignInError('bad-answer', 'The sign-in answer came from another server.');

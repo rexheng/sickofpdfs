@@ -179,9 +179,10 @@ export default defineConfig(
     },
   },
   // CA7 (CL10): the service worker's cloud token broker needs the sign-in token, so it may import exactly the two cloud files of
-  // local-only/ (which reach only db.ts). Everything else in local-only/, the secrets store above all, stays barred for it.
+  // local-only/ (which reach only db.ts). Everything else in local-only/, the secrets store above all, stays barred for it. The
+  // Android app's broker (mobile round 3) is the same door on the phone, with the same rule.
   {
-    files: ['apps/extension/src/background/cloud-broker.ts'],
+    files: ['apps/extension/src/background/cloud-broker.ts', 'apps/mobile/src/platform/cloud-broker.ts'],
     rules: {
       'no-restricted-imports': ['error', { patterns: [{ regex: '(^|/)local-only(/(?!(cloud-auth|cloud-forget)$).*)?$', message: LOCAL_ONLY_MESSAGE }, SDK_IMPORT_PATTERN] }],
       'no-restricted-syntax': ['error', ...LOCAL_ONLY_SYNTAX, ...SDK_SYNTAX, ...SCRIPTING_SYNTAX, ...CLICK_PATH_SYNTAX],

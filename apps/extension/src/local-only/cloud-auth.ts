@@ -22,6 +22,8 @@ interface CloudRecord {
   accessToken: string | null;
   accessExpiresAt: number;
   signedInAt: number | null;
+  /** The app that signed in (contracts CA11): the extension, or the Android app, which shares this file. Refresh and sign-out use it. */
+  clientId: string;
 }
 
 export interface CloudAuthState {
@@ -62,6 +64,7 @@ function parse(value: unknown): CloudRecord | null {
       accessToken: typeof r.accessToken === 'string' ? r.accessToken : null,
       accessExpiresAt: typeof r.accessExpiresAt === 'number' ? r.accessExpiresAt : 0,
       signedInAt: typeof r.signedInAt === 'number' ? r.signedInAt : null,
+      clientId: typeof r.clientId === 'string' && r.clientId !== '' ? r.clientId : EXTENSION_CLIENT_ID,
     };
   } catch {
     return null;
@@ -96,10 +99,10 @@ export async function connectedServer(): Promise<string | null> {
   return (await read())?.server ?? null;
 }
 
-/** Keeps the tokens of a finished sign-in to `server` (an origin). Replaces any earlier sign-in. */
-export async function saveSignIn(server: string, tokens: TokenSet, now = Date.now()): Promise<void> {
+/** Keeps the tokens of a finished sign-in to `server` (an origin) by `clientId`. Replaces any earlier sign-in. */
+export async function saveSignIn(server: string, tokens: TokenSet, now = Date.now(), clientId: string = EXTENSION_CLIENT_ID): Promise<void> {
   refreshing = null;
-  await write({ v: 1, server, refreshToken: tokens.refreshToken, accessToken: tokens.accessToken, accessExpiresAt: tokens.accessExpiresAt, signedInAt: now });
+  await write({ v: 1, server, refreshToken: tokens.refreshToken, accessToken: tokens.accessToken, accessExpiresAt: tokens.accessExpiresAt, signedInAt: now, clientId });
 }
 
 /**
@@ -111,7 +114,7 @@ export async function signOut(o: { disconnect?: boolean; fetch?: typeof fetch } 
   if (r === null) return;
   refreshing = null;
   await write(o.disconnect === true ? null : { ...r, refreshToken: null, accessToken: null, accessExpiresAt: 0, signedInAt: null });
-  if (r.refreshToken !== null) await revokeToken(r.server, EXTENSION_CLIENT_ID, r.refreshToken, { fetch: o.fetch });
+  if (r.refreshToken !== null) await revokeToken(r.server, r.clientId, r.refreshToken, { fetch: o.fetch });
 }
 
 let refreshing: Promise<AccessToken> | null = null;
@@ -132,7 +135,7 @@ export async function accessToken(o: { forceRefresh?: boolean; now?: () => numbe
       if (o.forceRefresh !== true && cur.accessToken !== null && cur.accessExpiresAt > now()) return { ok: true, token: cur.accessToken, server: cur.server, expiresAt: cur.accessExpiresAt };
       let t: TokenSet;
       try {
-        t = await refreshTokens(cur.server, EXTENSION_CLIENT_ID, cur.refreshToken, { fetch: o.fetch, now });
+        t = await refreshTokens(cur.server, cur.clientId, cur.refreshToken, { fetch: o.fetch, now });
       } catch (e) {
         if (e instanceof SignInError && e.reason === 'refused') {
           // The sign-in ended (revoked, expired, or no longer the owner): signed out, server kept.

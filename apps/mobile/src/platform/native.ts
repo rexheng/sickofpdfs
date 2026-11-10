@@ -44,6 +44,14 @@ interface SopPlatformPlugin {
   setPageSelection(o: { on: boolean }): Promise<void>;
   /** About the phone's web engine: for the app check in Settings. */
   webViewInfo(): Promise<{ version: string; packageName: string }>;
+  /**
+   * Settings → Cloud, "Connect": opens the owner's server's sign-in page in a Custom Tab (the system browser, never a web view;
+   * contracts CA11). The answer comes back as the 'oauth' event, when the browser opens `com.sickofpdfs.reader:/oauth?…`.
+   */
+  openSignIn(o: { url: string }): Promise<void>;
+  addListener(event: 'oauth', cb: (e: { url: string }) => void): Promise<PluginListenerHandle>;
+  /** The app came back to the front (from the browser, another app, or the home screen). */
+  addListener(event: 'resume', cb: () => void): Promise<PluginListenerHandle>;
   addListener(event: 'incoming', cb: (e: { pdf: IncomingPdf }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'back', cb: () => void): Promise<PluginListenerHandle>;
 }
