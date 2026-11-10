@@ -30,6 +30,11 @@ export interface TailFix {
   kind: 'none' | 'xref-stream' | 'xref-stream-ok';
 }
 
+/**
+ * One char per byte, to search the tail as text. The browser's TextDecoder('latin1') is windows-1252, so bytes 0x80–0x9F
+ * become chars above 0xFF: still one UTF-16 unit each (indices stay byte offsets), but never encode text back to bytes
+ * from it. Binary parts are always copied from the bytes themselves.
+ */
 const latin1 = (b: Uint8Array): string => new TextDecoder('latin1').decode(b);
 const ascii = (s: string): Uint8Array => Uint8Array.from(s, (c) => c.charCodeAt(0));
 
@@ -52,7 +57,7 @@ export function fixXrefStreamTail(tail: Uint8Array, originalLength: number): Tai
   if (hasType && hasEndobj && self === null) return { bytes: tail, kind: 'xref-stream-ok' };
   const pieces: (Uint8Array | string)[] = [tail.subarray(0, dictStart), hasType ? '' : '/Type/XRef'];
   if (self === null) pieces.push(tail.subarray(dictStart, end.index));
-  else pieces.push(self.dict, self.data, tail.subarray(self.dataEnd, end.index));
+  else pieces.push(self.dict, tail.subarray(self.streamFrom, self.dataEnd), self.data, tail.subarray(self.dataEnd, end.index));
   pieces.push(hasEndobj ? '' : 'endobj\r\n', tail.subarray(end.index));
   const parts = pieces.map((p) => (typeof p === 'string' ? ascii(p) : p));
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
@@ -68,10 +73,11 @@ export function fixXrefStreamTail(tail: Uint8Array, originalLength: number): Tai
  * PDFium's xref stream lists every object of the update but itself, so its /Size (one more than its own number) is one
  * more than the highest object it lists, and qpdf warns. When the stream is not compressed (PDFium writes it plain), its
  * own entry is added: its number at the end of /Index, and its offset in the data. `dictStart` is just after its "<<".
- * Returns the new text from there to the end of the old stream data, the entry's bytes (which follow it), and where the old
- * stream data ended; or null to leave the stream as it is.
+ * Returns the new dictionary text (ASCII), where the old bytes from its `stream` keyword to the end of its data are (copied
+ * as bytes: the xref data is binary, and text would turn bytes 0x80–0x9F into other bytes in a browser), the entry's
+ * bytes (which follow them); or null to leave the stream as it is.
  */
-function selfEntry(text: string, dictStart: number, offset: number, num: number): { dict: string; data: Uint8Array; dataEnd: number } | null {
+function selfEntry(text: string, dictStart: number, offset: number, num: number): { dict: string; streamFrom: number; data: Uint8Array; dataEnd: number } | null {
   const streamKw = text.indexOf('stream', dictStart);
   if (streamKw < 0) return null;
   const dict = text.slice(dictStart, streamKw);
@@ -95,7 +101,7 @@ function selfEntry(text: string, dictStart: number, offset: number, num: number)
   const newDict = dict
     .replace(index[0], `/Index[${index[1].trimEnd()} ${num} 1]`)
     .replace(length[0], `/Length ${Number(length[1]) + entry.length}`);
-  return { dict: newDict + text.slice(streamKw, dataEnd), data: entry, dataEnd };
+  return { dict: newDict, streamFrom: streamKw, data: entry, dataEnd };
 }
 
 /**
