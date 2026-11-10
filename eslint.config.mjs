@@ -144,7 +144,7 @@ export default defineConfig(
   // the same files, so a later block that bars something else (the Anthropic SDK, in Phase 4) must repeat these entries
   // (LOCAL_ONLY_IMPORT_PATTERN and LOCAL_ONLY_SYNTAX).
   {
-    files: ['apps/extension/src/**/*.{ts,tsx,js,mjs}', 'apps/mobile/src/**/*.{ts,tsx,js,mjs}', 'packages/**/*.{ts,tsx,js,mjs}'],
+    files: ['apps/extension/src/**/*.{ts,tsx,js,mjs}', 'apps/mobile/src/**/*.{ts,tsx,js,mjs}', 'apps/cloud/web/src/**/*.{ts,tsx,js,mjs}', 'packages/**/*.{ts,tsx,js,mjs}'],
     rules: {
       'no-restricted-imports': ['error', { patterns: [LOCAL_ONLY_IMPORT_PATTERN, SDK_IMPORT_PATTERN] }],
       // import(), require() and import('...') in a type are not covered by no-restricted-imports.

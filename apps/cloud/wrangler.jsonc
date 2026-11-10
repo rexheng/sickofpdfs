@@ -22,8 +22,8 @@
     "directory": "./public",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    // navigations to these must reach the Worker, not the SPA shell
-    "run_worker_first": ["/mcp", "/api/*", "/authorize", "/oauth/*", "/login", "/logout", "/.well-known/*", "/app/*"]
+    // navigations to these must reach the Worker, not the SPA shell ("/" and "/d/*": the web library checks the session first)
+    "run_worker_first": ["/", "/d/*", "/mcp", "/api/*", "/authorize", "/oauth/*", "/login", "/logout", "/.well-known/*", "/app/*"]
   },
   "vars": {
     "ENVIRONMENT": "local",
@@ -61,7 +61,7 @@
         "directory": "./public",
         "binding": "ASSETS",
         "not_found_handling": "single-page-application",
-        "run_worker_first": ["/mcp", "/api/*", "/authorize", "/oauth/*", "/login", "/logout", "/.well-known/*", "/app/*"]
+        "run_worker_first": ["/", "/d/*", "/mcp", "/api/*", "/authorize", "/oauth/*", "/login", "/logout", "/.well-known/*", "/app/*"]
       },
       "vars": {
         "ENVIRONMENT": "staging",
@@ -96,7 +96,7 @@
         "directory": "./public",
         "binding": "ASSETS",
         "not_found_handling": "single-page-application",
-        "run_worker_first": ["/mcp", "/api/*", "/authorize", "/oauth/*", "/login", "/logout", "/.well-known/*", "/app/*"]
+        "run_worker_first": ["/", "/d/*", "/mcp", "/api/*", "/authorize", "/oauth/*", "/login", "/logout", "/.well-known/*", "/app/*"]
       },
       "vars": {
         "ENVIRONMENT": "production",

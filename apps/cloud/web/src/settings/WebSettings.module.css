@@ -1,0 +1,41 @@
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-inline-size: var(--sop-notes-col-max);
+  padding-block: var(--space-2) var(--space-8);
+}
+
+.inlineButton {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--gm3-sys-color-primary);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* A thin bar for a daily meter: primary while there is room, the error colour from 90 %. */
+.meter {
+  display: block;
+  overflow: hidden;
+  inline-size: 100%;
+  max-inline-size: calc(var(--space-16) * 5);
+  block-size: var(--space-1);
+  margin-block: var(--space-2) var(--space-1);
+  border-radius: var(--shape-full);
+  background-color: var(--gm3-sys-color-surface-container-highest);
+}
+
+.meterFill {
+  display: block;
+  block-size: 100%;
+  border-radius: var(--shape-full);
+  background-color: var(--gm3-sys-color-primary);
+}
+
+.meterFill[data-high='true'] {
+  background-color: var(--gm3-sys-color-error);
+}

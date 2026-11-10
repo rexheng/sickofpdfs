@@ -1,0 +1,54 @@
+/* The sync status in the top bar: a quiet 32 px pill, like Drive's "Saved to Drive" status. */
+.chip {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-2);
+  align-items: center;
+  block-size: var(--space-8);
+  padding-inline: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--shape-full);
+  background: transparent;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.chip:is(button[data-sync='offline'], button[data-sync='busy'], button[data-sync='refused']) {
+  cursor: pointer;
+}
+
+.chip:hover:is([data-sync='offline'], [data-sync='busy'], [data-sync='refused']) {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-surface) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+.chip:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.warn {
+  color: var(--gm3-sys-color-error);
+}
+
+.text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spin {
+  animation: spin 1.2s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}

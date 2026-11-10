@@ -1,0 +1,107 @@
+/* The web library's frames. The computer frame is @sop/ui's LibraryShell; these are its link and the phone frame. */
+.markLink {
+  display: inline-flex;
+  color: inherit;
+  text-decoration: none;
+}
+
+/* The phone: top bar, the page in Drive's white card, the bottom bar. The card scrolls; the frame does not. */
+.phone {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
+  block-size: 100vh;
+  block-size: 100dvh;
+  overflow: hidden;
+  background-color: var(--drive-app-bg);
+  color: var(--gm3-sys-color-on-surface);
+}
+
+.phoneTop {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  min-block-size: var(--space-14);
+  padding-inline: var(--space-3) var(--space-1);
+}
+
+.phoneSearch {
+  display: flex;
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.phoneSearch input {
+  min-inline-size: 0;
+}
+
+.phoneMain {
+  display: flex;
+  min-inline-size: 0;
+  min-block-size: 0;
+  padding-inline: var(--space-2);
+}
+
+/*
+ * The pages' title rows on a phone: the title keeps its words (it wraps instead of ending in "…"), and the controls beside it
+ * (Group by, the layout toggle, a star) move under it when they do not fit. The row belongs to @sop/ui's LibraryShell, so it
+ * is found by its module class name.
+ */
+.phoneMain [class*='_titleRow_'] {
+  flex-wrap: wrap;
+  row-gap: var(--space-1);
+  block-size: auto;
+  min-block-size: var(--space-16);
+  padding-block: var(--space-3) var(--space-2);
+}
+
+.phoneMain [class*='_titleRow_'] > h1 {
+  flex: 1 0 auto;
+  max-inline-size: 100%;
+  white-space: normal;
+}
+
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  min-block-size: var(--phone-nav-h);
+  padding-block-end: env(safe-area-inset-bottom);
+  background-color: var(--drive-app-bg);
+}
+
+.tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: center;
+  justify-content: center;
+  color: var(--gm3-sys-color-on-surface-variant);
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tabIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--phone-tab-indicator-w);
+  block-size: var(--phone-tab-indicator-h);
+  border-radius: var(--space-4);
+}
+
+.tab[aria-current='page'] {
+  color: var(--gm3-sys-color-on-surface);
+}
+
+.tab[aria-current='page'] .tabIcon {
+  background-color: var(--gm3-sys-color-secondary-container);
+}
+
+.tab:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+.tabLabel {
+  font: var(--type-tag-chip);
+}

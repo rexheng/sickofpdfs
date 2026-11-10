@@ -1,0 +1,178 @@
+/*
+ * The Worker's sign-in pages (sign in, "This library is private", the consent page, errors): plain HTML with no script, in
+ * the web library's look. Built by Vite into /pages.css, with the bundled fonts, so these pages load nothing from another site.
+ */
+@import '../../../../../packages/ui/src/tokens/tokens.css';
+@import '../../../../../packages/ui/src/base.css';
+
+/* eslint-disable sop/no-raw-design-values -- the bundled fonts' faces (the extension registers the same files from script) */
+@font-face {
+  font-family: "Google Sans";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('../../../../../packages/ui/node_modules/@fontsource-variable/google-sans/files/google-sans-latin-full-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: "Google Sans Text";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('../../../../../packages/ui/node_modules/@fontsource-variable/google-sans/files/google-sans-latin-full-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: "Google Sans Flex";
+  font-style: normal;
+  font-weight: 1 1000;
+  font-display: swap;
+  src: url('../../../../../packages/ui/node_modules/@fontsource-variable/google-sans-flex/files/google-sans-flex-latin-full-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: "Material Symbols Outlined";
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: block;
+  src: url('../../../../../packages/ui/node_modules/material-symbols/material-symbols-outlined.woff2') format('woff2');
+}
+/* eslint-enable sop/no-raw-design-values */
+
+body {
+  min-block-size: 100vh;
+  min-block-size: 100dvh;
+  background-color: var(--drive-app-bg);
+}
+
+main {
+  box-sizing: border-box;
+  max-inline-size: calc(var(--space-16) * 7);
+  margin: calc(var(--space-16) * 1.5) auto var(--space-8);
+  padding: var(--space-10) var(--space-10) var(--space-8);
+  border-radius: var(--shape-dialog);
+  background-color: var(--gm3-sys-color-surface);
+}
+
+.mark {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin-block-end: var(--space-6);
+}
+
+.tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--sop-lib-mark);
+  block-size: var(--sop-lib-mark);
+  overflow: hidden;
+  border-radius: var(--sop-lib-mark-radius);
+  background-color: var(--gm3-sys-color-primary);
+  color: var(--gm3-sys-color-on-primary);
+  font-family: var(--font-icons);
+  font-size: var(--sop-lib-mark-glyph);
+  font-weight: 400;
+  line-height: 1;
+  font-feature-settings: "liga";
+  font-variation-settings: "FILL" 1, "wght" 400, "GRAD" 0, "opsz" 24;
+}
+
+.word {
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-wordmark);
+  font-variation-settings: "opsz" 18;
+}
+
+h1 {
+  margin: 0 0 var(--space-4);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-dialog-title);
+  font-variation-settings: "opsz" 18;
+}
+
+p,
+li {
+  margin: var(--space-2) 0;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-lib-search);
+}
+
+strong {
+  color: var(--gm3-sys-color-on-surface);
+  font-weight: 500;
+}
+
+ul {
+  margin: var(--space-2) 0;
+  padding-inline-start: var(--space-6);
+}
+
+.muted {
+  font: var(--type-body);
+}
+
+.note {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--shape-banner);
+  background-color: var(--gm3-sys-color-surface-container-high);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-body);
+}
+
+form {
+  display: flex;
+  flex-wrap: wrap-reverse;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  margin-block-start: var(--space-8);
+}
+
+button {
+  box-sizing: border-box;
+  block-size: var(--btn-h);
+  padding: 0 var(--space-6);
+  border: 0;
+  border-radius: var(--shape-full);
+  background-color: transparent;
+  color: var(--gm3-sys-color-primary);
+  font: var(--type-text-button);
+  cursor: pointer;
+}
+
+button:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-primary) calc(var(--gm3-state-hover) * 100%), transparent);
+}
+
+button.primary {
+  background-color: var(--gm3-sys-color-primary);
+  color: var(--gm3-sys-color-on-primary);
+}
+
+button.primary:hover {
+  background-color: color-mix(in srgb, var(--gm3-sys-color-on-primary) calc(var(--gm3-state-hover) * 100%), var(--gm3-sys-color-primary));
+}
+
+button:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.foot {
+  margin-block-start: var(--space-6);
+  font: var(--type-tooltip);
+  text-align: center;
+}
+
+@media (max-width: 520px) {
+  main {
+    margin: 0;
+    padding: var(--space-8) var(--space-6);
+    border-radius: 0;
+    min-block-size: 100vh;
+    min-block-size: 100dvh;
+  }
+
+  form {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+}

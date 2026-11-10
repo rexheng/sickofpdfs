@@ -7,7 +7,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "dev:test": "node scripts/dev-test.mjs",
-    "db:apply": "node scripts/apply-local.mjs"
+    "db:apply": "node scripts/apply-local.mjs",
+    "build:web": "pnpm -C ../extension exec wxt prepare && pnpm --filter @sop/cloud-web build"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "1.2.4",

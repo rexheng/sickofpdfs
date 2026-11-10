@@ -1,0 +1,27 @@
+{
+  "name": "@sop/cloud-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The web library (CL13): the extension's library pages over a sync replica in the browser, served by the cloud Worker.",
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sop/core": "workspace:*",
+    "@sop/extension": "workspace:*",
+    "@sop/ui": "workspace:*",
+    "@sop/viewer": "workspace:*",
+    "@sqlite.org/sqlite-wasm": "3.54.1-build1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.3.7",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "vite": "8.3.5"
+  }
+}

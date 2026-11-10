@@ -128,6 +128,11 @@ export const ICON_NAMES = [
   'drive_file_move',
   // R112: "Listen with ElevenReader" in the phone viewer's menu
   'headphones',
+  // Release 2 (CL13): the web library's sync status, sign out and the devices list in Settings
+  'cloud_done',
+  'cloud_off',
+  'logout',
+  'devices',
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

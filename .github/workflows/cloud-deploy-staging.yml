@@ -35,6 +35,9 @@ jobs:
       - name: Typecheck
         run: pnpm -C apps/cloud typecheck
 
+      - name: Build the web library (into the Worker's static assets)
+        run: pnpm -C apps/cloud build:web
+
       - name: Schema, then the Worker
         working-directory: apps/cloud
         env:

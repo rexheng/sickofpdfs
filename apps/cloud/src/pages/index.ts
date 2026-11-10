@@ -1,17 +1,17 @@
-// CL13 replaces these: the server-rendered pages (sign in, "not your account", consent). Plain HTML for now, so the sign-in
-// flow works before the web slice lands. Everything that came from outside (a client's name, a GitHub login, a host) is escaped.
-// No scripts. The wording is for the owner: short sentences, no jargon.
+// The server-rendered pages (CL13): sign in, "This library is private", the consent page and the error pages. Plain HTML with
+// no script, in the web library's look: one style sheet, /pages.css, built from the shared tokens with the bundled fonts
+// (apps/cloud/web/src/pages/pages.css), so these pages load nothing from another site. Everything that came from outside (a
+// client's name, a GitHub login, a host) is escaped. The wording is for the owner: short sentences, no jargon.
+//
+// No `form-action` in the policy on purpose: the sign-in form's answer is a redirect to GitHub, and the consent form's a
+// redirect to the app that asked, and browsers apply `form-action` to those redirects too.
 
-const CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'";
+const CSP = "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'";
 
 export const escapeHtml = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-const STYLE =
-  'body{font:16px/1.5 system-ui,sans-serif;color:#1f1f1f;background:#fff;margin:0}main{max-width:30rem;margin:3rem auto;padding:0 16px}' +
-  'h1{font-size:1.4rem;font-weight:500;margin:0 0 1rem}p,li{margin:.5rem 0}ul{padding-left:1.2rem}.note{background:#fef7e0;border-radius:8px;padding:.75rem 1rem}' +
-  '.muted{color:#5f6368;font-size:.9rem}form{margin-top:1.5rem;display:flex;flex-wrap:wrap;gap:.5rem}' +
-  'button{font:inherit;border-radius:20px;padding:.5rem 1.25rem;border:1px solid #dadce0;background:#fff;color:#0b57d0;cursor:pointer}' +
-  'button.primary{background:#0b57d0;border-color:#0b57d0;color:#fff}';
+/** Our mark, as the library's top bar draws it (the Material Symbol menu_book on a primary tile), and the product's name. */
+const MARK = '<div class="mark"><span class="tile" aria-hidden="true">menu_book</span><span class="word">sickofpdfs</span></div>';
 
 export function page(title: string, body: string, status = 200, headers: HeadersInit = {}): Response {
   const h = new Headers(headers);
@@ -23,7 +23,7 @@ export function page(title: string, body: string, status = 200, headers: Headers
   h.set('referrer-policy', 'same-origin');
   h.set('x-content-type-options', 'nosniff');
   return new Response(
-    `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>${STYLE}</style><body><main><h1>${escapeHtml(title)}</h1>${body}</main>`,
+    `<!doctype html><html lang="en" data-theme="light"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f8fafd"><title>${escapeHtml(title)} - sickofpdfs</title><link rel="stylesheet" href="/pages.css"><body><main>${MARK}<h1>${escapeHtml(title)}</h1>${body}</main>`,
     { status, headers: h },
   );
 }
@@ -31,7 +31,7 @@ export function page(title: string, body: string, status = 200, headers: Headers
 export const signInPage = (action: string, next = '/'): Response =>
   page(
     'Sign in',
-    `<p>Your library is private. Sign in with your GitHub account to open it.</p><form method="post" action="${escapeHtml(action)}"><input type="hidden" name="next" value="${escapeHtml(next)}"><button class="primary">Sign in with GitHub</button></form>`,
+    `<p>Your library is private. Sign in with your GitHub account to open it.</p><form method="post" action="${escapeHtml(action)}"><input type="hidden" name="next" value="${escapeHtml(next)}"><button class="primary">Sign in with GitHub</button></form><p class="foot">Only the owner of this library can sign in.</p>`,
   );
 
 export const notYourAccountPage = (login?: string): Response =>
