@@ -2,7 +2,8 @@
 // - "Never save this file": a salted fingerprint in the local-only store (`sop-local`), read before any page is read. It also
 //   goes to the owner's other devices (the web library's upload, the phone) as the synced setting `filter.never.<code>`. The
 //   code is a one-way scramble of the fingerprint, cut to 128 bits (`neverCode`): never the fingerprint itself, so the cloud
-//   cannot tell which file it is, or link it to a reading, unless it already holds that very file;
+//   cannot tell which file it is, or link it to a reading, unless it already holds that very file. It is written only while
+//   a cloud is connected: with no cloud, the choice stays in `sop-local` alone and the library keeps no trace of it (R13);
 // - the deny and allow lists: the synced settings `filter.deny` and `filter.allow` in the library store;
 // - "Report a wrong decision": the owner's label and a salted fingerprint, never the file.
 // The list of forgotten readings is not here: it is the library store's own, written with Forget's delete (R88, R89).
@@ -12,6 +13,7 @@
 import { cleanList, type FilterRules, isListEntryOk, type Sha256 } from '@sop/core';
 import type { FilterReportLabel, LocalOnlyStore } from '../../local-only/secrets-store';
 import type { StoreClient } from '../../store/client';
+import { cloudStatus } from '../../shared/cloud-messages';
 
 /** The synced settings that hold the lists (contracts §5): JSON arrays of hosts, web addresses and folders. */
 export const ALLOW_LIST_KEY = 'filter.allow';
@@ -59,7 +61,15 @@ export interface RulesSourceDeps {
   localExists?(): Promise<boolean>;
   /** The library store; null when it cannot be reached. */
   store(): Promise<StoreClient | null>;
+  /** Whether the owner connected a cloud (asks this computer only; no request). Left out: the token broker is asked. */
+  cloudConnected?(): Promise<boolean>;
 }
+
+/** Asks this extension's token broker (or the phone app's) whether a cloud is connected. False when it cannot say. */
+const defaultCloudConnected = async (): Promise<boolean> => {
+  const r = await cloudStatus();
+  return r.ok && r.status.connected;
+};
 
 export function createRulesSource(d: RulesSourceDeps): FilterRulesSource {
   async function local(): Promise<LocalOnlyStore> {
@@ -88,8 +98,9 @@ export function createRulesSource(d: RulesSourceDeps): FilterRulesSource {
     for (const sha of shas) if ((await s.getSetting(`${NEVER_SAVE_PREFIX}${await neverCode(sha)}`)) === true) return true;
     return false;
   }
-  /** Keeps (true) or takes back (null) the synced choice for these fingerprints. */
+  /** Keeps (true, only while a cloud is connected) or takes back (null) the synced choice for these fingerprints. */
   async function setSynced(shas: readonly string[], on: boolean): Promise<void> {
+    if (on && !(await (d.cloudConnected ?? defaultCloudConnected)())) return;
     const s = on ? await store() : await d.store();
     if (s === null) return;
     for (const sha of new Set(shas)) {
