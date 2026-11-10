@@ -1,0 +1,10 @@
+/*
+ * Tokens for the phone app (apps/mobile) only: Material 3's navigation bar and floating action button sizes. The app imports this
+ * file after tokens.css; the extension never does.
+ */
+:root {
+  --phone-nav-h: 80px;            /* GM3 navigation bar */
+  --phone-fab-shadow: var(--shadow-docs-comment-active);
+  --phone-tab-indicator-w: 64px;  /* GM3 active indicator, 64 × 32 */
+  --phone-tab-indicator-h: 32px;
+}

@@ -1,0 +1,33 @@
+{
+  "name": "@sop/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The sickofpdfs phone app (Capacitor, Android first): the extension's viewer and library in an app.",
+  "scripts": {
+    "assets": "pnpm -C ../extension assets",
+    "build:web": "vite build",
+    "build": "pnpm assets && vite build && cap sync android",
+    "apk": "pnpm build && cd android && ./gradlew assembleDebug",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/core": "8.5.3",
+    "@sop/core": "workspace:*",
+    "@sop/extension": "workspace:*",
+    "@sop/ui": "workspace:*",
+    "@sop/viewer": "workspace:*",
+    "@sqlite.org/sqlite-wasm": "3.54.1-build1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3",
+    "@types/chrome": "0.3.7",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "vite": "8.3.5"
+  }
+}

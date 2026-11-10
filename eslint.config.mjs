@@ -78,6 +78,8 @@ export default defineConfig(
     // third-party files the build copies in (onnxruntime-web's runtime, the tie-breaker model): not our code
     'apps/extension/public/ort/**',
     'apps/extension/public/models/**',
+    // the phone app's Android project: Gradle files and the web build copied into it
+    'apps/mobile/android/**',
     // the throwaway Phase 0 package has its own tooling and is not part of the workspace
     'spikes/**',
     // research notes and third-party reference copies
@@ -141,7 +143,7 @@ export default defineConfig(
   // the same files, so a later block that bars something else (the Anthropic SDK, in Phase 4) must repeat these entries
   // (LOCAL_ONLY_IMPORT_PATTERN and LOCAL_ONLY_SYNTAX).
   {
-    files: ['apps/extension/src/**/*.{ts,tsx,js,mjs}', 'packages/**/*.{ts,tsx,js,mjs}'],
+    files: ['apps/extension/src/**/*.{ts,tsx,js,mjs}', 'apps/mobile/src/**/*.{ts,tsx,js,mjs}', 'packages/**/*.{ts,tsx,js,mjs}'],
     rules: {
       'no-restricted-imports': ['error', { patterns: [LOCAL_ONLY_IMPORT_PATTERN, SDK_IMPORT_PATTERN] }],
       // import(), require() and import('...') in a type are not covered by no-restricted-imports.

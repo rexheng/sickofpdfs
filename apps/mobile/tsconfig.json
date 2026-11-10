@@ -1,0 +1,9 @@
+{
+  "extends": "../extension/tsconfig.json",
+  "compilerOptions": {
+    "types": ["chrome", "node", "vite/client"],
+    "paths": { "@ext/*": ["../extension/src/*"] }
+  },
+  "include": ["src", "vite.config.ts", "capacitor.config.ts", "scripts", "src/env.d.ts"],
+  "exclude": ["node_modules", "dist", "android"]
+}

@@ -1,0 +1,14 @@
+/* The viewer on a phone. The page list keeps the WebView's own one-finger scrolling and fling; two fingers are the app's pinch
+   (touch-zoom.ts), so the browser's own page zoom is off there. */
+[role='document'] {
+  touch-action: pan-x pan-y;
+  /* eslint-disable-next-line css/use-baseline -- Android System WebView only (Chromium has had it since 63) */
+  overscroll-behavior: contain;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  /* eslint-disable-next-line css/use-baseline -- Android System WebView only (Chromium has had it since 63) */
+  overscroll-behavior: none;
+}
