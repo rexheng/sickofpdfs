@@ -12,6 +12,7 @@
     "./text-fold": "./src/anchoring/text-fold.ts",
     "./page-order": "./src/pages/page-order.ts",
     "./sync": "./src/sync/index.ts",
+    "./sync-client": "./src/sync/client/index.ts",
     "./connector": "./src/connector/index.ts"
   },
   "scripts": {

@@ -4,3 +4,4 @@ export * from './clamp';
 export * from './columns';
 export * from './merge';
 export * from './reparent';
+export * from './local';

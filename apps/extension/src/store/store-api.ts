@@ -42,6 +42,7 @@ import { createRestoreApi, type RestoreApi } from './restore-api';
 import { createLookupsApi, type LookupsApi } from './lookups-api';
 import { createPassageVectorsApi, type PassageVectorsApi } from './passage-vectors';
 import { createSettingsApi, type SettingsApi } from './settings-api';
+import { createSyncStoreApi, type SyncStoreApi } from './sync-store';
 import { clearTagOutbox, createTagsApi, dropOrphanAutoTags, tagRowIds, type TagsApi } from './tags-api';
 import { createPageFiguresApi, type PageFiguresApi } from './page-figures';
 import { createPageOcrApi, type PageOcrApi } from './page-ocr';
@@ -115,7 +116,7 @@ export interface TouchLocationInput {
   at: number;
 }
 
-export interface StoreApi extends AnnotationsApi, PageFiguresApi, PageOcrApi, LibraryApi, BackupApi, RestoreApi, SettingsApi, TagsApi, LookupsApi, PassageVectorsApi, CoursesApi {
+export interface StoreApi extends AnnotationsApi, PageFiguresApi, PageOcrApi, LibraryApi, BackupApi, RestoreApi, SettingsApi, TagsApi, LookupsApi, PassageVectorsApi, CoursesApi, SyncStoreApi {
   schemaVersion(): Promise<number>;
   stats(): Promise<StoreStats>;
   /** The library document these bytes are: `documents.id`, or the document an alias (a stamped copy) points to. */
@@ -426,6 +427,9 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
     resolveFingerprint: (sha256) =>
       attempt(() => {
         if (typeof sha256 !== 'string' || !HEX64.test(sha256)) return null;
+        // A reading emptied into another as its duplicate (R59, sync) is in Trash and is that one's alias: open the one it joined.
+        const dup = one('SELECT a.document_id FROM documents d JOIN aliases a ON a.sha256 = d.id WHERE d.id = ? AND d.deleted_at IS NOT NULL', [sha256]);
+        if (dup) return text(dup, 'document_id') as DocumentId;
         if (documentExists(sha256)) return sha256;
         const alias = one('SELECT document_id FROM aliases WHERE sha256 = ?', [sha256]);
         return alias ? (text(alias, 'document_id') as DocumentId) : null;
@@ -881,5 +885,6 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
     ...createLookupsApi(db, deps),
     ...createPassageVectorsApi(db),
     ...createCoursesApi(db, deps),
+    ...createSyncStoreApi(db, deps, { forget: (id) => forgetRows(id, false).then(() => forgetThumbnail(id)) }),
   };
 }

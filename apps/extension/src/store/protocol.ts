@@ -18,10 +18,11 @@ import { PASSAGE_VECTORS_API_METHODS, PASSAGE_VECTORS_READ_METHODS } from './pas
 import { RESTORE_API_METHODS, RESTORE_READ_METHODS } from './restore-api';
 import { SETTINGS_API_METHODS, SETTINGS_READ_METHODS } from './settings-api';
 import { LIBRARY_METHODS, type StoreApi } from './store-api';
+import { SYNC_STORE_METHODS, SYNC_STORE_READ_METHODS } from './sync-store';
 import { TAGS_API_METHODS, TAGS_READ_METHODS } from './tags-api';
 
 /** Every method a store port serves. */
-export const STORE_METHODS = [...LIBRARY_METHODS, ...ANNOTATION_METHODS, ...PAGE_FIGURES_METHODS, ...PAGE_OCR_API_METHODS, ...LIBRARY_API_METHODS, ...BACKUP_API_METHODS, ...RESTORE_API_METHODS, ...SETTINGS_API_METHODS, ...TAGS_API_METHODS, ...LOOKUPS_API_METHODS, ...PASSAGE_VECTORS_API_METHODS, ...COURSES_API_METHODS] as const;
+export const STORE_METHODS = [...LIBRARY_METHODS, ...ANNOTATION_METHODS, ...PAGE_FIGURES_METHODS, ...PAGE_OCR_API_METHODS, ...LIBRARY_API_METHODS, ...BACKUP_API_METHODS, ...RESTORE_API_METHODS, ...SETTINGS_API_METHODS, ...TAGS_API_METHODS, ...LOOKUPS_API_METHODS, ...PASSAGE_VECTORS_API_METHODS, ...COURSES_API_METHODS, ...SYNC_STORE_METHODS] as const;
 export type StoreMethod = (typeof STORE_METHODS)[number];
 
 // Every StoreApi method must be served: this line stops compiling when one is missing from the lists above.
@@ -57,6 +58,7 @@ const READ_METHODS: ReadonlySet<string> = new Set<StoreMethod>([
   ...LOOKUPS_READ_METHODS,
   ...PASSAGE_VECTORS_READ_METHODS,
   ...COURSES_READ_METHODS,
+  ...SYNC_STORE_READ_METHODS,
 ]);
 
 export interface StoreRequest {
