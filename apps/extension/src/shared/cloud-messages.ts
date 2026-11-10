@@ -93,7 +93,7 @@ async function send<M extends CloudMessage>(message: M): Promise<CloudReplyOf<M>
  * (`identity`, optional, so a fresh install asks for nothing), which needs the owner's click.
  */
 export async function cloudSignIn(server: string): Promise<CloudReplyOf<{ type: 'cloud:signin'; server: string }>> {
-  if (import.meta.env.MODE !== 'test') {
+  if ((import.meta as ImportMeta & { env?: { MODE?: string } }).env?.MODE !== 'test') {
     let granted: boolean;
     try {
       granted = await chrome.permissions.request({ permissions: ['identity'] });

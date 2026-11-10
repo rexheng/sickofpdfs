@@ -87,6 +87,7 @@ export default defineConfig(
     'docs/**',
     // the launch video's local snapshot of arXiv's page (not committed)
     'apps/video/fixtures/**',
+    'apps/cloud/public/**', // the web library's build output (deploy-production.mjs)
   ]),
 
   // JavaScript and TypeScript
