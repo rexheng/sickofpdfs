@@ -1,0 +1,23 @@
+{
+  "name": "@sop/video",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The launch video, made in code with Remotion from real recordings of the extension, the phone app and the site.",
+  "scripts": {
+    "record": "playwright test -c record/playwright.config.ts",
+    "render": "node scripts/render.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.539",
+    "@remotion/renderer": "4.0.539",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "remotion": "4.0.539"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/node": "22.20.5"
+  }
+}

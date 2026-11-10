@@ -214,4 +214,11 @@ export default defineConfig(
     plugins: { sop },
     rules: { 'sop/no-raw-design-values': 'error' },
   },
+
+  // The launch video (apps/video): a fixed 1920 × 1080 canvas drawn by Remotion, not product UI, so it measures in pixels. Remotion's
+  // easing functions are passed as plain functions (Easing.out(Easing.cubic)).
+  {
+    files: ['apps/video/src/**/*.{ts,tsx}'],
+    rules: { 'sop/no-raw-design-values': 'off', '@typescript-eslint/unbound-method': 'off' },
+  },
 );

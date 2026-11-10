@@ -1,0 +1,5 @@
+# Recordings, frames and renders are made on demand and never committed.
+public/
+out/
+.frames/
+.record-results/
