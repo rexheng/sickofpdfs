@@ -12,3 +12,116 @@ body {
   /* eslint-disable-next-line css/use-baseline -- Android System WebView only (Chromium has had it since 63) */
   overscroll-behavior: none;
 }
+
+/* ---- Round 2: the phone layout (PhoneHeader, PhoneToolbar, touch-select, SelectionBar, SheetGrip) ---- */
+
+/* The app bar is 56 px; there is no pill row under it (the page chip floats at the bottom). */
+html:root {
+  --viewer-header-h: var(--phone-app-bar-h);
+  --viewer-header-size: var(--phone-app-bar-h);
+  --viewer-pill-h: 0px;
+}
+
+/* No long-press callout of the WebView's own over the pages: the action bar is the menu. */
+[role='document'] {
+  -webkit-touch-callout: none;
+}
+
+/* The thumbnail rail's toggle would sit over the page at the bottom left; on a phone the pages fill the width. */
+button[aria-label='Show navigation pane'],
+button[aria-label='Hide navigation pane'] {
+  display: none;
+}
+
+/*
+ * The selection handles (touch-select.ts): a blue drop hanging under each end of the selection, Android's shape. The element is
+ * the finger's catch area; it is placed with its top corner on the end it moves.
+ */
+.sop-touch-handle {
+  position: fixed;
+  inset: 0 auto auto 0;
+  z-index: 4;
+  inline-size: var(--phone-handle-hit);
+  block-size: var(--phone-handle-hit);
+  touch-action: none;
+}
+
+.sop-touch-handle[data-handle='start'] {
+  margin-inline-start: calc(-1 * var(--phone-handle-hit));
+}
+
+.sop-touch-handle::before {
+  position: absolute;
+  inset-block-start: 0;
+  inline-size: var(--phone-handle-size);
+  block-size: var(--phone-handle-size);
+  background-color: var(--gm3-sys-color-primary);
+  content: '';
+}
+
+.sop-touch-handle[data-handle='start']::before {
+  inset-inline-end: 0;
+  border-radius: 50% 0 50% 50%;
+}
+
+.sop-touch-handle[data-handle='end']::before {
+  inset-inline-start: 0;
+  border-radius: 0 50% 50% 50%;
+}
+
+.sop-touch-handle[hidden] {
+  display: none;
+}
+
+/*
+ * The notes panel as a bottom sheet (SheetGrip.tsx sets --phone-sheet-h): the full width, from the bottom up, with GM3's 28 px
+ * top corners and its 32 × 4 grip. It covers the pages under it, as a sheet does; the page column keeps its full width.
+ */
+html [data-notes-panel-open][data-notes-panel-open] {
+  --viewer-end-inset: 0px;
+}
+
+/* The note box's keyboard hint ("Enter to send · Shift+Enter for a new line") means nothing on a phone: the button sends. */
+textarea[aria-keyshortcuts] + div > span[id]:first-child {
+  display: none;
+}
+
+aside[data-notes-panel] {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 3;
+  inline-size: auto;
+  block-size: var(--phone-sheet-h, var(--phone-sheet-half));
+  padding-block-start: var(--space-6);
+  border-radius: var(--phone-sheet-radius) var(--phone-sheet-radius) 0 0;
+  box-shadow: var(--phone-sheet-shadow);
+  transition: block-size var(--phone-fade);
+}
+
+:root[data-sheet='dragging'] aside[data-notes-panel] {
+  transition: none;
+}
+
+.sop-sheet-grip {
+  position: fixed;
+  inset: auto 0 calc(var(--phone-sheet-h, var(--phone-sheet-half)) - var(--space-6));
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  block-size: var(--space-6);
+  touch-action: none;
+  transition: inset-block-end var(--phone-fade);
+  -webkit-tap-highlight-color: transparent;
+}
+
+:root[data-sheet='dragging'] .sop-sheet-grip {
+  transition: none;
+}
+
+.sop-sheet-grip-bar {
+  inline-size: var(--phone-sheet-grip-w);
+  block-size: var(--phone-sheet-grip-h);
+  border-radius: var(--phone-sheet-grip-h);
+  background-color: var(--gm3-sys-color-on-surface-variant);
+  opacity: 0.4;
+}

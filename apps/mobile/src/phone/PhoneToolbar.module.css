@@ -1,0 +1,65 @@
+/*
+ * The page chip: a dark pill 16 px above the bottom, in the middle, over the pages. It fades out a moment after the pages stop,
+ * and comes back while they move or while its box has the caret.
+ */
+.chip {
+  position: fixed;
+  inset: auto auto calc(var(--space-4) + env(safe-area-inset-bottom, 0px)) 50%;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  block-size: var(--space-10);
+  margin: 0;
+  padding: 0 var(--space-4) 0 var(--space-2);
+  border-radius: var(--space-10);
+  background-color: var(--gm3-sys-color-surface-container-high);
+  box-shadow: var(--phone-chip-shadow);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-body);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%);
+  transition: opacity 200ms ease;
+}
+
+.chip[data-shown],
+.chip:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.label {
+  display: flex;
+}
+
+.field {
+  box-sizing: content-box;
+  padding: var(--space-1) var(--space-1);
+  border: 0;
+  border-radius: var(--space-2);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.field:focus {
+  outline: none;
+  box-shadow: var(--phone-field-ring);
+  background-color: var(--gm3-sys-color-surface-container-highest);
+}
+
+.total {
+  padding-inline-start: var(--space-1);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}

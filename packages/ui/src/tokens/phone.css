@@ -8,3 +8,31 @@
   --phone-tab-indicator-w: 64px;  /* GM3 active indicator, 64 × 32 */
   --phone-tab-indicator-h: 32px;
 }
+
+/* The phone viewer (apps/mobile/src/phone): Drive mobile's app bar, a thumb-sized touch target, the selection handles and the
+   notes bottom sheet's three heights. */
+:root {
+  --phone-app-bar-h: 56px;        /* GM3 small top app bar */
+  --phone-touch: 48px;            /* the smallest touch target */
+  --phone-badge-size: 16px;
+  --phone-badge-font: 600 10px/16px var(--font-text);
+  --phone-title-font: 400 18px/24px var(--font-display);  /* the PDF name in the app bar */
+  --phone-handle-size: 22px;      /* a selection handle's drop */
+  --phone-handle-hit: 44px;       /* the area round it that a finger can catch */
+  --phone-bar-radius: 16px;       /* the selection action bar */
+  --phone-sheet-radius: 28px;     /* GM3 bottom sheet top corners */
+  --phone-sheet-grip-w: 32px;     /* GM3 drag handle, 32 × 4 */
+  --phone-sheet-grip-h: 4px;
+  --phone-sheet-peek: 35vh;
+  --phone-sheet-half: 55vh;
+  --phone-sheet-full: calc(100vh - var(--phone-app-bar-h));
+  --phone-sheet-shadow: 0 -2px 12px rgba(0, 0, 0, 0.45);
+  --phone-chip-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  --phone-bar-shadow: 0 4px 16px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
+  --phone-action-w: 64px;          /* one labelled button of the selection bar */
+  --phone-swatch: 32px;
+  --phone-swatch-ring: 0 0 0 2px var(--menu-bg), 0 0 0 4px var(--gm3-sys-color-on-surface);  /* the chosen colour */
+  --phone-field-ring: 0 0 0 2px var(--gm3-sys-color-primary);
+  --type-phone-action: 500 11px/16px var(--font-text);  /* the name under a bar button */
+  --phone-fade: 160ms ease;
+}

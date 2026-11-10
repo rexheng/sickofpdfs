@@ -126,6 +126,8 @@ export const ICON_NAMES = [
   'export_notes',
   // Phase 8 (slice 8.5b): Courses: move a reading to another course
   'drive_file_move',
+  // R112: "Listen with ElevenReader" in the phone viewer's menu
+  'headphones',
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

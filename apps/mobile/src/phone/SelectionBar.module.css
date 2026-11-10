@@ -1,0 +1,106 @@
+/*
+ * The selection action bar: a dark card (the desktop mark-up menu's #282a2c, 16 px corners, a soft shadow) floating over the
+ * pages, placed in script beside the words it acts on. Two rows: the five colours and Copy; then the labelled actions.
+ */
+.bar {
+  position: fixed;
+  inset: 0 auto auto 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  max-inline-size: calc(100vw - 2 * var(--space-2));
+  padding: var(--space-2) var(--space-1) var(--space-1);
+  border-radius: var(--phone-bar-radius);
+  background-color: var(--menu-bg);
+  box-shadow: var(--phone-bar-shadow);
+  color: var(--gm3-sys-color-on-surface);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--phone-fade);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bar[data-shown] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.colours {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+}
+
+.swatch {
+  display: grid;
+  place-items: center;
+  inline-size: var(--phone-swatch);
+  block-size: var(--phone-swatch);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background-color: var(--swatch);
+  color: var(--gm3-sys-color-on-surface-inverse, var(--gm3-sys-color-scrim));
+}
+
+.swatch[aria-pressed='true'] {
+  box-shadow: var(--phone-swatch-ring);
+}
+
+.copy {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  block-size: var(--phone-swatch);
+  margin-inline-start: auto;
+  padding: 0 var(--space-3) 0 var(--space-2);
+  border: 0;
+  border-radius: var(--phone-swatch);
+  background: none;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-text-button);
+}
+
+.copy:active,
+.action:active:not(:disabled) {
+  background-color: var(--icon-btn-hover);
+}
+
+.actions {
+  display: flex;
+}
+
+.action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  inline-size: var(--phone-action-w);
+  min-block-size: var(--space-14);
+  padding: var(--space-1) 0;
+  border: 0;
+  border-radius: var(--space-3);
+  background: none;
+  color: var(--gm3-sys-color-on-surface);
+}
+
+.action:disabled {
+  opacity: 0.38;
+}
+
+.actionLabel {
+  font: var(--type-phone-action);
+  white-space: nowrap;
+}
+
+.why {
+  max-inline-size: calc(5 * var(--phone-action-w));
+  margin: 0;
+  padding: 0 var(--space-2) var(--space-1);
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-tooltip);
+}

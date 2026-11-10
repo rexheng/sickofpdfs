@@ -1,0 +1,86 @@
+/*
+ * The phone viewer's app bar: 56 px on the viewer canvas, 4 px in at each side, 48 px buttons. The name takes what is left,
+ * on one line with an ellipsis. The library status chip shows its icon only here (its menu and its name still say the state).
+ */
+.header {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  block-size: var(--phone-app-bar-h);
+  padding: 0 var(--space-1);
+  background-color: var(--gm3-sys-color-surface-container-low);
+  color: var(--gm3-sys-color-on-surface);
+}
+
+.button {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  inline-size: var(--phone-touch);
+  block-size: var(--phone-touch);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--gm3-sys-color-on-surface-variant);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.button:active {
+  background-color: var(--icon-btn-hover);
+}
+
+.name {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  margin: 0 0 0 var(--space-1);
+  overflow: hidden;
+  font: var(--phone-title-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+
+.status:empty {
+  display: none;
+}
+
+/* The chip's words are read aloud, not shown: the icon alone, in a round 40 px chip. */
+.status button {
+  min-inline-size: var(--space-10);
+  padding-inline: var(--space-2);
+  justify-content: center;
+}
+
+.status button > span:not([aria-hidden]) {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.badge {
+  position: absolute;
+  inset: var(--space-2) var(--space-1) auto auto;
+  min-inline-size: var(--phone-badge-size);
+  block-size: var(--phone-badge-size);
+  padding: 0 var(--space-1);
+  box-sizing: border-box;
+  border-radius: var(--phone-badge-size);
+  background-color: var(--gm3-sys-color-primary);
+  color: var(--gm3-sys-color-on-primary);
+  font: var(--phone-badge-font);
+  text-align: center;
+}

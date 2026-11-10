@@ -2,17 +2,21 @@ package com.sickofpdfs.reader;
 
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
+import android.content.ClipData;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.pm.PackageInfo;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.OpenableColumns;
+import android.util.Base64;
 import android.view.Window;
 import android.webkit.WebView;
 import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResult;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.webkit.WebViewCompat;
@@ -48,9 +52,13 @@ public class SopPlatformPlugin extends Plugin {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private String waiting = null;
 
+    /** R112: the ElevenReader app's package id on Google Play (play.google.com/store/apps/details?id=io.elevenlabs.readerapp). */
+    private static final String ELEVENREADER = "io.elevenlabs.readerapp";
+
     @Override
     public void load() {
         deleteTree(incomingDir());
+        deleteTree(sharedDir());
         androidx.appcompat.app.AppCompatActivity activity = getActivity();
         activity
             .getOnBackPressedDispatcher()
@@ -266,5 +274,121 @@ public class SopPlatformPlugin extends Plugin {
         r.put("version", info == null ? "" : info.versionName);
         r.put("packageName", info == null ? "" : info.packageName);
         call.resolve(r);
+    }
+
+    // ---- R112: "Listen with ElevenReader"
+
+    private File sharedDir() {
+        return new File(getContext().getCacheDir(), "shared");
+    }
+
+    /** A share to ElevenReader of the open PDF: SEND, application/pdf, to its package only. */
+    private Intent elevenReaderIntent() {
+        Intent send = new Intent(Intent.ACTION_SEND);
+        send.setType("application/pdf");
+        send.setPackage(ELEVENREADER);
+        return send;
+    }
+
+    @PluginMethod
+    public void elevenReader(PluginCall call) {
+        PackageManager pm = getContext().getPackageManager();
+        boolean installed;
+        try {
+            pm.getPackageInfo(ELEVENREADER, 0);
+            installed = true;
+        } catch (PackageManager.NameNotFoundException e) {
+            installed = false;
+        }
+        boolean canShare = installed && !pm.queryIntentActivities(elevenReaderIntent(), 0).isEmpty();
+        JSObject r = new JSObject();
+        r.put("installed", installed);
+        r.put("canShare", canShare);
+        call.resolve(r);
+    }
+
+    private final Map<String, File> sharing = new HashMap<>();
+
+    @PluginMethod
+    public void shareBegin(PluginCall call) {
+        String name = call.getString("name", "Document.pdf");
+        io.execute(() -> {
+            synchronized (sharing) {
+                sharing.clear();
+            }
+            deleteTree(sharedDir()); // one shared PDF at a time
+            String id = UUID.randomUUID().toString();
+            File dir = new File(sharedDir(), id);
+            if (!dir.mkdirs()) {
+                call.reject("The PDF could not be written");
+                return;
+            }
+            String safe = name.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_").trim();
+            if (safe.length() > 120) safe = safe.substring(0, 120);
+            if (safe.isEmpty()) safe = "Document";
+            if (!safe.toLowerCase().endsWith(".pdf")) safe = safe + ".pdf";
+            synchronized (sharing) {
+                sharing.put(id, new File(dir, safe));
+            }
+            JSObject r = new JSObject();
+            r.put("id", id);
+            call.resolve(r);
+        });
+    }
+
+    @PluginMethod
+    public void shareChunk(PluginCall call) {
+        String id = call.getString("id", "");
+        String data = call.getString("data", "");
+        io.execute(() -> {
+            File file;
+            synchronized (sharing) {
+                file = sharing.get(id);
+            }
+            if (file == null) {
+                call.reject("No share is open");
+                return;
+            }
+            try (OutputStream out = new FileOutputStream(file, true)) {
+                out.write(Base64.decode(data, Base64.DEFAULT));
+                call.resolve();
+            } catch (Exception e) {
+                call.reject("The PDF could not be written");
+            }
+        });
+    }
+
+    @PluginMethod
+    public void shareEnd(PluginCall call) {
+        String id = call.getString("id", "");
+        File file;
+        synchronized (sharing) {
+            file = sharing.remove(id);
+        }
+        if (file == null || !file.exists()) {
+            call.reject("No share is open");
+            return;
+        }
+        Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", file);
+        Intent send = elevenReaderIntent();
+        send.putExtra(Intent.EXTRA_STREAM, uri);
+        send.putExtra(Intent.EXTRA_TITLE, file.getName());
+        send.setClipData(ClipData.newRawUri(file.getName(), uri));
+        send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        getActivity().runOnUiThread(() -> {
+            try {
+                getActivity().startActivity(send);
+                call.resolve();
+            } catch (ActivityNotFoundException e) {
+                call.reject("ElevenReader did not take the PDF");
+            }
+        });
+    }
+
+    /** The pages hold a text selection (true) or not: Android's own text bar stays closed over it (MainActivity). */
+    @PluginMethod
+    public void setPageSelection(PluginCall call) {
+        MainActivity.pageSelection = Boolean.TRUE.equals(call.getBoolean("on", false));
+        call.resolve();
     }
 }

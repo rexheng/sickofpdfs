@@ -56,6 +56,9 @@ export interface NotesPanelProps {
   options?: MenuItemDef[];
 }
 
+/** A touch screen with no mouse (the phone app): the empty message says how to add a note with a finger. */
+const TOUCH = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches;
+
 const TABS: { id: NotesFilter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'mine', label: 'Mine' },
@@ -229,7 +232,7 @@ function EmptyMessage({ mine, total }: { mine: boolean; total: number }) {
       ) : (
         <>
           <p className={styles.emptyTitle}>No notes yet</p>
-          <p className={styles.emptyHint}>Select some text, then press Ctrl+Alt+M to add a note.</p>
+          <p className={styles.emptyHint}>{TOUCH ? 'Press and hold some text, then tap Comment.' : 'Select some text, then press Ctrl+Alt+M to add a note.'}</p>
         </>
       )}
     </div>

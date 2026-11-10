@@ -8,12 +8,15 @@ import { listenForAppEvents, openWaitingPdf } from './platform/app-events';
 import { takeIncomingPdf } from './platform/incoming';
 import { isNativeApp, SopPlatform } from './platform/native';
 import { PdfClosed } from './phone/PdfClosed';
+import { installTouchSelection } from './phone/touch-select';
 import { installTouchZoom } from './phone/touch-zoom';
+import '../../../packages/ui/src/tokens/phone.css';
 import './phone/viewer-phone.css';
 
 listenForAppEvents();
 if (isNativeApp()) void SopPlatform.setBars({ dark: true }).catch(() => {});
 installTouchZoom();
+installTouchSelection();
 const outcome = await takeIncomingPdf();
 void openWaitingPdf();
 

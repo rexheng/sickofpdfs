@@ -29,6 +29,19 @@ interface SopPlatformPlugin {
   goBack(): Promise<void>;
   /** Colours the status and navigation bars: dark for the viewer, light for the library. */
   setBars(o: { dark: boolean }): Promise<void>;
+  /**
+   * R112: whether the ElevenReader app is on the phone (`installed`) and takes a shared PDF (`canShare`). Asked of Android each
+   * time, by the app's package id.
+   */
+  elevenReader(): Promise<{ installed: boolean; canShare: boolean }>;
+  /** Starts a PDF to share to ElevenReader: a new file in the app's cache, with this name. */
+  shareBegin(o: { name: string }): Promise<{ id: string }>;
+  /** Adds the next piece of the PDF (base64). */
+  shareChunk(o: { id: string; data: string }): Promise<void>;
+  /** Hands the PDF to ElevenReader with Android's share. Rejects when ElevenReader would not take it. */
+  shareEnd(o: { id: string }): Promise<void>;
+  /** The pages hold a text selection or not: Android's own Copy/Share bar is kept closed over one (MainActivity). */
+  setPageSelection(o: { on: boolean }): Promise<void>;
   /** About the phone's web engine: for the app check in Settings. */
   webViewInfo(): Promise<{ version: string; packageName: string }>;
   addListener(event: 'incoming', cb: (e: { pdf: IncomingPdf }) => void): Promise<PluginListenerHandle>;
