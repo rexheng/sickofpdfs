@@ -94,3 +94,4 @@ export {
   countWords, JOINED_HYPHEN, needsOcr, OCR_MAX_WORDS, OCR_MIN_IMAGE_COVERAGE, ocrAngle, ocrLines, ocrPlainText, ocrRects, ocrSource, ocrText, ocrToPageGlyphs, searchOcr,
 } from './ocr';
 export type { OcrEngine, OcrPageKind, OcrPageResult, OcrProgress, OcrService, OcrWord, PageImageSource } from './ocr';
+export { ELEVENREADER_STUDENT_URL, SITE_ORIGIN, waitlistUrl } from './links';

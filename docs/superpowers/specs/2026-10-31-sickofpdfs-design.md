@@ -689,6 +689,50 @@ A fix moves up a tier only after passing the one below.
 
 **Gates per phase.** Each phase has its own gate list in the implementation plan, because some tests (such as the filter test) only exist from a later phase. Speed budgets are measured on the reference laptop: a pinned Windows test machine running stable Chrome at 150% scaling, with 20% tolerance. @Claude is tested against recorded replies in CI and against the real API once per phase gate. Build agents never touch your production cloud; they deploy to staging only.
 
+## Launch (owner, Nov 10)
+
+Release 1 is the core product. It launches in the Chrome Web Store, then on Android (Google Play) and iOS (App Store), with a public site and a waitlist.
+
+- **R107 · Notes panel.**
+  - Drag the panel's inner edge to make it wider or narrower: 280 px up to half the window. The width is remembered on this computer. Double-click the edge to go back to 320 px.
+  - The Notes title and the All / Mine tabs sit close together, with little space above the first card. A spacing choice, Compact or Comfortable, sets the header and card spacing and is remembered.
+  - Cards never show the model name or the cost of an answer. An answer from Think harder keeps a plain "Thought harder" label. Cost stays in Settings → Claude.
+  - Normal text in a card never scrolls sideways. Only a wide formula or code block scrolls, inside its own box.
+- **R108 · Reorder pages.**
+  - Drag a page's thumbnail in the sidebar to move the page. Ctrl- or Shift-click selects several pages to move together. A line shows where they will land.
+  - With a thumbnail focused, Alt+Up and Alt+Down move it. Ctrl+Z undoes a move. "Reset page order" puts the pages back.
+  - The order belongs to the reading. A saved reading keeps it, with backup and sync. For a PDF that is not saved, it lasts only for that tab, and nothing is written.
+  - The original file is never changed. Notes stay on their pages. Page numbers you see (toolbar, Page chips, Find, the Notes panel) follow the new order.
+  - Print and "Download with notes" use the new order. Export notes lists notes in the new order.
+- **R109 · The cloud for the owner, a waitlist for everyone else.**
+  - Release 2 is built and runs on the owner's own Cloudflare account, for the owner only.
+  - For everyone else, Settings → Cloud says "Cloud sync is coming" with "Join the waitlist", which opens the site's waitlist. A small "Connect my own server" link stays.
+  - Sync joins the extension, the Android app and the web library. A note made on the phone shows in the web library and in Chrome, and the other way round.
+  - Nothing is created on Cloudflare without the owner's OK.
+- **R110 · Apps, Android first.**
+  - The same reader on a phone: read, select, the five marks, comments, the library, @Claude and the learning filter.
+  - It is built with Capacitor around the same viewer code. It opens PDFs from "Open with" and the share sheet.
+  - The same privacy rules apply: no network traffic except what the owner turns on.
+  - iOS follows Android.
+- **R111 · The site and the waitlist.**
+  - One public page, plain like 7-Zip's site: white, small system text, a short list of links, a simple download table, and only the words that are needed.
+  - The page shows:
+    - downloads (Chrome Web Store, Android, iOS "soon");
+    - "Trusted by students at UC Berkeley, LSE, NUS, NTU and UCL";
+    - a real count, labelled with what it counts and never typed in by hand;
+    - the ElevenLabs logo with the ElevenReader student offer, marked as sponsor;
+    - the cloud waitlist form;
+    - a privacy page, which the stores require.
+  - The waitlist stores only an email address and the date, on the owner's Cloudflare, behind a bot check. It is never shared.
+  - It is hosted as a Worker with static files and a small database, created only with the owner's OK.
+- **R112 · ElevenReader (owner: "key sponsorship").**
+  - The link is always the owner's ambassador link, `ELEVENREADER_STUDENT_URL` in `packages/core/src/links.ts`.
+  - The site shows it with the logo.
+  - The extension's Tools menu has "Listen with ElevenReader", which opens the offer in a new tab.
+  - The Android app shares the open PDF to the ElevenReader app when it is installed, and otherwise opens the offer.
+  - Nothing goes to ElevenLabs unless the owner clicks.
+- **Launch video.** Made in code with Remotion (React), from real recordings of the extension, the app and the site.
+
 ## Build phases
 
 Three releases and nine phases, each closed by a gauntlet gate and a short demo for you. Phase 0 starts as soon as you approve this spec, and each release gets its own implementation plan.
