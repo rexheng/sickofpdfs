@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 import { all, columnNames, count, dump, ftsHits, openMemoryDb, outboxRows, schemaText, tableNames, triggerNames, userVersion, value } from './db.spec-blind';
 import { wrapStore } from './env.spec-blind';
 import { migrate } from './migrate';
+import { SCHEMA_VERSION } from './schema-v2';
 import { DOC, T_A, commentRow, markRow, textAnchor, threadRow } from './rows.spec-blind';
 import { CLAUDE_META, V1_ANCHORS, V1_LIVE, V1_TABLES, fillV1 } from './v1-data.spec-blind';
 
@@ -37,9 +38,9 @@ describe('upgrade from a filled v1 database', () => {
     expect(before['comments'].rows).toHaveLength(6); // the dataset is really filled: notes, a Claude reply, a draft, a tombstone
 
     // Schema v6 (Phase 4 slice D, 6 Nov) adds @Claude's passage vectors, so the newest version is 6 (v5 was R92's tags, v4 ruling N5's forgotten list).
-    expect(migrate(db as never)).toBe(7);
+    expect(migrate(db as never)).toBe(SCHEMA_VERSION);
 
-    expect(userVersion(db)).toBe(7);
+    expect(userVersion(db)).toBe(SCHEMA_VERSION);
     expect(sameAfter(db, before)).toEqual(before);
     // the new columns hold their documented defaults on old rows
     expect(all(db, 'SELECT DISTINCT author FROM marks').map((r) => r.author)).toEqual(['me']);
@@ -61,13 +62,13 @@ describe('upgrade from a filled v1 database', () => {
     const schema = schemaText(db);
     const rows = Object.fromEntries(V1_TABLES.map((t) => [t, dump(db, t)]));
 
-    expect(migrate(db as never)).toBe(7);
+    expect(migrate(db as never)).toBe(SCHEMA_VERSION);
     expect(schemaText(db)).toBe(schema);
 
     // "run twice": the steps themselves must survive being run again (a restored backup, a downgrade tool, a retry)
     db.exec('PRAGMA user_version = 1');
     expect(() => migrate(db as never)).not.toThrow();
-    expect(userVersion(db)).toBe(7);
+    expect(userVersion(db)).toBe(SCHEMA_VERSION);
     expect(Object.fromEntries(V1_TABLES.map((t) => [t, dump(db, t)]))).toEqual(rows);
     expect(schemaText(db)).toBe(schema);
   });
@@ -175,7 +176,7 @@ describe('an upgrade that cannot finish', () => {
       expect(sameAfter(db, before)).toEqual(before);
     } else {
       expect(failed).toBe(false);
-      expect(userVersion(db)).toBe(7);
+      expect(userVersion(db)).toBe(SCHEMA_VERSION);
       expect(columnNames(db, 'marks')).toContain('author');
       expect(columnNames(db, 'threads')).toContain('draft_of_tab');
       expect(sameAfter(db, before)).toEqual(before);
@@ -222,8 +223,8 @@ describe('a database from a newer version', () => {
 describe('a new database', () => {
   it('lands on v2 with the contracted columns, the draft index and the author constraint', async () => {
     const db = await openMemoryDb();
-    expect(migrate(db as never)).toBe(7);
-    expect(migrate(db as never)).toBe(7);
+    expect(migrate(db as never)).toBe(SCHEMA_VERSION);
+    expect(migrate(db as never)).toBe(SCHEMA_VERSION);
     expect(columnNames(db, 'marks')).toContain('author');
     expect(columnNames(db, 'threads')).toContain('draft_of_tab');
     expect(all(db, "SELECT name FROM sqlite_schema WHERE type = 'index' AND tbl_name = 'comments'").map((r) => r.name)).toContain('comments_drafts');

@@ -19,6 +19,7 @@ import { count, openMemoryDb, outboxRows, rowsMentioning, value } from './db.spe
 import { freshStore, type StoreEnv } from './env.spec-blind';
 import { ALIAS_1, GHOST, ZERO_STATS, assertIndexesSound } from './library.spec-blind';
 import { migrate } from './migrate';
+import { SCHEMA_VERSION } from './schema-v2';
 import { DOC, SAMPLE_INPUT, commentRow, markRow, threadRow } from './rows.spec-blind';
 
 type Op = Parameters<StoreEnv['api']['writeAnnotations']>[0][number];
@@ -209,11 +210,11 @@ describe('opening the library file', () => {
   it('migrate lands on schema v2 with the safety settings the spec asks for: foreign keys on, secure delete on, synchronous FULL', async () => {
     const db = await openMemoryDb();
     // Ruling N5 (backup re-check, 2 Nov): schema v4 adds the local forgotten list, so the newest version is 4 (was 3).
-    expect(migrate(db)).toBe(7); // v7 since Phase 7 (7 Nov): the recognised text of scanned pages
+    expect(migrate(db)).toBe(SCHEMA_VERSION); // the current schema version, whatever it is
     expect(value(db, 'PRAGMA foreign_keys'), 'deleting a document must cascade').toBe(1);
     expect(value(db, 'PRAGMA secure_delete'), 'R13: deleted rows are overwritten in the file').toBe(1);
     expect(value(db, 'PRAGMA synchronous'), 'FULL: a committed note is on disk').toBe(2);
-    expect(migrate(db), 'opening again changes nothing').toBe(7);
+    expect(migrate(db), 'opening again changes nothing').toBe(SCHEMA_VERSION);
     expect(value(db, 'PRAGMA foreign_keys')).toBe(1);
   });
 });

@@ -22,6 +22,7 @@ import type { CommentRow, MarkRow, PageFigure, ThreadRow } from '../../../../pac
 import { all, count, ftsHits, outboxRows, reopen, rowsMentioning, userVersion, value } from './db.spec-blind';
 import { freshStore, saveSecondDocument, wrapStore, type StoreEnv } from './env.spec-blind';
 import { migrate } from './migrate';
+import { SCHEMA_VERSION } from './schema-v2';
 import { ANCHORS, DOC, DOC2, T_A, T_B, T_C, cid, commentRow, draftRow, markRow, pageOf, textAnchor, threadRow } from './rows.spec-blind';
 
 type Op = Parameters<StoreEnv['api']['writeAnnotations']>[0][number];
@@ -368,8 +369,8 @@ describe('reload: only what was committed survives, and it survives whole', () =
 
     const db2 = await reopen(env.db);
     // Ruling N5 (backup re-check, 2 Nov): schema v4 adds the local forgotten list; v5 the tags (R92); v6 @Claude's passage vectors (6 Nov).
-    expect(migrate(db2 as never)).toBe(7);
-    expect(userVersion(db2)).toBe(7);
+    expect(migrate(db2 as never)).toBe(SCHEMA_VERSION);
+    expect(userVersion(db2)).toBe(SCHEMA_VERSION);
     const { api } = wrapStore(db2);
 
     const notes = await api.listAnnotations(DOC);
