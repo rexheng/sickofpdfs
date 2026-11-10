@@ -8,13 +8,13 @@ import styles from './PrintDialog.module.css';
 /** What Ctrl+P asks about (R99): the document's pages, the page in view, and whether it has marks that could print. */
 export interface PrintAsk {
   pageCount: number;
-  /** The page in view, 0-based ("This page"). */
+  /** The page in view, 0-based ("This page"), counted as the pages are shown (R108). */
   currentPage: number;
   /** The document has marks: the "Print my marks too" box shows. */
   marks: boolean;
 }
 
-/** The answer: the pages to print (0-based, in order) and whether the marks print on them. */
+/** The answer: the pages to print (0-based places in the order shown, in that order) and whether the marks print on them. */
 export interface PrintChoice {
   pages: number[];
   withMarks: boolean;

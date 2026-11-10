@@ -16,6 +16,8 @@ export interface FiguresTabItem {
   /** "Figure 3", "Table IV", or "Figure" for one without a caption. */
   label: string;
   pageIndex: number;
+  /** R108: the page number shown for it (the reader's page order); pageIndex + 1 when not given. */
+  pageNumber?: number;
   /** An object or data URL drawn on this computer; null until it is drawn. */
   thumbnail: string | null;
 }
@@ -79,7 +81,7 @@ export function FiguresTab({ items, progress, selectedKey, onSelect, onShow }: F
                 data-figure-key={item.key}
                 data-figure-index={i}
                 aria-current={item.key === selectedKey ? 'true' : undefined}
-                aria-label={`${item.label}, page ${item.pageIndex + 1}`}
+                aria-label={`${item.label}, page ${item.pageNumber ?? item.pageIndex + 1}`}
                 tabIndex={i === tabStop ? 0 : -1}
                 // A click goes to the figure without taking the focus, so the reading keys keep moving the pages.
                 onMouseDown={(e) => e.preventDefault()}
@@ -96,7 +98,7 @@ export function FiguresTab({ items, progress, selectedKey, onSelect, onShow }: F
                 )}
                 <span className={styles.text}>
                   <span className={styles.label}>{item.label}</span>
-                  <span className={styles.page}>Page {item.pageIndex + 1}</span>
+                  <span className={styles.page}>Page {item.pageNumber ?? item.pageIndex + 1}</span>
                 </span>
               </button>
             </li>

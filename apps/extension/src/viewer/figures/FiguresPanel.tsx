@@ -13,6 +13,8 @@ import { goToSpot } from '../notes-panel/navigate';
 import { figureName, figureRect, type FoundFigure } from './anchors';
 import { thumbKey, thumbnailBlob } from './images';
 import { controllerOf } from './registry';
+import { positionOfPage, shownPageNumber } from '@sop/core/page-order';
+import { usePageOrder } from '../page-order/shown';
 
 /** Waits for an idle moment (at most a second). */
 function idle(): { wait: Promise<void>; cancel: () => void } {
@@ -65,13 +67,16 @@ export function FiguresPanel({ host }: { host: NotesHost }) {
     searched++;
     for (const figure of list) if (isOutlined(figure)) found.push({ page, figure, rect: figureRect(figure, size) });
   }
+  // R108: in the order the pages are shown, with the page numbers shown.
+  const order = usePageOrder();
+  if (order !== null) found.sort((a, b) => positionOfPage(order, a.page) - positionOfPage(order, b.page));
   const byKey = new Map(found.map((f) => [keyOf(f), f]));
   const items: FiguresTabItem[] = found.map((f) => {
     const key = keyOf(f);
     const size = pages[f.page];
     const thumbnail =
       wanted.has(key) && size !== undefined ? c.thumbnails.get(thumbKey(f.page, f.rect, null), () => thumbnailBlob(host.backend, host.doc, f.page, size, f.rect, null)) : null;
-    return { key, label: figureName(f.figure.label, f.figure.kind), pageIndex: f.page, thumbnail };
+    return { key, label: figureName(f.figure.label, f.figure.kind), pageIndex: f.page, pageNumber: shownPageNumber(order, f.page), thumbnail };
   });
 
   const onShow = useCallback((key: string) => setWanted((w) => (w.has(key) ? w : new Set([...w, key]))), []);

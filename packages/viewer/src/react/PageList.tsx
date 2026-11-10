@@ -8,7 +8,8 @@
 import { type JSX, type ReactNode, type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import type { OpenResult, PageSize, PdfBackend, Rotation } from '../backend/types';
-import { computeLayout, type PageBox, type PageLayout, visibleRange } from '../layout/page-layout';
+import { pageAfter } from '@sop/core/page-order';
+import { boxAt, computeLayout, type PageBox, type PageLayout, pageAt, positionIn, visibleRange } from '../layout/page-layout';
 import { contentPointToPage, pagePointToContent, type PagePoint } from '../layout/page-space';
 import { PAGE_GAP, pageDeviceSize, resolveScale, rowsOf, type Spread, stepZoom, wheelZoom, type ZoomMode } from '../layout/zoom';
 import type { RenderScheduler } from '../render/scheduler';
@@ -208,11 +209,14 @@ function spreadClearance(viewport: Viewport, spread: Spread, sideClearance: numb
   return { less: 2 * sideClearance - bar, shift: bar / 2 };
 }
 
-function scaleFor(zoom: ZoomMode, viewport: Viewport, pages: PageSize[], fitPage: number, viewRotation: Rotation, spread: Spread): number {
+function scaleFor(zoom: ZoomMode, viewport: Viewport, pages: PageSize[], fitPage: number, viewRotation: Rotation, spread: Spread, order: readonly number[] | null): number {
   if (zoom.kind !== 'fit-page') return resolveScale(zoom, viewport, pages, { viewRotation, spread });
+  // Rows are positions (R108): the row that shows the page, and the pages shown in it.
+  const shown = { order: order ?? undefined };
   const rows = rowsOf(pages.length, spread);
-  const row = rows.find((r) => r.includes(fitPage)) ?? rows[0] ?? [];
-  return resolveScale(zoom, viewport, row.map((i) => pages[i]), { viewRotation, spread });
+  const at = positionIn(shown, fitPage);
+  const row = rows.find((r) => r.includes(at)) ?? rows[0] ?? [];
+  return resolveScale(zoom, viewport, row.map((p) => pages[pageAt(shown, p)]), { viewRotation, spread });
 }
 
 /** How far the pages of `l` must move left for `reserve` CSS px beside them (beyond PAGE_GAP), and whether they can. */
@@ -246,29 +250,51 @@ function withReserve(l: PageLayout, viewportWidth: number, r: Reserve): PageLayo
  * sizes a page to whole device pixels and puts it on one), so the pair is 16 px apart on screen, not 16 ± 1.
  */
 function withSpreadGaps(l: PageLayout, pages: PageSize[], o: { viewRotation: Rotation; scale: number; dpr: number }): PageLayout {
-  const boxes = l.boxes.map((b) => ({ ...b }));
-  for (let i = 1; i < boxes.length; i++) {
-    const before = boxes[i - 1];
-    if (boxes[i].top !== before.top) continue;
+  const out = { ...l, boxes: l.boxes.map((b) => ({ ...b })) };
+  // Side by side as shown (R108: positions, not page indices).
+  for (let p = 1; p < out.boxes.length; p++) {
+    const before = boxAt(out, p - 1);
+    const box = boxAt(out, p);
+    if (box.top !== before.top) continue;
     const drawnWidth = pageDeviceSize(pages[before.index], o.viewRotation, o.scale, o.dpr).width / o.dpr;
-    boxes[i].left = snapToDevice(before.left, o.dpr) + drawnWidth + PAGE_GAP;
+    box.left = snapToDevice(before.left, o.dpr) + drawnWidth + PAGE_GAP;
   }
-  return { ...l, boxes };
+  return out;
+}
+
+/**
+ * The mounted pages' DOM order: the pages in `next` (near the view, in the order shown), with every page that was
+ * mounted before kept in its old order, so React moves no element; a newly mounted page goes just after the page shown
+ * before it (or first). Without moved pages this is `next` itself; after a move it becomes it again as pages scroll by.
+ */
+export function stableMountOrder(prev: readonly number[], next: readonly number[]): number[] {
+  const wanted = new Set(next);
+  const out = prev.filter((p) => wanted.has(p));
+  if (out.length === next.length) return out;
+  const have = new Set(out);
+  for (let k = 0; k < next.length; k++) {
+    const p = next[k];
+    if (have.has(p)) continue;
+    const before = k > 0 ? out.indexOf(next[k - 1]) : -1;
+    out.splice(before + 1, 0, p);
+    have.add(p);
+  }
+  return out;
 }
 
 /** The page whose box holds content point `c`, or the nearest one. */
 function nearestPage(layout: PageLayout, c: { x: number; y: number }): number {
   const near = visibleRange(layout, c.y - 1, 2, 1);
   const candidates = near.last >= near.first ? near : { first: 0, last: layout.boxes.length - 1 };
-  let best = candidates.first;
+  let best = pageAt(layout, candidates.first);
   let bestDistance = Infinity;
-  for (let i = candidates.first; i <= candidates.last; i++) {
-    const b = layout.boxes[i];
+  for (let p = candidates.first; p <= candidates.last; p++) {
+    const b = boxAt(layout, p);
     const dx = Math.max(b.left - c.x, 0, c.x - (b.left + b.width));
     const dy = Math.max(b.top - c.y, 0, c.y - (b.top + b.height));
     const d = Math.hypot(dx, dy);
     if (d < bestDistance) {
-      best = i;
+      best = b.index;
       bestDistance = d;
     }
   }
@@ -296,6 +322,8 @@ export function PageList({
   const viewRotation = useViewerState(store, (s) => s.viewRotation);
   const spread = useViewerState(store, (s) => s.spread);
   const presenting = useViewerState(store, (s) => s.presenting);
+  // R108: the order the reader put the pages in. A move re-lays the pages out; nothing is drawn again.
+  const pageOrder = useViewerState(store, (s) => s.pageOrder);
   const presentingOn = presenting !== null;
   const [viewport, setViewport] = useState<Viewport | null>(null);
   // CSS px kept free at the right for the notes margin or panel; it moves the pages, never resizes them (setReserveRight).
@@ -307,6 +335,8 @@ export function PageList({
   const overlayRef = useRef<HTMLDivElement>(null);
   const [dpr, setDpr] = useState(() => window.devicePixelRatio || 1);
   const [range, setRange] = useState({ first: 0, last: -1 });
+  /** The pages mounted at the last render, in their DOM order (stableMountOrder). */
+  const lastMounted = useRef<number[]>([]);
   const [driver] = useState(() => new PageDriver(scheduler, pages, store.get().currentPage));
   const fitPage = useRef(store.get().currentPage);
   const pendingAnchor = useRef<Anchor | null>(null);
@@ -325,10 +355,10 @@ export function PageList({
     ? store.get().scale
     : presenting
       ? presentationScale(pages, presenting.page, viewport, viewRotation)
-      : scaleFor(zoom, fitViewport(zoom, viewport, reserve, spread, spreadSideClearance), pages, fitPage.current, viewRotation, spread);
+      : scaleFor(zoom, fitViewport(zoom, viewport, reserve, spread, spreadSideClearance), pages, fitPage.current, viewRotation, spread, pageOrder);
   /** The layout at `s` in a page area of size `vp`, before the room at the right moves the pages. */
   const baseFor = (vp: Viewport, s: number): PageLayout => {
-    const c = computeLayout(pages, { scale: s, viewRotation, spread, viewportWidth: vp.width });
+    const c = computeLayout(pages, { scale: s, viewRotation, spread, viewportWidth: vp.width, order: pageOrder });
     const l = spread === 'two-page' ? withSpreadGaps(c, pages, { viewRotation, scale: s, dpr }) : c;
     // A fitted spread is centred in the whole reading area, the scroll bar's strip included (spreadClearance).
     const { shift } = zoom.kind === 'scale' ? { shift: 0 } : spreadClearance(vp, spread, spreadSideClearance);
@@ -338,15 +368,15 @@ export function PageList({
   const base = useMemo(
     () => (!viewport || presentingOn ? null : baseFor(viewport, scale)),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- baseFor reads spread, scale, viewRotation, dpr and the zoom, listed here
-    [pages, scale, viewRotation, spread, viewport, presentingOn, dpr, zoom.kind, spreadSideClearance],
+    [pages, scale, viewRotation, spread, viewport, presentingOn, dpr, zoom.kind, spreadSideClearance, pageOrder],
   );
   const layout = useMemo(
-    () => (!viewport ? null : presentingOn ? presentationLayout(pages, { scale, viewRotation, viewport }) : base && withReserve(base, viewport.width, reserve)),
-    [pages, scale, viewRotation, viewport, reserve, presentingOn, base],
+    () => (!viewport ? null : presentingOn ? presentationLayout(pages, { scale, viewRotation, viewport, order: pageOrder }) : base && withReserve(base, viewport.width, reserve)),
+    [pages, scale, viewRotation, viewport, reserve, presentingOn, base, pageOrder],
   );
-  const latest = useRef({ layout, base, viewport, scale, viewRotation, spread, dpr, reserve, presenting: presentingOn, sideClearance: spreadSideClearance });
+  const latest = useRef({ layout, base, viewport, scale, viewRotation, spread, dpr, reserve, presenting: presentingOn, sideClearance: spreadSideClearance, pageOrder });
   useLayoutEffect(() => {
-    latest.current = { layout, base, viewport, scale, viewRotation, spread, dpr, reserve, presenting: presentingOn, sideClearance: spreadSideClearance };
+    latest.current = { layout, base, viewport, scale, viewRotation, spread, dpr, reserve, presenting: presentingOn, sideClearance: spreadSideClearance, pageOrder };
   });
 
   /** Where page `index` starts on screen, in client px, with the layout the page list has now (no glide counted). */
@@ -377,6 +407,19 @@ export function PageList({
         const s = store.get();
         const v = latest.current;
         if (s.presenting !== null || v.presenting || pendingAnchor.current) return; // presentation places its own page
+        if (s.pageOrder !== v.pageOrder && s.viewRotation === v.viewRotation && s.spread === v.spread) {
+          // R108: pages moved. The page in view stays where it is on screen, wherever it went in the list, so the reader
+          // keeps their place (and a page they moved stays in front of them). Its own point at the top of the view is
+          // kept, even in the gap above it, so a page shown from its top is still shown from its top. At the very top of
+          // the document the view stays at the top: a reading opened with its saved order starts at its first page.
+          const el = scrollerRef.current;
+          const box = v.layout?.boxes[s.currentPage];
+          if (el && box) {
+            const c = { x: el.scrollLeft + el.clientWidth / 2, y: el.scrollTop };
+            pendingAnchor.current = { pageIndex: s.currentPage, point: contentPointToPage(box, pages[s.currentPage], c), dx: el.clientWidth / 2, dy: 0, top: el.scrollTop <= 0 };
+          }
+          return;
+        }
         if (s.viewRotation === v.viewRotation && s.spread === v.spread) return;
         const el = scrollerRef.current;
         const kept = turnAnchor.current;
@@ -421,7 +464,7 @@ export function PageList({
       if (!el || !sizer || !v.layout || !v.viewport || v.presenting || v.layout.boxes.length === 0) return;
       const next: Viewport = { width: el.clientWidth, height: el.clientHeight, gutter: Math.max(0, el.offsetWidth - el.clientWidth) };
       const z = store.get().zoom;
-      const s = scaleFor(z, fitViewport(z, next, v.reserve, v.spread, v.sideClearance), pages, fitPage.current, v.viewRotation, v.spread);
+      const s = scaleFor(z, fitViewport(z, next, v.reserve, v.spread, v.sideClearance), pages, fitPage.current, v.viewRotation, v.spread, store.get().pageOrder);
       const l = withReserve(baseFor(next, s), next.width, v.reserve);
       const k = s / v.scale;
       const c = { x: el.scrollLeft + next.width / 2, y: el.scrollTop };
@@ -553,10 +596,13 @@ export function PageList({
     // Where a page is drawn: PageView puts its box on whole device pixels, up to half a device pixel from the layout's.
     const drawn = (b: PageBox): PageBox => ({ ...b, left: snapToDevice(b.left, latest.current.dpr), top: snapToDevice(b.top, latest.current.dpr) });
     const moved = () => driver.onScroll(true);
+    /** The order shown now (R108): positions to pages and back. */
+    const shown = () => ({ order: store.get().pageOrder ?? undefined });
     const neighbour = (dir: 1 | -1) => {
       const rows = rowsOf(pages.length, latest.current.spread);
-      const at = rows.findIndex((r) => r.includes(store.get().currentPage));
-      return rows[Math.min(rows.length - 1, Math.max(0, at + dir))]?.[0] ?? 0;
+      const now = positionIn(shown(), store.get().currentPage);
+      const at = rows.findIndex((r) => r.includes(now));
+      return pageAt(shown(), rows[Math.min(rows.length - 1, Math.max(0, at + dir))]?.[0] ?? 0);
     };
     /** Presentation mode: shows page `index` (clamped); resolves once its full render is on screen. */
     const present = (index: number): Promise<void> | null => {
@@ -566,7 +612,10 @@ export function PageList({
       if (page !== now.page) flushSync(() => store.set({ presenting: { page } }));
       return driver.whenPainted(page);
     };
-    const step = (dir: number) => present((store.get().presenting?.page ?? 0) + Math.sign(dir));
+    const step = (dir: number) => {
+      const now = store.get().presenting;
+      return now === null ? null : present(pageAfter(store.get().pageOrder, pages.length, now.page, Math.sign(dir)));
+    };
     const self: PageListApi = {
       zoomTo(mode, anchor) {
         const v = latest.current;
@@ -576,7 +625,7 @@ export function PageList({
           store.set({ zoom: mode });
           return;
         }
-        const next = scaleFor(mode, fitViewport(mode, v.viewport, v.reserve, v.spread, v.sideClearance), pages, fitPage.current, v.viewRotation, v.spread);
+        const next = scaleFor(mode, fitViewport(mode, v.viewport, v.reserve, v.spread, v.sideClearance), pages, fitPage.current, v.viewRotation, v.spread, store.get().pageOrder);
         if (next !== v.scale) pendingAnchor.current = anchorAt(anchor);
         flushSync(() => store.set({ zoom: mode, scale: next }));
       },
@@ -614,14 +663,14 @@ export function PageList({
         }
       },
       goToStart() {
-        if (present(0)) return;
+        if (present(pageAt(shown(), 0))) return;
         const s = el();
         if (!s) return;
         s.scrollTop = 0;
         moved();
       },
       goToEnd() {
-        if (present(pages.length - 1)) return;
+        if (present(pageAt(shown(), pages.length - 1))) return;
         const s = el();
         if (!s) return;
         s.scrollTop = s.scrollHeight;
@@ -752,8 +801,13 @@ export function PageList({
   }, [driver]);
 
   const deviceSizes = useMemo(() => pages.map((p) => pageDeviceSize(p, viewRotation, scale, dpr)), [pages, viewRotation, scale, dpr]);
-  const mounted: number[] = [];
-  if (layout) for (let i = range.first; i <= Math.min(range.last, layout.boxes.length - 1); i++) mounted.push(i);
+  // The pages near the view, in the order they are shown (R108), so the DOM order is the reading order (a screen reader,
+  // Tab). A page already on the page keeps its place in the DOM when pages are moved (stableMountOrder): moving its
+  // element would make the browser lay its whole text layer out again, which is a visible hitch on a long page.
+  const shownNear: number[] = [];
+  if (layout) for (let p = range.first; p <= Math.min(range.last, layout.boxes.length - 1); p++) shownNear.push(pageAt(layout, p));
+  const mounted = stableMountOrder(lastMounted.current, shownNear);
+  lastMounted.current = mounted;
   return (
     <div
       ref={scrollerRef}

@@ -20,21 +20,27 @@ type Pages = Pick<PageScroller, 'scrollTop' | 'pageBoxes'>;
 /** The reader's position: the page under the top edge of the view (or the next one, in a gap), how far down it, the zoom. */
 export function viewPosition(api: Pages, scale: number): ViewPosition {
   const top = api.scrollTop();
-  const boxes = api.pageBoxes();
-  if (boxes.length === 0) return { pageIndex: 0, offset: 0, scale };
-  // Boxes are in page order and their tops never go back up: the last box that starts at or above the view's top,
-  // unless the view's top is in the gap below it.
-  let lo = 0;
-  let hi = boxes.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (boxes[mid].top <= top) lo = mid;
-    else hi = mid - 1;
-  }
-  let b = boxes[lo];
-  while (b.index > 0 && boxes[b.index - 1].top === b.top) b = boxes[b.index - 1]; // the first page of a two-page row
-  if (top > b.top + b.height && b.index + 1 < boxes.length) b = boxes[b.index + 1];
+  const b = pageUnderTop(api.pageBoxes(), top);
+  if (b === null) return { pageIndex: 0, offset: 0, scale };
   return { pageIndex: b.index, offset: (top - b.top) / b.height, scale };
+}
+
+/**
+ * The box under `top` (a scroll position): the last row that starts at or above it, unless `top` is in the gap below
+ * that row (then the next row), and the first page of a two-page row. `boxes[i]` is page i's box; their tops follow the
+ * order the pages are shown in (R108), which need not be page order, so they are searched rather than bisected.
+ */
+export function pageUnderTop(boxes: readonly PageBox[], top: number): PageBox | null {
+  let b: PageBox | null = null;
+  let next: PageBox | null = null;
+  for (const box of boxes) {
+    if (box.top <= top) {
+      if (b === null || box.top > b.top || (box.top === b.top && box.left < b.left)) b = box;
+    } else if (next === null || box.top < next.top || (box.top === next.top && box.left < next.left)) next = box;
+  }
+  if (b === null) return next;
+  if (top > b.top + b.height && next !== null) return next;
+  return b;
 }
 
 /** Back to a position: its zoom (only if it changed), then its page and offset. */

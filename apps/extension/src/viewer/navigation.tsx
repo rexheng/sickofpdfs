@@ -19,6 +19,7 @@ import { type PageListApi, PageLinks } from '@sop/viewer/react';
 import { type ReactNode, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { OpenedDocument } from './open-document';
 import { installShortcuts } from './shortcuts';
+import { shownPage } from './page-order/shown';
 
 /** Below this window width the rail starts closed, and when opened it lies over the pages (NavRail.module.css). */
 export const RAIL_OVERLAY_BELOW_PX = 1100;
@@ -131,7 +132,8 @@ export function useReaderNavigation({ backend, doc, store, api }: NavigationDeps
     [api, jumps, store],
   );
   const renderPage = useCallback(
-    (box: PageBox) => <PageLinks source={links} box={box} page={pages[box.index]} onInternal={followLink} />,
+    // R108: a link names the page it goes to by the number shown (its target stays the file's page).
+    (box: PageBox) => <PageLinks source={links} box={box} page={pages[box.index]} onInternal={followLink} pageNumber={shownPage} />,
     [links, pages, followLink],
   );
   const onPage = useCallback((index: number) => void api.current?.goToPage(index), [api]);

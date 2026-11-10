@@ -12,12 +12,17 @@
 //   smooth while a query runs over cached text.
 // - A new query cancels the old search (after a short pause in typing).
 //
+// R108: with a page order, "pages" above means the pages as the reader sees them: the search runs out from the page in
+// view in that order, the hits are numbered in it, and Enter steps through them in it. A new order starts the open search
+// again (orderChanged); the pages' text is kept, so that is quick.
+//
 // For speed checks it leaves performance marks: sop:find-start (a query's search begins, after the typing pause),
 // sop:find-first-hit (its first hits are in) and sop:find-done (every page searched).
 //
 // Hits carry no rects (`rects` is empty): the highlights and the jump read the line rects of the pages in view
 // (markLineRects), the same rects a selection is painted with.
 import type { DocHandle, PdfBackend, SearchHit } from '../backend/types';
+import { positionOfPage } from '@sop/core/page-order';
 import type { FindController, FindState } from '../contracts';
 import { buildFindText, findKey, findPattern, type FindText, matchFindText } from './find-text';
 
@@ -36,13 +41,19 @@ export interface FindControllerOptions {
    * Default: the engine's getPageChars.
    */
   chars?: (pageIndex: number) => Promise<string>;
+  /** R108: the reader's page order (the page at each position; null for the file's own), read when a search starts. */
+  order?: () => readonly number[] | null;
 }
 
-/** One query's search: the pages searched so far are the run lo..hi, which always holds the start page. */
+/**
+ * One query's search: the pages searched so far are the run lo..hi, which always holds the start page. `start`, `lo` and
+ * `hi` are positions in `order` (R108: the order the pages were shown in when the search started).
+ */
 interface Run {
   query: string;
   key: string;
   pattern: RegExp;
+  order: readonly number[] | null;
   start: number;
   lo: number;
   /** hi < lo until the first page is searched. */
@@ -68,21 +79,26 @@ function yieldToPage(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-/** Index of the first hit at or after (pageIndex, start) in hits sorted by page then start. */
-function lowerBound(hits: readonly SearchHit[], pageIndex: number, start: number): number {
+/** The page at a position of a run's order, and the position of a page. */
+const pageAt = (order: readonly number[] | null, position: number): number => (order ? order[position] : position);
+const placeOf = (order: readonly number[] | null, pageIndex: number): number => positionOfPage(order, pageIndex);
+
+/** Index of the first hit at or after (position, start) in hits sorted by position (as shown) then start. */
+function lowerBound(hits: readonly SearchHit[], order: readonly number[] | null, position: number, start: number): number {
   let lo = 0;
   let hi = hits.length;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
     const h = hits[mid];
-    if (h.pageIndex < pageIndex || (h.pageIndex === pageIndex && h.start < start)) lo = mid + 1;
+    const at = placeOf(order, h.pageIndex);
+    if (at < position || (at === position && h.start < start)) lo = mid + 1;
     else hi = mid;
   }
   return lo;
 }
 
-function indexOfHit(hits: readonly SearchHit[], h: SearchHit): number {
-  const i = lowerBound(hits, h.pageIndex, h.start);
+function indexOfHit(hits: readonly SearchHit[], order: readonly number[] | null, h: SearchHit): number {
+  const i = lowerBound(hits, order, placeOf(order, h.pageIndex), h.start);
   return i < hits.length && hits[i].pageIndex === h.pageIndex && hits[i].start === h.start ? i : -1;
 }
 
@@ -136,7 +152,7 @@ export function createFindController(
     if (!r.dirty) return;
     const out: SearchHit[] = [];
     if (r.lo <= r.hi) for (let p = r.lo; p <= r.hi; p++) {
-      const hs = r.pageHits.get(p);
+      const hs = r.pageHits.get(pageAt(r.order, p));
       if (hs) for (const h of hs) out.push(h);
     }
     r.hits = out;
@@ -156,14 +172,14 @@ export function createFindController(
       return;
     }
     if (r.current === null) {
-      const i = lowerBound(hits, r.start, 0);
+      const i = lowerBound(hits, r.order, r.start, 0);
       if (i < hits.length) r.current = hits[i];
       else if (r.complete) r.current = hits[0];
       if (r.current !== null) r.pending = 0;
       return;
     }
     if (r.pending === 0) return;
-    const at = indexOfHit(hits, r.current);
+    const at = indexOfHit(hits, r.order, r.current);
     if (r.pending === 1) {
       if (at + 1 < hits.length) r.current = hits[at + 1];
       else if (r.complete) r.current = hits[0];
@@ -179,7 +195,7 @@ export function createFindController(
   function snapshot(r: Run | null, query: string): FindState {
     if (r === null) return { ...EMPTY, query };
     settle(r);
-    const s: FindState = { query: r.query, hits: r.hits, current: r.current === null ? -1 : indexOfHit(r.hits, r.current), complete: r.complete };
+    const s: FindState = { query: r.query, hits: r.hits, current: r.current === null ? -1 : indexOfHit(r.hits, r.order, r.current), complete: r.complete };
     if (r.complete && r.failed === 0 && r.letters === 0) s.noText = true;
     return s;
   }
@@ -217,7 +233,8 @@ export function createFindController(
     let sliceFrom = now();
     let first = true;
     while (!(r.lo === 0 && r.hi === pageCount - 1)) {
-      const page = nextPage(r);
+      const position = nextPage(r);
+      const page = pageAt(r.order, position);
       let t = texts.get(page) ?? null;
       if (t === null) {
         t = await load(page);
@@ -239,9 +256,9 @@ export function createFindController(
           r.dirty = true;
         }
       }
-      if (r.hi < r.lo) r.lo = r.hi = page;
-      else if (page > r.hi) r.hi = page;
-      else r.lo = page;
+      if (r.hi < r.lo) r.lo = r.hi = position;
+      else if (position > r.hi) r.hi = position;
+      else r.lo = position;
       settle(r);
       if (!hadHits && r.hits.length > 0) performance.mark('sop:find-first-hit');
       notify(first || (!hadHits && r.hits.length > 0) || r.current !== wasCurrent);
@@ -258,7 +275,7 @@ export function createFindController(
   }
 
   /** Searches for `query` now. True when that starts a new search (not the same words in another case or spacing). */
-  function begin(query: string): boolean {
+  function begin(query: string, again = false): boolean {
     typed = null;
     clearTimeout(typingTimer);
     const key = findKey(query);
@@ -268,16 +285,19 @@ export function createFindController(
       notify(true);
       return true;
     }
-    if (run !== null && run.key === key) {
+    if (run !== null && run.key === key && !again) {
       run.query = query;
       notify(true);
       return false;
     }
-    const start = Math.min(pageCount - 1, Math.max(0, Math.round(startPage())));
+    const order = o.order?.() ?? null;
+    const shown = order !== null && order.length === pageCount ? order : null;
+    const start = placeOf(shown, Math.min(pageCount - 1, Math.max(0, Math.round(startPage()))));
     const r: Run = {
       query,
       key,
       pattern: findPattern(key),
+      order: shown,
       start,
       lo: 0,
       hi: -1,
@@ -311,7 +331,7 @@ export function createFindController(
     if (r === null) return null;
     settle(r);
     if (r.current === null || r.hits.length === 0) return null;
-    const at = indexOfHit(r.hits, r.current);
+    const at = indexOfHit(r.hits, r.order, r.current);
     const to = at + dir;
     if (to >= 0 && to < r.hits.length) r.current = r.hits[to];
     else if (r.complete) r.current = dir === 1 ? r.hits[0] : r.hits[r.hits.length - 1];
@@ -350,7 +370,7 @@ export function createFindController(
       loads.delete(pageIndex);
       const r = run;
       // A page the open search has passed is searched again with its new text; one it has not reached is read when it gets there.
-      if (r === null || disposed || r.hi < r.lo || pageIndex < r.lo || pageIndex > r.hi) return;
+      if (r === null || disposed || r.hi < r.lo || placeOf(r.order, pageIndex) < r.lo || placeOf(r.order, pageIndex) > r.hi) return;
       void load(pageIndex).then((t) => {
         if (r !== run || disposed || t === null) return;
         r.letters += t.letters - (old?.letters ?? 0);
@@ -362,6 +382,11 @@ export function createFindController(
         r.dirty = true;
         notify(true);
       });
+    },
+    orderChanged() {
+      // The hits are numbered and stepped through in the order shown: the open search starts again in the new one.
+      if (disposed || run === null) return;
+      begin(run.query, true);
     },
     dispose() {
       disposed = true;

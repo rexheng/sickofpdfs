@@ -183,11 +183,13 @@ export class RenderScheduler {
   }
 
   /**
-   * Cancels queued work for pages outside [first, last] (each rejects with AbortError). Running work finishes, and idle
-   * previews (requestIdlePreview) stay queued.
+   * Cancels queued work for pages outside [first, last], or outside the set given (R108: pages near each other on screen
+   * after a reorder are not a range), each rejecting with AbortError. Running work finishes, and idle previews
+   * (requestIdlePreview) stay queued.
    */
-  retain(range: { first: number; last: number }): void {
-    this.cancelQueued((j) => !j.idle && (j.pageIndex < range.first || j.pageIndex > range.last));
+  retain(range: { first: number; last: number } | ReadonlySet<number>): void {
+    if ('has' in range) this.cancelQueued((j) => !j.idle && !range.has(j.pageIndex));
+    else this.cancelQueued((j) => !j.idle && (j.pageIndex < range.first || j.pageIndex > range.last));
   }
 
   /** The preview of `pageIndex` if it is cached, without queueing anything (for drawing in the same frame). */

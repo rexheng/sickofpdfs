@@ -28,6 +28,7 @@ import { createMarkInput, type MarkInput } from './mark-input';
 import { type AnnotationSession, type AnnotationState, createAnnotationSession } from './session';
 import { createTabPresence, tabIdentity } from './tab-presence';
 import { anchorKey } from './undo';
+import { recordEdit } from '../page-order/edit-journal';
 
 type TextAnchor = Extract<Anchor, { kind: 'text' }>;
 
@@ -570,6 +571,8 @@ export function createNotes(d: NotesDeps): Notes | null {
     onError: logNotesError,
     // Ctrl+Z and Ctrl+Y say what they did ("Note removed", "Mark back"): a note never vanishes without a word.
     onUndone: (what) => d.showNote(what),
+    // R108: one Ctrl+Z for the tab. The journal knows a notes action came last (page moves record their own).
+    onRecorded: () => recordEdit('notes'),
     // R67: rows made before the save lands carry the file's fingerprint, and are kept as save-pending under it.
     fingerprint: d.opened.loaded.sha256,
     pending: localPendingSaves(),

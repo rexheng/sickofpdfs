@@ -11,6 +11,7 @@
 import type { DocHandle, PageSize, PdfBackend } from '@sop/viewer';
 import type { ViewerContext } from '../commands';
 import { createMarkPainter, type MarkPainter, type MarksToPrint, marksToPrint } from './print-marks';
+import { pageAtPosition, positionOfPage } from '@sop/core/page-order';
 
 /** The resolution of the print copy. */
 export const PRINT_DPI = 200;
@@ -280,7 +281,10 @@ export async function printDocument(ctx: ViewerContext): Promise<void> {
   let withMarks = false;
   try {
     const found = ctx.printMarks ? marksToPrint(ctx.printMarks, pageCount) : null;
-    const answer = await ctx.ui.askPrint({ pageCount, currentPage: ctx.store.get().currentPage, marks: found !== null });
+    // R108: the step counts pages as they are shown ("This page", "Pages 3–7"), and they print in that order. The
+    // answer's positions become the file's pages here; the file itself is never changed.
+    const order = ctx.store.get().pageOrder;
+    const answer = await ctx.ui.askPrint({ pageCount, currentPage: positionOfPage(order, ctx.store.get().currentPage), marks: found !== null });
     if (answer === null) return; // Cancel, Escape or a click away: nothing is printed
     withMarks = found !== null && answer.withMarks;
     const total = answer.pages.length;
@@ -297,7 +301,7 @@ export async function printDocument(ctx: ViewerContext): Promise<void> {
       signal: controller.signal,
       onProgress: progress,
       marks: withMarks ? found : null,
-      only: answer.pages,
+      only: answer.pages.map((position) => pageAtPosition(order, position)),
     });
     const onAfterPrint = () => disposeActive();
     window.addEventListener('afterprint', onAfterPrint, { once: true });

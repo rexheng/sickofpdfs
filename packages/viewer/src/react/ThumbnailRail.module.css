@@ -89,3 +89,126 @@
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: calc(2 * var(--focus-ring-offset));
 }
+
+/*
+ * R108: moving pages, as in Slides' filmstrip. A page picked with Ctrl- or Shift-click gets the page-in-view ring and a
+ * light blue wash, and its number turns blue, so the picked pages read as one group. A dragged page fades in its old
+ * place; the drop line is a 3 px blue bar across the number and the thumbnail, in the gap where the pages will land.
+ */
+.item[data-selected] .thumb {
+  outline: var(--focus-ring-width) solid var(--viewer-focus);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.item[data-selected] .thumb::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-color: var(--viewer-focus);
+  opacity: 0.28;
+  content: "";
+  pointer-events: none;
+}
+
+.item[data-selected] .number {
+  color: var(--viewer-focus);
+}
+
+.thumb {
+  position: relative;
+  touch-action: none;
+}
+
+.item[data-lifted] .thumb {
+  opacity: 0.5;
+}
+
+/* While a drag is on, the hover ring would follow the pointer over every thumbnail: only the line shows. */
+.rail[data-dragging] .thumb:hover:not([aria-current='page']) {
+  outline: none;
+}
+
+.rail[data-dragging] {
+  cursor: grabbing;
+}
+
+.rail[data-dragging] .thumb {
+  cursor: grabbing;
+}
+
+.dropLine {
+  position: absolute;
+  inset-inline-start: var(--space-2);
+  z-index: 1;
+  inline-size: calc(var(--thumb-num-w) + var(--space-3) + var(--thumb-w) + var(--space-2));
+  block-size: var(--page-drop-line);
+  margin-block-start: calc(var(--page-drop-line) / -2);
+  border-radius: var(--shape-full);
+  background-color: var(--viewer-focus);
+  pointer-events: none;
+}
+
+/* The bar's round end on the left, as Docs and Slides draw a drop place. */
+.dropLine::before {
+  position: absolute;
+  inset-block-start: calc((var(--page-drop-line) - var(--page-drop-dot)) / 2);
+  inset-inline-start: calc(var(--space-1) * -1);
+  inline-size: var(--page-drop-dot);
+  block-size: var(--page-drop-dot);
+  border-radius: 50%;
+  background-color: var(--viewer-focus);
+  content: "";
+}
+
+/* The floating copy under the pointer (makeGhost): fixed to the window, above everything, never in the pointer's way. */
+.ghost {
+  position: fixed;
+  inset: 0 auto auto 0;
+  z-index: 2147483000;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.ghostCard,
+.ghostStack {
+  overflow: hidden;
+  border-radius: var(--shape-thumb);
+  background-color: var(--viewer-page);
+  box-shadow: var(--shadow-docs-comment-active);
+}
+
+.ghostCard {
+  position: relative;
+  opacity: 0.92;
+  outline: var(--focus-ring-width) solid var(--viewer-focus);
+}
+
+.ghostCard canvas {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+/* More than one page: a second card peeks out behind the first. */
+.ghostStack {
+  position: absolute;
+  inset: var(--space-2) auto auto var(--space-2);
+  opacity: 0.7;
+}
+
+/* How many pages are moving, on the card's top right corner. */
+.ghostCount {
+  position: absolute;
+  inset: calc(var(--space-2) * -1) calc(var(--space-2) * -1) auto auto;
+  box-sizing: border-box;
+  min-inline-size: var(--space-6);
+  block-size: var(--space-6);
+  padding: 0 var(--space-1);
+  border-radius: var(--shape-full);
+  background-color: var(--viewer-focus);
+  color: var(--gm3-sys-color-on-primary-fixed);
+  font: var(--type-viewer-toolbar);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--space-6);
+  text-align: center;
+}

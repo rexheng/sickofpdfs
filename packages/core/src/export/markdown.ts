@@ -6,6 +6,7 @@
 //   # Title
 //   ## Document notes                notes on the whole document, first
 //   ## Page N                        one section for each page that has notes, in page order; inside, top to bottom
+//                                    (R108: in the order the owner put the pages in, with the page numbers they see)
 //
 // An item is the passage as a blockquote (bold as **…**, strikethrough as ~~…~~), then one line of labels and a link back
 // ("Highlight (yellow) · [p. 4](…#page=4)"), then the comment as a bullet with its replies indented under it. A reply from
@@ -22,6 +23,7 @@
 // Front matter values are always double-quoted YAML strings.
 import type { Anchor } from '../model/anchor';
 import type { ExportComment, ExportDocument, ExportMark, ExportThread } from './markdown-input';
+import { byShownPosition, shownPageNumber } from '../pages/page-order';
 
 /** `sickofpdfs.format` in the front matter. */
 export const MARKDOWN_FORMAT = 1;
@@ -157,7 +159,7 @@ function rewriteLink(bang: string, label: string, target: string, ctx: Ctx): str
     const fromLabel = /(\d+)/.exec(plain)?.[1];
     const page1 = known ? known.pageIndex + 1 : fromLabel !== undefined ? Number(fromLabel) : 0;
     if (!Number.isSafeInteger(page1) || page1 < 1) return plain;
-    return `[p. ${page1}](${linkTarget(linkBack(ctx.doc, page1))})`;
+    return `[p. ${shownNumber(ctx.doc, page1 - 1)}](${linkTarget(linkBack(ctx.doc, page1))})`;
   }
   const web = /^web:(\d+)$/.exec(t);
   if (web && bang === '') {
@@ -420,6 +422,18 @@ function quoteLines(quote: string, bold: boolean, strike: boolean): string[] {
   return out;
 }
 
+/** The reading's page order, when it is a real one for these notes (R108). */
+function orderOf(doc: ExportDocument): readonly number[] | null {
+  const o = doc.pageOrder;
+  return Array.isArray(o) && o.length > 0 ? o : null;
+}
+
+/** The page number the owner sees for page `index` (0-based in the file). */
+function shownNumber(doc: ExportDocument, index: number): number {
+  const order = orderOf(doc);
+  return order !== null && index < order.length ? shownPageNumber(order, index) : index + 1;
+}
+
 function itemLines(item: Item, doc: ExportDocument): string[] {
   const ctx: Ctx = { doc, refs: { citations: [], webSources: [] } };
   const blocks: string[][] = [];
@@ -428,7 +442,7 @@ function itemLines(item: Item, doc: ExportDocument): string[] {
     if (q.length > 0) blocks.push(q);
   }
   if (item.page !== null) {
-    const link = `[p. ${item.page + 1}](${linkTarget(linkBack(doc, item.page + 1))})`;
+    const link = `[p. ${shownNumber(doc, item.page)}](${linkTarget(linkBack(doc, item.page + 1))})`;
     blocks.push([[...item.labels.map(escapeInline), link].join(SEP)]);
   } else if (item.labels.length > 0) {
     blocks.push([item.labels.map(escapeInline).join(SEP)]);
@@ -495,9 +509,9 @@ export function exportMarkdown(
     for (const item of whole) out.push('', ...itemLines(item, doc));
   }
 
-  const pages = [...new Set(items.filter((i) => i.page !== null).map((i) => i.page as number))].sort((a, b) => a - b);
+  const pages = [...new Set(items.filter((i) => i.page !== null).map((i) => i.page as number))].sort(byShownPosition(orderOf(doc)));
   for (const p of pages) {
-    out.push('', `## Page ${p + 1}`);
+    out.push('', `## Page ${shownNumber(doc, p)}`);
     for (const item of items.filter((i) => i.page === p).sort(byReading)) out.push('', ...itemLines(item, doc));
   }
   return `${out.join('\n')}\n`;

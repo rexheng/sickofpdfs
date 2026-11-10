@@ -4,10 +4,12 @@
 // - Every thread is listed, the ones that could not be placed in this copy of the PDF included ("Couldn't place").
 // - Order is the reading order of this copy: whole-document notes first, then by page, then top to bottom. A note
 //   is ordered by where it was placed here (the in-memory Resolution), not by where it was stored.
+// - R108: pages are in the order the owner put them in (the tab's page order), and labels say the page numbers shown.
 // - "Mine" is the notes the owner started. A note Claude started (through the connector, Release 2) is in All only.
-import type { Anchor, CommentRow, Resolution, ThreadId, ThreadRow } from '@sop/core';
+import { type Anchor, type CommentRow, type PageOrder, positionOfPage, type Resolution, shownPageNumber, type ThreadId, type ThreadRow } from '@sop/core';
 import type { CardPlacement } from '@sop/ui';
 import type { AnnotationState } from '../annotations/session';
+import { currentPageOrder } from '../page-order/shown';
 
 export type NotesFilter = 'all' | 'mine';
 
@@ -44,7 +46,7 @@ export interface NoteList {
 }
 
 /** Every note of the session, split into the ones placed in this copy and the ones that could not be placed. */
-export function listNotes(s: AnnotationState, filter: NotesFilter = 'all'): NoteList {
+export function listNotes(s: AnnotationState, filter: NotesFilter = 'all', order: PageOrder = currentPageOrder()): NoteList {
   const sent = new Map<ThreadId, CommentRow[]>();
   for (const c of s.comments) {
     const list = sent.get(c.threadId);
@@ -60,16 +62,17 @@ export function listNotes(s: AnnotationState, filter: NotesFilter = 'all'): Note
     const comments = sent.get(thread.id) ?? [];
     const draft = drafts.get(thread.id) ?? null;
     if (comments.length === 0 && draft === null) continue; // a thread with nothing in it is not a note
-    const entry = noteEntry(thread, comments, draft, s.placement.get(thread.id));
+    const entry = noteEntry(thread, comments, draft, s.placement.get(thread.id), order);
     if (filter === 'mine' && !entry.mine) continue;
     (entry.placement === 'unplaced' ? unplaced : placed).push(entry);
   }
-  placed.sort(byReadingOrder);
-  unplaced.sort(byStoredOrder);
+  const pos = (page: number | null | undefined) => (page === null || page === undefined ? -1 : positionOfPage(order, page));
+  placed.sort((a, b) => pos(a.spot?.pageIndex) - pos(b.spot?.pageIndex) || byReadingOrder(a, b));
+  unplaced.sort((a, b) => pos(a.thread.pageIndex) - pos(b.thread.pageIndex) || byStoredOrder(a, b));
   return { placed, unplaced };
 }
 
-function noteEntry(thread: ThreadRow, comments: CommentRow[], draft: CommentRow | null, res: Resolution | undefined): NoteEntry {
+function noteEntry(thread: ThreadRow, comments: CommentRow[], draft: CommentRow | null, res: Resolution | undefined, order: PageOrder): NoteEntry {
   const placement = placementOf(res);
   // Until the session has placed a note (it does that as the PDF opens), it is shown where it was stored.
   const here = res?.placed ? res.anchor : thread.anchor;
@@ -82,7 +85,7 @@ function noteEntry(thread: ThreadRow, comments: CommentRow[], draft: CommentRow 
     placement,
     spot: placement === 'unplaced' ? null : spotOf(here, thread),
     // The page it is on in this copy (a moved note says where it is now); a note that couldn't place says where it was.
-    label: labelOf(here),
+    label: labelOf(here, order),
     quote: thread.anchor.kind === 'text' ? thread.anchor.quote.quote : null,
     mine: first?.author === 'me',
   };
@@ -125,18 +128,19 @@ export function spotOf(a: Anchor, thread?: Pick<ThreadRow, 'sortKey'>): NoteSpot
 }
 
 /** The line above a card's text: what the note is on, in plain words, the page always as "Page N" (R74). Page numbers count from 1. */
-export function labelOf(a: Anchor): string | null {
+export function labelOf(a: Anchor, order: PageOrder = currentPageOrder()): string | null {
+  const n = (page: number) => shownPageNumber(order, page);
   switch (a.kind) {
     case 'text':
-      return `Page ${a.start.page + 1}`;
+      return `Page ${n(a.start.page)}`;
     case 'area':
-      return `Area · Page ${a.page + 1}`;
+      return `Area · Page ${n(a.page)}`;
     case 'figure':
-      return `${a.figure.label ?? 'Figure'} · Page ${a.page + 1}`;
+      return `${a.figure.label ?? 'Figure'} · Page ${n(a.page)}`;
     case 'point':
-      return `Page ${a.page + 1}`;
+      return `Page ${n(a.page)}`;
     case 'page':
-      return `Page ${a.page + 1}`;
+      return `Page ${n(a.page)}`;
     case 'document':
       return 'Whole document';
   }

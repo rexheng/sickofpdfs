@@ -30,6 +30,8 @@ export interface LinkLayerProps {
    */
   page?: PageSize;
   onInternal(this: void, t: PageTarget): void;
+  /** R108: the page number shown for a page (the reader's page order), for the links' names; pageIndex + 1 by default. */
+  pageNumber?: (pageIndex: number) => number;
 }
 
 /** A press that moves this far is a drag (a text selection), not a click: the text layer's threshold. */
@@ -195,7 +197,7 @@ const pct = (v: number) => `${v * 100}%`;
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 /** The links of one page, as anchors over the page box (PageList's `renderPage` slot). */
-export function LinkLayer({ links, box, page, onInternal }: LinkLayerProps): JSX.Element {
+export function LinkLayer({ links, box, page, onInternal, pageNumber = (i) => i + 1 }: LinkLayerProps): JSX.Element {
   const root = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => register(root.current!), []);
   const { width, height } = sizeOf(box, page);
@@ -239,7 +241,7 @@ export function LinkLayer({ links, box, page, onInternal }: LinkLayerProps): JSX
               className={`sop-link ${styles.link}`}
               data-kind="page"
               href={`#page=${t.pageIndex + 1}`}
-              aria-label={`Go to page ${t.pageIndex + 1}`}
+              aria-label={`Go to page ${pageNumber(t.pageIndex)}`}
               draggable={false}
               style={style}
               onPointerDown={onPointerDown}
@@ -290,13 +292,15 @@ export interface PageLinksProps {
   box: PageBox;
   page: PageSize;
   onInternal(this: void, t: PageTarget): void;
+  /** R108: the page number shown for a page, for the links' names. */
+  pageNumber?: (pageIndex: number) => number;
 }
 
 /** Links are read no later than this after their page appears, however busy the page is. */
 const LINKS_IDLE_TIMEOUT_MS = 500;
 
 /** A page's LinkLayer, once its links are read (PageLinkSource reads each page once). Nothing for a page without links. */
-export function PageLinks({ source, box, page, onInternal }: PageLinksProps): JSX.Element | null {
+export function PageLinks({ source, box, page, onInternal, pageNumber }: PageLinksProps): JSX.Element | null {
   const index = box.index;
   const [read, setRead] = useState<{ index: number; links: PdfLink[] } | null>(() => {
     const links = source.cached(index);
@@ -313,5 +317,5 @@ export function PageLinks({ source, box, page, onInternal }: PageLinksProps): JS
     };
   }, [source, index]);
   if (read === null || read.index !== index || read.links.length === 0) return null;
-  return <LinkLayer links={read.links} box={box} page={page} onInternal={onInternal} />;
+  return <LinkLayer links={read.links} box={box} page={page} onInternal={onInternal} {...(pageNumber ? { pageNumber } : {})} />;
 }

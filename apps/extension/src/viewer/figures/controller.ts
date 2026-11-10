@@ -47,6 +47,7 @@ import {
 } from './anchors';
 import { copyRegion, createThumbnailCache, regionPng, type ThumbnailCache } from './images';
 import { setSpecialNoteTarget, type SpecialNote } from './notes-bridge';
+import { shownPage } from '../page-order/shown';
 
 /** What Ctrl+Alt+M, Ctrl+C and the figure menu act on: the selected figure, or the focused area mark. */
 export type Region =
@@ -302,7 +303,7 @@ export function createFigureController(host: NotesHost): FigureController {
       if (host.textSelection.ranges().length > 0) host.textSelection.clear();
       void wholeFigure(f).catch(() => {}); // ready by the time Ctrl+Alt+M is pressed
       const name = f.figure.label ?? 'Figure';
-      announce(`${name} on page ${f.page + 1} selected. Ctrl+Alt+M comments on it, Ctrl+C copies it, Esc lets go.`);
+      announce(`${name} on page ${shownPage(f.page)} selected. Ctrl+Alt+M comments on it, Ctrl+C copies it, Esc lets go.`);
     } else if (st.selected !== null) announce('');
     set({ selected: f, hover: f !== null && sameFigure(st.hover, f) ? null : st.hover });
   }

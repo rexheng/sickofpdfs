@@ -195,6 +195,8 @@ export interface SessionDeps {
   onError?(e: unknown, where: string): void;
   /** Told what an undo or a redo did, in a few plain words ("Note removed", "Mark back"), for the snackbar. */
   onUndone?(what: string): void;
+  /** R108: told when an action joins the undo history, so the tab's one Ctrl+Z can tell it from a page move. */
+  onRecorded?(): void;
   /**
    * R67: the opened file's SHA-256. Rows made before the save lands carry it as their document id (never ''), and the
    * save-pending record is kept under it.
@@ -1361,7 +1363,10 @@ export function createAnnotationSession(d: SessionDeps): AnnotationSession {
     }
     tidyAfterRemoval();
     // A change that only removed a highlight nobody had saved yet leaves nothing to undo.
-    if (ops.length > 0) undo.record(c);
+    if (ops.length > 0) {
+      undo.record(c);
+      d.onRecorded?.();
+    }
     const started = startSaveIfNeeded(triggerKeysOf(c));
     if (!started && c.rows.some((rc) => rc.after !== null && !savedTriggerKeys.has(rowKey(rc.table, rc.id)))) contentAdded();
     emit(); // draw first

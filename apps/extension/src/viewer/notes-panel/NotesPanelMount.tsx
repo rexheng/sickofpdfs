@@ -27,7 +27,11 @@ import { NotesPanel } from './NotesPanel';
 import styles from './NotesPanelMount.module.css';
 import { PanelEdge } from './PanelEdge';
 import { cardsFolded, notesPanel, openEdit, publishNotesButton, useCardsFolded, useNotesPanelOpen, useOpenEdit } from './panel-state';
+<<<<<<< HEAD
 import { notesPanelSpacing, notesPanelWidth, PANEL_DEFAULT_W, showPanelWidth, useNotesPanelSpacing, useNotesPanelWidth } from './panel-size';
+=======
+import { shownPage, usePageOrder } from '../page-order/shown';
+>>>>>>> a93c42b (feat(viewer): reorder pages by dragging thumbnails (R108))
 
 export interface NotesPanelMountProps {
   /** The tab's annotation session. Null while there is none: then nothing is shown and the keys do nothing. */
@@ -101,8 +105,9 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
   );
 
   const available = state.mode !== 'view-only';
-  const all = useMemo(() => listNotes(state), [state]);
-  const shown = useMemo(() => (filter === 'all' ? all : listNotes(state, 'mine')), [all, filter, state]);
+  const order = usePageOrder(); // R108: the notes follow the order the pages are shown in
+  const all = useMemo(() => listNotes(state, 'all', order), [state, order]);
+  const shown = useMemo(() => (filter === 'all' ? all : listNotes(state, 'mine', order)), [all, filter, state, order]);
   const total = all.placed.length + all.unplaced.length;
   const entry = useCallback((id: ThreadId | null) => (id === null ? undefined : [...all.placed, ...all.unplaced].find((e) => e.id === id)), [all]);
 
@@ -173,7 +178,7 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
     if (to === null) return;
     activate(to.stop.id);
     show(to.stop);
-    const where = `Note ${to.index + 1} of ${stops.length}, page ${to.stop.pageIndex + 1}.`;
+    const where = `Note ${to.index + 1} of ${stops.length}, page ${shownPage(to.stop.pageIndex)}.`;
     if (to.wrapped && stops.length > 1) say(`${dir === 1 ? 'Back to the first note.' : 'Back to the last note.'} ${where}`, true);
     else say(where, false);
   }, [activate, pageList, pages, say, session, show, total]);

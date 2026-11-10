@@ -315,6 +315,13 @@ export interface WriteAnnotationsOptions {
   boldFills?: Record<string, ApFill[]>;
   /** The document information to set in the copy (spec: tags in Keywords, the reading's context in Subject). */
   info?: { keywords?: string; subject?: string };
+  /**
+   * R108: the copy's pages in this order (the original page index at each position; every page once). The notes are
+   * written on their own pages first (the plan's page indices are the file's), then the pages are moved
+   * (FPDF_MovePages), so each note travels with its page. With `save: 'tail'` the original's bytes still lead the copy:
+   * the move only rewrites the page tree in the update.
+   */
+  pageOrder?: readonly number[];
 }
 
 /**

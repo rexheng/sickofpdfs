@@ -21,7 +21,7 @@ const LAYOUT: { id: string; label: string; items: (ViewerCommandId | typeof SEPA
     label: 'View',
     items: [
       'view.fitWidth', 'view.fitPage', 'view.zoomIn', 'view.zoomOut', SEPARATOR,
-      'view.rotateCw', 'view.rotateCcw', SEPARATOR,
+      'view.rotateCw', 'view.rotateCcw', 'view.resetPageOrder', SEPARATOR,
       'view.twoPage', 'view.presentation', SEPARATOR,
       // R90c: Bold word starts offers Off, Light, Medium and Strong directly; Alt+Shift+S turns it on and off.
       { heading: 'Bold word starts', keysOf: 'view.wordStarts', choices: ['view.wordStarts.off', 'view.wordStarts.light', 'view.wordStarts.medium', 'view.wordStarts.strong'] },

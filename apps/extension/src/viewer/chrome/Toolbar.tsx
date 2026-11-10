@@ -1,3 +1,4 @@
+import { pageAtPosition, positionOfPage } from '@sop/core/page-order';
 import { DropdownMenu, Icon, IconButton, type MenuItemDef, PillToolbar, TextField, ToolbarSeparator } from '@sop/ui';
 import { createViewerStore, useViewerState, type ViewerStore, type ZoomMode } from '@sop/viewer';
 import { type ComponentPropsWithRef, type FocusEvent, type KeyboardEvent, type ReactNode, type RefObject, useContext, useEffect, useRef, useState } from 'react';
@@ -287,7 +288,8 @@ const HOW_TO = 'Type a page number, then press Enter';
  * lets go, also with the number unchanged, and hands the focus to the pages, so F7 and Alt+Shift+S work straight after.
  */
 function PageField({ store, pageCount, onGoToPage, inputRef, onDone }: PageFieldProps) {
-  const current = useViewerState(store, (s) => s.currentPage);
+  // R108: the box counts pages as they are shown. `current` and `jump` are positions; onGoToPage takes the page there.
+  const current = useViewerState(store, (s) => positionOfPage(s.pageOrder, s.currentPage));
   const [typed, setTyped] = useState<string | null>(null);
   // After a jump the page in view may not be the one asked for (the last pages cannot reach the top): show the one asked
   // for until the view moves on.
@@ -329,8 +331,8 @@ function PageField({ store, pageCount, onGoToPage, inputRef, onDone }: PageField
     const page = Math.min(pageCount, Math.max(1, n));
     if (page !== n) showNote(rangeNote(n, pageCount));
     else setNote(null);
-    onGoToPage(page - 1);
-    const landed = store.get().currentPage;
+    onGoToPage(pageAtPosition(store.get().pageOrder, page - 1));
+    const landed = positionOfPage(store.get().pageOrder, store.get().currentPage);
     // In two-page view a page lands with its pair, and the box shows the pair's left page (Task 26).
     const pairLanded = store.get().spread === 'two-page' && Math.floor(landed / 2) === Math.floor((page - 1) / 2);
     setJump(landed === page - 1 || pairLanded ? null : { target: page - 1, landed });

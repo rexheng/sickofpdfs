@@ -11,6 +11,7 @@ import type { OpenedDocument } from '../open-document';
 import type { SaveControllerImpl } from '../save/save-controller';
 import { createReadingTracker } from './reading-tracker';
 import { openingSpot, readerHasMoved, readerSpot, resumeReading } from './resume';
+import { shownPage } from '../page-order/shown';
 
 /** The quiet note after a resume. */
 export const RESUMED_NOTE = (page: number): string => `Opened on page ${page}, where you stopped.`;
@@ -104,7 +105,7 @@ export function useReadingHistory(o: {
           void resumed.startOver();
         };
         onStartOver({ run });
-        ui.showNote(RESUMED_NOTE(view.get().currentPage + 1), { label: START_OVER_LABEL, run, until: (done) => untilReaderMoves(view, pageList, done) });
+        ui.showNote(RESUMED_NOTE(shownPage(view.get().currentPage)), { label: START_OVER_LABEL, run, until: (done) => untilReaderMoves(view, pageList, done) });
       },
     });
     return () => {

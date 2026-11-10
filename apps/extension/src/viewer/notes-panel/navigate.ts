@@ -10,7 +10,7 @@
 //   where the reader was before the first one (spec "Jumps inside a document … are kept in the page's history state
 //   and collapsed").
 import type { JumpHistory, LinkTarget, PageBox, PageSize, ViewPosition } from '@sop/viewer';
-import { cssToNorm, normToCss } from '@sop/viewer';
+import { cssToNorm, normToCss, pageUnderTop } from '@sop/viewer';
 import type { ThreadId } from '@sop/core';
 import type { NoteEntry, NoteSpot } from './model';
 
@@ -107,15 +107,9 @@ export function jumpTarget(spot: NoteSpot, pages: readonly PageSize[], api: Pick
  */
 export function readingPosition(api: Pick<PageScroller, 'scrollTop' | 'pageBoxes'>, scale: number): ViewPosition {
   const top = api.scrollTop();
-  const boxes = api.pageBoxes();
-  if (boxes.length === 0) return { pageIndex: 0, offset: 0, scale };
-  let b = boxes[0];
-  for (const box of boxes) {
-    if (box.top > top) break;
-    b = box;
-  }
-  while (b.index > 0 && boxes[b.index - 1].top === b.top) b = boxes[b.index - 1]; // the first page of a two-page row
-  if (top > b.top + b.height && b.index + 1 < boxes.length) b = boxes[b.index + 1];
+  // R108: the boxes' tops follow the order the pages are shown in, which may not be page order.
+  const b = pageUnderTop(api.pageBoxes(), top);
+  if (b === null) return { pageIndex: 0, offset: 0, scale };
   return { pageIndex: b.index, offset: (top - b.top) / b.height, scale };
 }
 

@@ -24,6 +24,7 @@
 // - Caret browsing (R93, ./caret-browsing.ts): a text cursor on the same char model. Shift+keys move the selection's end
 //   in PDFium's reading order (with the switch or after a mouse selection); with the switch on, a click puts the cursor
 //   between two letters and the keys move it.
+import { pageAtPosition, positionOfPage } from '@sop/core/page-order';
 import { memo, useLayoutEffect, useRef } from 'react';
 import { PdfEngineCrashedError } from '../backend/errors';
 import type { PageGlyphs, PageSize, PdfRect } from '../backend/types';
@@ -76,6 +77,11 @@ export interface TextLayerControllerOptions {
   paused?: () => boolean;
   /** Whether a page is a scan: the caret skips pages with no text, with a note once a tab when they are scans. */
   isScannedPage?: (pageIndex: number) => Promise<boolean>;
+  /**
+   * R108: the reader's page order (the page at each position; null for the file's own). A selection runs through the
+   * pages in the order they are shown, so a drag across a moved page, Copy and the caret follow what the reader sees.
+   */
+  order?: () => readonly number[] | null;
 }
 
 /** A position between two chars: just before char `charIndex` of page `pageIndex`. PAGE_END: after the page's last char. */
@@ -224,7 +230,8 @@ interface Drag {
 }
 
 const isPos = (e: End | CharPos): e is CharPos => 'charIndex' in e;
-const cmpPos = (a: CharPos, b: CharPos) => a.pageIndex - b.pageIndex || a.charIndex - b.charIndex;
+/** Compares two positions in the order the pages are shown (R108: `pos` gives a page's place). */
+const cmpPosIn = (pos: (page: number) => number) => (a: CharPos, b: CharPos) => pos(a.pageIndex) - pos(b.pageIndex) || a.charIndex - b.charIndex;
 const sameRanges = (a: CharRange[], b: CharRange[]) =>
   a.length === b.length && a.every((r, i) => r.pageIndex === b[i].pageIndex && r.start === b[i].start && r.end === b[i].end);
 
@@ -278,6 +285,11 @@ export class TextLayerController {
   /** Pages whose text changed while their layer was being built (refreshPage): built again once that build ends. */
   private readonly stale = new Set<number>();
 
+  /** Where a page is shown, and the page shown at a place (R108). */
+  private readonly pos = (page: number): number => positionOfPage(this.o.order?.() ?? null, page);
+  private readonly pageShownAt = (position: number): number => pageAtPosition(this.o.order?.() ?? null, position);
+  private readonly cmpPos = cmpPosIn(this.pos);
+
   constructor(private readonly o: TextLayerControllerOptions) {
     this.rectSource = {
       rects: (p, s, c) => o.source.rects(p, s, c),
@@ -320,6 +332,7 @@ export class TextLayerController {
         scroller: () => this.root,
         pageList: () => o.pageList?.() ?? null,
         paused: () => o.paused?.() ?? false,
+        order: () => o.order?.() ?? null,
         ...(o.isScannedPage ? { isScannedPage: o.isScannedPage } : {}),
         ...(o.onNote ? { note: o.onNote } : {}),
       },
@@ -637,7 +650,7 @@ export class TextLayerController {
 
   /** The model's two ends in document order. */
   private ordered(m: TextSelection): [CharPos, CharPos] {
-    return cmpPos(m.anchor, m.focus) <= 0 ? [m.anchor, m.focus] : [m.focus, m.anchor];
+    return this.cmpPos(m.anchor, m.focus) <= 0 ? [m.anchor, m.focus] : [m.focus, m.anchor];
   }
 
   /** A page's char count: from its glyphs, or from a read for Copy; undefined while unknown. */
@@ -648,7 +661,7 @@ export class TextLayerController {
   /** The model's chars on page `p`, or null (an end at PAGE_END is the page's count when known). */
   private rangeOn(m: TextSelection, p: number): CharRange | null {
     const [lo, hi] = this.ordered(m);
-    if (p < lo.pageIndex || p > hi.pageIndex) return null;
+    if (this.pos(p) < this.pos(lo.pageIndex) || this.pos(p) > this.pos(hi.pageIndex)) return null;
     const n = this.countOf(p);
     const start = p === lo.pageIndex ? lo.charIndex : 0;
     let end = p === hi.pageIndex ? hi.charIndex : PAGE_END;
@@ -661,8 +674,8 @@ export class TextLayerController {
     if (!m) return [];
     const [lo, hi] = this.ordered(m);
     const out: CharRange[] = [];
-    for (let p = lo.pageIndex; p <= hi.pageIndex; p++) {
-      const r = this.rangeOn(m, p);
+    for (let q = this.pos(lo.pageIndex); q <= this.pos(hi.pageIndex); q++) {
+      const r = this.rangeOn(m, this.pageShownAt(q));
       if (r) out.push(r);
     }
     return out;
@@ -675,7 +688,7 @@ export class TextLayerController {
    */
   private setModel(next: TextSelection | null, dom: boolean | 'soon' = true): void {
     const was = this.model;
-    this.model = next && cmpPos(next.anchor, next.focus) !== 0 ? next : null;
+    this.model = next && this.cmpPos(next.anchor, next.focus) !== 0 ? next : null;
     if (dom === 'soon') {
       if (this.domFollow !== null) clearTimeout(this.domFollow);
       this.domFollow = setTimeout(() => {
@@ -689,7 +702,7 @@ export class TextLayerController {
     }
     this.prepareCopy();
     this.schedulePaint();
-    const same = was === this.model || (was && this.model && cmpPos(was.anchor, this.model.anchor) === 0 && cmpPos(was.focus, this.model.focus) === 0);
+    const same = was === this.model || (was && this.model && this.cmpPos(was.anchor, this.model.anchor) === 0 && this.cmpPos(was.focus, this.model.focus) === 0);
     if (!same) for (const cb of [...this.selectionListeners]) cb();
   }
 
@@ -702,7 +715,7 @@ export class TextLayerController {
     const ranges = built.map((p) => this.rangeOn(m, p)).filter((r): r is CharRange => r !== null);
     const ends = domEndsOf(root, ranges);
     if (!ends) return null;
-    const backward = cmpPos(m.anchor, m.focus) > 0;
+    const backward = this.cmpPos(m.anchor, m.focus) > 0;
     return backward ? { anchor: ends.end, focus: ends.start } : { anchor: ends.start, focus: ends.end };
   }
 
@@ -1100,10 +1113,10 @@ export class TextLayerController {
   private selectionTo(from: End | CharPos, to: End): TextSelection {
     const where = (e: End): CharPos => (e.caret ? this.posOf(e, true, true) : { pageIndex: e.pageIndex, charIndex: e.start });
     if (isPos(from)) {
-      const forward = cmpPos(where(to), from) >= 0;
+      const forward = this.cmpPos(where(to), from) >= 0;
       return { anchor: from, focus: this.posOf(to, true, forward) };
     }
-    const forward = cmpPos(where(to), where(from)) >= 0;
+    const forward = this.cmpPos(where(to), where(from)) >= 0;
     return { anchor: this.posOf(from, false, forward), focus: this.posOf(to, true, forward) };
   }
 
@@ -1181,7 +1194,7 @@ export class TextLayerController {
     this.loadUnder(d.x, d.y);
     if (!to) return;
     const next = this.selectionTo(d.from, to);
-    this.model = cmpPos(next.anchor, next.focus) !== 0 ? next : null;
+    this.model = this.cmpPos(next.anchor, next.focus) !== 0 ? next : null;
     this.schedulePaint();
   }
 
@@ -1295,7 +1308,7 @@ export class TextLayerController {
   /** Copies `m` once Copy has read its pages, through the async clipboard. */
   private async copyLater(m: TextSelection): Promise<void> {
     const [lo, hi] = this.ordered(m);
-    const pages = hi.pageIndex - lo.pageIndex + 1;
+    const pages = this.pos(hi.pageIndex) - this.pos(lo.pageIndex) + 1;
     const note = this.o.onNote;
     note?.(pages > 1 ? `Copying ${pages} pages…` : 'Copying…');
     try {
@@ -1314,7 +1327,8 @@ export class TextLayerController {
   private copyParts(m: TextSelection): { pageIndex: number; whole: boolean; start: number; end: number }[] {
     const [lo, hi] = this.ordered(m);
     const out: { pageIndex: number; whole: boolean; start: number; end: number }[] = [];
-    for (let p = lo.pageIndex; p <= hi.pageIndex; p++) {
+    for (let q = this.pos(lo.pageIndex); q <= this.pos(hi.pageIndex); q++) {
+      const p = this.pageShownAt(q);
       const n = this.countOf(p);
       const start = p === lo.pageIndex ? lo.charIndex : 0;
       const end = p === hi.pageIndex ? hi.charIndex : PAGE_END;

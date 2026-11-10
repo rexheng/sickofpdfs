@@ -240,6 +240,7 @@ export async function writeAnnotationsCopy(m: WrappedPdfiumModule, source: Write
   try {
     const errors = writePlan(io, opened.doc, plan, o.boldFills ?? {});
     if (o.info) writeInfo(io, opened.doc, o.info, errors);
+    if (o.pageOrder) movePagesTo(io, opened.doc, o.pageOrder, errors);
     if (errors.length > 0) throw new Error(`${errors.length} note${errors.length === 1 ? '' : 's'} could not be written (${errors.slice(0, 3).join('; ')})`);
     if (o.save === 'full') return saveCopy(m, opened.doc, SAVE_FLAGS.noIncremental, 0).bytes;
     const skip = o.save === 'tail' ? opened.length : 0;
@@ -266,6 +267,28 @@ function writeInfo(io: Io, doc: number, info: NonNullable<WriteAnnotationsOption
   for (const [key, value] of [['Keywords', info.keywords], ['Subject', info.subject]] as const) {
     if (value === undefined) continue;
     if (!io.withWide(value, (p) => io.m.EPDF_SetMetaText(doc, key, p))) errors.push(`document ${key} not set`);
+  }
+}
+
+/**
+ * R108: puts the copy's pages in `order` (the original index at each position). FPDF_MovePages with every page, in the
+ * new order, to index 0 leaves exactly that order. A copy in the wrong order would put notes on the wrong pages for the
+ * reader, so anything odd is an error and no copy is made.
+ */
+function movePagesTo(io: Io, doc: number, order: readonly number[], errors: string[]): void {
+  const n = io.m.FPDF_GetPageCount(doc);
+  const seen = new Set(order);
+  if (order.length !== n || seen.size !== n || order.some((p) => !Number.isInteger(p) || p < 0 || p >= n)) {
+    errors.push(`the page order does not fit this file's ${n} pages`);
+    return;
+  }
+  if (order.every((p, k) => p === k)) return;
+  const p = io.x.malloc(4 * n);
+  try {
+    new Int32Array(io.x.memory.buffer, p, n).set(order);
+    if (!io.m.FPDF_MovePages(doc, p, n, 0)) errors.push('the pages could not be put in the new order');
+  } finally {
+    io.x.free(p);
   }
 }
 

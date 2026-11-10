@@ -19,6 +19,10 @@ export interface NavRailProps {
   onOutline(this: void, t: LinkTarget): void;
   /** Opens or closes the rail (View → Thumbnails and outline, F4). */
   onToggle(this: void): void;
+  /** R108: thumbnails were dragged (or moved with Alt+Up and Alt+Down): move `pages` to just before position `before`. */
+  onMovePages?(this: void, pages: number[], before: number): void;
+  /** R108: the thumbnails' menu was asked for, for `pages`, at a point in the window. */
+  onPageMenu?(this: void, pages: number[], at: { x: number; y: number }): void;
   /** The page list. It sits beside the rail; in a window under 1100 px the rail lies over it instead. */
   children: ReactNode;
   /** More tabs after Thumbnails and Outline (the figures feature's Figures tab), each in the thumbnails' width. */
@@ -38,7 +42,7 @@ export interface RailTab {
  * Thumbnails and Outline (the selected one on a #333537 disc), then the thumbnails or the outline. A pill at the bottom
  * left hides the rail, and shows it again. The rail starts open when the window is 1100 px wide or more (Reader).
  */
-export function NavRail({ store, scheduler, pages, outline, onPage, onOutline, onToggle, children, tabs }: NavRailProps) {
+export function NavRail({ store, scheduler, pages, outline, onPage, onOutline, onToggle, onMovePages, onPageMenu, children, tabs }: NavRailProps) {
   const open = useViewerState(store, (s) => s.railOpen);
   const [tab, setTab] = useState<string>('thumbnails');
   const hasOutline = outline !== null && outline.length > 0;
@@ -73,7 +77,14 @@ export function NavRail({ store, scheduler, pages, outline, onPage, onOutline, o
             ) : extra !== undefined ? (
               extra.panel
             ) : (
-              <ThumbnailRail scheduler={scheduler} pages={pages} store={store} onSelect={onPage} />
+              <ThumbnailRail
+                scheduler={scheduler}
+                pages={pages}
+                store={store}
+                onSelect={onPage}
+                {...(onMovePages ? { onMove: onMovePages } : {})}
+                {...(onPageMenu ? { onMenu: onPageMenu } : {})}
+              />
             )}
           </div>
         </div>

@@ -163,6 +163,15 @@ export function useReaderFind({ backend, doc, store, api, pageText, textLayers, 
     };
   }, [open, scans, store, doc]);
 
+  useEffect(() => {
+    let order = store.get().pageOrder;
+    return store.subscribe(() => {
+      if (store.get().pageOrder === order) return;
+      order = store.get().pageOrder;
+      made.current?.orderChanged?.();
+    });
+  }, [store]);
+
   const scroller = useCallback(() => root.current?.querySelector<HTMLElement>('[role="document"]') ?? null, [root]);
 
   /** Brings a hit into view (through the jump history), unless it is in view already. Only the latest call moves the view. */
@@ -211,7 +220,8 @@ export function useReaderFind({ backend, doc, store, api, pageText, textLayers, 
   const openBar = useCallback(() => {
     if (made.current === null) {
       // The chars come from the page text, so a scanned page is searched in its recognised text (Phase 7).
-      made.current = createFindController(backend, doc.open.doc, doc.open.pageCount, () => store.get().currentPage, { chars: (i) => pageText.rawText(i) });
+      // R108: the search goes through the pages in the order they are shown, and starts again when it changes.
+      made.current = createFindController(backend, doc.open.doc, doc.open.pageCount, () => store.get().currentPage, { chars: (i) => pageText.rawText(i), order: () => store.get().pageOrder });
       setController(made.current);
     }
     setLinger(null);

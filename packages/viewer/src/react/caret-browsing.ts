@@ -12,6 +12,7 @@
 // - The caret is drawn on its page as a thin line over the text layer, turned with the page (view/page-transform.ts
 //   through layout/page-space.ts); it blinks unless the reader asked for reduced motion, and the view scrolls to keep it
 //   in sight. A polite live region tells a screen reader the line the caret moves to.
+import { pageAtPosition, positionOfPage } from '@sop/core/page-order';
 import type { PageGlyphs, PageSize } from '../backend/types';
 import type { PageBox } from '../layout/page-layout';
 import { contentPointToPage, cssPerPoint, pagePointToContent, pageToDisplayed } from '../layout/page-space';
@@ -55,6 +56,8 @@ export interface CaretHost {
   paused(): boolean;
   isScannedPage?: (this: void, pageIndex: number) => Promise<boolean>;
   note?: (this: void, text: string) => void;
+  /** R108: the reader's page order: the caret goes from page to page as they are shown, and says their shown numbers. */
+  order?: (this: void) => readonly number[] | null;
 }
 
 type MoveKind = 'char' | 'word' | 'line' | 'lineEdge' | 'docEdge' | 'screen';
@@ -89,7 +92,8 @@ const SCREEN_OVERLAP_PX = 40;
 let scanNoteShown = false;
 
 const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-const cmpPos = (a: CharPos, b: CharPos) => a.pageIndex - b.pageIndex || a.charIndex - b.charIndex;
+/** Compares two positions in the order the pages are shown (R108). */
+const cmpPosIn = (pos: (page: number) => number) => (a: CharPos, b: CharPos) => pos(a.pageIndex) - pos(b.pageIndex) || a.charIndex - b.charIndex;
 
 /** The caret move a key asks for, or null. */
 function moveOf(e: KeyboardEvent): Move | null {
@@ -119,6 +123,10 @@ function moveOf(e: KeyboardEvent): Move | null {
 }
 
 export class CaretBrowsing {
+  /** Where a page is shown, and the page shown at a place (R108: the reader's page order). */
+  private readonly placeOf = (page: number): number => positionOfPage(this.host.order?.() ?? null, page);
+  private readonly pageShownAt = (place: number): number => pageAtPosition(this.host.order?.() ?? null, place);
+  private readonly cmpPos = cmpPosIn(this.placeOf);
   private on = false;
   /** Where the caret is; null before it is placed. While text is selected, the selection's focus. */
   private pos: CaretPos | null = null;
@@ -303,12 +311,16 @@ export class CaretBrowsing {
 
   /** The selection's focus as a caret: at the end of a line when the selection runs forward to it, else at a start. */
   private focusOf(s: TextSelection): CaretPos {
-    return { ...s.focus, side: cmpPos(s.anchor, s.focus) < 0 ? 'after' : 'before' };
+    return { ...s.focus, side: this.cmpPos(s.anchor, s.focus) < 0 ? 'after' : 'before' };
   }
 
   /** The next page from `from` in direction `dir` that has text, or −1 (none within `max` pages). */
   private async textPage(from: number, dir: 1 | -1, max = SKIP_PAGES_MAX): Promise<number> {
-    for (let i = from + dir, n = 0; i >= 0 && i < this.host.pages.length && n < max; i += dir, n++) {
+    // Through the pages as they are shown (R108); -1 and the page count stand for before the first and after the last.
+    const count = this.host.pages.length;
+    const start = from < 0 ? -1 : from >= count ? count : this.placeOf(from);
+    for (let q = start + dir, n = 0; q >= 0 && q < count && n < max; q += dir, n++) {
+      const i = this.pageShownAt(q);
       if (!this.textless.has(i) && (await this.page(i)).stops.length > 0) return i;
       this.noteIfScan(i);
     }
@@ -371,7 +383,7 @@ export class CaretBrowsing {
     const at = from ?? this.pos!;
     // ←/→ with text selected and no Shift: the caret goes to that end of the selection, as in a text editor.
     if (sel && !move.extend && move.kind === 'char') {
-      const [lo, hi] = cmpPos(sel.anchor, sel.focus) <= 0 ? [sel.anchor, sel.focus] : [sel.focus, sel.anchor];
+      const [lo, hi] = this.cmpPos(sel.anchor, sel.focus) <= 0 ? [sel.anchor, sel.focus] : [sel.focus, sel.anchor];
       const edge = await this.resolve(move.dir < 0 ? { ...lo, side: 'before' } : { ...hi, side: 'after' });
       if (edge) this.place(edge, { clear: true });
       return;
@@ -536,8 +548,11 @@ export class CaretBrowsing {
       }
     }
     // Neighbouring pages are read ahead, so the next move across a page edge needs no wait.
-    for (const i of [to.pageIndex - 1, to.pageIndex, to.pageIndex + 1]) {
-      if (i < 0 || i >= this.host.pages.length || this.textless.has(i)) continue;
+    const here = this.placeOf(to.pageIndex);
+    for (const q of [here - 1, here, here + 1]) {
+      if (q < 0 || q >= this.host.pages.length) continue;
+      const i = this.pageShownAt(q);
+      if (this.textless.has(i)) continue;
       if (this.host.cachedGlyphs(i)) this.warm(i);
       else
         this.host.glyphs(i).then(
@@ -669,7 +684,7 @@ export class CaretBrowsing {
     const text = lineTextOf(p, k);
     const live = this.liveRegion();
     // The same words twice in a row would not be read again: a zero-width space tells the two apart.
-    const next = `${newPage ? `Page ${at.pageIndex + 1}. ` : ''}${text}`;
+    const next = `${newPage ? `Page ${this.placeOf(at.pageIndex) + 1}. ` : ''}${text}`;
     live.textContent = live.textContent === next ? `${next}\u200b` : next;
   }
 

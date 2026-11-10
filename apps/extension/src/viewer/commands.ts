@@ -39,6 +39,7 @@ export type ViewerCommandId =
   | 'file.startOver' // TB5: "Start from page 1" while a resume stands (history/use-reading-history.ts)
   | 'view.fitWidth' | 'view.fitPage' | 'view.zoomIn' | 'view.zoomOut' | 'view.rotateCw' | 'view.rotateCcw'
   | 'view.twoPage' | 'view.presentation' | 'view.wordStarts' | WordStartsChoiceId | 'view.caretBrowsing' | 'view.toggleRail' | 'view.hideMenus'
+  | 'view.resetPageOrder' // R108: page-order/commands.ts
   | 'tools.find' | 'tools.goToPage' | 'tools.search' | 'help.shortcuts' | 'help.about'
   // Phase 2 (plan section 7). S13 runs the marks, the menu and undo; S14 the comment commands; S15 the notes ones;
   // S16 the figure and area ones. P4 adds 'claude.ask' and 'claude.explainFigure'.
@@ -198,6 +199,8 @@ export const SPECS: [ViewerCommandId, CommandSpec][] = [
   ['view.caretBrowsing', { label: 'Caret browsing', icon: 'text_select_start', keys: ['F7'] }],
   ['view.toggleRail', { label: 'Thumbnails and outline', icon: 'photo_library', keys: ['F4'] }],
   // As Google Docs' "Hide the menus": folds the title and menu row away. Remembered for every PDF and tab (menus-hidden.ts).
+  // R108: the pages back in the file's own order (also on the thumbnails' right-click menu).
+  ['view.resetPageOrder', { label: 'Reset page order', icon: 'settings_backup_restore', keys: [] }],
   ['view.hideMenus', { label: 'Hide the menus', icon: 'keyboard_arrow_up', keys: ['Ctrl+Shift+F'] }],
   ['tools.find', { label: 'Find', icon: 'find_in_page', keys: ['Ctrl+F'] }],
   // Not 'pageview' (a page and a magnifier), which looks like Find's icon beside it in the Tools menu.

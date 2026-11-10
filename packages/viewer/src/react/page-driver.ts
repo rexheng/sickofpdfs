@@ -17,7 +17,7 @@
 // The scheduler puts every preview before any full render, so the queue only ever holds what is wanted right now.
 import type { PageSize, PdfRect, Rotation } from '../backend/types';
 import type { PageBox, PageLayout } from '../layout/page-layout';
-import { visibleRange } from '../layout/page-layout';
+import { pageAt, positionIn, visibleRange } from '../layout/page-layout';
 import { displayedRectToPage } from '../layout/page-space';
 import { displayedSize, pageDeviceSize } from '../layout/zoom';
 import { isSideways, turnMatrix } from '../view/page-transform';
@@ -64,7 +64,10 @@ export interface DriverView {
 }
 
 export interface DriverHooks {
-  /** The pages to mount changed (visible pages plus OVERSCAN on each side). `fromEvent`: called from a DOM event. */
+  /**
+   * The pages to mount changed (visible pages plus OVERSCAN on each side), as positions in the layout (R108: pageAt gives
+   * the page at each). `fromEvent`: called from a DOM event.
+   */
   onRange(range: { first: number; last: number }, fromEvent: boolean): void;
   /** The page with the most area in view changed. */
   onCurrentPage(index: number): void;
@@ -136,8 +139,11 @@ export class PageDriver {
   private readonly slots = new Map<number, SlotState>();
   /** Request keys whose results are awaited, with the priority they were asked at. */
   private readonly pending = new Map<string, number>();
+  /** Positions in the layout (R108: the page at a position is pageAt(layout, position)); everything else is by page. */
   private visible = { first: 0, last: -1 };
   private mounted = { first: 0, last: -1 };
+  /** The pages at the visible positions. */
+  private visibleSet = new Set<number>();
   private current = -1;
   private lastTop = 0;
   private direction: 1 | -1 = 1;
@@ -193,7 +199,7 @@ export class PageDriver {
       // What is on screen is turned the wrong way: back to placeholders, measured as blank until repainted.
       for (const key of [...this.pending.keys()]) this.pending.delete(key);
       for (const s of this.slots.values()) this.clearSlot(s);
-      if (this.firstPageMarked) for (let i = this.visible.first; i <= this.visible.last; i++) this.openBlank(i);
+      if (this.firstPageMarked) for (const i of this.visibleSet) this.openBlank(i);
     }
     this.update(false);
   }
@@ -277,9 +283,21 @@ export class PageDriver {
     for (const l of [...(this.paintListeners.get(index) ?? [])]) l();
   }
 
-  /** The visible range (no overscan). */
+  /** The visible range (no overscan), as positions in the layout. */
   visiblePages(): { first: number; last: number } {
     return { ...this.visible };
+  }
+
+  /** The page at a position of the layout shown now. */
+  private at(position: number): number {
+    return this.view ? pageAt(this.view.layout, position) : position;
+  }
+
+  /** The pages at positions first..last. */
+  private pagesIn(r: { first: number; last: number }): number[] {
+    const out: number[] = [];
+    for (let p = r.first; p <= r.last; p++) out.push(this.at(p));
+    return out;
   }
 
   /** Undoes dispose() (React's StrictMode unmounts and mounts every component once in development). */
@@ -306,11 +324,13 @@ export class PageDriver {
     const now = performance.now();
 
     const visible = visibleRange(view.layout, top, height, 0);
+    const visibleSet = new Set(this.pagesIn(visible));
     if (this.firstPageMarked) {
-      for (let i = visible.first; i <= visible.last; i++) if (!inRange(i, this.visible)) this.openBlank(i);
-      for (let i = this.visible.first; i <= this.visible.last; i++) if (!inRange(i, visible)) this.closeBlank(i);
+      for (const i of visibleSet) if (!this.visibleSet.has(i)) this.openBlank(i);
+      for (const i of this.visibleSet) if (!visibleSet.has(i)) this.closeBlank(i);
     }
     this.visible = visible;
+    this.visibleSet = visibleSet;
 
     const current = this.mostVisible(visible, top, height);
     if (current !== this.current && current >= 0) {
@@ -333,8 +353,9 @@ export class PageDriver {
     const { first, last } = this.visible;
     if (last < first) return;
     const step = this.direction;
+    // Pages, in scroll order (positions first..last, R108).
     const visibleOrder: number[] = [];
-    for (let k = 0; k <= last - first; k++) visibleOrder.push(step > 0 ? first + k : last - k);
+    for (let k = 0; k <= last - first; k++) visibleOrder.push(this.at(step > 0 ? first + k : last - k));
     const scrolling = now - this.lastScrollAt < SCROLL_IDLE_MS;
     // Previews ahead help a continuous scroll; after a jump they would only hold up the page landed on.
     const flowing = now - this.lastContinuousScrollAt < SCROLL_IDLE_MS;
@@ -359,18 +380,18 @@ export class PageDriver {
       this.wake(this.holdFullUntil + 1);
     }
 
-    // 2. previews ahead in the scroll direction (and the page just behind)
+    // 2. previews ahead in the scroll direction (and the page just behind); positions, as the reader meets them
     let ahead = { first, last };
     if (flowing || fullsDone) {
       const n = this.pages.length;
       for (let j = 1; j <= LOOKAHEAD; j++) {
-        const i = step > 0 ? last + j : first - j;
-        if (i < 0 || i >= n) break;
-        this.wantPreview(i, 100 + j);
-        ahead = { first: Math.min(ahead.first, i), last: Math.max(ahead.last, i) };
+        const p = step > 0 ? last + j : first - j;
+        if (p < 0 || p >= n) break;
+        this.wantPreview(this.at(p), 100 + j);
+        ahead = { first: Math.min(ahead.first, p), last: Math.max(ahead.last, p) };
       }
       const behind = step > 0 ? first - 1 : last + 1;
-      if (behind >= 0 && behind < n) this.wantPreview(behind, 100 + LOOKAHEAD + 1);
+      if (behind >= 0 && behind < n) this.wantPreview(this.at(behind), 100 + LOOKAHEAD + 1);
     }
 
     // 4. once the scroll is still: previews of the visible pages for the cache (a later jump back is then instant), and
@@ -381,16 +402,19 @@ export class PageDriver {
         visibleOrder.forEach((i, k) => this.wantPreview(i, 200 + k));
         let outsideDone = true;
         const speculate = this.scheduler.fullRenderMs < SPECULATIVE_FULL_MS;
-        for (let i = this.mounted.first; i <= this.mounted.last && speculate; i++) {
-          if (inRange(i, this.visible) || !this.slots.has(i) || this.plan(view, i).tiled) continue;
-          if (!this.wantFull(view, i, 10_000 + Math.abs(i - first))) outsideDone = false;
+        for (let p = this.mounted.first; p <= this.mounted.last && speculate; p++) {
+          const i = this.at(p);
+          if (inRange(p, this.visible) || !this.slots.has(i) || this.plan(view, i).tiled) continue;
+          if (!this.wantFull(view, i, 10_000 + Math.abs(p - first))) outsideDone = false;
         }
         if (outsideDone) this.prefetchNext();
       }
     }
 
     // Everything queued for other pages is dropped, the step-5 preview too: it is asked for again once all is still.
-    this.scheduler.retain({ first: Math.min(this.mounted.first, ahead.first) - 1, last: Math.max(this.mounted.last, ahead.last) + 1 });
+    const keep = { first: Math.min(this.mounted.first, ahead.first) - 1, last: Math.max(this.mounted.last, ahead.last) + 1 };
+    if (!view.layout.order) this.scheduler.retain(keep);
+    else this.scheduler.retain(new Set(this.pagesIn({ first: Math.max(0, keep.first), last: Math.min(this.pages.length - 1, keep.last) })));
   }
 
   /** Step 5: the preview of the nearest page (to the current one) that is not cached, within half the cache size. */
@@ -398,10 +422,13 @@ export class PageDriver {
     if (this.prefetching !== null) return;
     const n = this.pages.length;
     const reach = Math.floor(this.scheduler.previewCapacity / 2);
-    const from = Math.max(0, this.current);
+    // Nearest as the pages are shown (R108): positions out from the current page's.
+    const from = this.view ? positionIn(this.view.layout, Math.max(0, this.current)) : Math.max(0, this.current);
     for (let d = 0; d <= reach; d++) {
-      for (const i of d === 0 ? [from] : [from + d, from - d]) {
-        if (i < 0 || i >= n || this.scheduler.cachedPreview(i) || this.pending.has(`preview|${i}`)) continue;
+      for (const p of d === 0 ? [from] : [from + d, from - d]) {
+        if (p < 0 || p >= n) continue;
+        const i = this.at(p);
+        if (this.scheduler.cachedPreview(i) || this.pending.has(`preview|${i}`)) continue;
         this.prefetching = i;
         this.wantPreview(i, 300 + d, () => {
           if (this.prefetching === i) this.prefetching = null;
@@ -651,7 +678,7 @@ export class PageDriver {
       this.firstPageMarked = true;
       performance.mark('sop:first-page');
       // Blank times count from here: opening the document is the first-page budget, not a scroll.
-      for (let v = this.visible.first; v <= this.visible.last; v++) this.openBlank(v);
+      for (const v of this.visibleSet) this.openBlank(v);
     }
     if (this.isComplete(i)) {
       const waiters = this.paintWaiters.get(i);
@@ -702,17 +729,19 @@ export class PageDriver {
   /**
    * The row with the most area in view, by its first page: in two-page view the page box shows the left page of the
    * pair in view (Task 26). A row is the pages sharing a top; with one page a row this is the page with the most area.
+   * `r` is positions; the answer is a page.
    */
   private mostVisible(r: { first: number; last: number }, top: number, height: number): number {
-    const boxes = this.view?.layout.boxes;
-    if (!boxes || r.last < r.first) return -1;
+    const layout = this.view?.layout;
+    if (!layout || r.last < r.first) return -1;
+    const box = (p: number) => layout.boxes[pageAt(layout, p)];
     let best = r.first;
     let bestArea = -1;
     for (let i = r.first; i <= r.last; ) {
       let area = 0;
       let j = i;
-      for (; j <= r.last && boxes[j].top === boxes[i].top; j++) {
-        const b = boxes[j];
+      for (; j <= r.last && box(j).top === box(i).top; j++) {
+        const b = box(j);
         area += Math.max(0, Math.min(b.top + b.height, top + height) - Math.max(b.top, top)) * b.width;
       }
       if (area > bestArea) {
@@ -721,7 +750,7 @@ export class PageDriver {
       }
       i = j;
     }
-    return best;
+    return pageAt(layout, best);
   }
 
   /** Runs update() at `at` (performance.now() time), unless an earlier wake-up is already set. */

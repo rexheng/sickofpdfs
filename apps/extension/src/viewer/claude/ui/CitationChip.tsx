@@ -13,6 +13,8 @@ import { Icon, type IconName, Tooltip } from '@sop/ui';
 import { createContext, useContext } from 'react';
 import styles from './CitationChip.module.css';
 import { claudeJump } from './jump-target';
+import { type PageOrder, shownPageNumber } from '@sop/core/page-order';
+import { currentPageOrder, usePageOrder } from '../../page-order/shown';
 
 /** Where the chips are drawn. Empty in the viewer, where they jump in the open PDF. */
 export interface ReplyChipPlaceValue {
@@ -72,10 +74,12 @@ export function quoteTip(quote: string): string | null {
 }
 
 /** "Page 4" for the chip: from the citation's page, else from the body's link text ("p. 4" becomes "Page 4"). */
-export function pageChipLabel(label: string, citation: PageCitation | null): string {
-  if (citation !== null) return `Page ${citation.pageIndex + 1}`;
+export function pageChipLabel(label: string, citation: PageCitation | null, order: PageOrder = currentPageOrder()): string {
+  // R108: the page number as the owner sees it. Claude was given the file's own numbers, so a bare "p. 4" is page 4 of
+  // the file, shown at its place in the order the owner made.
+  if (citation !== null) return `Page ${shownPageNumber(order, citation.pageIndex)}`;
   const n = /^\s*p(?:age|\.)?\s*(\d+)\s*$/iu.exec(label)?.[1];
-  return n === undefined ? label : `Page ${n}`;
+  return n === undefined ? label : `Page ${shownPageNumber(order, Number(n) - 1)}`;
 }
 
 export interface CitationChipProps {
@@ -91,12 +95,13 @@ export interface CitationChipProps {
 
 export function CitationChip({ label, citation, also = [], sentence = '' }: CitationChipProps) {
   const place = useContext(ReplyChipPlace);
-  const page = citation === null ? null : citation.pageIndex + 1;
+  const order = usePageOrder();
+  const page = citation === null ? null : shownPageNumber(order, citation.pageIndex);
   return (
     <ReplyChip
       kind="page"
-      label={pageChipLabel(label, citation)}
-      name={page === null ? pageChipLabel(label, null) : `Go to page ${page}`}
+      label={pageChipLabel(label, citation, order)}
+      name={page === null ? pageChipLabel(label, null, order) : `Go to page ${page}`}
       tooltip={citation === null ? null : quoteTip(citation.quote)}
       missing={citation === null}
       onPress={(el) => {

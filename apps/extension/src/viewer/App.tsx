@@ -120,7 +120,12 @@ import { LoadErrorCard } from './ui/LoadErrorCard';
 import { LocalFileCard } from './ui/LocalFileCard';
 import { PasswordDialog } from './ui/PasswordDialog';
 import { ScanHint } from './ui/ScanHint';
-import { useStore } from './use-store';
+import { libraryStore, useStore } from './use-store';
+import { createPageOrderController } from './page-order/controller';
+import { pageOrderBehaviours } from './page-order/commands';
+import { clearEdits } from './page-order/edit-journal';
+import { type PageMenuAt, PageOrderMenu } from './page-order/PageOrderMenu';
+import { bindPageOrder } from './page-order/shown';
 import { chooseWordStarts, noteScannedPageOnce, useWordStarts, useWordStartsStrength, WORD_STARTS_LOOK, wordStartsLevel, wordStartsStrength, wordStartsSwitch } from './word-starts';
 
 /**
@@ -145,7 +150,7 @@ registerViewerFeature(claudeUiFeature);
 registerViewerFeature(claudeEntryFeature);
 
 /** Where the reader was when the engine stopped, so the document opens again at the same place. */
-type Resume = Pick<ViewerSnapshot, 'zoom' | 'currentPage' | 'viewRotation' | 'spread' | 'railOpen'>;
+type Resume = Pick<ViewerSnapshot, 'zoom' | 'currentPage' | 'viewRotation' | 'spread' | 'railOpen' | 'pageOrder'>;
 
 type View =
   | { kind: 'loading' }
@@ -587,7 +592,7 @@ const IDLE_STORE = createViewerStore();
  * again.
  */
 function useViewVersion(store: ViewerStore | null): string {
-  return useViewerState(store ?? IDLE_STORE, (s) => `${s.zoom.kind}|${s.scale}|${s.viewRotation}|${s.spread}|${s.railOpen}`);
+  return useViewerState(store ?? IDLE_STORE, (s) => `${s.zoom.kind}|${s.scale}|${s.viewRotation}|${s.spread}|${s.railOpen}|${s.pageOrder === null ? 0 : 1}`);
 }
 
 /** "Open extension settings": the service worker opens chrome://extensions/?id=… beside this tab (a page cannot). */
@@ -682,6 +687,8 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
         pageList: () => api.current,
         paused: () => store.get().presenting !== null,
         isScannedPage: (i) => scans.isScannedPage(i),
+        // R108: a selection runs through the pages in the order they are shown.
+        order: () => store.get().pageOrder,
       }),
   );
   useEffect(() => {
@@ -691,6 +698,20 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
   const nav = useReaderNavigation({ backend, doc, store, api });
   const outline = useOutline(backend, doc);
   useRailFitsWindow(store);
+  // R108: the order the owner put the pages in (the thumbnails move them; the page list and every page number follow).
+  const [pageOrder] = useState(() => createPageOrderController({ store, pageCount: doc.open.pageCount, library: libraryStore, showNote: (text, action) => ui.showNote(text, action) }));
+  useEffect(() => pageOrder.attachSave(save), [pageOrder, save]);
+  useEffect(() => bindPageOrder(store), [store]);
+  useEffect(
+    () => () => {
+      pageOrder.dispose();
+      clearEdits();
+    },
+    [pageOrder],
+  );
+  const [pageMenu, setPageMenu] = useState<PageMenuAt | null>(null);
+  const movePages = useCallback((pages: number[], before: number) => void pageOrder.move(pages, before), [pageOrder]);
+  const openPageMenu = useCallback((pages: number[], at: { x: number; y: number }) => setPageMenu({ pages, at }), []);
   // Find jumps through the same history as links, so Back returns from each jump to a hit (Task 25).
   const find = useReaderFind({ backend, doc, store, api, pageText, textLayers, jumps: nav.jumps, root: rootRef, scans: ocrScans, reading: findReading });
   // A page whose recognised text arrives (or goes) is read again by the text layer and Find.
@@ -760,13 +781,15 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       wordStarts: { on: wordStartsSwitch.get, toggle: () => void wordStartsSwitch.toggle(), level: wordStartsLevel, choose: chooseWordStarts },
       ui,
     };
+    const noteBehaviours = notes?.behaviours() ?? null;
     return createCommands(ctx, {
-      ...notes?.behaviours(),
+      ...noteBehaviours,
+      ...pageOrderBehaviours(pageOrder, noteBehaviours),
       ...saveDecisionCommands(save),
       ...aboutCommands(),
       ...(startOver !== null ? { 'file.startOver': { run: startOver.run, enabled: () => true } } : {}),
     });
-  }, [params, doc, store, scheduler, rootRef, ui, save, nav.jumps, find.controller, find.open, notes, pageText, originalLink, startOver]);
+  }, [params, doc, store, scheduler, rootRef, ui, save, nav.jumps, find.controller, find.open, notes, pageText, originalLink, startOver, pageOrder]);
   // Search hits in this document (S15): a jump in place, through the same history as links and find.
   const jumper = useMemo(
     () =>
@@ -840,8 +863,8 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       }
       if (stopped.current) return;
       stopped.current = true;
-      const { zoom, currentPage, viewRotation, spread, railOpen } = store.get();
-      onEngineStopped(err, { zoom, currentPage, viewRotation, spread, railOpen });
+      const { zoom, currentPage, viewRotation, spread, railOpen, pageOrder: order } = store.get();
+      onEngineStopped(err, { zoom, currentPage, viewRotation, spread, railOpen, pageOrder: order });
     },
     [store, onEngineStopped],
   );
@@ -877,6 +900,8 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
         onPage={nav.onPage}
         onOutline={nav.onOutline}
         onToggle={() => commands.get('view.toggleRail')?.run()}
+        onMovePages={movePages}
+        onPageMenu={openPageMenu}
         tabs={notes === null ? undefined : viewerFeatures().flatMap((f) => (f.rail ? [{ id: f.id, icon: f.rail.icon, label: f.rail.label, panel: <f.rail.Panel host={notes.host} /> }] : []))}
       >
         <PageList backend={backend} doc={doc} store={store} scheduler={scheduler} apiRef={api} renderPage={renderPage} onError={onDrawError} initialReserveRight={reserveAtOpen?.px ?? 0} initialReserveOptions={reserveAtOpen ?? undefined} spreadSideClearance={railOpen ? 0 : SPREAD_SIDE_CLEARANCE} />
@@ -884,6 +909,7 @@ const Reader = memo(function Reader({ doc, resume, params, rootRef, pageFieldRef
       {find.view}
       {notes !== null && viewerFeatures().map((f) => f.View && <f.View key={f.id} host={notes.host} />)}
       {notes !== null && <MarkupMenu input={notes.input} commands={commands} />}
+      <PageOrderMenu open={pageMenu} pages={pageOrder} pageCount={doc.open.pageCount} onClose={() => setPageMenu(null)} />
       <ViewerAbout doc={doc} save={save} session={notes?.host.session ?? null} ui={ui} />
     </>
   );

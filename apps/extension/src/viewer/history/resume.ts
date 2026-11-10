@@ -47,7 +47,14 @@ const NEXT_PAGE_OFFSET = 0.97;
  */
 export function readerSpot(api: Pick<PageListApi, 'scrollTop' | 'pageBoxes'>, scale: number, pageCount: number): ViewPosition {
   const p = viewPosition(api, scale);
-  if (p.offset >= NEXT_PAGE_OFFSET && p.pageIndex + 1 < pageCount) return { pageIndex: p.pageIndex + 1, offset: 0, scale };
+  if (p.offset >= NEXT_PAGE_OFFSET && p.pageIndex + 1 < pageCount) {
+    // The next page as shown (R108: the reader may have moved pages), the first of the next row in two-page view.
+    const boxes = api.pageBoxes();
+    const at = boxes[p.pageIndex];
+    let next: (typeof boxes)[number] | null = null;
+    for (const b of boxes) if (at && b.top > at.top && (next === null || b.top < next.top || (b.top === next.top && b.left < next.left))) next = b;
+    if (next !== null) return { pageIndex: next.index, offset: 0, scale };
+  }
   return { ...p, offset: Math.max(0, p.offset) };
 }
 

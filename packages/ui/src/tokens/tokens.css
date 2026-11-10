@@ -283,6 +283,8 @@
   --rail-tools-w: 62px;             /* the toggle column: 16 + a 40 px button + 6 */
   --rail-outline-w: 300px;          /* the rail with the outline: Chrome's side panel width, so titles fit [css] */
   --thumb-w: 73px;                  /* a portrait thumbnail is 73 × 97 */
+  --page-drop-line: 3px;            /* R108: the line where dragged pages will land, between two thumbnails */
+  --page-drop-dot: 9px;             /* its round end on the left */
   --shape-thumb: 8px;               /* thumbnail corners */
   --viewer-rail-pill-bg: rgba(30,31,32,.92); /* "Hide navigation pane", bottom left, radius 0 100px 100px 0 */
   --outline-indent: 12px;           /* each outline level steps in this far [inf] */

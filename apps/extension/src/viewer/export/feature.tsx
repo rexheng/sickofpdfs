@@ -48,7 +48,9 @@ let running = false;
 /** Makes the copy and downloads it. Never throws: a failure is told in the snackbar, and the notes are never touched. */
 export async function downloadWithNotes(host: NotesHost): Promise<void> {
   if (running) return;
-  if (!hasNotes(host)) {
+  // R108: with the pages moved, the copy is worth making without notes too (the pages in the new order).
+  const notes = hasNotes(host);
+  if (!notes && host.view.get().pageOrder === null) {
     host.showNote('This PDF has no notes yet. Add a highlight or a comment first.');
     return;
   }
@@ -56,6 +58,8 @@ export async function downloadWithNotes(host: NotesHost): Promise<void> {
   try {
     const store = await libraryStore();
     let name = await readAuthorName(store);
+    // The name goes on notes: a copy that only has its pages moved needs none.
+    if (name === null && !notes) name = '';
     if (name === null) {
       const a = await askOwner({ kind: 'name' });
       if (a === null || a === true) return;
@@ -64,7 +68,7 @@ export async function downloadWithNotes(host: NotesHost): Promise<void> {
     }
     const signatures = await host.backend.getSignatureCount(host.doc).catch(() => 0);
     if (signatures > 0 && (await askOwner({ kind: 'signed', signatures })) !== true) return;
-    host.showNote('Adding your notes to a copy…');
+    host.showNote(notes ? 'Adding your notes to a copy…' : 'Making a copy with the pages in your order…');
     // the tags of a reading in the library (spec: they go in the copy's Keywords); an unsaved PDF has none
     const saved = host.save?.state.kind === 'saved' ? host.save.state.documentId : null;
     const tags = saved !== null && store !== null ? await store.tagsOf(saved).then((t) => t.map((x) => x.name), () => []) : [];

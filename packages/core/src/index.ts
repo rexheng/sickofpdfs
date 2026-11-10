@@ -95,3 +95,9 @@ export {
 } from './ocr';
 export type { OcrEngine, OcrPageKind, OcrPageResult, OcrProgress, OcrService, OcrWord, PageImageSource } from './ocr';
 export { ELEVENREADER_STUDENT_URL, SITE_ORIGIN, waitlistUrl } from './links';
+// R108: a reading's page order (the original page index shown at each position).
+export {
+  PAGE_ORDER_KEY_PREFIX, byShownPosition, cleanPageOrder, documentOfPageOrderKey, movePages, nudgePages, pageAfter, pageAtPosition, pageOrderKey, positionOfPage, samePageOrder,
+  shownPageNumber, shownPages,
+} from './pages/page-order';
+export type { PageOrder } from './pages/page-order';

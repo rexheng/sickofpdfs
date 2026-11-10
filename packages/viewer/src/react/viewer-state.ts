@@ -22,6 +22,12 @@ export interface ViewerSnapshot {
    * list follows it (presentation.ts and the reading keys step it).
    */
   presenting: Presenting | null;
+  /**
+   * R108: the page order the reader made (the original page index shown at each position), or null for the file's own
+   * order. Every page index in this snapshot (currentPage, presenting) is still an original index: only the layout and
+   * the page numbers shown follow the order (@sop/core/page-order).
+   */
+  pageOrder: readonly number[] | null;
 }
 
 export interface ViewerStore {
@@ -38,6 +44,7 @@ export const INITIAL_VIEWER_SNAPSHOT: ViewerSnapshot = {
   spread: 'none',
   railOpen: false,
   presenting: null,
+  pageOrder: null,
 };
 
 /** A store holding `initial` (default: fit width, page 1). `set` notifies only when a field actually changes. */

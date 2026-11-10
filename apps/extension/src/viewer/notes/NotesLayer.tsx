@@ -56,6 +56,7 @@ import { useFigureCards } from '../figures/cards';
 import { openSpecialNote } from '../figures/notes-bridge';
 import styles from './NotesLayer.module.css';
 import type { NotesWiring } from './wiring';
+import { shownPage, usePageOrder } from '../page-order/shown';
 
 export interface NotesLayerProps {
   /** The open document's notes (annotations/wire.ts): its session, the page list, the view and the selection. */
@@ -501,7 +502,8 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
   const pins: { t: ThreadRow; x: number; y: number }[] = [];
   const spots: { id: string; n: number; page: number; top: number }[] = [];
   // R98: the markers count the notes in reading order, as the notes panel does ("Note 3 of 7").
-  const order = useMemo(() => new Map(listNotes(s).placed.map((e, i) => [e.id as string, i + 1])), [s]);
+  const pageOrder = usePageOrder(); // R108: in the order the pages are shown
+  const order = useMemo(() => new Map(listNotes(s, 'all', pageOrder).placed.map((e, i) => [e.id as string, i + 1])), [s, pageOrder]);
   for (const t of s.threads) {
     const res = s.placement.get(t.id);
     const shown = shownAnchor(t.anchor, res);
@@ -660,7 +662,7 @@ function Notes({ host: notes, wiring }: { host: NotesHost; wiring: NotesWiring }
           data-theme="light"
           data-active={s.active === t.id ? 'true' : 'false'}
           style={{ left: x, top: y }}
-          aria-label={`Note on page ${(t.anchor.kind === 'point' ? t.anchor.page : 0) + 1}`}
+          aria-label={`Note on page ${shownPage(t.anchor.kind === 'point' ? t.anchor.page : 0)}`}
           onClick={() => activate(t.id)}
         >
           <Icon name="comment" size={20} filled className={styles.pinIcon} />

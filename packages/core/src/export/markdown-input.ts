@@ -30,6 +30,12 @@ export interface ExportDocument {
    * the import's own meta is found without this; a bare mark or a thread is found with it.
    */
   importedRowIds?: ReadonlySet<string>;
+  /**
+   * R108: the order the owner put the reading's pages in (the original page index at each position; null or absent for
+   * the file's own). The pages are listed in that order and named by the numbers the owner sees ("Page 3"); a link back
+   * still goes to the file's page (`#page=N`), which the viewer shows at its place in the order.
+   */
+  pageOrder?: readonly number[] | null;
 }
 
 export type ExportMark = Pick<MarkRow, 'id' | 'style' | 'color' | 'anchor' | 'pageIndex' | 'sortKey' | 'createdAt' | 'deletedAt'>;

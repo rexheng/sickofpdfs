@@ -19,6 +19,7 @@ import type { PageListApi } from '@sop/viewer/react';
 import type { RefObject } from 'react';
 import { flushSync } from 'react-dom';
 import './presentation.css';
+import { pageAfter } from '@sop/core/page-order';
 
 /** The cursor hides after this long without moving. */
 export const CURSOR_HIDE_MS = 2000;
@@ -152,7 +153,9 @@ export async function enterPresentation(ctx: PresentationContext): Promise<() =>
 
   const step = (dir: 1 | -1) => {
     const now = store.get().presenting;
-    if (now) store.set({ presenting: { page: Math.max(0, now.page + dir) } }); // the page list stops it at the last page
+    // R108: the next page as shown (the page list keeps it within the document)
+    const order = store.get().pageOrder;
+    if (now) store.set({ presenting: { page: pageAfter(order, order?.length ?? Number.MAX_SAFE_INTEGER, now.page, dir) } });
   };
 
   // The cursor: hidden after CURSOR_HIDE_MS still, back on the next move.

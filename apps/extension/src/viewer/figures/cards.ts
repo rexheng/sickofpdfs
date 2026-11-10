@@ -9,6 +9,7 @@ import type { NotesHost } from '../annotations/wire';
 import { figureName, pinNumbers, placedAnchor } from './anchors';
 import { thumbKey, thumbnailBlob, type ThumbMark } from './images';
 import { controllerOf } from './registry';
+import { shownPage } from '../page-order/shown';
 
 /** For the margin's cards: each figure or area note's thumbnail and label (null for other notes). */
 export function useFigureCards(host: NotesHost): (t: ThreadRow, r: Resolution | undefined) => CardFigure | null {
@@ -27,10 +28,10 @@ export function useFigureCards(host: NotesHost): (t: ThreadRow, r: Resolution | 
     const name = figureName(a.kind === 'figure' ? a.figure.label : null);
     const label =
       a.kind === 'area'
-        ? `Area · Page ${a.page + 1}`
+        ? `Area · Page ${shownPage(a.page)}`
         : a.sub?.rect
-          ? `Part of ${name} · Page ${a.page + 1}`
-          : `${name} · Page ${a.page + 1}${pin === undefined ? '' : ` · Pin ${pin}`}`;
+          ? `Part of ${name} · Page ${shownPage(a.page)}`
+          : `${name} · Page ${shownPage(a.page)}${pin === undefined ? '' : ` · Pin ${pin}`}`;
     return { label, thumbnail };
   };
 }

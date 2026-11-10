@@ -36,6 +36,7 @@ import { type BackupApi, createBackupApi } from './backup-api';
 import type { StoreChange } from './change-bus';
 import { ftsQuery } from './fts-query';
 import { createCoursesApi, type CoursesApi, forgetCoursePlacements } from './courses-api';
+import { forgetPageOrders } from './page-order-rows';
 import { createLibraryApi, type LibraryApi } from './library-api';
 import { createRestoreApi, type RestoreApi } from './restore-api';
 import { createLookupsApi, type LookupsApi } from './lookups-api';
@@ -848,6 +849,8 @@ export function createStoreApi(db: Sqlite3Database, deps: StoreDeps): StoreApi {
         clearTagOutbox(db, [documentId]);
         // Where the owner put it on the Courses page: a settings row named by its fingerprint (8.5b).
         forgetCoursePlacements(db, [documentId]);
+        // R108: its page order (a settings row named by its fingerprint) goes too.
+        forgetPageOrders(db, [documentId]);
         // A topic or course tag that only this reading kept alive is deleted too (its name came from this reading's words).
         if (existed) orphaned = dropOrphanAutoTags(db);
         // 4. Merge each index into one fresh segment, so the deleted words are gone from the index files too (R13).

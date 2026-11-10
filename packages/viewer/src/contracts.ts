@@ -44,6 +44,8 @@ export interface FindController {
   subscribe(cb: (s: FindState) => void): () => void;
   /** Phase 7: the page's text changed (its recognised text arrived): it is read again, and searched again for the open query. */
   refreshPage?(pageIndex: number): void;
+  /** R108: the reader moved pages. The open search starts again, so its hits are in the new order. */
+  orderChanged?(): void;
   dispose(): void;
 }
 

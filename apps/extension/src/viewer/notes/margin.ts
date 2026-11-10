@@ -7,6 +7,7 @@ import type { Anchor, NormRect } from '@sop/core';
 import { type Box, normToCss, type PageBox, PAGE_GAP, type Rotation } from '@sop/viewer';
 import type { Resolution } from '../annotations/boundary';
 import { regionNoteHit } from '../figures/anchors';
+import { shownPage } from '../page-order/shown';
 
 /** Docs' margin card (02 section 4.11; the card tokens). */
 export const CARD_WIDTH = 282;
@@ -119,7 +120,7 @@ export function anchorLabel(a: Anchor): string | null {
   switch (a.kind) {
     case 'page':
     case 'point':
-      return `Page ${a.page + 1}`;
+      return `Page ${shownPage(a.page)}`;
     case 'document':
       return 'Whole document';
     default:

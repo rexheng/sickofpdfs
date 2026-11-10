@@ -34,8 +34,11 @@ export const SETTINGS_API_METHODS = ['getSetting', 'setSetting', 'addToSettingLi
 /** The methods that only read: their answers are not kept for replays. */
 export const SETTINGS_READ_METHODS = ['getSetting'] as const satisfies readonly (keyof SettingsApi)[];
 
-/** A key is a dotted name: `filter.allow`, `library.layout`. */
-const KEY = /^[a-z][a-zA-Z0-9]*(?:\.[a-z][a-zA-Z0-9]*)+$/;
+/**
+ * A key is a dotted name: `filter.allow`, `library.layout`. After the first part, a part may start with a digit, so a key
+ * can end in a reading's fingerprint (R108: `pageOrder.of.<sha>`, as the courses' `course.of.<sha>`).
+ */
+const KEY = /^[a-z][a-zA-Z0-9]*(?:\.[a-z0-9][a-zA-Z0-9]*)+$/;
 const MAX_KEY = 128;
 /** The longest stored value (JSON text). The lists are short; this only stops a runaway write. */
 const MAX_VALUE = 64 * 1024;

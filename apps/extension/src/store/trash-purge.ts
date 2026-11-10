@@ -17,6 +17,7 @@
 import type { DocumentId, HlcStamp } from '@sop/core';
 import type { StoreChange } from './change-bus';
 import { forgetCoursePlacements } from './courses-api';
+import { forgetPageOrders } from './page-order-rows';
 import { forgottenHashes, recordForgotten } from './forgotten';
 import { FTS_TABLES } from './schema';
 import type { SqlDb } from './schema-v2';
@@ -129,6 +130,7 @@ export async function purgeTrashRows(db: SqlDb, deps: TrashDeps, olderThan: numb
         forgotten.push(...still);
         clearTagOutbox(tx, still);
         forgetCoursePlacements(tx, still);
+        forgetPageOrders(tx, still); // R108
         // A topic or course tag only these readings kept alive goes too (R92).
         orphaned.push(...dropOrphanAutoTags(tx));
       }

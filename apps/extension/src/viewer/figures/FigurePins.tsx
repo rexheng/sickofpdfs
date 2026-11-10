@@ -9,6 +9,7 @@ import { createPortal } from 'react-dom';
 import { figureName, notePlace, pinNumbers, placedAnchor } from './anchors';
 import type { FigureController } from './controller';
 import styles from './figures.module.css';
+import { shownPage } from '../page-order/shown';
 
 export function FigurePins({ controller }: { controller: FigureController }) {
   const { host } = controller;
@@ -47,7 +48,7 @@ export function FigurePins({ controller }: { controller: FigureController }) {
             data-theme="light"
             data-active={active ? 'true' : 'false'}
             style={{ left: p.x, top: p.y }}
-            aria-label={`Pin ${p.n} on ${p.label}, Page ${p.page + 1}`}
+            aria-label={`Pin ${p.n} on ${p.label}, Page ${shownPage(p.page)}`}
             aria-pressed={active}
             onClick={() => session.setActive(p.id)}
           >

@@ -1,6 +1,6 @@
 // What goes in the backup folder, worked out from the library dump. Pure: no folder, no clock, no storage.
 // The writer (writer.ts) and "Export library" (zip.ts) both build their files from this, so the zip has the folder's layout.
-import { exportMarkdown, isSha, notesPath, type DocumentRow, type LibraryDump, type LocationRow } from '@sop/core';
+import { cleanPageOrder, documentOfPageOrderKey, exportMarkdown, isSha, notesPath, type DocumentRow, type LibraryDump, type LocationRow } from '@sop/core';
 
 /** One document's notes as a Markdown file in `notes/` (contracts §5). */
 export interface NotesFile {
@@ -59,6 +59,7 @@ export function notesFiles(dump: LibraryDump, o: LayoutOptions, imported?: Reado
   const comments = groupBy(dump.tables.comments);
   const locations = groupBy(dump.tables.locations);
   const courses = coursesOf(dump);
+  const orders = pageOrdersOf(dump);
   const out: NotesFile[] = [];
   for (const doc of dump.tables.documents) {
     if (!isSha(doc.id) || !live(doc)) continue;
@@ -69,7 +70,7 @@ export function notesFiles(dump: LibraryDump, o: LayoutOptions, imported?: Reado
       documentId: doc.id,
       path: notesPath(doc.title, doc.id),
       markdown: exportMarkdown(
-        { id: doc.id, title: doc.title, authors: doc.authors, doi: doc.doi, arxivId: doc.arxivId, sourceLink: sourceLinkOf(locations.get(doc.id)), viewerBase: o.viewerBase, courses: courses.get(doc.id), importedRowIds: imported?.get(doc.id) },
+        { id: doc.id, title: doc.title, authors: doc.authors, doi: doc.doi, arxivId: doc.arxivId, sourceLink: sourceLinkOf(locations.get(doc.id)), viewerBase: o.viewerBase, courses: courses.get(doc.id), importedRowIds: imported?.get(doc.id), pageOrder: cleanPageOrder(orders.get(doc.id), doc.pageCount) },
         m,
         t,
         comments.get(doc.id) ?? [],
@@ -77,6 +78,21 @@ export function notesFiles(dump: LibraryDump, o: LayoutOptions, imported?: Reado
     });
   }
   return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+/** R108: each reading's page order, from its `pageOrder.of.<sha>` setting (checked against the page count by the caller). */
+function pageOrdersOf(dump: LibraryDump): Map<string, unknown> {
+  const out = new Map<string, unknown>();
+  for (const row of dump.tables.settings) {
+    const id = documentOfPageOrderKey(row.key);
+    if (id === null) continue;
+    try {
+      out.set(id, JSON.parse(row.value) as unknown);
+    } catch {
+      // not an order: the file's own
+    }
+  }
+  return out;
 }
 
 /** The documents of a dump that are saved PDFs the library keeps a copy of. */

@@ -1,5 +1,6 @@
 // The reader's own view of the pages in one tab (Task 26, R81): rotation, two-page view and presentation mode. None of
 // it is saved: the PDF reopens upright, one page a row, as in Chrome. The file itself is never changed.
+import { positionOfPage } from '@sop/core/page-order';
 import type { PageSize, Rotation } from '../backend/types';
 import type { PageBox, PageLayout } from '../layout/page-layout';
 import { displayedSize, PT_TO_CSS } from '../layout/zoom';
@@ -40,15 +41,21 @@ export function presentationScale(pages: readonly PageSize[], index: number, vie
  * the viewport's height, or the tallest page's at this scale when that is taller (pages of other sizes), so with the
  * page shown centred in the view (presentationTop) no other page reaches into it.
  */
-export function presentationLayout(pages: readonly PageSize[], o: { scale: number; viewRotation: Rotation; viewport: { width: number; height: number } }): PageLayout {
+export function presentationLayout(
+  pages: readonly PageSize[],
+  o: { scale: number; viewRotation: Rotation; viewport: { width: number; height: number }; order?: readonly number[] | null },
+): PageLayout {
   const { width: W, height: H } = o.viewport;
+  const order = o.order && o.order.length === pages.length ? o.order : null;
   const shown = pages.map((p) => {
     const d = displayedSize(p, o.viewRotation);
     return { width: cssAt(d.width, o.scale), height: cssAt(d.height, o.scale), rotation: d.rotation };
   });
   const slot = Math.max(H, ...shown.map((s) => s.height));
-  const boxes: PageBox[] = shown.map((s, i) => ({ index: i, top: i * slot + (slot - s.height) / 2, left: (W - s.width) / 2, width: s.width, height: s.height, rotation: s.rotation }));
-  return { boxes, width: W, height: pages.length * slot };
+  // R108: slot k shows the page at position k; boxes[i] is still page i's box.
+  const slotOf = (i: number) => (order ? positionOfPage(order, i) : i);
+  const boxes: PageBox[] = shown.map((s, i) => ({ index: i, top: slotOf(i) * slot + (slot - s.height) / 2, left: (W - s.width) / 2, width: s.width, height: s.height, rotation: s.rotation }));
+  return { boxes, width: W, height: pages.length * slot, ...(order ? { order } : {}) };
 }
 
 /** The scroll position that shows page box `box` centred in a view `viewportHeight` tall (presentation mode). */

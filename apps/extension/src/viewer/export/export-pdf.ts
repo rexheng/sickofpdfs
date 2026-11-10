@@ -69,6 +69,12 @@ export function withNotesName(displayName: string): string {
   return `${base} (with notes).pdf`;
 }
 
+/** "paper.pdf" → "paper (new page order).pdf": a copy with no notes, only the pages moved (R108). */
+export function reorderedName(displayName: string): string {
+  const base = displayName.replace(/\.pdf$/iu, '').trim() || 'document';
+  return `${base} (new page order).pdf`;
+}
+
 /** The notes this tab would export: live marks and sent threads. False when there is nothing to write. */
 export function hasNotes(host: Pick<NotesHost, 'session'>): boolean {
   const s = host.session.state();
@@ -187,11 +193,16 @@ export async function exportWithNotes(host: NotesHost, o: ExportOptions): Promis
   const docNote = threads.find((t) => t.anchor.kind === 'document');
   const docNoteRoot = docNote ? state.comments.filter((c) => c.threadId === docNote.id && c.deletedAt === null && c.draftOfTab === null).sort((a, b) => a.createdAt - b.createdAt)[0] : undefined;
   const info = { ...(docNoteRoot ? { subject: commentPlainText(docNoteRoot) } : {}), ...(o.tags && o.tags.length > 0 ? { keywords: o.tags.join(', ') } : {}) };
+  // R108: the copy has the pages in the order the owner put them in. The notes are planned on the file's own page
+  // indices, and the engine moves each page (with its notes) to its place after writing them.
+  const pageOrder = host.view.get().pageOrder;
   const blob = await host.backend.writeAnnotations(host.opened.loaded.blob, plan.annotations, {
     save: 'tail',
     boldFills,
     ...(host.opened.password !== null ? { password: host.opened.password } : {}),
     ...(Object.keys(info).length > 0 ? { info } : {}),
+    ...(pageOrder !== null ? { pageOrder: [...pageOrder] } : {}),
   });
-  return { blob, fileName: withNotesName(host.opened.loaded.displayName), annotations: plan.annotations.length, notPlaced: plan.notPlaced.length, skippedMarks: plan.skippedMarks.length };
+  const named = plan.annotations.length === 0 && pageOrder !== null ? reorderedName(host.opened.loaded.displayName) : withNotesName(host.opened.loaded.displayName);
+  return { blob, fileName: named, annotations: plan.annotations.length, notPlaced: plan.notPlaced.length, skippedMarks: plan.skippedMarks.length };
 }
