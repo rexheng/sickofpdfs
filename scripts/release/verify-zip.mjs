@@ -1,4 +1,6 @@
-// `node scripts/release/verify-zip.mjs <release zip>` (also the last step of `pnpm release:zip` and of the release workflow).
+// `node scripts/release/verify-zip.mjs <release zip> [--store]` (also the last step of `pnpm release:zip` and of the release workflow).
+// With --store it checks the Chrome Web Store zip instead: no `key` in the manifest (the store refuses one) and no
+// HOW-TO-UPDATE.txt; everything else is the same.
 // Opens the zip the way Chrome would, and fails (exit 1) with one plain line per problem when:
 //  1. the extension id is not the one the committed public key gives (apps/extension/extension-key.pub.txt), or the version is wrong;
 //  2. a test hook is inside (the __sopTest hooks, the test Claude base URL);
@@ -21,9 +23,12 @@ const ext = join(root, 'apps/extension');
 const { extensionIdFromKey, readPublicKey } = await import(new URL('../../apps/extension/scripts/extension-id.mjs', import.meta.url));
 const { MINILM_FILES } = await import(new URL('../../apps/extension/scripts/fetch-minilm.mjs', import.meta.url));
 
-const zipPath = process.argv[2] ? resolve(process.argv[2]) : undefined;
+const cli = process.argv.slice(2).filter((a) => a !== '--');
+const store = cli.includes('--store');
+const zipArg = cli.find((a) => !a.startsWith('--'));
+const zipPath = zipArg ? resolve(zipArg) : undefined;
 if (!zipPath || !existsSync(zipPath)) {
-  console.error('usage: node scripts/release/verify-zip.mjs <release zip>');
+  console.error('usage: node scripts/release/verify-zip.mjs <release zip> [--store]');
   process.exit(2);
 }
 
@@ -58,7 +63,9 @@ try {
   const manifest = files.has('manifest.json') ? JSON.parse(text('manifest.json')) : {};
   const wantKey = readPublicKey();
   const wantId = extensionIdFromKey(wantKey);
-  if (manifest.key !== wantKey) fail(`the extension id would be ${manifest.key ? extensionIdFromKey(manifest.key) : '(random: no key)'}, not ${wantId} from the committed key`);
+  if (store) {
+    if (manifest.key !== undefined) fail('the manifest has a "key": the Chrome Web Store refuses it (make the zip with `pnpm release:zip --store`)');
+  } else if (manifest.key !== wantKey) fail(`the extension id would be ${manifest.key ? extensionIdFromKey(manifest.key) : '(random: no key)'}, not ${wantId} from the committed key`);
   const version = JSON.parse(readFileSync(join(ext, 'package.json'), 'utf8')).version;
   if (manifest.version !== version) fail(`manifest version is ${manifest.version}, apps/extension/package.json says ${version}`);
   if (manifest.version_name !== 'Release 1') fail(`manifest version_name is "${manifest.version_name}", not "Release 1" (is this a test build?)`);
@@ -123,7 +130,9 @@ try {
     else if (buf.length !== m.bytes || createHash('sha256').update(buf).digest('hex') !== m.sha256) fail(`${p} is not the pinned file (size or sha256 differs)`);
   }
   for (const page of ['library.html', 'viewer.html', 'popup.html', 'offscreen.html', 'licences.html', 'save-page.html']) if (!files.has(page)) fail(`missing ${page}`);
-  if (!files.has('HOW-TO-UPDATE.txt')) fail('missing HOW-TO-UPDATE.txt');
+  if (store && files.has('HOW-TO-UPDATE.txt')) fail('HOW-TO-UPDATE.txt is in the store zip (store installs update by themselves)');
+  if (!store && !files.has('HOW-TO-UPDATE.txt')) fail('missing HOW-TO-UPDATE.txt');
+  if (files.has('key.pem')) fail('key.pem is in the zip: the private key must never be in a made zip (add it by hand, only for the first store upload)');
 
   // 6. Licence notices: the file, every listed item has its text, and the big pieces are named.
   if (!files.has('THIRD_PARTY_NOTICES.txt')) fail('missing THIRD_PARTY_NOTICES.txt');
@@ -152,7 +161,7 @@ try {
     if (problems.length > 40) console.error(`  … and ${problems.length - 40} more`);
     process.exit(1);
   }
-  console.log(`verify-zip: OK ${zipPath} (${(size / 2 ** 20).toFixed(1)} MiB, ${files.size} files, version ${manifest.version} "${manifest.version_name}", id ${wantId})`);
+  console.log(`verify-zip: OK ${zipPath} (${(size / 2 ** 20).toFixed(1)} MiB, ${files.size} files, version ${manifest.version} "${manifest.version_name}", ${store ? 'id from the store (the same as the fixed one when key.pem went with the first upload)' : `id ${wantId}`})`);
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
