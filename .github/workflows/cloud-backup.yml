@@ -1,0 +1,44 @@
+# Release 2 cloud: the nightly backup of PRODUCTION. Pages through the export endpoint and writes JSON into the Worker's R2
+# (backup/<date>/, kept 30 days by the Worker's daily job). The search tables and page text are left out: they are rebuilt.
+# By hand for now; turn on the schedule below after Round 6.
+name: Cloud backup
+
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: '41 2 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Back up
+        working-directory: apps/cloud
+        env:
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+        run: |
+          URL="$(node scripts/env-info.mjs --env production url)"
+          node scripts/backup.mjs --url "$URL" --env production

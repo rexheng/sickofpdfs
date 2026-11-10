@@ -35,7 +35,7 @@ export async function dailyJob(env: Env, now: number = Date.now()): Promise<JobR
     db.prepare('DELETE FROM audit WHERE at < ?').bind(now - AUDIT_DAYS * DAY),
     db.prepare('DELETE FROM usage_day WHERE day < ?').bind(cutoffDay),
     db.prepare('SELECT sha256, upload_id FROM blob_upload WHERE started_at < ? LIMIT 20').bind(now - STALE_UPLOAD_DAYS * DAY),
-    db.prepare('SELECT id FROM documents WHERE deleted_at IS NOT NULL AND deleted_at < ? ORDER BY deleted_at LIMIT ?').bind(now - KEEP_DAYS * DAY, PURGES_PER_RUN),
+    db.prepare('SELECT id FROM documents WHERE deleted_at IS NOT NULL AND deleted_at < ? ORDER BY deleted_at LIMIT ?').bind(now - KEEP_DAYS * DAY, PURGES_PER_RUN * 4),
   ]);
   report.appliedPruned = applied?.meta.changes ?? 0;
   report.auditPruned = audit?.meta.changes ?? 0;
@@ -49,8 +49,19 @@ export async function dailyJob(env: Env, now: number = Date.now()): Promise<JobR
   }
 
   // 3. Trash older than 30 days is purged like Forget (D8). A document restored since then has deleted_at NULL and is kept.
+  //    `deleted_at` comes from a device's clock, which can be wrong, so the server also needs 30 days of its own: no push of
+  //    the document row may have reached it in that time (its replay memory, kept exactly 30 days, would show one).
   const sync = createSyncService(env);
-  for (const d of (trash?.results ?? []) as { id: string }[]) {
+  const candidates = ((trash?.results ?? []) as { id: string }[]).map((d) => d.id);
+  const recent = new Set<string>();
+  if (candidates.length) {
+    const r = await db
+      .prepare(`SELECT row_id FROM applied_entry WHERE table_name = 'documents' AND at > ? AND row_id IN (${candidates.map(() => '?').join(',')})`)
+      .bind(now - KEEP_DAYS * DAY, ...candidates)
+      .all<{ row_id: string }>();
+    for (const x of r.results) recent.add(x.row_id);
+  }
+  for (const d of candidates.filter((id) => !recent.has(id)).slice(0, PURGES_PER_RUN).map((id) => ({ id }))) {
     try {
       await sync.purgeDocument(d.id as Sha256);
       report.trashPurged++;
