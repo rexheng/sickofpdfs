@@ -1,0 +1,21 @@
+{
+  "name": "@sop/site",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The public site (spec R111, R112): one plain page, a privacy page, the cloud sync waitlist and a real count. A Worker with static files and D1. Local only until the owner says OK.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "db:local": "wrangler d1 migrations apply SITE_DB --local",
+    "dev": "wrangler dev --local",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sop/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261101.1",
+    "@types/node": "22.20.5",
+    "wrangler": "4.156.0"
+  }
+}

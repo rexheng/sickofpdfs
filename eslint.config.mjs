@@ -71,6 +71,8 @@ export default defineConfig(
     '**/playwright-report/**',
     '**/test-results/**',
     '**/.vitest-attachments/**',
+    // Wrangler's local state and temporary bundles
+    '**/.wrangler/**',
     '.superpowers/**',
     'test-assets/**',
     // third-party files the build copies in (onnxruntime-web's runtime, the tie-breaker model): not our code

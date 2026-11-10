@@ -1,0 +1,77 @@
+// The public site (spec R111): static pages plus a small Worker for the waitlist and the count, with one D1 database.
+//
+// The top level is LOCAL: it is what `wrangler dev` uses, on temporary storage in .wrangler/. It can never be deployed, because
+// its database id is a `local-only-*` placeholder that Wrangler refuses. `production` is the real site. Its ids are placeholders
+// until the owner says OK (README.md, "Deploying"). Nothing in this file creates anything on a Cloudflare account.
+//
+// Bindings and variables are repeated in `production` on purpose: Wrangler does not inherit them. Every database keeps an id,
+// so Wrangler's auto-provisioning (which creates resources for bindings with no id) never switches on.
+//
+// Secrets are never in this file. TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY come from .dev.vars locally and from
+// `wrangler secret put` in production.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "sickofpdfs-site-local",
+  "main": "src/worker.ts",
+  // Wrangler 4.156.0 ships a runtime that supports dates up to 2026-10-23.
+  "compatibility_date": "2026-10-23",
+  "compatibility_flags": ["global_fetch_strictly_public"],
+  "workers_dev": true,
+  "preview_urls": false,
+  // No request logs are kept, so no IP address is ever stored.
+  "observability": { "enabled": false },
+  // The pages are made from src/pages before every `wrangler dev` and `wrangler deploy`.
+  "build": { "command": "node --disable-warning=ExperimentalWarning scripts/build.mjs", "watch_dir": ["src/pages", "scripts"] },
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "html_handling": "drop-trailing-slash",
+    "not_found_handling": "404-page",
+    // /__scheduled is local only: `wrangler dev --test-scheduled` runs the daily job from it (README.md)
+    "run_worker_first": ["/api/*", "/__scheduled"]
+  },
+  // The site's settings. The build reads them too (scripts/build.mjs).
+  //   SITE_ORIGIN    the site's address, such as https://sickofpdfs.com. Empty: the Worker uses the address it was called on.
+  //   CONTACT_EMAIL  who to write to, shown on the privacy page. A production build refuses to run while it is empty.
+  //   CWS_ITEM_ID    the Chrome Web Store listing id. Empty: the table says "Coming soon" and the daily job does nothing.
+  //   PLAY_APP_ID    the Google Play app id (com.sickofpdfs.reader) once the listing is live. Empty: "Coming soon".
+  "vars": {
+    "SITE_ORIGIN": "",
+    "CONTACT_EMAIL": "",
+    "CWS_ITEM_ID": "",
+    "PLAY_APP_ID": ""
+  },
+  "d1_databases": [{ "binding": "SITE_DB", "database_name": "sop_site_local", "database_id": "local-only-site", "migrations_dir": "migrations" }],
+  // Sign-up tries per connection: 5 a minute. The counter lives in Cloudflare's memory for the minute and is never written down.
+  // (period must be 10 or 60 seconds; the namespace id is a number of our choosing, distinct from the cloud Worker's.)
+  "ratelimits": [{ "name": "RL_WAITLIST", "namespace_id": "4001", "simple": { "limit": 5, "period": 60 } }],
+  // Once a day: read the public user count from the Chrome Web Store listing (only when CWS_ITEM_ID is set).
+  "triggers": { "crons": ["41 5 * * *"] },
+
+  "env": {
+    "production": {
+      "name": "sickofpdfs-site",
+      "compatibility_flags": ["global_fetch_strictly_public"],
+      "workers_dev": true,
+      "preview_urls": false,
+      "observability": { "enabled": false },
+      "build": { "command": "node --disable-warning=ExperimentalWarning scripts/build.mjs --env production" },
+      "assets": {
+        "directory": "./public",
+        "binding": "ASSETS",
+        "html_handling": "drop-trailing-slash",
+        "not_found_handling": "404-page",
+        "run_worker_first": ["/api/*"]
+      },
+      "vars": {
+        "SITE_ORIGIN": "",
+        "CONTACT_EMAIL": "",
+        "CWS_ITEM_ID": "",
+        "PLAY_APP_ID": ""
+      },
+      "d1_databases": [{ "binding": "SITE_DB", "database_name": "sop_site", "database_id": "REPLACE_AT_DEPLOY", "migrations_dir": "migrations" }],
+      "ratelimits": [{ "name": "RL_WAITLIST", "namespace_id": "4002", "simple": { "limit": 5, "period": 60 } }],
+      "triggers": { "crons": ["41 5 * * *"] }
+    }
+  }
+}

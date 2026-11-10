@@ -1,0 +1,6 @@
+# made by scripts/build.mjs from src/pages (the pages, the headers file); only the hand-made files are committed
+public/*.html
+public/_headers
+# local secrets and local databases
+.dev.vars
+.wrangler/

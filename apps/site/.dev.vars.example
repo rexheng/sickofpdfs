@@ -1,0 +1,5 @@
+# Copy this file to .dev.vars (it is gitignored) and fill in the two values. See README.md, "Keys".
+# For `wrangler dev`, use Cloudflare's Turnstile test keys: the site key and secret key that always pass.
+# They are listed at https://developers.cloudflare.com/turnstile/troubleshooting/testing/
+TURNSTILE_SITE_KEY=
+TURNSTILE_SECRET_KEY=
