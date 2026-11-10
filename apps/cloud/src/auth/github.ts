@@ -15,6 +15,9 @@ export function githubUrls(env: Env): { web: string; api: string } {
   return { web: 'https://github.com', api: 'https://api.github.com' };
 }
 
+/** Both GitHub OAuth App keys are set. Until they are, every sign-in shows "Sign-in is not set up yet" instead of going to GitHub. */
+export const githubConfigured = (env: Env): boolean => Boolean((env.GITHUB_CLIENT_ID ?? '').trim() && (env.GITHUB_CLIENT_SECRET ?? '').trim());
+
 export const githubCallbackUrl = (env: Env): string => `${env.PUBLIC_URL}/oauth/github/callback`;
 
 export function githubAuthorizeUrl(env: Env, state: string, codeChallenge: string): string {

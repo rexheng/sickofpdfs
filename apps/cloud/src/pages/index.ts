@@ -82,6 +82,14 @@ export function consentPage(v: ConsentView, headers: HeadersInit = {}): Response
   );
 }
 
+/** Shown while the GitHub sign-in app is not connected yet (no GITHUB_CLIENT_ID or GITHUB_CLIENT_SECRET on the Worker). */
+export const signInNotSetUpPage = (): Response =>
+  page(
+    'Sign-in is not set up yet',
+    '<p>Your library is ready, but GitHub sign-in is not connected yet.</p><p class="muted">To finish, add your two GitHub sign-in keys in the Cloudflare dashboard. The cloud setup guide shows each click.</p>',
+    503,
+  );
+
 export const claudeOffPage = (): Response =>
   page('Claude is turned off', "<p>You turned off Claude's access to your library.</p><p>To connect Claude, turn it on in your library's Settings first.</p>", 503);
 

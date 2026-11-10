@@ -1,0 +1,4 @@
+# Production's static-assets folder is empty on purpose: on this account Wrangler cannot upload static assets, so the web
+# library's files are served from the R2 bucket sop-web instead (src/web/r2-assets.ts, scripts/deploy-production.mjs).
+# Production still needs an "assets" block, because Wrangler would otherwise inherit the top level's one (./public).
+*

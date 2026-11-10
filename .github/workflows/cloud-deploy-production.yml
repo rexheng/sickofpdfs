@@ -1,6 +1,7 @@
 # Release 2 cloud: deploys a TAGGED release (v*) to the owner's production Worker. First it records a D1 Time Travel restore
 # point for every production database (kept 7 days; the bookmarks are in the job summary and kept as an artifact for 30 days)
-# and stops if that fails. Then the schema, the Worker and the smoke test. Run by hand on a tag, never on a branch.
+# and stops if that fails. Then the web library's files (to R2), the schema, the Worker and the smoke test. Run by hand on a
+# tag, never on a branch.
 # The GitHub environment "production" should require the owner's approval (docs/setup/cloud.md).
 name: Deploy cloud (production)
 
@@ -53,19 +54,16 @@ jobs:
           path: apps/cloud/restore-point.json
           retention-days: 30
 
-      - name: Build the web library (into the Worker's static assets)
+      - name: Build the web library
         run: pnpm -C apps/cloud build:web
 
-      - name: Schema, then the Worker
+      # The web library's files go to the R2 bucket sop-web (Workers static assets cannot be uploaded on this account), then
+      # the schema, the Worker and the smoke test. Secrets are left as they are. See apps/cloud/scripts/deploy-production.mjs.
+      - name: Files, schema, the Worker and the smoke test
         working-directory: apps/cloud
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           node scripts/env-info.mjs --env production ready
-          for db in META TEXT_0 TEXT_1; do echo y | node node_modules/wrangler/bin/wrangler.js d1 migrations apply $db --remote --env production; done
-          node node_modules/wrangler/bin/wrangler.js deploy --env production
-
-      - name: Smoke test
-        working-directory: apps/cloud
-        run: node scripts/smoke.mjs --url "$(node scripts/env-info.mjs --env production url)"
+          node scripts/deploy-production.mjs --skip-build --skip-restore-point --skip-secrets

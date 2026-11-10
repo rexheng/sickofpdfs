@@ -1,4 +1,5 @@
-// CL8 · The smoke test after every deploy: a stranger is refused, /mcp answers 401 with its metadata, one sync round trip works.
+// CL8 · The smoke test after every deploy: a stranger is refused, /mcp answers 401 with its metadata, the web library's files
+// load with the right types, and one sync round trip works.
 //
 //   node scripts/smoke.mjs --url https://sickofpdfs-staging.<you>.workers.dev
 //   node scripts/smoke.mjs --url http://127.0.0.1:8787 --fake-github http://127.0.0.1:<port>    (against `pnpm dev:test`)
@@ -62,9 +63,29 @@ async function signIn(who) {
   return { status: 0, text: 'too many redirects' };
 }
 
-// Registers the first-party clients, and shows the extension's sign-in starts at GitHub
+// The web library: signed out, "/" goes to sign in; its files load with the right types (from R2 in production)
+const home = await fetch(`${W}/`, { redirect: 'manual' });
+check(home.status === 302 && (home.headers.get('location') ?? '').startsWith('/login'), '"/" sends a signed-out visit to sign in');
+const login = await fetch(`${W}/login`);
+const loginText = await login.text();
+const notSetUp = login.status === 503 && loginText.includes('Sign-in is not set up yet');
+check((login.status === 200 && loginText.includes('Sign in with GitHub')) || notSetUp, `the sign-in page (${notSetUp ? 'GitHub sign-in is not set up yet' : login.status})`);
+check(/default-src 'none'/.test(login.headers.get('content-security-policy') ?? ''), 'the sign-in page has its security policy');
+for (const [path, type] of [['/pages.css', 'text/css'], ['/pdf/pdfium.wasm', 'application/wasm'], ['/pdf/NotoSans-Regular.ttf', 'font/ttf']]) {
+  const r = await fetch(`${W}${path}`, { method: 'HEAD' });
+  check(r.status === 200 && (r.headers.get('content-type') ?? '').startsWith(type) && r.headers.get('x-content-type-options') === 'nosniff', `${path} loads as ${type}`);
+}
+if (health?.environment === 'production') {
+  // production's files come from R2 (src/web/r2-assets.ts), which never answers a missing script with the library page
+  const missing = await fetch(`${W}/assets/no-such-file.js`, { method: 'HEAD' });
+  check(missing.status === 404, 'a missing file is a 404, not the library page');
+}
+
+// Registers the first-party clients, and shows the extension's sign-in starts at GitHub (or, before the owner adds the GitHub
+// sign-in keys, says plainly that sign-in is not set up)
 const start = await fetch(`${W}/authorize?${new URLSearchParams({ response_type: 'code', client_id: 'sickofpdfs-extension', redirect_uri: redirectUri, scope: 'sync', state: 'x', code_challenge: b64url(randomBytes(32)), code_challenge_method: 'S256', resource: `${W}/api` })}`, { redirect: 'manual' });
-check(start.status === 302 && /\/login\/oauth\/authorize/.test(start.headers.get('location') ?? ''), 'the extension\'s sign-in goes to GitHub');
+if (notSetUp) check(start.status === 503 && (await start.text()).includes('Sign-in is not set up yet'), 'the extension\'s sign-in says it is not set up yet');
+else check(start.status === 302 && /\/login\/oauth\/authorize/.test(start.headers.get('location') ?? ''), 'the extension\'s sign-in goes to GitHub');
 
 let token = process.env.SMOKE_ACCESS_TOKEN ?? null;
 if (GH) {

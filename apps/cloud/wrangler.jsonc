@@ -1,9 +1,9 @@
 // The sickofpdfs Worker. The top level is LOCAL: it is what `wrangler dev`, the tests and `dev:test` use, on temporary storage.
 // It can never be deployed: every id below is a `local-only-*` placeholder, and Wrangler refuses to deploy a binding with an id that
 // is not real. (Locally each database needs its own id, or Wrangler gives all three bindings the same storage.)
-// `staging` and `production` are separate Workers with their own databases, bucket and KV (spec, "Hosting"). Their ids are
-// placeholders until the owner says OK and the bootstrap workflow fills them in (docs/setup/cloud.md, CL8). Nothing in this file
-// creates anything on a Cloudflare account.
+// `staging` and `production` are separate Workers with their own databases, bucket and KV (spec, "Hosting"). Production's ids
+// are real (deployed 2026-11-10 with scripts/deploy-production.mjs); staging's are placeholders until the bootstrap workflow
+// fills them in (docs/setup/cloud.md, CL8). Nothing in this file creates anything on a Cloudflare account.
 //
 // Bindings are repeated in each environment on purpose: Wrangler does not inherit them. Every binding keeps an id, so Wrangler's
 // auto-provisioning (which creates resources for bindings that have no id) can never switch on.
@@ -56,7 +56,9 @@
       "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
       "workers_dev": true,
       "preview_urls": false,
-      "observability": { "enabled": true },
+      // Only the Worker's own log lines (which never hold a token, a search word or a title). No per-request logs: those
+      // keep every full address, query words and sign-in codes included, and the caller's location.
+      "observability": { "enabled": true, "logs": { "enabled": true, "invocation_logs": false } },
       "assets": {
         "directory": "./public",
         "binding": "ASSETS",
@@ -91,15 +93,16 @@
       "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
       "workers_dev": true,
       "preview_urls": false,
-      "observability": { "enabled": true },
-      "assets": {
-        "directory": "./public",
-        "binding": "ASSETS",
-        "not_found_handling": "single-page-application",
-        "run_worker_first": ["/", "/d/*", "/viewer", "/viewer.html", "/mcp", "/api/*", "/authorize", "/oauth/*", "/login", "/logout", "/.well-known/*", "/app/*"]
-      },
+      // Only the Worker's own log lines (which never hold a token, a search word or a title). No per-request logs: those
+      // keep every full address, query words and sign-in codes included, and the caller's location.
+      "observability": { "enabled": true, "logs": { "enabled": true, "invocation_logs": false } },
+      // On this account Wrangler cannot upload static assets, so the web library's files are served from the R2 bucket sop-web
+      // instead (src/web/r2-assets.ts); scripts/deploy-production.mjs uploads them and sets WEB_BUILD. This block must stay:
+      // without it Wrangler inherits the top level's ./public. Its folder uploads nothing, and every request runs the Worker.
+      "assets": { "directory": "./no-assets", "binding": "ASSETS", "run_worker_first": true },
       "vars": {
         "ENVIRONMENT": "production",
+        "STATIC_SOURCE": "r2",
         "PUBLIC_URL": "https://sickofpdfs.rexheng-policy.workers.dev",
         "EXTENSION_ID": "donjaoofgenmbfgfcefnmlgmhiffbglk",
         "WRITE_BUDGET": "75000",
@@ -110,7 +113,10 @@
         { "binding": "TEXT_0", "database_name": "sop_text_0", "database_id": "ea27ceba-a50e-48a2-8e86-a936b4875c9b", "migrations_dir": "migrations/text" },
         { "binding": "TEXT_1", "database_name": "sop_text_1", "database_id": "73563f8f-c695-4391-bbda-b458757eb3db", "migrations_dir": "migrations/text" }
       ],
-      "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "sop-blobs" }],
+      "r2_buckets": [
+        { "binding": "BLOBS", "bucket_name": "sop-blobs" },
+        { "binding": "WEB", "bucket_name": "sop-web" }
+      ],
       "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "8ffa2cc9c84342e78466d6f1bc1ce809" }],
       "ratelimits": [
         { "name": "RL_AUTH", "namespace_id": "3001", "simple": { "limit": 20, "period": 60 } },

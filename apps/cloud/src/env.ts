@@ -28,6 +28,12 @@ export interface Env {
   BLOBS: R2Bucket;
   OAUTH_KV: KVNamespace;
   ASSETS: Fetcher;
+  /** Production only: "r2" serves the web library's files from the WEB bucket instead of the static assets (web/r2-assets.ts). */
+  STATIC_SOURCE?: 'assets' | 'r2';
+  /** The R2 bucket `sop-web` that holds the built web library, one folder per build. Production only. */
+  WEB?: R2Bucket;
+  /** Which build folder in WEB this Worker version serves (a hash of the files). Set by scripts/deploy-production.mjs. */
+  WEB_BUILD?: string;
   RL_AUTH: RateLimit;
   RL_MCP: RateLimit;
   RL_API: RateLimit;

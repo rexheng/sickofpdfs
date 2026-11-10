@@ -15,11 +15,11 @@
 import { type AuthRequest, AuthorizationError, CimdFetchError, authorizationErrorRedirect } from '@cloudflare/workers-oauth-provider';
 import { Hono } from 'hono';
 import type { AppEnv, Env } from '../env';
-import { backToAppPage, claudeOffPage, consentPage, errorPage, notYourAccountPage, signInPage } from '../pages';
+import { backToAppPage, claudeOffPage, consentPage, errorPage, notYourAccountPage, signInNotSetUpPage, signInPage } from '../pages';
 import { wiring } from '../seams';
 import { audit } from './audit';
 import { authenticate, clientAddress, mcpEnabled, requireAuth, tooManyRequests, withinLimit } from './authenticate';
-import { GithubError, githubAuthorizeUrl, githubUserFromCode, isOwner, randomToken, s256 } from './github';
+import { GithubError, githubAuthorizeUrl, githubConfigured, githubUserFromCode, isOwner, randomToken, s256 } from './github';
 import { grantScopes, isWebRedirect, scopeLines } from './policy';
 import {
   CHALLENGE_SCOPES,
@@ -87,6 +87,7 @@ function authorizeFailure(e: unknown): Response {
 }
 
 async function toGithub(env: Env, request: AuthRequest, readOnly: boolean, headers?: Headers): Promise<Response> {
+  if (!githubConfigured(env)) return signInNotSetUpPage();
   const verifier = randomToken(48);
   const up = await oauthApi(env).beginUpstream(request, { data: { verifier, readOnly } satisfies UpstreamData, ...(headers ? { headers } : {}) });
   up.headers.set('location', githubAuthorizeUrl(env, up.state, await s256(verifier)));
@@ -97,6 +98,7 @@ authApp.get('/authorize', async (c) => {
   const env = c.env;
   if (!(await limitAuth(env, c.req.raw))) return tooManyRequests();
   await registerFirstPartyClients(env);
+  if (!githubConfigured(env)) return signInNotSetUpPage();
   const oauth = oauthApi(env);
   let request: AuthRequest;
   try {
@@ -168,6 +170,7 @@ authApp.post('/authorize', async (c) => {
 authApp.get('/oauth/github/callback', async (c) => {
   const env = c.env;
   if (!(await limitAuth(env, c.req.raw))) return tooManyRequests();
+  if (!githubConfigured(env)) return signInNotSetUpPage();
   const url = new URL(c.req.url);
   const state = url.searchParams.get('state') ?? '';
   const code = url.searchParams.get('code');
@@ -230,6 +233,7 @@ authApp.get('/login', async (c) => {
   const next = safeNext(c.req.query('next'));
   const s = await getSession(c.env, c.req.raw);
   if (s && isOwner(c.env, s.uid)) return c.redirect(next, 302);
+  if (!githubConfigured(c.env)) return signInNotSetUpPage();
   return signInPage('/login', next);
 });
 
@@ -237,6 +241,7 @@ authApp.post('/login', async (c) => {
   const env = c.env;
   if (!(await limitAuth(env, c.req.raw))) return tooManyRequests();
   if (!sameOrigin(env, c.req.raw)) return errorPage('Sign-in did not work', 'This form did not come from your library.', 403);
+  if (!githubConfigured(env)) return signInNotSetUpPage();
   const form = await c.req.raw.clone().formData().catch(() => null);
   const nextField = form?.get('next');
   const { state, verifier, cookie } = await beginWebLogin(env, typeof nextField === 'string' ? nextField : '/');

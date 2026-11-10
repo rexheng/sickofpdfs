@@ -5,6 +5,60 @@ It takes about 40 minutes. You need no developer tools on your PC: everything ru
 
 **Nothing is created on Cloudflare until you run step 6 yourself.** Do staging first. Do production only after staging works.
 
+## Production is already live (10 November 2026)
+
+With your OK, production was set up from the build machine: <https://sickofpdfs.rexheng-policy.workers.dev>.
+Its databases, buckets, key-value store, schema, daily job and three of its secrets are in place.
+Opening it now shows **"Sign-in is not set up yet"**. That is expected. Two steps are left, both yours.
+
+### Last step A: the GitHub sign-in app (5 minutes)
+
+1. Open GitHub → your picture (top right) → **Settings** → **Developer settings** (bottom of the left list) → **OAuth Apps**.
+2. If an app called **sickofpdfs** is there, click it. If not, click **New OAuth App**.
+3. Fill in, exactly:
+   - **Application name:** `sickofpdfs`
+   - **Homepage URL:** `https://sickofpdfs.rexheng-policy.workers.dev`
+   - **Authorization callback URL:** `https://sickofpdfs.rexheng-policy.workers.dev/oauth/github/callback`
+   - Leave **Enable Device Flow** off.
+4. Click **Register application** (or **Update application**).
+5. Copy the **Client ID** somewhere safe for a minute.
+6. Click **Generate a new client secret**. Copy it straight away: GitHub shows it only once.
+
+### Last step B: the two keys in Cloudflare (3 minutes)
+
+1. Open [dash.cloudflare.com](https://dash.cloudflare.com) and pick **Ripostenigma@gmail.com's Account**.
+2. In the left list, click **Compute (Workers)** → **Workers & Pages** (older dashboards: just **Workers & Pages**).
+3. Click **sickofpdfs** (not `sickofpdfs-site`).
+4. Click the **Settings** tab, then find **Variables and Secrets**.
+5. Click **+ Add**.
+   - **Type:** Secret
+   - **Variable name:** `GITHUB_CLIENT_ID`
+   - **Value:** the Client ID from step A5
+6. Click **+ Add** again.
+   - **Type:** Secret
+   - **Variable name:** `GITHUB_CLIENT_SECRET`
+   - **Value:** the client secret from step A6
+7. Click **Deploy** (some dashboards say **Save and deploy**).
+8. Open <https://sickofpdfs.rexheng-policy.workers.dev>. You see **Sign in**. Sign in with GitHub. Only your account (id 121754907) gets in.
+
+Do not change the other entries there (`ALLOWED_GITHUB_ID`, `SESSION_SECRET`, `SOP_EXPORT_TOKEN`, `WEB_BUILD`, and the plain
+variables). `SESSION_SECRET` and `SOP_EXPORT_TOKEN` were made at random and nobody has seen them.
+
+### How production is updated from now on
+
+- **From the build machine:** `node apps/cloud/scripts/deploy-production.mjs --github-id 121754907` (in `apps/cloud`).
+  It builds the web library, puts its files in the R2 bucket `sop-web`, saves a restore point for every database, applies any
+  new schema, deploys, sets only the secrets that are missing, and runs the smoke test. `--dry-run` shows every step first.
+- **From GitHub:** **Deploy cloud (production)** on a `v…` tag does the same, without touching secrets. Its token then also needs
+  **Workers R2 Storage · Edit** (for the web library's files).
+- Why R2: on this account Wrangler cannot upload Workers static assets, so the web library's files are served from R2
+  (`apps/cloud/src/web/r2-assets.ts`). Each deploy has its own folder, named after a hash of the files.
+- Per-request logs are off. Cloudflare keeps only the Worker's own log lines, which never hold a token, a search word or a title.
+- The nightly backup workflow needs the export token. It was made at random, so the backup cannot run yet. When you want it,
+  ask for the export token to be set from the `SESSION_SECRET` in GitHub (this signs the web library out once).
+- The public site (`sickofpdfs-site`) has the same upload problem. `node apps/site/scripts/deploy-inline.mjs` deploys it with
+  its pages inside the Worker.
+
 ## What you will have at the end
 
 - **Staging**: a practice copy at `https://sickofpdfs-staging.<your-subdomain>.workers.dev`. Build agents may use it. It has its own small databases and its own GitHub sign-in.
@@ -86,7 +140,7 @@ Only after staging works. Run **Bootstrap cloud** with `production` (print first
 
 ### 8. Swap to a narrower token
 
-The first token can create things. After step 7, make a second token with only **D1 Edit**, **Workers Scripts Edit** and **Account Settings Read**, and put it in `CLOUDFLARE_API_TOKEN` instead.
+The first token can create things. After step 7, make a second token with only **D1 Edit**, **Workers Scripts Edit**, **Workers R2 Storage Edit** (the web library's files) and **Account Settings Read**, and put it in `CLOUDFLARE_API_TOKEN` instead.
 
 ### 9. Connect your apps
 
@@ -113,6 +167,6 @@ To turn on the nightly backup, remove the `#` signs in front of `schedule:` in `
 
 ## What is where (for whoever helps you)
 
-- `apps/cloud/wrangler.jsonc`: the three copies (`local`, `staging`, `production`). Ids are placeholders until bootstrap fills them.
-- `apps/cloud/scripts/`: `bootstrap.mjs`, `restore-point.mjs`, `smoke.mjs`, `backup.mjs`, `env-info.mjs`. Each one has `--dry-run` or works against the local Worker (`pnpm -C apps/cloud dev:test`).
+- `apps/cloud/wrangler.jsonc`: the three copies (`local`, `staging`, `production`). Production's ids are real; staging's are placeholders until bootstrap fills them.
+- `apps/cloud/scripts/`: `bootstrap.mjs`, `deploy-production.mjs`, `restore-point.mjs`, `smoke.mjs`, `backup.mjs`, `env-info.mjs`. Each one has `--dry-run` or works against the local Worker (`pnpm -C apps/cloud dev:test`).
 - The Worker's addresses are listed in the Phase 5–6 plan, "Contract additions", CA3 and CA11.

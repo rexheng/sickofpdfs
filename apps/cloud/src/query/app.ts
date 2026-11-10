@@ -26,7 +26,7 @@ async function guarded(c: Context<AppEnv>, run: (api: ReturnType<typeof createQu
   try {
     return c.json(await run(createQueryApi(c.env, 'owner')), 200, noStore);
   } catch (e) {
-    console.error('query failed', e instanceof Error ? e.message : 'unknown');
+    console.error('query failed', e instanceof Error ? e.name : 'unknown'); // the name only: a message can carry the search words
     return c.json({ error: 'query_failed' }, 500, noStore);
   }
 }
