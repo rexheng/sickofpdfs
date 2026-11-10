@@ -1,4 +1,4 @@
-// Makes the site's static files in public/ from src/pages: index.html, privacy.html, 404.html and _headers.
+// Makes the site's static files in public/ from src/pages: index.html, features.html, privacy.html, 404.html and _headers.
 // Wrangler runs it before every `wrangler dev` and `wrangler deploy` (wrangler.jsonc, "build").
 //
 // The settings come from wrangler.jsonc `vars` (the top level, or `--env production`), so the pages and the Worker read the same
@@ -30,12 +30,14 @@ if (typeof sponsorUrl !== 'string' || !sponsorUrl.startsWith('https://')) fail('
 
 // --- the pages
 const { homePage } = await import('../src/pages/home.ts');
+const { featuresPage } = await import('../src/pages/features.ts');
 const { privacyPage, notFoundPage } = await import('../src/pages/privacy.ts');
 const { STYLE } = await import('../src/pages/layout.ts');
 const script = readFileSync(file('src/pages/home.client.js'), 'utf8');
 
 const pages = {
   'index.html': homePage({ sponsorUrl, cwsItemId: setting('CWS_ITEM_ID'), playAppId: setting('PLAY_APP_ID'), script }),
+  'features.html': featuresPage(),
   'privacy.html': privacyPage({ contactEmail }),
   '404.html': notFoundPage(),
 };
@@ -65,6 +67,8 @@ writeFileSync(
     '/elevenlabs-logo-black.svg',
     '  Cache-Control: public, max-age=604800',
     '/favicon.svg',
+    '  Cache-Control: public, max-age=604800',
+    '/*.webp',
     '  Cache-Control: public, max-age=604800',
     '',
   ].join('\n'),

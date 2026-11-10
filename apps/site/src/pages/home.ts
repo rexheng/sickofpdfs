@@ -45,7 +45,7 @@ export function homePage(c: HomeConfig): string {
 
   const sponsor = esc(c.sponsorUrl);
   const main = [
-    '<p><b>sickofpdfs</b> is a PDF reader for Chrome: highlight, comment and ask Claude.</p>',
+    '<p class="lead"><b>sickofpdfs</b> is a PDF reader for Chrome: highlight, comment and ask Claude.</p>',
     '<p>Trusted by students at UC Berkeley, LSE, NUS, NTU and UCL.</p>',
     // filled from /api/count by the script; stays hidden when there is no number to show
     '<p id="count" hidden></p>',

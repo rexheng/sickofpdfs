@@ -1,11 +1,12 @@
 # apps/site
 
-The public site (spec R111, R112): one plain page, a privacy page, the cloud sync waitlist and a real count.
+The public site (spec R111, R112): one plain page, a features page, a privacy page, the cloud sync waitlist and a real count.
 A Cloudflare Worker with static files and one D1 database. Nothing here is created on Cloudflare until the owner says OK.
 
 - `src/pages/` makes the pages. `scripts/build.mjs` writes them to `public/` (gitignored) before every `wrangler dev` and `wrangler deploy`.
 - `src/worker.ts` answers `/api/*` only. Cloudflare serves the pages itself, without running the Worker.
 - The ElevenReader link comes from `packages/core/src/links.ts` (`ELEVENREADER_STUDENT_URL`), unchanged.
+- `public/features-*.webp` are frames of real recordings of the built extension (the launch video's clips), under 60 KB each.
 - `public/elevenlabs-logo-black.svg` is ElevenLabs' own logo file from <https://elevenlabs.io/brand>, unaltered. Keep clear space equal to its height around it.
 
 ## API
