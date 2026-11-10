@@ -60,6 +60,13 @@ The owner has learning disabilities and is highly intelligent. Write to them pla
      - a test build must pass the upgrade check before it ships (no lost library);
      - a suspected lost note or privacy leak is fixed at once, with at most 3 runs to show the fix.
 
+## Chrome's Modern Web Guidance (owner, 2026-11-10)
+
+- Every builder uses the two project skills in `.claude/skills/` (installed from Chrome's Modern Web Guidance): `chrome-extensions` for anything in the extension, and `modern-web-guidance` for web platform features. Follow their best practices as you build.
+- Run the guidance CLI as `DISABLE_TELEMETRY=1 npx -y modern-web-guidance@latest …`. Its usage reporting stays off.
+- `CHROMEWEBSTORE.md` (repo root) is the single source for the store listing. Any change to the manifest's permissions, host permissions or what the extension sends anywhere updates it in the same commit, with a justification for each permission.
+- Chrome DevTools for agents is set up in `.mcp.json` (`chrome-devtools`, extensions category). Use it to inspect the real extension when it is available.
+
 ## Standing constraints
 
 - Never put model ID strings (such as `claude-…` ids) in commits, PR text, code, comments or docs. The one exception is the Co-Authored-By and Claude-Session trailer lines the session gives, which end every commit message.
