@@ -38,6 +38,7 @@ import {
   unionBitsets,
 } from './columns';
 import { clampHlc, compareStamps, maxStamp, parseHlc } from './clamp';
+import { documentIdsInKey } from './local';
 import { CLAUDE_DEVICE, type ChangeEntry, type RejectCode, type SyncedTable, SYNCED_TABLES } from './protocol';
 
 /** The row the server holds, as the push handler read it from the database (see `dbToWire`). */
@@ -324,6 +325,15 @@ export function mergeEntry(server: ServerRow | null, entry: ChangeEntry, ctx: Me
     if (s === 'unknown') return reject('unknown_document', 'the server does not hold this document yet', true);
   }
   if (table === 'settings' && !isSyncableSetting(entry.id)) return reject('setting_not_syncable', 'this setting stays on the computer');
+  // A setting about one reading (`course.of.<sha>`, `pageOrder.of.<sha>`) follows that reading: never for a forgotten one, and
+  // only once the server holds it (CL11), so a private reading's fingerprint never arrives in a setting's key.
+  if (table === 'settings') {
+    for (const d of documentIdsInKey(entry.id)) {
+      const s = state(d);
+      if (s === 'forgotten') return reject('forgotten', 'this setting is about a forgotten document');
+      if (s === 'unknown') return reject('unknown_document', 'the server does not hold this document yet', true);
+    }
+  }
 
   // 4. Who may write what
   const fromClaude = ctx.device === CLAUDE_DEVICE;

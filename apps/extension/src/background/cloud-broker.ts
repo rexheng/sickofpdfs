@@ -15,6 +15,8 @@ import { accessToken, cloudAuthState, connectedServer, EXTENSION_CLIENT_ID, save
 import { drainForgets, enqueueForget, queuedForgets } from '../local-only/cloud-forget';
 import { asCloudMessage, type CloudFailure, type CloudMessage, type CloudReplies, type CloudStatus } from '../shared/cloud-messages';
 import { OFFSCREEN_PATH } from '../store/transport';
+import { setSyncBadge } from '../backup/badge';
+import { wakeSync } from '../sync/scheduler';
 
 const FORGET_ALARM = 'sop-cloud-forget';
 const FORGET_EVERY_MIN = 15;
@@ -164,6 +166,7 @@ async function handle(m: CloudMessage, sender: Sender): Promise<CloudReplies[Clo
           const tokens = await finishSignIn(pending, readRedirect(pending, back));
           await saveSignIn(server, tokens);
           void drain();
+          void wakeSync(); // CL11: the first round (a restore, on a fresh install) starts at once
           return { ok: true, status: await status() };
         } catch (e) {
           if (e instanceof SignInError) return fail(e.reason, e.message);
@@ -178,6 +181,9 @@ async function handle(m: CloudMessage, sender: Sender): Promise<CloudReplies[Clo
     case 'cloud:signout':
       if (!fromLibrary(sender)) return fail('not-allowed', 'Sign out from Settings.');
       await signOut({ disconnect: m.disconnect === true });
+      // CL11: signed out, sync stops and the icon says so; disconnected, there is no cloud to sync with, so no badge
+      if (m.disconnect === true) void setSyncBadge(null).catch(() => {});
+      else void wakeSync();
       return { ok: true, status: await status() };
 
     case 'cloud:forget': {
@@ -188,6 +194,15 @@ async function handle(m: CloudMessage, sender: Sender): Promise<CloudReplies[Clo
       void drain();
       return { ok: true, queued: true };
     }
+  }
+}
+
+/** Whether the owner connected a server. Reads this computer's storage only (no request); for the sync scheduler (CL11). */
+export async function cloudConnected(): Promise<boolean> {
+  try {
+    return (await connectedServer()) !== null;
+  } catch {
+    return false;
   }
 }
 

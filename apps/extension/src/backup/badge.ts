@@ -47,12 +47,50 @@ export function announceBackupBadge(badge: BadgeState): void {
 /** The tooltip for a badge state. */
 export const badgeTitle = (b: BadgeState): string => (b.attention === 'waiting' ? BADGE_TITLE : b.attention === 'held' ? HELD_TITLES[b.held] : DEFAULT_TITLE);
 
-/** In the service worker: sets or clears the badge. */
-export async function setBackupBadge(badge: BadgeState): Promise<void> {
-  const on = badge.attention !== null;
+// A second source (CL11): sync has stopped and needs the owner (signed out, or refused). A backup waiting for its click outranks it.
+// Both are remembered in session storage, so a restarted service worker draws the same badge.
+const SYNC_KEY = 'sop-badge-sync';
+const BACKUP_KEY = 'sop-badge-backup';
+
+async function remembered<T>(key: string): Promise<T | null> {
+  try {
+    const got = await chrome.storage.session.get(key);
+    return (got[key] as T | undefined) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function draw(backup: BadgeState, syncTitle: string | null): Promise<void> {
+  const on = backup.attention !== null || syncTitle !== null;
   await chrome.action.setBadgeText({ text: on ? BADGE_TEXT : '' });
   if (on) await chrome.action.setBadgeBackgroundColor({ color: BADGE_COLOR });
-  await chrome.action.setTitle({ title: badgeTitle(badge) });
+  await chrome.action.setTitle({ title: backup.attention !== null ? badgeTitle(backup) : (syncTitle ?? DEFAULT_TITLE) });
+}
+
+/**
+ * One badge, two writers: each change is written and drawn in turn, from both remembered values, so a backup update arriving at
+ * the same moment as a sync update can never draw over it with an old value.
+ */
+let drawing: Promise<void> = Promise.resolve();
+function update(key: string, value: unknown): Promise<void> {
+  const next = drawing.then(async () => {
+    await chrome.storage.session.set({ [key]: value }).catch(() => undefined);
+    const backup = key === BACKUP_KEY ? (value as BadgeState) : (asBadge(await remembered<BadgeState>(BACKUP_KEY)) ?? { attention: null });
+    await draw(backup, key === SYNC_KEY ? (value as string | null) : await remembered<string>(SYNC_KEY));
+  });
+  drawing = next.catch(() => undefined);
+  return next;
+}
+
+/** In the service worker: sets or clears the backup's badge (the sync badge, if any, shows when the backup needs nothing). */
+export function setBackupBadge(badge: BadgeState): Promise<void> {
+  return update(BACKUP_KEY, badge);
+}
+
+/** In the service worker: sync has stopped (`title` says why, in plain words), or null when it runs again. */
+export function setSyncBadge(title: string | null): Promise<void> {
+  return update(SYNC_KEY, title);
 }
 
 /** The badge the status record asks for, put on the icon. Used when the service worker starts. */

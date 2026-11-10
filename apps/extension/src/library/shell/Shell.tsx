@@ -3,6 +3,7 @@ import { LibraryShell, NavList, ProductMark, SearchPill } from '@sop/ui/library'
 import { type ReactNode, type Ref, useEffect } from 'react';
 import { palette } from '../../shared/palette';
 import { BackupAttention } from '../settings/BackupAttention';
+import { SyncChip } from '../../sync/ui/SyncChip';
 import { DEFAULT_ROUTE } from '../routes/pages';
 import { ROUTES, type RouteId, routeHref } from '../routes/routes';
 import type { UploadOutcome } from '../data/types';
@@ -67,6 +68,7 @@ export function Shell({ route, onNotify, newMenu, onUpload, children }: ShellPro
       topEnd={
         <>
           <BackupAttention />
+          <SyncChip />
           <IconButton icon="settings" label="Settings" size={40} onClick={() => (location.hash = routeHref('settings'))} />
         </>
       }

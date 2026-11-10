@@ -1,12 +1,13 @@
 import { defineBackground } from 'wxt/utils/define-background';
 import { installBackup } from '../backup/service-worker';
-import { installCloudBroker } from '../background/cloud-broker';
+import { cloudConnected, installCloudBroker } from '../background/cloud-broker';
 import { installCrashRecovery } from '../background/crash-recovery';
 import { installStoreBroker } from '../background/store-broker';
 import { installFileFallback } from '../background/takeover/file-fallback';
 import { installGrants } from '../background/takeover/grants';
 import { installTakeoverMessages } from '../background/takeover/messages';
 import { registerTakeover } from '../background/takeover/register';
+import { installSyncScheduler } from '../sync/scheduler';
 import { installRequestLog } from '../background/takeover/request-log';
 import { installTabLifecycle } from '../background/takeover/tab-lifecycle';
 
@@ -21,5 +22,6 @@ export default defineBackground(() => {
   installCrashRecovery();
   installBackup();
   installCloudBroker();
+  installSyncScheduler({ connected: cloudConnected });
   registerTakeover().catch((error: unknown) => console.error('sickofpdfs: the takeover is not registered', error));
 });

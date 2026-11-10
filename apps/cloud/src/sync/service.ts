@@ -9,6 +9,9 @@
 //      Forget and purge changes the lock, so a push that raced one of them writes nothing and starts again from step 1.
 // D1 runs one batch at a time per database and each batch is a transaction, so this is a compare-and-set on the whole push.
 //
+// Deletes of rows without soft deletes (a reading's tags, settings, locations, aliases: `REMOVABLE_TABLES`) come as
+// `removed: true` entries (CL11). The row is deleted and a marker kept in `removed_row`, which a pull hands out like a change.
+//
 // After every `apply` or `noop`, `entry.hlc` goes into `applied_entry(device, table, row)` in the same batch (plan carried
 // requirement), and `mergeEntry` reads it back as `processedUpTo`: a replayed log can neither add a second conflict copy nor
 // bring back a note that was deleted since.
@@ -23,12 +26,19 @@ import {
   type PullResponse,
   type PushResponse,
   type RejectedEntry,
+  REMOVABLE_TABLES,
+  type RemovalMarker,
   type ServerRow,
   SYNCED_TABLES,
   type SyncedTable,
   compareStamps,
+  deleteIsLater,
+  documentIdsInKey,
+  documentOfRemovable,
   formatHlc,
+  judgeRemoval,
   mergeEntry,
+  removalRow,
 } from '@sop/core/sync';
 import { type Env, textShards } from '../env';
 import type { SyncService } from '../seams';
@@ -102,6 +112,7 @@ async function pull(env: Env, since: number, limit: number): Promise<PullRespons
     db.prepare('SELECT seq FROM sync_counter WHERE id = 1'),
     ...SYNCED_TABLES.map((t) => db.prepare(`SELECT * FROM ${t} WHERE seq > ? ORDER BY seq LIMIT ?`).bind(from, n)),
     db.prepare('SELECT document_id, at, seq FROM forgotten WHERE seq > ? ORDER BY seq LIMIT ?').bind(from, n),
+    db.prepare('SELECT table_name, row_id, rev, hlc, seq, device FROM removed_row WHERE seq > ? ORDER BY seq LIMIT ?').bind(from, n),
   ]);
   const headSeq = Number(results[0]?.results[0]?.seq ?? 0);
   const all: PullResponse['entries'] = [];
@@ -111,6 +122,12 @@ async function pull(env: Env, since: number, limit: number): Promise<PullRespons
   for (const f of results[SYNCED_TABLES.length + 1]?.results ?? []) {
     const at = Number(f.at ?? 0);
     all.push({ table: 'documents', id: str(f.document_id), baseRev: 0, hlc: serverStamp(at), row: { id: str(f.document_id), deletedAt: at, forgotten: true }, rev: 0, seq: Number(f.seq ?? 0), device: 'server' });
+  }
+  for (const r of results[SYNCED_TABLES.length + 2]?.results ?? []) {
+    const table = str(r.table_name) as SyncedTable;
+    if (!REMOVABLE_TABLES.has(table)) continue;
+    const rev = Number(r.rev ?? 0);
+    all.push({ table, id: str(r.row_id), baseRev: rev, hlc: str(r.hlc), row: removalRow(table, str(r.row_id)), removed: true, rev, seq: Number(r.seq ?? 0), device: str(r.device) });
   }
   all.sort((a, b) => a.seq - b.seq);
 
@@ -166,12 +183,22 @@ async function tryPush(env: Env, device: string, raw: ChangeEntry[]): Promise<Pu
     if (e.table === 'documents') docIds.add(e.id);
     const d = documentOf(e.table, (typeof e.row === 'object' && e.row !== null ? e.row : {}));
     if (d !== null && /^[0-9a-f]{64}$/.test(d)) docIds.add(d);
+    if (e.table === 'settings') for (const k of documentIdsInKey(e.id)) docIds.add(k);
+    const r = REMOVABLE_TABLES.has(e.table) ? documentOfRemovable(e.table, e.id, null) : null;
+    if (r !== null) docIds.add(r);
   }
   const reads: D1PreparedStatement[] = [db.prepare('SELECT seq, lock FROM sync_counter WHERE id = 1'), usageStatement(env, now)];
-  const kinds: ({ kind: 'rows'; table: SyncedTable } | { kind: 'applied' | 'docs' | 'forgotten' | 'doc_text' })[] = [];
+  const kinds: ({ kind: 'rows'; table: SyncedTable } | { kind: 'applied' | 'docs' | 'forgotten' | 'doc_text' | 'markers' })[] = [];
   for (const [table, list] of ids) for (const s of selectByIds(db, table, list)) {
     reads.push(s);
     kinds.push({ kind: 'rows', table });
+  }
+  for (const [table, list] of ids) {
+    if (!REMOVABLE_TABLES.has(table)) continue;
+    for (const part of chunk([...new Set(list)], 80)) {
+      reads.push(db.prepare(`SELECT table_name, row_id, rev, hlc, device FROM removed_row WHERE table_name = ? AND row_id IN (${part.map(() => '?').join(',')})`).bind(table, ...part));
+      kinds.push({ kind: 'markers' });
+    }
   }
   for (const [table, list] of ids) {
     for (const part of chunk([...new Set(list)], 80)) {
@@ -199,6 +226,7 @@ async function tryPush(env: Env, device: string, raw: ChangeEntry[]): Promise<Pu
   const docs = new Map<string, DocFacts>();
   const forgotten = new Set<string>();
   const textState = new Map<string, string>();
+  const markers = new Map<string, RemovalMarker>();
   kinds.forEach((k, i) => {
     const rows = got[i + 2]?.results ?? [];
     if (k.kind === 'rows') {
@@ -211,6 +239,8 @@ async function tryPush(env: Env, device: string, raw: ChangeEntry[]): Promise<Pu
     else if (k.kind === 'docs')
       for (const r of rows) docs.set(str(r.id), { blobStored: r.blob_stored === 1, hasText: r.has_text === 1, indexText: r.index_text === 1, encrypted: r.encrypted === 1, deleted: r.deleted_at !== null });
     else if (k.kind === 'forgotten') for (const r of rows) forgotten.add(str(r.document_id));
+    else if (k.kind === 'markers')
+      for (const r of rows) markers.set(`${str(r.table_name)}\u0000${str(r.row_id)}`, { table: str(r.table_name) as SyncedTable, id: str(r.row_id), rev: Number(r.rev ?? 0), hlc: str(r.hlc), device: str(r.device) });
     else for (const r of rows) textState.set(str(r.document_id), str(r.state));
   });
 
@@ -237,6 +267,42 @@ async function tryPush(env: Env, device: string, raw: ChangeEntry[]): Promise<Pu
   for (const e of entries) {
     const key = `${e.table}\u0000${e.id}`;
     const server = stored.get(key) ?? null;
+    const marker = markers.get(key) ?? null;
+
+    // A row deleted outright on the device (CL11)
+    if (e.removed === true) {
+      const j = judgeRemoval(server, e, ctx);
+      if (j.kind === 'reject') {
+        rejected.push({ table: e.table, id: e.id, code: j.code, message: j.message, retryable: j.retryable });
+        continue;
+      }
+      if (j.kind === 'remove' && server !== null) {
+        seq += 1;
+        const doc = documentOfRemovable(e.table, e.id, server);
+        writes.push(db.prepare(`DELETE FROM ${e.table} WHERE ${pkColumn(e.table)} = ?`).bind(e.id));
+        writes.push(
+          db
+            .prepare('INSERT INTO removed_row (table_name, row_id, document_id, rev, hlc, seq, device, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(table_name, row_id) DO UPDATE SET document_id = excluded.document_id, rev = excluded.rev, hlc = excluded.hlc, seq = excluded.seq, device = excluded.device, at = excluded.at')
+            .bind(e.table, e.id, doc, j.rev, j.hlc, seq, device, now),
+        );
+        stored.delete(key);
+        markers.set(key, { table: e.table, id: e.id, rev: j.rev, hlc: j.hlc, device });
+        response.applied.push({ table: e.table, id: e.id, rev: j.rev, seq });
+      } else if (j.kind === 'keep' && server !== null) {
+        response.rebased.push({ table: e.table, id: e.id, baseRev: server.rev, hlc: server.hlc, row: server.row, rev: server.rev, seq: seqOf.get(key) ?? 0 });
+      } else {
+        response.applied.push({ table: e.table, id: e.id, rev: marker?.rev ?? e.baseRev, seq: 0 });
+      }
+      remember(e);
+      continue;
+    }
+    // The row itself, where the server keeps only the marker of its delete: the later change wins
+    if (server === null && marker !== null && deleteIsLater(marker, e, now)) {
+      response.rebased.push({ table: e.table, id: e.id, baseRev: marker.rev, hlc: marker.hlc, row: removalRow(e.table, e.id), removed: true, rev: marker.rev, seq: 0 });
+      remember(e);
+      continue;
+    }
+
     let r;
     try {
       r = mergeEntry(server, e, ctx);
@@ -264,6 +330,11 @@ async function tryPush(env: Env, device: string, raw: ChangeEntry[]): Promise<Pu
     if (r.kind === 'apply') {
       seq += 1;
       writes.push(upsertRow(db, e.table, r.row, { rev: r.rev, hlc: r.hlc, seq, device }));
+      if (marker !== null) {
+        // added again after its delete: the marker goes (its seq is older than the row's, so no pull can miss the row)
+        writes.push(db.prepare('DELETE FROM removed_row WHERE table_name = ? AND row_id = ?').bind(e.table, e.id));
+        markers.delete(key);
+      }
       const next: ServerRow = { table: e.table, id: e.id, rev: r.rev, hlc: r.hlc, device, row: r.row };
       stored.set(key, next);
       seqOf.set(key, seq);
@@ -350,6 +421,10 @@ async function purgeDocument(env: Env, sha: Sha256): Promise<void> {
     ...children,
     db.prepare("DELETE FROM applied_entry WHERE table_name = 'documents' AND row_id = ?").bind(sha),
     ...CHILDREN.map((t) => db.prepare(`DELETE FROM ${t} WHERE document_id = ?`).bind(sha)),
+    // settings about this reading (`course.of.<sha>`, `pageOrder.of.<sha>`): no fingerprint of a forgotten PDF stays (CL11)
+    db.prepare("DELETE FROM applied_entry WHERE table_name = 'settings' AND instr(row_id, ?) > 0").bind(sha),
+    db.prepare('DELETE FROM settings WHERE instr(key, ?) > 0').bind(sha),
+    db.prepare('DELETE FROM removed_row WHERE document_id = ? OR instr(row_id, ?) > 0').bind(sha, sha),
     db.prepare('DELETE FROM documents WHERE id = ?').bind(sha),
     db.prepare('DELETE FROM doc_text WHERE document_id = ?').bind(sha),
     db.prepare('DELETE FROM blob_upload WHERE sha256 = ?').bind(sha),

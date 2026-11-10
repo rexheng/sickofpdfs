@@ -13,6 +13,10 @@
 // - a PDF that was not saved: it has no row here at all. The R105b "Send" memory lives in `sop-local` too.
 // File locations leave as file names (`normalizeWireRow`), and the learning filter's lists leave with web entries only.
 //
+// Deletes that sync (CL11): a row of a table without soft deletes (a reading's tags, auto-tag removals, settings, locations,
+// aliases) that this computer deleted, and that the server held (`rev > 0`), leaves as `removed: true`, stamped at the time of the
+// delete. A pulled `removed: true` deletes the row here too, unless this computer has a newer queued change for it.
+//
 // Rules for what comes in:
 // - A pulled row is skipped while this computer has a queued change for it: the server decides at the next push.
 // - Pulled rows and acks are written with the `applying` flag set (schema-v9.ts), so they never queue a push.
@@ -45,6 +49,11 @@ import {
   TABLE_SPECS,
   tombstoneOf,
   documentIdsInKey,
+  documentOfRemovable,
+  formatHlc,
+  parseHlc,
+  removalRow,
+  REMOVABLE_TABLES,
   type WireRow,
   wireToDb,
 } from '@sop/core/sync';
@@ -82,10 +91,38 @@ export interface SyncStoreApi {
   pendingText(): Promise<PendingText[]>;
   /** A pulled `{ forgotten: true }` row: Forget this reading here too. */
   forgetLocally(id: DocumentId): Promise<void>;
+  /**
+   * Restore (CL11): readings the cloud holds that lack their PDF or their page text here, most recently opened first. A reading in
+   * Trash or private is never in the list, and a "keep local" one never asks for its PDF.
+   */
+  pendingRestore(): Promise<RestoreWant[]>;
+  /** The page text of a reading as the cloud should hold it: one extractor and every page, or null when none may leave. */
+  textForSync(id: DocumentId): Promise<SyncText | null>;
+  /**
+   * Pages of text pulled from the cloud (a restore). A page that has text here already keeps it. With `complete`, the text the
+   * cloud holds is remembered as sent (`textSent:<id>`), so it is not uploaded back.
+   */
+  putSyncedText(id: DocumentId, extractor: string, pages: readonly { pageIndex: number; text: string }[], complete: boolean): Promise<void>;
 }
 
-export const SYNC_STORE_METHODS = ['collectPush', 'ackPush', 'applyPulled', 'getSyncState', 'setSyncState', 'unsyncedCount', 'pendingBlobs', 'pendingText', 'forgetLocally'] as const satisfies readonly (keyof SyncStoreApi)[];
-export const SYNC_STORE_READ_METHODS = ['getSyncState', 'unsyncedCount', 'pendingBlobs', 'pendingText'] as const satisfies readonly (keyof SyncStoreApi)[];
+/** A reading a restore should fill in: its PDF (with the size the cloud expects), its page text, or both. */
+export interface RestoreWant {
+  documentId: DocumentId;
+  byteSize: number;
+  blob: boolean;
+  text: boolean;
+}
+
+/** Page text for the cloud (`PUT /api/text/:sha`). */
+export interface SyncText {
+  extractor: string;
+  /** The source word `pendingText` gave, to keep in `textSent:<id>` once the cloud has it all. */
+  source: string;
+  pages: { pageIndex: number; text: string }[];
+}
+
+export const SYNC_STORE_METHODS = ['collectPush', 'ackPush', 'applyPulled', 'getSyncState', 'setSyncState', 'unsyncedCount', 'pendingBlobs', 'pendingText', 'forgetLocally', 'pendingRestore', 'textForSync', 'putSyncedText'] as const satisfies readonly (keyof SyncStoreApi)[];
+export const SYNC_STORE_READ_METHODS = ['getSyncState', 'unsyncedCount', 'pendingBlobs', 'pendingText', 'pendingRestore', 'textForSync'] as const satisfies readonly (keyof SyncStoreApi)[];
 
 export interface SyncStoreDeps {
   now(): number;
@@ -145,7 +182,7 @@ function documentOfGroupSql(table: SyncedTable): string {
     case 'aliases':
       return '(SELECT document_id FROM aliases WHERE sha256 = g.row_id)';
     case 'settings':
-      return `(CASE WHEN g.row_id LIKE 'course.of.%' THEN substr(g.row_id, 11) END)`;
+      return `(CASE WHEN g.row_id LIKE 'course.of.%' THEN substr(g.row_id, 11) WHEN g.row_id LIKE 'pageOrder.of.%' THEN substr(g.row_id, 14) END)`;
     case 'tags':
       return 'NULL';
     default:
@@ -265,6 +302,13 @@ export function createSyncStoreApi(db: SqlDb, deps: SyncStoreDeps, hooks: SyncSt
     const row = readRow(table, id);
     let wire: WireRow;
     let hlc: string;
+    if (row === undefined && REMOVABLE_TABLES.has(table)) {
+      // Deleted outright (CL11). A row the server never held needs nothing sent.
+      if (baseRev === 0) return { kind: 'drop', why: 'never-sent' };
+      for (const doc of [...documentIdsInKey(table === 'settings' ? id : ''), documentOfRemovable(table, id, null)]) if (doc !== null && isPrivate(doc) === true) return { kind: 'hold' };
+      if (table === 'settings' && !isSyncableSetting(id)) return { kind: 'drop', why: 'secret' };
+      return { kind: 'send', entry: { table, id, baseRev, hlc: removalStamp(table, id), row: removalRow(table, id), removed: true } };
+    }
     if (row === undefined) {
       // A hard delete. The wire has no "deleted" for tables without soft deletes, and a row never pushed needs no tombstone.
       const tomb = baseRev > 0 ? tombstoneOf(table, rowJson, deps.now()) : null;
@@ -287,7 +331,12 @@ export function createSyncStoreApi(db: SqlDb, deps: SyncStoreDeps, hooks: SyncSt
     // What may leave at all
     if (table === 'settings') {
       if (!isSyncableSetting(id)) return { kind: 'drop', why: 'secret' };
-      for (const doc of documentIdsInKey(id)) if (isPrivate(doc) === true) return { kind: 'hold' };
+      for (const doc of documentIdsInKey(id)) {
+        const p = isPrivate(doc);
+        if (p === true) return { kind: 'hold' };
+        // about a reading that is not here (forgotten): the cloud refuses it, so it would wait for ever (CL11)
+        if (p === null) return { kind: 'drop', why: 'no-document' };
+      }
     }
     const documentId = table === 'documents' ? id : spec.documentField !== null ? str(wire[spec.documentField]) : null;
     if (documentId !== null) {
@@ -299,6 +348,32 @@ export function createSyncStoreApi(db: SqlDb, deps: SyncStoreDeps, hooks: SyncSt
     const norm = normalizeWireRow(table, wire);
     if (!norm.ok) return { kind: 'drop', why: norm.code };
     return { kind: 'send', entry: { table, id, baseRev, hlc, row: norm.row, ...(table === 'documents' ? { label: 'learning' as const } : {}) } };
+  }
+
+  /**
+   * The stamp of a delete: when it happened (the outbox keeps the time), later than the version it deleted, on this computer's clock.
+   * Stamped at the delete and not at the push, so a delete made offline does not beat a change made elsewhere in between.
+   */
+  function removalStamp(table: SyncedTable, id: string): string {
+    const mine = parseHlc(deps.hlc.tick());
+    const del = one(`SELECT created_at AS at, hlc FROM outbox WHERE table_name = ? AND row_id = ? AND op = 'delete' ORDER BY seq DESC LIMIT 1`, [table, id]);
+    const old = parseHlc(str(del?.hlc));
+    const at = int(del?.at) || deps.now();
+    if (mine === null) return deps.hlc.tick();
+    if (old !== null && old.ms >= at) return formatHlc({ ms: old.ms, counter: old.counter + 1, device: mine.device });
+    return formatHlc({ ms: Math.min(at, mine.ms), counter: 0, device: mine.device });
+  }
+
+  /** Deletes a row here because the cloud deleted it. Runs inside `applying`, so nothing queues. */
+  function removeHere(table: SyncedTable, id: string): boolean {
+    const cur = readRow(table, id);
+    run('DELETE FROM sync_parked WHERE table_name = ? AND row_id = ?', [table, id]);
+    if (cur === undefined) return false;
+    const field = TABLE_SPECS[table].documentField;
+    const doc = field !== null ? str(cur[snake(field)]) : documentOfRemovable(table, id, null);
+    run(`DELETE FROM ${table} WHERE ${pk(table)} = ?`, [id]);
+    announce(table, id, doc === '' ? null : doc, 'delete');
+    return true;
   }
 
   // ─── Pull ───────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -370,6 +445,13 @@ export function createSyncStoreApi(db: SqlDb, deps: SyncStoreDeps, hooks: SyncSt
       if (HEX64.test(e.id)) forgets.add(e.id);
       return 'forget';
     }
+    if (e.removed === true) {
+      // A newer queued change here decides at the next push
+      if (!REMOVABLE_TABLES.has(table) || hasQueued(table, e.id)) return 'skipped';
+      return removeHere(table, e.id) ? 'applied' : 'skipped';
+    }
+    // A setting about a reading forgotten here or in this pull (`course.of.<sha>`, `pageOrder.of.<sha>`) never comes back
+    if (table === 'settings' && documentIdsInKey(e.id).some((d) => forgets.has(d) || (forgottenHere.has(d) && !exists('documents', d)))) return 'skipped';
     const norm = normalizeWireRow(table, e.row);
     if (!norm.ok) return 'skipped';
     const row = norm.row;
@@ -589,10 +671,17 @@ export function createSyncStoreApi(db: SqlDb, deps: SyncStoreDeps, hooks: SyncSt
             out.rebased++;
             // An edit made here since the push is newer: the next push merges it, so the server's row is not taken now.
             if (hasQueued(m.table, m.id, m.seqMax)) continue;
+            // CL11: the cloud deleted this row later than our change: it goes here too
+            if (r.removed === true) {
+              if (REMOVABLE_TABLES.has(r.table)) removeHere(r.table, r.id);
+              continue;
+            }
             const norm = normalizeWireRow(r.table, r.row);
             if (!norm.ok) continue;
             const cur = readRow(r.table, r.id);
-            if (cur === undefined) continue; // gone here meanwhile (Forget); nothing to bring back
+            // Gone here meanwhile: after a Forget there is nothing to bring back. A row we deleted outright, whose newer version the
+            // cloud kept (CL11), comes back when its reading (and tag) is still here.
+            if (cur === undefined && !(REMOVABLE_TABLES.has(r.table) && parentsOf(r.table, norm.row).every((p) => exists(p.table, p.id)))) continue;
             writePulled(r.table, norm.row, r);
           }
           for (const j of result.rejected ?? []) {
@@ -622,6 +711,7 @@ export function createSyncStoreApi(db: SqlDb, deps: SyncStoreDeps, hooks: SyncSt
         const f = e && (SYNCED_TABLES as readonly string[]).includes(e.table) ? TABLE_SPECS[e.table].documentField : null;
         const d = f !== null && typeof e.row === 'object' && e.row !== null ? e.row[f] : null;
         if (typeof d === 'string' && HEX64.test(d)) docIds.add(d);
+        if (e?.table === 'settings' && typeof e.id === 'string') for (const k of documentIdsInKey(e.id)) docIds.add(k);
       }
       for (const r of select('SELECT DISTINCT document_id FROM sync_parked WHERE document_id IS NOT NULL')) docIds.add(str(r.document_id));
       const forgottenHere = new Set(await forgottenAmong(db, [...docIds].filter((d) => HEX64.test(d))));
@@ -687,6 +777,76 @@ export function createSyncStoreApi(db: SqlDb, deps: SyncStoreDeps, hooks: SyncSt
       if (typeof id !== 'string' || !HEX64.test(id)) return Promise.reject(new SyncStoreError('bad-input', 'the document id is not a SHA-256'));
       return hooks.forget(id);
     },
+
+    pendingRestore: () =>
+      attempt((): RestoreWant[] =>
+        select(
+          // Readings the cloud holds (`rev > 0`): a PDF not kept here, or text the reading has and this computer lacks entirely
+          `SELECT d.id AS id, d.byte_size AS size,
+                  (d.blob_stored = 0 AND NOT EXISTS (SELECT 1 FROM sync_state s WHERE s.key = 'keepLocal:' || d.id)) AS blob,
+                  (d.has_text = 1 AND d.index_text = 1 AND d.encrypted = 0 AND d.page_count > 0
+                    AND NOT EXISTS (SELECT 1 FROM page_text p WHERE p.document_id = d.id)) AS text
+           FROM documents d LEFT JOIN history h ON h.document_id = d.id
+           WHERE d.rev > 0 AND d.deleted_at IS NULL AND NOT ${PRIVATE_DOC}
+           ORDER BY coalesce(h.last_opened, d.created_at) DESC`,
+        )
+          .filter((r) => int(r.blob) === 1 || int(r.text) === 1)
+          .map((r) => ({ documentId: str(r.id) as DocumentId, byteSize: int(r.size), blob: int(r.blob) === 1, text: int(r.text) === 1 })),
+      ),
+
+    textForSync: (id) =>
+      attempt((): SyncText | null => {
+        if (typeof id !== 'string' || !HEX64.test(id)) throw new SyncStoreError('bad-input', 'the document id is not a SHA-256');
+        const ok = one(`SELECT 1 AS x FROM documents d WHERE d.id = ? AND d.rev > 0 AND d.deleted_at IS NULL AND d.has_text = 1 AND d.encrypted = 0 AND NOT ${PRIVATE_DOC}`, [id]);
+        if (ok === undefined) return null;
+        const rows = select('SELECT page_index, text, source FROM page_text WHERE document_id = ? ORDER BY page_index', [id]);
+        if (rows.length === 0) return null;
+        const sources = rows.map((r) => str(r.source));
+        // One extractor for the reading in the cloud: a recogniser's, if any page was recognised (those pages must never be
+        // replaced by PDFium's near-empty text on a restore), else PDFium's.
+        const extractor = sources.find((x) => x.startsWith('ocr:')) ?? (sources[0] || 'pdfium');
+        const sorted = [...sources].sort();
+        return {
+          extractor,
+          source: `${sorted[0] ?? ''}|${sorted[sorted.length - 1] ?? ''}|${rows.length}`,
+          pages: rows.map((r) => ({ pageIndex: int(r.page_index), text: str(r.text) })),
+        };
+      }),
+
+    putSyncedText: (id, extractor, pages, complete) =>
+      attempt(() => {
+        assertWritable();
+        if (typeof id !== 'string' || !HEX64.test(id)) throw new SyncStoreError('bad-input', 'the document id is not a SHA-256');
+        if (typeof extractor !== 'string' || !/^[\x21-\x7e]{1,128}$/.test(extractor)) throw new SyncStoreError('bad-input', 'the extractor is short plain text');
+        if (!Array.isArray(pages)) throw new SyncStoreError('bad-input', 'page text comes as a list of pages');
+        const source = extractor.startsWith('ocr:') ? extractor : 'pdfium';
+        const changed: number[] = [];
+        db.savepoint(() => {
+          const doc = one('SELECT page_count, index_text FROM documents WHERE id = ?', [id]);
+          if (doc === undefined || int(doc.index_text) !== 1) return;
+          const count = int(doc.page_count);
+          for (const p of pages as readonly { pageIndex: unknown; text: unknown }[]) {
+            if (typeof p !== 'object' || p === null || !Number.isSafeInteger(p.pageIndex) || typeof p.text !== 'string') continue;
+            const i = p.pageIndex as number;
+            if (i < 0 || i >= count) continue;
+            // A page with text here keeps it: this computer read it itself.
+            if (one('SELECT 1 AS x FROM page_text WHERE document_id = ? AND page_index = ?', [id, i]) !== undefined) continue;
+            run('INSERT INTO page_text (document_id, page_index, text, source) VALUES (?, ?, ?, ?)', [id, i, p.text, source]);
+            changed.push(i);
+          }
+          if (complete) {
+            const r = one(`SELECT min(source) || '|' || max(source) || '|' || count(*) AS s FROM page_text WHERE document_id = ?`, [id]);
+            if (r !== undefined && str(r.s) !== '') putState(`textSent:${id}`, str(r.s));
+          }
+        });
+        if (changed.length > 0) {
+          try {
+            deps.publish({ table: 'page_text', ids: changed.map((i) => `${id}:${i}`), op: 'upsert', documentId: id, origin: 'sync' });
+          } catch {
+            // written; other tabs catch up on their next read
+          }
+        }
+      }),
   };
 
   function blobsWaiting(): DocumentId[] {

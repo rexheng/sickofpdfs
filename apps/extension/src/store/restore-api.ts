@@ -11,6 +11,7 @@
 import type { DocumentId } from '@sop/core';
 import type { StoreChange } from './change-bus';
 import { isReadOnly, type SqlDb } from './schema-v2';
+import { APPLYING_KEY } from './schema-v9';
 
 export interface RestoreApi {
   /**
@@ -60,8 +61,14 @@ export function createRestoreApi(db: SqlDb, deps: RestoreDeps): RestoreApi {
         db.savepoint(() => {
           const cur = db.selectValue('SELECT blob_stored FROM documents WHERE id = ?', [documentId]);
           if (cur === undefined || Number(cur) === 1) return;
-          // `rev` and `hlc` stay as they are: whether a copy is kept is this computer's business only.
-          db.exec({ sql: 'UPDATE documents SET blob_stored = 1 WHERE id = ?', bind: [documentId] });
+          // `rev` and `hlc` stay as they are: whether a copy is kept is this computer's business only. So it queues no push
+          // either (the `applying` row quiets the outbox triggers inside this transaction, schema-v9.ts; CL11).
+          db.exec(`INSERT OR IGNORE INTO sync_state (key, value) VALUES ('${APPLYING_KEY}', '1')`);
+          try {
+            db.exec({ sql: 'UPDATE documents SET blob_stored = 1 WHERE id = ?', bind: [documentId] });
+          } finally {
+            db.exec(`DELETE FROM sync_state WHERE key = '${APPLYING_KEY}'`);
+          }
           marked = true;
         });
         if (marked) {

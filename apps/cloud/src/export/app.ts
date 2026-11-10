@@ -33,6 +33,7 @@ const EXPORT_KEYS: Record<string, readonly string[]> = {
   setting: ['key'],
   doc_text: ['document_id'],
   forgotten: ['document_id'],
+  removed_row: ['table_name', 'row_id'],
   sync_counter: ['id'],
 };
 

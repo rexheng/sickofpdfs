@@ -39,6 +39,12 @@ export interface ChangeEntry {
   row: Record<string, unknown>;
   /** Documents only. The server refuses a document without it. */
   label?: 'learning';
+  /**
+   * The row was deleted outright (CL11). Only for the tables without soft deletes that a person can take a row out of
+   * (`REMOVABLE_TABLES`: a reading's tags and auto-tag removals, settings, locations, aliases). `row` then holds only the id
+   * field. The server keeps a small marker, so the delete reaches every computer, and the later change wins (`judgeRemoval`).
+   */
+  removed?: true;
 }
 
 export interface PushRequest {
@@ -101,6 +107,12 @@ export interface SyncStatus {
   lastSyncAt: number | null;
   message: string | null;
 }
+
+/**
+ * The tables whose rows can be deleted outright and whose delete syncs (CL11). Notes, threads, marks and tags have soft deletes
+ * instead (`deletedAt`). A document leaves only by Forget, and a reading's history with it.
+ */
+export const REMOVABLE_TABLES: ReadonlySet<SyncedTable> = new Set<SyncedTable>(['aliases', 'locations', 'settings', 'reading_tags', 'auto_tag_removed']);
 
 /** A push carries at most this many entries (contracts §7; research 05 §8.2). */
 export const MAX_PUSH_ENTRIES = 200;

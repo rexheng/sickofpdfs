@@ -83,7 +83,8 @@ function retryAfter(res: Response): number | null {
   return Number.isNaN(at) ? null : Math.max(0, at - Date.now());
 }
 
-async function failureOf(res: Response): Promise<SyncHttpError> {
+/** The failure an answer that is not ok stands for. Shared with the file and text transfers (transfer.ts). */
+export async function failureOf(res: Response): Promise<SyncHttpError> {
   const body = (await res.json().catch(() => null)) as { error?: unknown; message?: unknown; lane?: unknown } | null;
   const code = typeof body?.error === 'string' ? body.error : `http_${res.status}`;
   const message = typeof body?.message === 'string' ? body.message : `The server answered ${res.status}.`;
