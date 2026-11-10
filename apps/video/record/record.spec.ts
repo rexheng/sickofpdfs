@@ -1,14 +1,16 @@
 // Records the real footage for the launch video (apps/video). It drives the real test build of the extension in full Chromium, as
 // the walkthroughs do, through the same harness and network gate (e2e/support/test.ts): @Claude answers come from the recorded
 // double (e2e/support/claude-replay.ts), and nothing else may leave the browser. The phone clip is the app's own web build
-// (apps/mobile) in Pixel 7 emulation, and the site clip is the public site.
+// (apps/mobile) in Pixel 7 emulation, and the site clip is the public site. The opening starts on arXiv's page for the paper (a
+// local snapshot), and its side-by-side records Chrome's own PDF viewer in full Chromium with no extension.
 //
+//   node scripts/snapshot-arxiv.mjs     # once: the arXiv page, saved to apps/video/fixtures/arxiv (not committed)
 //   pnpm -C apps/extension build:e2e && pnpm -C apps/mobile build:web
 //   pnpm -C apps/video record            # writes apps/video/public/clips/*.mp4 and manifest.json (not committed)
 //
-// SOP_VIDEO_ONLY=site,phone records only those parts (the extension parts depend on each other and run together).
-import { createReadStream, statSync } from 'node:fs';
-import { createServer } from 'node:http';
+// SOP_VIDEO_ONLY=site,phone,chrome,side records only those parts (the extension parts depend on each other and run together).
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
+import { createServer, type ServerResponse } from 'node:http';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, devices, type Page } from '@playwright/test';
@@ -21,7 +23,7 @@ import { findOnPage } from '../../../e2e/support/tl-blind.spec-blind';
 import { setUpClaude } from '../../../e2e/walkthroughs/support/claude';
 import { libraryUrl, waitViewerReady } from '../../../e2e/walkthroughs/support/library-p3.spec-blind';
 import { replyBox, waitSaved } from '../../../e2e/walkthroughs/support/marks.spec-blind';
-import { glide, installPointer, startClip } from './capture';
+import { glide, installPointer, startClip, type Clip } from './capture';
 
 /** The window: 1600 × 900 CSS px at 1.2 device pixels each, so every frame is 1920 × 1080. */
 const VIEW = { width: 1600, height: 900 };
@@ -38,7 +40,7 @@ const SITE = 'https://sickofpdfs-site.rexheng-policy.workers.dev';
  * page's links. The files are the test set's own papers and slides.
  */
 const READINGS: Record<string, string> = {
-  '/courses/NLP201/attention-is-all-you-need.pdf': 'classifier/learning/arxiv-1706.03762-attention.pdf',
+  '/pdf/1706.03762': 'classifier/learning/arxiv-1706.03762-attention.pdf',
   '/courses/NLP201/sutskever-thesis.pdf': 'classifier/learning/thesis-sutskever-phd.pdf',
   '/courses/CS231n/lecture-2.pdf': 'classifier/learning/slides-cs231n-2024-lecture2.pdf',
   '/courses/CS231n/resnet.pdf': 'classifier/learning/arxiv-1512.03385-resnet.pdf',
@@ -49,25 +51,42 @@ const READINGS: Record<string, string> = {
   '/papers/plos-data-sharing.pdf': 'classifier/learning/plosone-10.1371-journal.pone.0000308.pdf',
   '/papers/scanned-chapter.pdf': 'scan-120.pdf',
 };
-const PAPER = '/courses/NLP201/attention-is-all-you-need.pdf';
+/** The paper, at the same path as on arXiv: the abstract page's "View PDF" link points here. */
+const PAPER = '/pdf/1706.03762';
 
-/** A plain course page with the week's reading on it: where the paper is opened from. */
-const COURSE_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>NLP201 · Week 4</title>
-<style>
-  body { margin: 0; font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #1f1f1f; background: #fff; }
-  main { max-width: 760px; margin: 96px auto; padding: 0 24px; }
-  p.k { color: #5f6368; margin: 0; font-size: 14px; letter-spacing: .02em; }
-  h1 { font-size: 34px; font-weight: 500; margin: 6px 0 28px; }
-  li { margin: 10px 0; font-size: 18px; } a { color: #0b57d0; }
-</style></head><body><main>
-<p class="k">NLP201 · Week 4</p>
-<h1>Attention and Transformers</h1>
-<p>Read this before Tuesday's class.</p>
-<ul>
-  <li><a id="paper" href="${PAPER}">Attention Is All You Need (PDF)</a></li>
-  <li>Lecture slides: posted after class</li>
-</ul>
-</main></body></html>`;
+/**
+ * arXiv's abstract page for the paper, as a local snapshot (scripts/snapshot-arxiv.mjs), served at its arXiv path, so the
+ * opening can be recorded again without the network.
+ */
+const ABS = '/abs/1706.03762';
+const SNAPSHOT_DIR = fileURLToPath(new URL('../fixtures/arxiv/', import.meta.url));
+const SNAPSHOT_TYPES: Record<string, string> = { '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.gif': 'image/gif', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf' };
+
+/** Serves the arXiv snapshot and the readings. False when the path is neither. */
+function serveFixture(res: ServerResponse, path: string): boolean {
+  if (path === ABS) {
+    const file = join(SNAPSHOT_DIR, 'abs.html');
+    if (!existsSync(file)) throw new Error('no arXiv snapshot: run "node scripts/snapshot-arxiv.mjs" first');
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(readFileSync(file));
+    return true;
+  }
+  if (path.startsWith('/arxiv-snapshot/') && !path.includes('..')) {
+    const file = join(SNAPSHOT_DIR, path);
+    if (!existsSync(file)) return void res.writeHead(404).end(), true;
+    res.writeHead(200, { 'content-type': SNAPSHOT_TYPES[extname(file)] ?? 'application/octet-stream', 'content-length': statSync(file).size });
+    createReadStream(file).pipe(res);
+    return true;
+  }
+  const reading = READINGS[path];
+  if (!reading) return false;
+  const full = join(TEST_ASSETS, reading);
+  res.writeHead(200, { 'content-type': 'application/pdf', 'content-length': statSync(full).size });
+  createReadStream(full).pipe(res);
+  return true;
+}
+
+/** The narrow window each side of the side-by-side is recorded in: 880 × 900 CSS px, so 1056 × 1080 frames. */
+const SIDE = { width: 880, height: 900 };
 
 const SENTENCE_HL = { from: 'The dominant sequence transduction models', to: 'an encoder and a decoder.' };
 const SENTENCE_BOLD = { from: 'We propose a new simple network architecture', to: 'entirely.' };
@@ -157,6 +176,32 @@ async function scrollPages(page: Page, dy: number, ms: number, selector = '[role
   );
 }
 
+/**
+ * One side of the side-by-side: in a narrow window on the arXiv page, the pointer goes to "View PDF" and clicks it. Marks
+ * "click" and "opened" (the tab has left the arXiv page).
+ */
+async function openFromAbstract(p: Page, clip: Clip): Promise<void> {
+  const link = await centreOf(p, p.locator('a.download-pdf'));
+  const from = { x: SIDE.width / 2, y: SIDE.height / 2 + 120 };
+  await p.mouse.move(from.x, from.y);
+  await sleep(p, 600);
+  await glide(p, from, link, 900);
+  await sleep(p, 120);
+  clip.mark('click');
+  await p.mouse.click(link.x, link.y);
+  await expect.poll(() => p.url(), { timeout: 30_000 }).not.toContain(ABS);
+  clip.mark('opened');
+}
+
+/**
+ * Marks "shown": the first frame on film with the paper open. When a tab moves to another process (Chrome's viewer, or ours),
+ * the camera loses it for a moment, so the moment the page is ready can come before the first frame that shows it.
+ */
+async function shown(clip: Clip): Promise<void> {
+  await clip.nextFrame();
+  clip.mark('shown');
+}
+
 /** A small static server for a built folder (the phone app's web build). */
 function serveFolder(root: string): Promise<{ origin: string; close: () => void }> {
   const types: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.pdf': 'application/pdf', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.otf': 'font/otf', '.onnx': 'application/octet-stream' };
@@ -182,18 +227,11 @@ function serveFolder(root: string): Promise<{ origin: string; close: () => void 
 }
 
 test('launch video footage: the extension', async ({ context, server }) => {
-  test.skip(!['extension', 'takeover', 'marks', 'claude', 'library', 'reorder', 'scan'].some(wants), 'not asked for');
+  test.skip(!['extension', 'arxiv', 'marks', 'claude', 'library', 'reorder', 'scan'].some(wants), 'not asked for');
   // Every paper here is a learning PDF, so it is saved as the owner reads, as the filter would decide.
   await forceVerdict(context, 'learning');
-  server.mount('/courses/', (_req, res, path) => Promise.resolve(serveReading(res, path)));
-  server.mount('/papers/', (_req, res, path) => Promise.resolve(serveReading(res, path)));
-  function serveReading(res: import('node:http').ServerResponse, path: string): void {
-    if (path === '/courses/NLP201/') return void res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(COURSE_PAGE);
-    const file = READINGS[path];
-    if (!file) return void res.writeHead(404).end();
-    const full = join(TEST_ASSETS, file);
-    res.writeHead(200, { 'content-type': 'application/pdf', 'content-length': statSync(full).size });
-    createReadStream(full).pipe(res);
+  for (const prefix of ['/courses/', '/papers/', '/pdf/', '/abs/', '/arxiv-snapshot/']) {
+    server.mount(prefix, (_req, res, path) => Promise.resolve(void (serveFixture(res, path) || res.writeHead(404).end())));
   }
 
   // ---- Before the cameras: the owner has read a few things this term (the library has something to show) ----
@@ -206,21 +244,20 @@ test('launch video footage: the extension', async ({ context, server }) => {
     await tab.close();
   }
 
-  // ---- 1. Open a paper: it opens here, not in Chrome's viewer ----
+  // ---- 1. Open the paper from its arXiv page: it opens here, not in Chrome's viewer ----
   const page = await context.newPage();
-  await page.goto(server.url('/courses/NLP201/'));
+  await page.goto(server.url(ABS));
   await installPointer(page);
   await page.mouse.move(mouse.x, mouse.y);
-  let clip = await startClip(page, 'takeover', SCALE);
-  await sleep(page, 900);
-  const link = page.locator('#paper');
+  let clip = await startClip(page, 'arxiv', SCALE);
+  await sleep(page, 1200);
   clip.mark('click');
-  await clickAt(page, await centreOf(page, link), 900);
+  await clickAt(page, await centreOf(page, page.locator('a.download-pdf')), 1100);
   await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/^chrome-extension:/);
   clip.mark('opened');
   await waitViewerReady(page, 60_000);
-  await installPointer(page);
-  await sleep(page, 2500);
+  clip.mark('ready');
+  await sleep(page, 1200);
   clip.mark('end');
   await clip.stop();
 
@@ -317,7 +354,7 @@ test('launch video footage: the extension', async ({ context, server }) => {
   await expect(thumbs).toBeVisible();
   await sleep(page, 1200);
   clip = await startClip(page, 'reorder', SCALE);
-  await sleep(page, 500);
+  await sleep(page, 700);
   const t3 = await centreOf(page, thumbs.locator('[data-thumb-index="2"]'));
   const t1box = (await thumbs.locator('[data-thumb-index="1"]').boundingBox())!;
   await moveTo(page, t3, 800);
@@ -325,11 +362,26 @@ test('launch video footage: the extension', async ({ context, server }) => {
   clip.mark('grab');
   await page.mouse.down();
   await moveTo(page, { x: t3.x + 6, y: t3.y - 12 }, 200);
-  await moveTo(page, { x: t1box.x + t1box.width / 2, y: t1box.y + 8 }, 1300);
-  await sleep(page, 500);
+  clip.mark('dragging');
+  // In small steps, each held until the camera has a frame of it: on a busy machine the tab can stall mid-drag, and a frame
+  // per step keeps the whole drag on film rather than a jump.
+  {
+    const from = { ...mouse };
+    const to = { x: t1box.x + t1box.width / 2, y: t1box.y + 8 };
+    const steps = 36;
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const e = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
+      await page.mouse.move(from.x + (to.x - from.x) * e, from.y + (to.y - from.y) * e);
+      await clip.nextFrame();
+    }
+    mouse = to;
+  }
+  clip.mark('over');
+  for (let i = 0; i < 6; i++) await clip.nextFrame();
   await page.mouse.up();
   clip.mark('dropped');
-  await sleep(page, 2200);
+  await sleep(page, 3000);
   clip.mark('end');
   await clip.stop();
 
@@ -391,6 +443,62 @@ test('launch video footage: the extension', async ({ context, server }) => {
   await sleep(scan, 1600);
   clip.mark('end');
   await clip.stop();
+});
+
+test.describe('the side-by-side', () => {
+  test.use({ viewport: SIDE });
+  test('launch video footage: our side of the side-by-side', async ({ context, server }) => {
+    test.skip(!wants('side'), 'not asked for');
+    // Its own run with a fresh profile, in the narrow window: the same click as on Chrome's side, until the paper shows.
+    await forceVerdict(context, 'learning');
+    for (const prefix of ['/pdf/', '/abs/', '/arxiv-snapshot/']) {
+      server.mount(prefix, (_req, res, path) => Promise.resolve(void (serveFixture(res, path) || res.writeHead(404).end())));
+    }
+    const side = await context.newPage();
+    await side.goto(server.url(ABS));
+    await installPointer(side);
+    const clip = await startClip(side, 'side-ours', SCALE);
+    await openFromAbstract(side, clip);
+    await waitViewerReady(side, 60_000);
+    await shown(clip);
+    await sleep(side, 4000);
+    clip.mark('end');
+    await clip.stop();
+  });
+});
+
+test("launch video footage: Chrome's own viewer", async () => {
+  test.skip(!wants('chrome'), 'not asked for');
+  // The other side of the side-by-side: the same click, in full Chromium with no extension, so Chrome's built-in PDF viewer
+  // opens the paper. The arXiv page and the paper come from a local server; this browser reaches nothing else.
+  const local = createServer((req, res) => {
+    if (!serveFixture(res, decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname))) res.writeHead(404).end();
+  });
+  await new Promise<void>((done) => local.listen(0, '127.0.0.1', done));
+  const origin = `http://127.0.0.1:${(local.address() as { port: number }).port}`;
+  const browser = await chromium.launch({ channel: 'chromium', headless: true, args: ['--disable-component-update', '--no-pings', '--disable-domain-reliability'] });
+  try {
+    const ctx = await browser.newContext({ viewport: SIDE, deviceScaleFactor: SCALE });
+    const p = await ctx.newPage();
+    await p.goto(`${origin}${ABS}`);
+    await installPointer(p);
+    const clip = await startClip(p, 'side-chrome', SCALE);
+    await openFromAbstract(p, clip);
+    // Chrome's viewer is a frame of its own (its built-in PDF extension); it is up once that frame has drawn its pages.
+    await expect
+      .poll(async () => {
+        const viewer = p.frames().find((f) => f.url().startsWith('chrome-extension://'));
+        return viewer ? viewer.evaluate(() => !!document.querySelector('pdf-viewer')?.shadowRoot?.querySelector('div')).catch(() => false) : false;
+      }, { timeout: 30_000 })
+      .toBe(true);
+    await shown(clip);
+    await sleep(p, 4000);
+    clip.mark('end');
+    await clip.stop();
+  } finally {
+    await browser.close();
+    local.close();
+  }
 });
 
 test('launch video footage: the phone app', async () => {

@@ -85,6 +85,8 @@ export default defineConfig(
     'spikes/**',
     // research notes and third-party reference copies
     'docs/**',
+    // the launch video's local snapshot of arXiv's page (not committed)
+    'apps/video/fixtures/**',
   ]),
 
   // JavaScript and TypeScript

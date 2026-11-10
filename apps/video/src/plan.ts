@@ -35,6 +35,19 @@ export interface Crops {
   tall: Crop;
 }
 
+/** A slow push-in on one point of the recording (x, y from 0 to 1), from `from` to `to` seconds into the scene. */
+export interface Push {
+  from: number;
+  to: number;
+  x: number;
+  y: number;
+  scale: number;
+}
+export interface Pushes {
+  wide?: Push;
+  tall?: Push;
+}
+
 export interface Caption {
   /** Seconds into the scene. */
   at: number;
@@ -47,10 +60,21 @@ export interface KeyPress {
   keys: string[];
 }
 
+export interface SideBySide {
+  clip: string;
+  label: string;
+  segments: Segment[];
+}
+
 export type Scene =
   | { kind: 'title'; seconds: number }
-  | { kind: 'clip'; clip: string; segments: Segment[]; captions: Caption[]; keys: KeyPress[]; focus: Focus[]; crop?: Crops; seconds: number }
+  | { kind: 'clip'; clip: string; segments: Segment[]; captions: Caption[]; keys: KeyPress[]; focus: Focus[]; crop?: Crops; push?: Pushes; seconds: number }
   | { kind: 'phone'; clip: string; segments: Segment[]; captions: Caption[]; seconds: number }
+  /**
+   * Two recordings side by side, each under its label (Chrome's own viewer on the left, ours on the right), then from `zoomAt`
+   * seconds on, the right one grows to fill the frame (the next scene's footage takes over from it).
+   */
+  | { kind: 'compare'; left: SideBySide; right: SideBySide; zoomAt: number; seconds: number }
   | { kind: 'end'; seconds: number };
 
 /** Frames that two scenes overlap by (a cross-fade). */
@@ -68,6 +92,10 @@ function sceneTimeOf(segments: Segment[], t: number): number {
   return acc;
 }
 
+/** The side-by-side: 2.6 s of both, then 0.8 s of moving in on ours. */
+const COMPARE_ZOOM = 0.8;
+const COMPARE_SECONDS = 2.6 + COMPARE_ZOOM;
+
 export function buildPlan(m: Manifest): Scene[] {
   const mark = (clip: string, name: string, fallback = 0): number => m[clip]?.marks[name] ?? fallback;
   const dur = (clip: string): number => m[clip]?.duration ?? 1;
@@ -78,6 +106,7 @@ export function buildPlan(m: Manifest): Scene[] {
     keys: { atClip: number; keys: string[] }[],
     focus: { atClip?: number; at?: number; x: number }[],
     crop?: Crops,
+    push?: (at: (clipTime: number) => number) => Pushes,
   ): Scene => {
     const t = (c: { atClip?: number; at?: number }) => (c.atClip !== undefined ? sceneTimeOf(segments, c.atClip) : (c.at ?? 0));
     return {
@@ -89,15 +118,20 @@ export function buildPlan(m: Manifest): Scene[] {
       keys: keys.map((k) => ({ at: sceneTimeOf(segments, k.atClip), keys: k.keys })),
       focus: focus.map((f) => ({ at: t(f), x: f.x })),
       ...(crop ? { crop } : {}),
+      ...(push ? { push: push((c) => sceneTimeOf(segments, c)) } : {}),
     };
   };
 
+  // The pointer reaches "View PDF" about 0.8 s before the tab leaves arXiv's page; its move starts about 1.6 s before.
+  const arxivMove = mark('arxiv', 'opened') - 1.7;
   const marksSel = mark('marks', 'selected');
   const marksH = mark('marks', 'key-h');
   const marksB = mark('marks', 'key-b');
   const commentSel = mark('comment', 'selected');
   const claudeAnswered = mark('claude', 'answered');
   const grab = mark('reorder', 'grab');
+  const dragging = mark('reorder', 'dragging');
+  const over = mark('reorder', 'over');
   const dropped = mark('reorder', 'dropped');
   const scanRead = mark('scan', 'read');
   const scanSel = mark('scan', 'selected');
@@ -106,12 +140,31 @@ export function buildPlan(m: Manifest): Scene[] {
   return [
     { kind: 'title', seconds: 2 },
     clipScene(
-      'takeover',
-      [{ from: 0.6, to: Math.min(dur('takeover'), mark('takeover', 'opened') + 2.0), rate: 1.4 }],
-      [{ at: 0, text: 'Open any PDF in Chrome' }, { atClip: mark('takeover', 'opened') + 0.3, text: 'It opens here instead' }],
+      'arxiv',
+      // The page, then the pointer's way to "View PDF" and the click, up to the moment the tab leaves the page.
+      [
+        { from: 0.3, to: arxivMove - 0.4, rate: 1.6 },
+        { from: arxivMove - 0.4, to: Math.min(dur('arxiv'), mark('arxiv', 'opened') - 0.1), rate: 1.0 },
+      ],
+      [{ at: 0, text: 'Open any PDF in Chrome' }],
       [],
-      [{ at: 0, x: 0.3 }, { atClip: mark('takeover', 'opened'), x: 0.5 }],
+      // The abstract first, then the "View PDF" link at the top right.
+      [{ at: 0, x: 0.3 }, { atClip: arxivMove, x: 0.8 }],
+      undefined,
+      // As the pointer goes to "View PDF", the camera moves in on it (the page is small at full width).
+      (at) => ({
+        wide: { from: at(arxivMove - 0.3), to: at(arxivMove + 0.9), x: 0.88, y: 0.11, scale: 1.9 },
+        tall: { from: at(arxivMove - 0.3), to: at(arxivMove + 0.9), x: 0.88, y: 0.11, scale: 1.35 },
+      }),
     ),
+    // The same paper, the moment it opens: Chrome's own viewer, and ours, each from its first frame with the paper on screen.
+    {
+      kind: 'compare',
+      left: { clip: 'side-chrome', label: 'Chrome’s own viewer', segments: [{ from: Math.max(0, mark('side-chrome', 'shown') - 0.1), to: mark('side-chrome', 'shown') - 0.1 + COMPARE_SECONDS, rate: 1 }] },
+      right: { clip: 'side-ours', label: 'sickofpdfs', segments: [{ from: Math.max(0, mark('side-ours', 'shown') - 0.1), to: mark('side-ours', 'shown') - 0.1 + COMPARE_SECONDS, rate: 1 }] },
+      zoomAt: COMPARE_SECONDS - COMPARE_ZOOM,
+      seconds: COMPARE_SECONDS,
+    },
     clipScene(
       'marks',
       [
@@ -139,12 +192,22 @@ export function buildPlan(m: Manifest): Scene[] {
       [],
       [{ at: 0, x: 0.84 }],
     ),
+    // The whole drag, then the page in its new place for a beat. The recorder takes the drag in small steps, one frame each
+    // (slow on a busy machine), so that part is sped up to an easy 1.8 s.
     clipScene(
       'reorder',
-      [{ from: Math.max(0, grab - 0.8), to: Math.min(dur('reorder'), dropped + 1.4), rate: 2.6 }],
+      [
+        { from: Math.max(0, grab - 0.6), to: dragging, rate: 1.2 },
+        { from: dragging, to: over, rate: Math.max(1, (over - dragging) / 1.8) },
+        { from: over, to: dropped + 0.2, rate: Math.max(1, (dropped + 0.2 - over) / 0.6) },
+        { from: dropped + 0.2, to: Math.min(dur('reorder'), dropped + 2.2), rate: 1.0 },
+      ],
       [{ at: 0, text: 'Drag pages into order' }],
       [],
       [{ at: 0, x: 0.28 }],
+      undefined,
+      // In 16:9 the thumbnails are small: move in on them as the drag begins.
+      (at) => ({ wide: { from: at(grab - 0.4), to: at(dragging), x: 0, y: 0.32, scale: 1.6 } }),
     ),
     clipScene(
       'library',
@@ -152,7 +215,7 @@ export function buildPlan(m: Manifest): Scene[] {
         { from: 0.2, to: mark('library', 'courses') + 1.4, rate: 1.0 },
         { from: mark('library', 'courses') + 1.4, to: dur('library'), rate: 2.0 },
       ],
-      [{ at: 0, text: 'Every saved PDF, in one library' }, { atClip: mark('library', 'courses') + 1.3, text: 'Grouped by course' }],
+      [{ at: 0, text: 'Automatically save your pdfs to a reading list and library' }, { atClip: mark('library', 'courses') + 1.3, text: 'Grouped by course' }],
       [],
       [{ at: 0, x: 0.27 }],
     ),
@@ -180,7 +243,8 @@ export function buildPlan(m: Manifest): Scene[] {
       wide: { x: 0, y: 0, w: 1280, h: 720 },
       tall: { x: 0, y: 0, w: 1160, h: 640 },
     }),
-    { kind: 'end', seconds: 3.6 },
+    // Long enough to scan the QR code with a phone.
+    { kind: 'end', seconds: 6 },
   ];
 }
 

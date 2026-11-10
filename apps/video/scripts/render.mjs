@@ -21,6 +21,8 @@ if (!existsSync(manifestPath)) throw new Error('no recordings: run "pnpm record"
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
 // The sponsor's logo, unaltered, from the site.
 copyFileSync(join(root, '../site/public/elevenlabs-logo-black.svg'), join(publicDir, 'elevenlabs-logo-black.svg'));
+// The owner's ElevenReader QR code for the end card (it opens ELEVENREADER_STUDENT_URL).
+copyFileSync(join(root, 'assets/elevenreader-qr.png'), join(publicDir, 'elevenreader-qr.png'));
 
 const shell = chromium.executablePath().replace(/chromium-(\d+)\/chrome-linux64\/chrome$/, 'chromium_headless_shell-$1/chrome-headless-shell-linux64/chrome-headless-shell');
 const browserExecutable = existsSync(shell) ? shell : undefined;

@@ -29,6 +29,8 @@ export interface ClipInfo {
 
 export interface Clip {
   mark(name: string): void;
+  /** Resolves once a frame taken after this call is in: a slow tab (a drag on a busy machine) still gets a frame per step. */
+  nextFrame(): Promise<void>;
   stop(): Promise<ClipInfo>;
 }
 
@@ -73,6 +75,11 @@ export async function startClip(page: Page, name: string, scale: number): Promis
   return {
     mark(m) {
       marks[m] = Date.now() / 1000 - t0;
+    },
+    async nextFrame() {
+      // The frame after the one being taken now: that one may have been asked for before the call.
+      const want = frames.length + 2;
+      while (frames.length < want && !stopped) await new Promise((res) => setTimeout(res, 10));
     },
     async stop() {
       const tEnd = Date.now() / 1000;

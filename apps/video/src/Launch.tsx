@@ -2,7 +2,7 @@
 // draws both cuts; `vertical` lays it out for phones (1080 × 1920).
 import type { CSSProperties, ReactNode } from 'react';
 import { AbsoluteFill, Easing, Img, interpolate, OffthreadVideo, Sequence, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
-import { buildPlan, FPS, OVERLAP, sceneFrames, timeline, type Caption, type Crop, type Focus, type KeyPress, type Manifest, type Scene, type Segment } from './plan';
+import { buildPlan, FPS, OVERLAP, sceneFrames, timeline, type Caption, type Crop, type Focus, type KeyPress, type Manifest, type Push, type Scene, type Segment } from './plan';
 
 export interface LaunchProps {
   manifest: Manifest;
@@ -157,12 +157,20 @@ function focusAt(focus: Focus[], t: number): number {
   return x;
 }
 
+/** The push-in's scale now (1 before it starts). */
+function pushAt(push: Push | undefined, t: number): number {
+  if (!push) return 1;
+  return interpolate(t, [push.from, push.to], [1, push.scale], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.inOut(Easing.cubic) });
+}
+
 /** A recording of the browser window, in a soft card (16:9) or a tall crop that follows the action (9:16). */
 function ClipScene({ scene, vertical }: { scene: Extract<Scene, { kind: 'clip' }>; vertical: boolean }) {
   const f = useCurrentFrame();
   const length = sceneFrames(scene);
   const fade = useFade(length);
   const zoom = interpolate(f, [0, length], [1, 1.025]);
+  const wide = scene.push?.wide;
+  const tallPush = scene.push?.tall;
   if (!vertical) {
     const w = 1600;
     const h = 900;
@@ -182,7 +190,14 @@ function ClipScene({ scene, vertical }: { scene: Extract<Scene, { kind: 'clip' }
             boxShadow: '0 1px 3px rgba(60,64,67,.25), 0 12px 40px rgba(60,64,67,.18)',
           }}
         >
-          <div style={{ width: '100%', height: '100%', transform: `scale(${zoom})`, transformOrigin: '50% 40%' }}>
+          <div
+            style={{
+              width: '100%',
+              height: '100%',
+              transform: `scale(${zoom * pushAt(wide, f / FPS)})`,
+              transformOrigin: wide ? `${wide.x * 100}% ${wide.y * 100}%` : '50% 40%',
+            }}
+          >
             {scene.crop ? (
               <Cropped crop={scene.crop.wide} width={w} clip={scene.clip} segments={scene.segments} />
             ) : (
@@ -223,7 +238,17 @@ function ClipScene({ scene, vertical }: { scene: Extract<Scene, { kind: 'clip' }
             <Cropped crop={tall} width={cardW} clip={scene.clip} segments={scene.segments} />
           </div>
         ) : (
-          <div style={{ position: 'absolute', left: left * k, top: 0, width: 1920 * k, height: 1080 * k, transform: `scale(${zoom})`, transformOrigin: `${((cx / 1920) * 100).toFixed(1)}% 45%` }}>
+          <div
+            style={{
+              position: 'absolute',
+              left: left * k,
+              top: 0,
+              width: 1920 * k,
+              height: 1080 * k,
+              transform: `scale(${zoom * pushAt(tallPush, f / FPS)})`,
+              transformOrigin: `${(((tallPush ? tallPush.x * 1920 : cx) / 1920) * 100).toFixed(1)}% ${tallPush ? tallPush.y * 100 : 45}%`,
+            }}
+          >
             <Footage clip={scene.clip} segments={scene.segments} style={{ width: '100%', height: '100%' }} />
           </div>
         )}
@@ -261,6 +286,79 @@ function PhoneScene({ scene, vertical }: { scene: Extract<Scene, { kind: 'phone'
   );
 }
 
+/** A box on the canvas, in px. */
+interface Box {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+const mix = (a: Box, b: Box, p: number): Box => ({
+  left: a.left + (b.left - a.left) * p,
+  top: a.top + (b.top - a.top) * p,
+  width: a.width + (b.width - a.width) * p,
+  height: a.height + (b.height - a.height) * p,
+});
+
+/**
+ * Chrome's own viewer and ours, side by side (one above the other in 9:16), each under its label. Then the camera moves in on
+ * ours: its card grows to where the next scene's card sits, and the next scene fades in over it.
+ */
+function CompareScene({ scene, vertical }: { scene: Extract<Scene, { kind: 'compare' }>; vertical: boolean }) {
+  const f = useCurrentFrame();
+  const length = sceneFrames(scene);
+  const fade = useFade(length);
+  const z = interpolate(f, [scene.zoomAt * FPS, length], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.inOut(Easing.cubic) });
+  // Where each card sits, and (for ours) where the next scene's card is: the zoom ends there.
+  const left: Box = vertical ? { left: 70, top: 140, width: 940, height: 760 } : { left: 48, top: 128, width: 888, height: 908 };
+  const right: Box = vertical ? { left: 70, top: 1040, width: 940, height: 760 } : { left: 984, top: 128, width: 888, height: 908 };
+  // 16:9: ours moves to the middle at the next card's height, where the next scene's page sits at nearly the same size.
+  const target: Box = vertical ? { left: 60, top: 400, width: 960, height: 1200 } : { left: 520, top: 118, width: 880, height: 900 };
+  const ours = mix(right, target, z);
+  const card = (b: Box, extra: CSSProperties = {}): CSSProperties => ({
+    position: 'absolute',
+    ...b,
+    borderRadius: vertical ? 28 : 18,
+    overflow: 'hidden',
+    background: '#202124',
+    boxShadow: '0 1px 3px rgba(60,64,67,.25), 0 12px 40px rgba(60,64,67,.18)',
+    ...extra,
+  });
+  const label = (text: string, b: Box): ReactNode => (
+    <div
+      style={{
+        position: 'absolute',
+        left: b.left,
+        width: b.width,
+        top: vertical ? b.top - 84 : 40,
+        textAlign: 'center',
+        fontFamily: FONT,
+        fontWeight: 500,
+        fontSize: vertical ? 54 : 46,
+        letterSpacing: '-0.01em',
+        color: C.ink,
+        opacity: 1 - z * 1.6,
+      }}
+    >
+      {text}
+    </div>
+  );
+  // The recordings keep their shape: each fills its card, from the top (the toolbar and the paper's first page).
+  const fill: CSSProperties = { width: '100%', height: '100%', objectFit: 'cover', objectPosition: '50% 0%' };
+  return (
+    <AbsoluteFill style={{ opacity: fade }}>
+      {label(scene.left.label, left)}
+      {label(scene.right.label, right)}
+      <div style={card(left, { opacity: 1 - z, transform: `translate${vertical ? 'Y' : 'X'}(${-z * 120}px)` })}>
+        <Footage clip={scene.left.clip} segments={scene.left.segments} style={fill} />
+      </div>
+      <div style={card(ours)}>
+        <Footage clip={scene.right.clip} segments={scene.right.segments} style={fill} />
+      </div>
+    </AbsoluteFill>
+  );
+}
+
 function Wordmark({ size }: { size: number }) {
   return (
     <div style={{ fontFamily: FONT, fontWeight: 600, fontSize: size, letterSpacing: '-0.03em', color: C.ink }}>
@@ -281,24 +379,57 @@ function TitleScene({ scene, vertical }: { scene: Scene; vertical: boolean }) {
         <Wordmark size={vertical ? 132 : 140} />
       </div>
       <div style={{ marginTop: 18, fontFamily: FONT, fontSize: vertical ? 50 : 46, color: C.muted, opacity: q, textAlign: 'center', padding: '0 60px' }}>
-        A calmer PDF reader for Chrome
+        cus all pdf readers now kinda suck
       </div>
     </AbsoluteFill>
   );
 }
 
+/** What the end card says about the sponsor (R112): the owner's ElevenReader offer, with the QR code that opens it. */
+export const PARTNER_LINE = 'Partnered with ElevenReader';
+export const QR_LINE = 'Scan this QR code to get 1 free year';
+
 function EndScene({ vertical }: { vertical: boolean }) {
   const f = useCurrentFrame();
   const p = interpolate(f, [0, 16], [0, 1], { extrapolateRight: 'clamp', easing: Easing.out(Easing.cubic) });
   const q = interpolate(f, [10, 26], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.out(Easing.cubic) });
+  // The QR code is drawn large and sharp (its modules stay square), on white with its own quiet zone, so a phone can read it
+  // off another screen: 440 px of 1080 in 16:9, 620 px of 1080 wide in 9:16.
+  const qrSize = vertical ? 620 : 440;
+  const qr = (
+    <div style={{ background: '#ffffff', borderRadius: 24, padding: 10, boxShadow: '0 1px 3px rgba(60,64,67,.2), 0 10px 32px rgba(60,64,67,.14)' }}>
+      <Img src={staticFile('elevenreader-qr.png')} style={{ display: 'block', width: qrSize, height: qrSize, imageRendering: 'pixelated' }} />
+    </div>
+  );
+  // The sponsor's logo, from apps/site/public, as it is: only its height is set, so it keeps its own shape and colour.
+  const logo = <Img src={staticFile('elevenlabs-logo-black.svg')} style={{ height: vertical ? 52 : 46, width: 'auto' }} />;
+  const partner = <div style={{ fontFamily: FONT, fontWeight: 500, fontSize: vertical ? 46 : 42, color: C.ink }}>{PARTNER_LINE}</div>;
+  const scan = <div style={{ fontFamily: FONT, fontSize: vertical ? 40 : 36, color: C.muted, lineHeight: 1.3 }}>{QR_LINE}</div>;
+  if (vertical) {
+    return (
+      <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', opacity: p }}>
+        <Wordmark size={124} />
+        <div style={{ marginTop: 18, fontFamily: FONT, fontSize: 36, color: C.blue }}>{SITE_ADDRESS}</div>
+        <div style={{ marginTop: 110, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 26, opacity: q }}>
+          {partner}
+          {logo}
+          <div style={{ marginTop: 18 }}>{qr}</div>
+          <div style={{ marginTop: 8 }}>{scan}</div>
+        </div>
+      </AbsoluteFill>
+    );
+  }
   return (
     <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', opacity: p }}>
-      <Wordmark size={vertical ? 132 : 132} />
-      <div style={{ marginTop: 22, fontFamily: FONT, fontSize: vertical ? 38 : 40, color: C.blue }}>{SITE_ADDRESS}</div>
-      <div style={{ marginTop: vertical ? 150 : 110, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20, opacity: q }}>
-        <div style={{ fontFamily: FONT, fontSize: vertical ? 34 : 30, color: C.muted }}>Sponsored by ElevenLabs</div>
-        {/* The sponsor's logo, from apps/site/public, as it is: only its height is set, so it keeps its own shape and colour. */}
-        <Img src={staticFile('elevenlabs-logo-black.svg')} style={{ height: vertical ? 46 : 42, width: 'auto' }} />
+      <Wordmark size={120} />
+      <div style={{ marginTop: 16, fontFamily: FONT, fontSize: 38, color: C.blue }}>{SITE_ADDRESS}</div>
+      <div style={{ marginTop: 64, display: 'flex', alignItems: 'center', gap: 64, opacity: q }}>
+        {qr}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 28, whiteSpace: 'nowrap' }}>
+          {partner}
+          {logo}
+          {scan}
+        </div>
       </div>
     </AbsoluteFill>
   );
@@ -312,6 +443,8 @@ function SceneView({ scene, vertical }: { scene: Scene; vertical: boolean }): Re
       return <ClipScene scene={scene} vertical={vertical} />;
     case 'phone':
       return <PhoneScene scene={scene} vertical={vertical} />;
+    case 'compare':
+      return <CompareScene scene={scene} vertical={vertical} />;
     case 'end':
       return <EndScene vertical={vertical} />;
   }

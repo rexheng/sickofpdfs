@@ -1,5 +1,6 @@
-# Recordings, frames and renders are made on demand and never committed.
+# Recordings, frames, renders and the arXiv page snapshot are made on demand and never committed.
 public/
 out/
 .frames/
 .record-results/
+fixtures/
