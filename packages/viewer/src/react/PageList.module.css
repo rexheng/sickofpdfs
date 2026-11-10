@@ -20,6 +20,11 @@
   outline: none;
 }
 
+/* The pages fit the view: no sideways scroll bar, not even for the moment a resize shows the old, wider layout (PageList.tsx). */
+.scroller[data-fits] {
+  overflow-x: hidden;
+}
+
 .sizer {
   position: relative;
 }

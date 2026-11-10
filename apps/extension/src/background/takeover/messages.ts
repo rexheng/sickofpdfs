@@ -141,9 +141,7 @@ async function handle(message: RuntimeMessage, sender: Sender, afterReply: (work
       const pageTitle = opened?.pageTitle ?? null;
       if (!/^https?:/.test(message.url)) return { known, referer: null, back, pageTitle };
       // The Referer of Chrome's own request for this very PDF, as the tab's record keeps it.
-      const referer = opened?.referer ?? null;
-      if (referer) await setStickyReferer(tabId, message.url, referer);
-      else await clearStickyReferer(tabId);
+      const referer = await keepReferer(tabId, message.url, opened?.referer ?? null);
       return { known, referer, back, pageTitle };
     }
 
@@ -212,19 +210,65 @@ async function handle(message: RuntimeMessage, sender: Sender, afterReply: (work
   }
 }
 
+/**
+ * Makes the viewer's own request for `url` carry `referer` (referer.ts), or none. Answers the Referer the request will
+ * carry: null when there is none, or when Chrome would not take the rule. That is not a reason to fail the whole answer:
+ * the viewer then loads the PDF without the Referer, as Chrome's own viewer would after a reload, and most hosts send it.
+ */
+async function keepReferer(tabId: number, url: string, referer: string | null): Promise<string | null> {
+  try {
+    if (referer === null) {
+      await clearStickyReferer(tabId);
+      return null;
+    }
+    return (await setStickyReferer(tabId, url, referer)) === 0 ? null : referer;
+  } catch (error) {
+    logOnce('referer', 'sickofpdfs: could not keep the Referer for a PDF, so it loads without it', error);
+    await clearStickyReferer(tabId).catch(() => undefined);
+    return null;
+  }
+}
+
+const logged = new Set<string>();
+
+/**
+ * One line per kind of problem while the service worker runs, never one per PDF. It names the error's kind, never its
+ * text: that may quote an address, and what a person opens is nobody else's business.
+ */
+function logOnce(kind: string, words: string, error?: unknown): void {
+  if (logged.has(kind)) return;
+  logged.add(kind);
+  const name = error instanceof Error ? error.name : typeof error;
+  console.error(error === undefined ? words : `${words} (${name})`);
+}
+
 /** What a sender gets when handling its message failed: never "go ahead". */
 function failureReply(message: RuntimeMessage): Reply {
   switch (message.type) {
     case 'takeover:can-take-over':
       return false;
     case 'takeover:prepare-fetch':
-      return { known: false, referer: null, back: null };
+      return { known: false, referer: null, back: null, pageTitle: null };
     case 'takeover:open-in-chrome':
       return { ok: false };
     case 'takeover:embedded':
       return { opened: false };
     default:
       return undefined;
+  }
+}
+
+/** The log line for a message the worker could not handle, in plain words. */
+function failedWords(type: RuntimeMessage['type']): string {
+  switch (type) {
+    case 'takeover:prepare-fetch':
+      return 'sickofpdfs: could not check how this tab opened a PDF, so it loads without the sign-in';
+    case 'takeover:open-in-chrome':
+      return "sickofpdfs: could not open a PDF in Chrome's own viewer";
+    case 'takeover:embedded':
+      return 'sickofpdfs: could not open a PDF from a page in its own tab';
+    default:
+      return `sickofpdfs: the takeover could not handle "${type}"`;
   }
 }
 
@@ -237,11 +281,10 @@ export function installTakeoverMessages(): void {
     handle(message, sender, (work) => after.push(work)).then(
       (reply) => {
         sendResponse(reply);
-        for (const work of after) work().catch(() => console.error(`sickofpdfs: ${message.type} failed`));
+        for (const work of after) work().catch((error: unknown) => logOnce(message.type, failedWords(message.type), error));
       },
-      () => {
-        // Not the error itself: it may quote an address, and what a person opens is nobody else's business.
-        console.error(`sickofpdfs: ${message.type} failed`);
+      (error: unknown) => {
+        logOnce(message.type, failedWords(message.type), error);
         sendResponse(failureReply(message));
       },
     );

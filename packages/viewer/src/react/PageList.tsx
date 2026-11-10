@@ -504,6 +504,23 @@ export function PageList({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- anchorAt reads refs only
   }, []);
 
+  // The sideways scroll bar is there only while the pages are wider than the view (`data-fits` hides it otherwise), and
+  // it comes or goes one frame after the layout that asks for it. In the observer above, the old layout is still on the
+  // page for a moment (or the held layout's preview is), and it can overflow the new width. A scroll bar that came or went
+  // then changed the very size the observer had just reported, inside its own callback, and Chrome reported "ResizeObserver
+  // loop completed with undelivered notifications". Now the bar does not appear for that moment, and when it changes, the
+  // observer sees it next frame as an ordinary resize.
+  const sidewaysFrame = useRef(0);
+  useLayoutEffect(() => {
+    const el = scrollerRef.current;
+    if (!el || !layout || !viewport) return;
+    const fits = layout.width <= viewport.width + 0.5;
+    cancelAnimationFrame(sidewaysFrame.current);
+    if (el.hasAttribute('data-fits') === fits) return;
+    sidewaysFrame.current = requestAnimationFrame(() => el.toggleAttribute('data-fits', fits));
+  }, [layout, viewport]);
+  useEffect(() => () => cancelAnimationFrame(sidewaysFrame.current), []);
+
   // Presentation mode starting or ending changes the page area's size at once (it covers the screen): measured in the same
   // frame, so leaving it lays the pages out at their old size straight away and the old place can be restored.
   useLayoutEffect(() => measureNow.current(), [presentingOn]);
