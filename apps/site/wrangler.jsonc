@@ -64,12 +64,12 @@
         "run_worker_first": ["/api/*"]
       },
       "vars": {
-        "SITE_ORIGIN": "",
-        "CONTACT_EMAIL": "",
+        "SITE_ORIGIN": "https://sickofpdfs-site.rexheng-policy.workers.dev",
+        "CONTACT_EMAIL": "ripostenigma@gmail.com",
         "CWS_ITEM_ID": "",
         "PLAY_APP_ID": ""
       },
-      "d1_databases": [{ "binding": "SITE_DB", "database_name": "sop_site", "database_id": "REPLACE_AT_DEPLOY", "migrations_dir": "migrations" }],
+      "d1_databases": [{ "binding": "SITE_DB", "database_name": "sop_site", "database_id": "459ad72d-a254-44d7-b066-310ef5ba2d68", "migrations_dir": "migrations" }],
       "ratelimits": [{ "name": "RL_WAITLIST", "namespace_id": "4002", "simple": { "limit": 5, "period": 60 } }],
       "triggers": { "crons": ["41 5 * * *"] }
     }

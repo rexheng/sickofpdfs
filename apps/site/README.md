@@ -61,3 +61,9 @@ To run the daily job: `npx wrangler dev --local --test-scheduled`, then open `/_
 4. `npx wrangler d1 migrations apply SITE_DB --remote --env production`
 5. `npx wrangler deploy --env production`
 6. Set `SOP_SITE_ORIGIN` for the extension build, so Settings → Cloud can link to the waitlist.
+
+## Deployed (Nov 10, owner's OK)
+
+- Account: "Ripostenigma@gmail.com's Account". Address: https://sickofpdfs-site.rexheng-policy.workers.dev
+- D1 `sop_site` (id in `wrangler.jsonc`), migration 0001 applied. Turnstile widget "sickofpdfs waitlist"; both keys are Worker secrets.
+- This deploy went through the Cloudflare API without Wrangler (no API token on the build machine), so the pages are served by a small wrapper Worker that holds the built files, with the same headers as `public/_headers`. With an API token, `npx wrangler deploy --env production` replaces it with the normal static-assets setup.
