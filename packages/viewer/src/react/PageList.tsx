@@ -84,6 +84,18 @@ export interface PageListApi {
    */
   glide(): void;
   /**
+   * Full renders wait until `ms` have passed with no new call, as they do for Ctrl+wheel: a run of quick size changes
+   * (an arrow key held on the notes panel's edge, R107) renders once, at the size it settles at.
+   */
+  holdFullRenders(ms: number): void;
+  /**
+   * While on, a change of the page area's size (a drag of the notes panel's edge, R107) does not lay the pages out again:
+   * they keep their layout and are shown, by a transform, scaled and moved to where the new size will put them, drawn from
+   * what is on screen. Nothing is laid out or rendered for each pixel. Off: they are laid out once at the size they settled
+   * at, keeping the line at the top of the view, and rendered there.
+   */
+  holdLayout(on: boolean): void;
+  /**
    * A layer inside the scroll area, above the pages, that scrolls with them (the notes margin draws its cards here). Its
    * coordinates are the layout's: CSS px from the top-left of the scroll area, as pageBoxes() gives them. It ignores the
    * pointer itself; its children take it back. Null until the first layout.
@@ -314,17 +326,18 @@ export function PageList({
     : presenting
       ? presentationScale(pages, presenting.page, viewport, viewRotation)
       : scaleFor(zoom, fitViewport(zoom, viewport, reserve, spread, spreadSideClearance), pages, fitPage.current, viewRotation, spread);
-  const spreadLayout = (l: PageLayout) => (spread === 'two-page' ? withSpreadGaps(l, pages, { viewRotation, scale, dpr }) : l);
+  /** The layout at `s` in a page area of size `vp`, before the room at the right moves the pages. */
+  const baseFor = (vp: Viewport, s: number): PageLayout => {
+    const c = computeLayout(pages, { scale: s, viewRotation, spread, viewportWidth: vp.width });
+    const l = spread === 'two-page' ? withSpreadGaps(c, pages, { viewRotation, scale: s, dpr }) : c;
+    // A fitted spread is centred in the whole reading area, the scroll bar's strip included (spreadClearance).
+    const { shift } = zoom.kind === 'scale' ? { shift: 0 } : spreadClearance(vp, spread, spreadSideClearance);
+    return shift > 0 ? { ...l, boxes: l.boxes.map((b) => ({ ...b, left: b.left + shift })) } : l;
+  };
   /** The layout before the room at the right moves the pages (roomForReserve measures the move from it). */
   const base = useMemo(
-    () => {
-      if (!viewport || presentingOn) return null;
-      const l = spreadLayout(computeLayout(pages, { scale, viewRotation, spread, viewportWidth: viewport.width }));
-      // A fitted spread is centred in the whole reading area, the scroll bar's strip included (spreadClearance).
-      const { shift } = zoom.kind === 'scale' ? { shift: 0 } : spreadClearance(viewport, spread, spreadSideClearance);
-      return shift > 0 ? { ...l, boxes: l.boxes.map((b) => ({ ...b, left: b.left + shift })) } : l;
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- spreadLayout reads spread, scale, viewRotation and dpr, listed here
+    () => (!viewport || presentingOn ? null : baseFor(viewport, scale)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- baseFor reads spread, scale, viewRotation, dpr and the zoom, listed here
     [pages, scale, viewRotation, spread, viewport, presentingOn, dpr, zoom.kind, spreadSideClearance],
   );
   const layout = useMemo(
@@ -394,6 +407,37 @@ export function PageList({
 
   // Viewport size (fit modes follow it); on a resize the line at the top of the view stays put.
   const measureNow = useRef<() => void>(() => {});
+  /** holdLayout: while true, a new size only moves the preview (previewNow); the layout waits. */
+  const layoutHeld = useRef(false);
+  const previewNow = useRef<() => void>(() => {});
+  // While the layout is held, the pages are shown where the page area's new size will put them: scaled by the new scale
+  // over the old, about the line at the top of the view (which measure() keeps in place), and moved sideways as the new
+  // layout centres them. A transform of what is on screen: nothing is laid out or rendered.
+  useLayoutEffect(() => {
+    previewNow.current = () => {
+      const el = scrollerRef.current;
+      const sizer = sizerRef.current;
+      const v = latest.current;
+      if (!el || !sizer || !v.layout || !v.viewport || v.presenting || v.layout.boxes.length === 0) return;
+      const next: Viewport = { width: el.clientWidth, height: el.clientHeight, gutter: Math.max(0, el.offsetWidth - el.clientWidth) };
+      const z = store.get().zoom;
+      const s = scaleFor(z, fitViewport(z, next, v.reserve, v.spread, v.sideClearance), pages, fitPage.current, v.viewRotation, v.spread);
+      const l = withReserve(baseFor(next, s), next.width, v.reserve);
+      const k = s / v.scale;
+      const c = { x: el.scrollLeft + next.width / 2, y: el.scrollTop };
+      const i = nearestPage(v.layout, c);
+      const was = v.layout.boxes[i];
+      const now = l.boxes[i];
+      if (!was || !now) return;
+      const to = pagePointToContent(now, pages[i], contentPointToPage(was, pages[i], c));
+      const left = Math.min(Math.max(0, to.x - next.width / 2), Math.max(0, l.width - next.width));
+      const top = Math.min(Math.max(0, to.y), Math.max(0, l.height - next.height));
+      const tx = now.left - k * was.left - left + el.scrollLeft;
+      const ty = now.top - k * was.top - top + el.scrollTop;
+      sizer.style.transformOrigin = '0 0';
+      sizer.style.transform = `matrix(${k}, 0, 0, ${k}, ${tx}, ${ty})`;
+    };
+  });
   useLayoutEffect(() => {
     const el = scrollerRef.current!;
     const measure = () => {
@@ -410,8 +454,8 @@ export function PageList({
     measure();
     measureNow.current = measure;
     // The new size is laid out before the browser paints: a rail folding away must not show one frame of the pages
-    // where the old layout puts them in the new, wider area.
-    const observer = new ResizeObserver(() => flushSync(measure));
+    // where the old layout puts them in the new, wider area. While the layout is held (holdLayout), only its preview moves.
+    const observer = new ResizeObserver(() => (layoutHeld.current ? previewNow.current() : flushSync(measure)));
     observer.observe(el);
     return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- anchorAt reads refs only
@@ -658,6 +702,21 @@ export function PageList({
         glideFrom.current = x === null ? null : { index: i, clientX: x, scale: latest.current.scale, until: performance.now() + GLIDE_WINDOW_MS, base: null };
       },
       redrawPages: () => driver.redrawAll(),
+      holdFullRenders: (ms) => driver.holdFullRenders(ms),
+      holdLayout(on) {
+        if (on === layoutHeld.current) return;
+        layoutHeld.current = on;
+        const sizer = sizerRef.current;
+        if (on) {
+          sizer?.style.setProperty('will-change', 'transform');
+          return;
+        }
+        sizer?.style.removeProperty('transform');
+        sizer?.style.removeProperty('transform-origin');
+        sizer?.style.removeProperty('will-change');
+        // Laid out once, at the size the page area settled at (the line at the top of the view stays put).
+        flushSync(measureNow.current);
+      },
       overlayHost: () => overlayRef.current,
     };
     return self;

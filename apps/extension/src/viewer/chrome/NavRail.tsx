@@ -87,7 +87,10 @@ export function NavRail({ store, scheduler, pages, outline, onPage, onOutline, o
           onClick={onToggle}
         />
       </div>
-      <div className={cx(styles.pages, open && styles.beside)}>{children}</div>
+      {/* data-page-column: the notes panel's edge moves this column's end while it is dragged (notes-panel/PanelEdge.tsx). */}
+      <div className={cx(styles.pages, open && styles.beside)} data-page-column="">
+        {children}
+      </div>
     </>
   );
 }

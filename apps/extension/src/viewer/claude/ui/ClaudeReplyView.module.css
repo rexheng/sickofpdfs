@@ -1,8 +1,8 @@
 /*
  * A reply from Claude inside a Docs card (02 section 4.11): the body is Docs' comment body (14/20 in on-surface-variant,
- * paragraphs 8 px apart), the chips end the lines of the sentences they cite, and the actions come under it in one quiet
- * row: Think harder at the left, the model and cost at the right end (shown on hover or keyboard focus, so the card stays
- * calm).
+ * paragraphs 8 px apart), the chips end the lines of the sentences they cite, and Think harder comes under it. R107: no
+ * model name and no cost on the card. Normal text never scrolls sideways; only a wide formula or code block scrolls,
+ * inside its own box.
  */
 .reply {
   position: relative;
@@ -67,27 +67,31 @@
   margin: 0;
   padding: var(--space-2) var(--space-3);
   overflow-x: auto;
-  white-space: pre-wrap;
-}
-
-/* An inline formula and the punctuation after it, kept on one line. */
-.nowrap {
-  white-space: nowrap;
+  overflow-wrap: normal;
+  white-space: pre;
+  /* eslint-disable css/use-baseline -- a Chrome-only extension (minimum Chrome 128; Chrome has both since 121) */
+  scrollbar-width: thin;
+  scrollbar-color: var(--gm3-sys-color-outline-variant) transparent;
+  /* eslint-enable css/use-baseline */
 }
 
 /*
- * The last word of a sentence and its chips, kept on one line: a chip ends its sentence's line and never starts the next
- * line, where it would read as a heading for the next sentence (TB6, student 4). A small gap sets it off from the word.
+ * Kept on one line: the last word of a sentence and its chips (a chip ends its sentence's line and never starts the next
+ * one, where it would read as a heading for the next sentence: TB6, student 4), and an inline formula with the
+ * punctuation after it. Each is one box that moves to the next line whole, like a word. One wider than the whole line
+ * wraps inside its box instead of sticking out of the card (R107). A small gap sets a chip off from the word.
  */
-.cited {
-  white-space: nowrap;
+.cited,
+.together {
+  display: inline-block;
+  max-inline-size: 100%;
 }
 
 .cited > :not(:first-child) {
   margin-inline-start: var(--space-1);
 }
 
-/* "Thought harder · Claude Opus 5.5" at the top of a Think harder answer: the 12/16 of the time under a name. */
+/* "Thought harder" at the top of a Think harder answer: the 12/16 of the time under a name. */
 .harder {
   display: flex;
   gap: var(--space-1);
@@ -174,53 +178,6 @@
   margin-block-start: var(--space-3);
 }
 
-/*
- * "Haiku 5.5 · less than 1¢ · 1 web search": 12/16, the size of the time under a name. It shows while the pointer is on
- * the reply or the keyboard is in it; screen readers always read it.
- */
-.cost {
-  overflow: hidden;
-  color: var(--gm3-sys-color-on-surface-variant);
-  font: var(--type-docs-comment-time);
-  letter-spacing: var(--tracking-tight);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  opacity: 0;
-  transition: opacity 120ms ease-out;
-}
-
-/*
- * At the right end of the Think harder row (TB6, visual 9): clear of the reply box, and of the button's tooltip below it.
- * In a narrow card it takes two lines, broken at a dot; two 16 px lines are the button's 32 px.
- */
-.costEnd {
-  flex: 1 1 0;
-  min-inline-size: 0;
-  overflow: visible;
-  white-space: normal;
-  text-align: end;
-}
-
-/* The last reply of a thread with no Think harder: a line of its own, at the right, so it never touches the reply box. */
-.costLine {
-  display: block;
-  margin-block-start: var(--space-2);
-  text-align: end;
-}
-
-/* A reply with more comments after it: in the gap under it, at the right, taking no room (Docs' spacing between comments). */
-.costGap {
-  position: absolute;
-  inset-block-start: 100%;
-  inset-inline: 0;
-  text-align: end;
-}
-
-.reply:hover .cost,
-.reply:focus-within .cost {
-  opacity: 1;
-}
-
 /* Home's short card: 4 lines of the reply, then "Show more" (the look CommentItem gives the owner's notes). */
 .clamped {
   max-block-size: calc(var(--sop-card-clamp-lines) * var(--space-5));
@@ -253,9 +210,5 @@
 @media (prefers-reduced-motion: reduce) {
   .caret {
     animation: none;
-  }
-
-  .cost {
-    transition: none;
   }
 }

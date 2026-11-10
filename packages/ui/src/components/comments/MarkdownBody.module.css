@@ -56,11 +56,17 @@
   padding: 0 var(--space-1);
 }
 
+/* A code block keeps its lines; a wide one scrolls sideways inside its own box, never the card (R107). */
 .pre {
   margin: 0;
   padding: var(--space-2) var(--space-3);
   overflow-x: auto;
-  white-space: pre-wrap;
+  overflow-wrap: normal;
+  white-space: pre;
+  /* eslint-disable css/use-baseline -- a Chrome-only extension (minimum Chrome 128; Chrome has both since 121) */
+  scrollbar-width: thin;
+  scrollbar-color: var(--gm3-sys-color-outline-variant) transparent;
+  /* eslint-enable css/use-baseline */
 }
 
 .link {

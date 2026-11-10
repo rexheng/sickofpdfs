@@ -297,7 +297,7 @@ export function createTurnRunner(d: TurnDeps): ClaudeTurnRunner & TurnMemory {
       const reading = { passages: sent.passages, figures: sent.figures, scope, ...(sent.pages !== null ? { pages: sent.pages } : {}) };
       d.live?.begin(replyId, reading);
       const meta1: ClaudeReplyMeta = { ...meta0, figureLabels };
-      // The cost line names the model that answered, even after the owner picks another (slice F reads `meta.modelName`).
+      // The model that answered, kept on the row for the record, even after the owner picks another (R107: no card shows it).
       writer.note({ modelName: model.displayName });
 
       // 4. Cost: cap, "ask first", the whole document. One question at a time, in decide's order.

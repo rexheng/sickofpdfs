@@ -547,7 +547,7 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
 
   /**
    * About what Think harder costs on this thread: the thread's last pack, with the Think harder model and the question's words.
-   * The button's tooltip shows it, and the Think harder turn asks first with this same amount (one estimate, TB6).
+   * The Think harder turn asks first with this amount when it is over the owner's limit (R107: the card itself shows no cost).
    */
   const thinkHarderEstimate = (threadId: ThreadId): number | null => {
     const pack = packs.get(threadId) ?? null;
@@ -661,18 +661,10 @@ export function createClaudeEntry(host: NotesHost, ui: EntryUi = {}): ClaudeEntr
       const question = meta?.questionId ?? lastQuestion(threadId)?.id ?? null;
       if (question === null) return;
       const preset = presets.get(replyId) ?? (meta?.scope === 'whole-document' ? 'whole-document' : undefined);
-      // One cost for Think harder (TB6): the ask-first dialog says the same amount the button's tooltip said.
+      // The ask-first dialog says this amount when it is over the owner's limit.
       const usd = thinkHarderEstimate(threadId);
       start({ threadId, questionId: question, replyId: newId<CommentId>(), role: 'think-harder', skip: [replyId], ...(preset ? { preset } : {}), ...(usd !== null ? { estimateUsd: usd } : {}) });
     },
-
-    model(role) {
-      if (settings === null) void loadSettings().catch(() => undefined);
-      const m = settings?.models[role] ?? null;
-      return m ? { displayName: m.displayName } : null;
-    },
-
-    thinkHarderUsd: (threadId) => thinkHarderEstimate(threadId),
 
     privacy: () => privacyNow(storedDocumentId()).reason,
     privateHint: () => (privateNow() !== null ? PRIVATE_HINT : null),
@@ -742,8 +734,6 @@ export const claudeTabHost: ClaudeUiHost = {
   stop: (replyId) => claudeEntry.get()?.stop(replyId),
   retry: (replyId) => claudeEntry.get()?.retry(replyId),
   thinkHarder: (threadId, replyId) => claudeEntry.get()?.thinkHarder(threadId, replyId),
-  model: (role) => claudeEntry.get()?.model(role) ?? null,
-  thinkHarderUsd: (threadId) => claudeEntry.get()?.thinkHarderUsd(threadId) ?? null,
 };
 claudeUi.set(claudeTabHost);
 

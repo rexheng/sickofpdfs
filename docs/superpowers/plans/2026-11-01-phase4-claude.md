@@ -112,7 +112,7 @@ What changed since research 03/06 (31 Oct), and what it changes here:
   - fills P2's card and note-box slots (§8 A4). The @Claude autocomplete item and the Ask Claude and Explain items (right-click menu, figure toolbar) call `ClaudeEntry.ask`;
   - while streaming: a status line ("Reading 4 passages…", "Searching the web for …"), Stop, and Markdown limited to `cite:`, `web:` and `https:` links (source chips open a new tab);
   - chips: "p. 4" jumps to the passage and flashes it; "Fig. 3 · p. 5" jumps to and selects the figure;
-  - Think harder, Try again, plain error text with an "Open Settings" button, and a cost line on hover (model name and cents);
+  - Think harder, Try again, plain error text with an "Open Settings" button, and a cost line on hover (model name and cents; removed by R107: cards show neither);
   - confirm dialogs for an unsaved PDF ("Send 3 passages to Anthropic?"), an estimate over $0.25 and "Ask about the whole document";
   - consumes `ClaudeStreamEvent`, `ClaudeReplyMeta`, and the `packages/ui` components and tokens.
 - Depends on: Round 2, against a fake runner fed by E's recordings. Risk: **visual**. Model: opus. Size: L.

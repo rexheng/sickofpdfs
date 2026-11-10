@@ -21,6 +21,7 @@
   --sop-card-avatar: 32px;        /* [live] round avatar; the name starts 12 px after it (x+44) */
   --sop-card-body-gap: 12px;      /* [live] 11 px below the author block, on the 4 px grid */
   --sop-card-reply-gap: 20px;     /* [live] replies stack with 20 px top padding */
+  --sop-card-context-gap: 12px;   /* under the "Page 4 · “passage”" line and a figure's thumbnail */
   --sop-card-clamp-lines: 4;      /* an inactive card shows at most 4 lines of a long note, then "Show more" */
   --sop-card-max-h-in-list: 100cqb; /* TB6: an open card in a list of cards (a size container) is at most the list's room */
 

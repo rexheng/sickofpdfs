@@ -2,11 +2,12 @@
 // section 4.11; drive-refs live-17 and live-18). It is a controlled component: NotesPanelMount owns the session, which
 // note is active, and what each action does.
 import type { CommentId, ThreadId } from '@sop/core';
-import { Icon, IconButton, type NoteKept, ThreadCard } from '@sop/ui';
-import { type KeyboardEvent, type MouseEvent, type Ref, useId, useRef } from 'react';
+import { DropdownMenu, Icon, IconButton, type MenuItemDef, type NoteKept, ThreadCard } from '@sop/ui';
+import { type KeyboardEvent, type MouseEvent, type Ref, type RefObject, useId, useRef } from 'react';
 import { claudePlaceholders, claudeReplyRenderer } from '../claude/ui/feature';
 import type { NoteEntry, NoteList, NotesFilter } from './model';
 import styles from './NotesPanel.module.css';
+import type { NotesSpacing } from './panel-size';
 
 export interface NotesPanelProps {
   notes: NoteList;
@@ -40,13 +41,19 @@ export interface NotesPanelProps {
   /** Each card's element, for scrolling it into view and giving it the focus. */
   cardRef(this: void, id: ThreadId, el: HTMLElement | null): void;
   /** The panel, so the mount can put the focus in it when it opens. */
-  panelRef?: Ref<HTMLElement>;
+  panelRef?: RefObject<HTMLElement | null>;
   /** The scrolling list of cards. */
   listRef?: Ref<HTMLDivElement>;
   /** Whether a note's sent text is kept (the quiet "Saved" sign on its card). */
   keptOf?(this: void, note: NoteEntry): NoteKept | null;
   /** "Try again" on a note the library would not take. */
   onRetrySave?(this: void): void;
+  /** The panel's element id, for its edge (PanelEdge's aria-controls). */
+  id?: string;
+  /** R107: Compact (the default) or Comfortable: the header's and the cards' spacing. */
+  spacing?: NotesSpacing;
+  /** The panel's own menu (⋮ beside Close): the spacing choice and "Reset width". Without it, no ⋮. */
+  options?: MenuItemDef[];
 }
 
 const TABS: { id: NotesFilter; label: string }[] = [
@@ -55,9 +62,11 @@ const TABS: { id: NotesFilter; label: string }[] = [
 ];
 
 /**
- * Docs' sidebar on the viewer's dark canvas: 320 px wide with 16 px corners, a 56 px header ("Notes" and Close), the
- * All and Mine tabs, then the cards, 16 px apart. A card turns light when it is active and shows its replies and the
- * reply box. Notes whose text is not in this copy of the PDF are listed last, under "Couldn't place".
+ * Docs' sidebar on the viewer's dark canvas: 320 px wide unless the owner dragged its edge (R107), with 16 px corners, a
+ * header ("Notes", the panel's menu and Close), the All and Mine tabs, then the cards. Compact spacing (the default) keeps
+ * the title, the tabs and the first card close together; Comfortable has Docs' own spacing. A card turns light when it is
+ * active and shows its replies and the reply box. Notes whose text is not in this copy of the PDF are listed last, under
+ * "Couldn't place".
  */
 export function NotesPanel(p: NotesPanelProps) {
   const titleId = useId();
@@ -66,6 +75,8 @@ export function NotesPanel(p: NotesPanelProps) {
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   const { placed, unplaced } = p.notes;
   const empty = placed.length === 0 && unplaced.length === 0;
+  const spacing = p.spacing ?? 'compact';
+  const big = spacing === 'comfortable';
 
   // Esc anywhere in the panel closes it, on a card too (the card lets go first, so a typed reply is sent, as when the
   // reader leaves it). In a note or reply box, Esc first finishes the box (the box keeps that key); the next Esc closes.
@@ -131,7 +142,9 @@ export function NotesPanel(p: NotesPanelProps) {
   return (
     <aside
       ref={p.panelRef}
+      id={p.id}
       className={styles.panel}
+      data-spacing={spacing}
       aria-labelledby={titleId}
       // The panel itself takes the focus when it is opened with the pointer (NotesPanelMount); Tab never stops on it.
       tabIndex={-1}
@@ -142,7 +155,18 @@ export function NotesPanel(p: NotesPanelProps) {
         <h2 id={titleId} className={styles.title}>
           Notes
         </h2>
-        <IconButton icon="close" label="Close notes" shortcut="Shift+F4" size={40} iconSize={24} onClick={p.onClose} />
+        <div className={styles.actions}>
+          {p.options !== undefined && (
+            <DropdownMenu
+              align="end"
+              items={p.options}
+              trigger={<IconButton icon="more_vert" label="Notes options" size={big ? 40 : 32} iconSize={big ? 24 : 20} />}
+              // Closed with the pointer, the focus goes back to the panel itself: no ring is left on ⋮.
+              returnFocus={() => p.panelRef?.current?.focus({ preventScroll: true })}
+            />
+          )}
+          <IconButton icon="close" label="Close notes" shortcut="Shift+F4" size={big ? 40 : 32} iconSize={big ? 24 : 20} onClick={p.onClose} />
+        </div>
       </div>
       <div role="tablist" aria-label="Which notes to show" className={styles.tabs}>
         {TABS.map((t, i) => {

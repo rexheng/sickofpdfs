@@ -55,8 +55,8 @@
 /*
  * The open card's comments (ThreadScroll). It spans the card's padding, so the ⋮ buttons, chips and focus rings near
  * the edges are not clipped, and its scroll bar sits at the card's right edge. 4 px above keeps the first control's
- * ring whole; the 16 px below is the gap over the reply box, which holds the reply's hover cost line, so that line never
- * makes a short thread scroll. The negative margins keep Docs' spacing exactly as it was.
+ * ring whole; the 16 px below is the gap over the reply box. The negative margins keep Docs' spacing exactly as it was.
+ * It scrolls up and down only (R107): its text wraps, and a wide formula or code block scrolls inside its own box.
  */
 .active > .thread {
   flex-shrink: 1;
@@ -64,6 +64,7 @@
   min-block-size: 0;
   margin: calc(-1 * var(--space-1)) calc(-1 * var(--sop-card-pad-x)) calc(-1 * var(--space-4));
   padding: var(--space-1) var(--sop-card-pad-x) var(--space-4);
+  overflow-x: hidden;
   overflow-y: auto;
   /* eslint-disable css/use-baseline -- a Chrome-only extension (minimum Chrome 128): Chrome has overflow-anchor since 56,
      overscroll-behavior since 63 and scrollbar-width since 121 */
@@ -94,7 +95,7 @@
 
 /* A line above the note: "Page 4 · “the passage…”" (Docs sidebar: 12/20 500 on-surface-variant, one line). */
 .context {
-  margin: 0 0 var(--space-3);
+  margin: 0 0 var(--sop-card-context-gap);
   overflow: hidden;
   color: var(--gm3-sys-color-on-surface-variant);
   font: var(--type-docs-comment-time);
@@ -110,7 +111,7 @@
   display: flex;
   gap: var(--space-3);
   align-items: center;
-  margin-block-end: var(--space-3);
+  margin-block-end: var(--sop-card-context-gap);
 }
 
 .thumb {

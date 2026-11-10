@@ -47,7 +47,7 @@ export interface ReplyWriter {
   fail(body: string, meta: ClaudeReplyMeta): Promise<void>;
   /** The owner cancelled before anything was sent (a confirm answered No): the row goes, from view and from the store. */
   discard(): Promise<void>;
-  /** Fields kept on the row's `meta` from now on, beside the contract's (`modelName`: the cost line names the model that answered). */
+  /** Fields kept on the row's `meta` from now on, beside the contract's (`modelName`: the model that answered, kept for the record; R107: no card shows it). */
   note(extra: Record<string, unknown>): void;
 }
 

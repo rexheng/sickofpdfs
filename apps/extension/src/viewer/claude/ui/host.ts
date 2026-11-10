@@ -4,7 +4,7 @@
 // and draws what the host reports: the reply rows in the store, and the live stream events (ReplyStatus.tsx's claudeLive).
 // Slice D's entry (entry.ts) sets the host once it exists; until then nothing is set, and every Claude item stays hidden
 // (plan §8 A3: "keep those items hidden until it exists").
-import type { Anchor, CommentId, ModelRole, ThreadId } from '@sop/core';
+import type { Anchor, CommentId, ThreadId } from '@sop/core';
 import { useCallback, useSyncExternalStore } from 'react';
 
 /** A fixed question instead of the owner's words (plan §8 A3). */
@@ -35,10 +35,6 @@ export interface ClaudeReplyActions {
   retry(replyId: CommentId): void;
   /** Think harder: a second reply from the Think harder model, to the question `replyId` answered. The first stays. */
   thinkHarder(threadId: ThreadId, replyId: CommentId): void;
-  /** The owner's chosen model for a role, as Settings stored it (ModelChoice.displayName). Null before setup. */
-  model(role: ModelRole): { displayName: string } | null;
-  /** About what Think harder would cost for this thread, in dollars; null when there is no estimate. */
-  thinkHarderUsd?(threadId: ThreadId): number | null;
 }
 
 /**

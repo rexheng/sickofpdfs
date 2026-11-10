@@ -1,16 +1,35 @@
 /*
  * The notes panel: Docs' comments sidebar (02 section 4.11; drive-refs live-17, live-18) on the viewer's dark canvas.
- *   320 px wide with 16 px corners, on --sop-notes-panel-bg (#1e1f20). It sits under the toolbar row on the right,
- *   16 px in, level with the first page, as the navigation rail sits on the left (Task 24).
- *   Header 56 px: "Notes" in Google Sans 22/28 at 16 px in, Close (24 px icon) at the right.
- *   Tabs row 48 px with 12 px side padding and a 1 px divider. The selected tab: primary label and Docs' 3 px primary bar
- *   with round top corners, the width of its label plus 3 px; no block behind it (TB5: the wash read as a focus ring).
- *   Cards 16 px apart and 16 px in (Docs: x+16, 288 wide, a 16 px gap). A card in the panel does not move left when it
- *   is active: that is for margin cards only.
+ *   320 px wide (or what the owner dragged it to, R107: --sop-notes-panel-w, PanelEdge.tsx) with 16 px corners, on
+ *   --sop-notes-panel-bg (#1e1f20). It sits under the toolbar row on the right, 16 px in, level with the first page, as
+ *   the navigation rail sits on the left (Task 24).
+ *   The selected tab: primary label and Docs' 3 px primary bar with round top corners, the width of its label plus 3 px;
+ *   no block behind it (TB5: the wash read as a focus ring). A card in the panel does not move left when it is active:
+ *   that is for margin cards only.
+ *
+ * Two spacings (R107), set on the panel, so its header and its cards follow:
+ *   Compact, the default: Drive's compact density. Header 48 px ("Notes" 18/24, as Drive's details pane titles it; 32 px
+ *     buttons), tabs 40 px, the first card 8 px under the tabs, cards 8 px apart and 12 px in, with 12 px inside them.
+ *   Comfortable: Docs' sidebar as measured. Header 56 px ("Notes" 22/28, 40 px buttons), tabs 48 px, cards 16 px apart
+ *     and 16 px in, padding 16px 16px 12px.
  */
 .panel {
   --sop-card-w: 100%;
   --sop-card-shift: 0px;
+  /* Compact */
+  --_header-h: var(--space-12);
+  --_header-pad: 0 var(--space-2) 0 var(--space-4);
+  --_tabs-h: var(--space-10);
+  --_tab-pad: 0 var(--space-3);
+  --_list-pad: var(--space-2) var(--space-1) var(--space-3) var(--space-3);
+  --_cards-gap: var(--space-2);
+  --_section-gap: var(--space-4);
+  --sop-card-pad-top: var(--space-3);
+  --sop-card-pad-x: var(--space-3);
+  --sop-card-pad-bottom: var(--space-2);
+  --sop-card-body-gap: var(--space-2);
+  --sop-card-reply-gap: var(--space-4);
+  --sop-card-context-gap: var(--space-2);
 
   position: absolute;
   inset: calc(var(--viewer-pill-h) + var(--space-4)) var(--space-4) var(--space-4) auto;
@@ -27,27 +46,54 @@
   outline: none;
 }
 
+.panel[data-spacing='comfortable'] {
+  --_header-h: var(--space-14);
+  --_header-pad: 0 var(--space-3) 0 var(--space-4);
+  --_tabs-h: var(--space-12);
+  --_tab-pad: 0 var(--space-4);
+  --_list-pad: var(--space-4) var(--space-2) var(--space-4) var(--space-4);
+  --_cards-gap: var(--space-4);
+  --_section-gap: var(--space-6);
+  --sop-card-pad-top: var(--space-4);
+  --sop-card-pad-x: var(--space-4);
+  --sop-card-pad-bottom: var(--space-3);
+  --sop-card-body-gap: var(--space-3);
+  --sop-card-reply-gap: var(--space-5);
+  --sop-card-context-gap: var(--space-3);
+}
+
 .header {
   display: flex;
   flex: none;
   align-items: center;
   justify-content: space-between;
   box-sizing: border-box;
-  block-size: var(--space-14);
-  padding: 0 var(--space-3) 0 var(--space-4);
+  block-size: var(--_header-h);
+  padding: var(--_header-pad);
 }
 
 .title {
   margin: 0;
   color: var(--gm3-sys-color-on-surface);
+  font: var(--type-details-title);
+}
+
+.panel[data-spacing='comfortable'] .title {
   font: var(--type-docs-sidebar-title);
+}
+
+/* The panel's menu (⋮) and Close, side by side at the right. */
+.actions {
+  display: flex;
+  flex: none;
+  align-items: center;
 }
 
 .tabs {
   display: flex;
   flex: none;
   box-sizing: border-box;
-  block-size: var(--space-12);
+  block-size: var(--_tabs-h);
   padding: 0 var(--space-3);
   border-block-end: 1px solid var(--gm3-sys-color-outline-variant);
 }
@@ -57,7 +103,7 @@
   display: flex;
   align-items: center;
   margin: 0;
-  padding: 0 var(--space-4);
+  padding: var(--_tab-pad);
   border: 0;
   background-color: transparent;
   color: var(--gm3-sys-color-on-surface-variant);
@@ -116,7 +162,7 @@
 
 /*
  * The cards. A thin scrollbar keeps them close to Docs' 288 px; its gutter is kept, so a card never changes width when
- * the list starts to scroll. The 8 px right padding plus the gutter matches the 16 px on the left.
+ * the list starts to scroll. The right padding plus the gutter matches the padding on the left.
  */
 .list {
   /* TB6: an open card is never taller than the list's room for cards (its content box), so its reply box is in view. */
@@ -125,7 +171,7 @@
   flex: 1 1 auto;
   min-block-size: 0;
   container-type: size;
-  padding: var(--space-4) var(--space-2) var(--space-4) var(--space-4);
+  padding: var(--_list-pad);
   overflow-y: auto;
   /* eslint-disable css/use-baseline -- a Chrome-only extension (minimum Chrome 128): Chrome has overscroll-behavior since 63,
      scrollbar-gutter since 94 and scrollbar-width since 121 */
@@ -138,7 +184,7 @@
 .cards {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--_cards-gap);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -148,9 +194,18 @@
   display: block;
 }
 
+/*
+ * Every card fills the list's width, the active one too: its light theme (data-theme="light") declares the tokens again,
+ * the margin card's 282 px among them, which would leave it narrower than the others and stuck at 282 px however wide the
+ * panel is dragged (R107).
+ */
+.cards > .item > * {
+  --sop-card-w: 100%;
+}
+
 /* "Couldn't place": its own section after the placed notes, with one plain line on what it means. */
 .unplaced {
-  margin-block-start: var(--space-6);
+  margin-block-start: var(--_section-gap);
 }
 
 .unplaced:first-child {

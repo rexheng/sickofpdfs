@@ -10,10 +10,10 @@
 //   controller's ruling): a note or reply with text is sent, an empty one is dropped. While it is being typed, the
 //   draft keeper keeps the text safe.
 import type { CommentId, ThreadId } from '@sop/core';
-import { lastInputWasPointer } from '@sop/ui';
+import { lastInputWasPointer, type MenuItemDef } from '@sop/ui';
 import type { JumpHistory, PageSize, ViewerStore } from '@sop/viewer';
 import type { PageListApi } from '@sop/viewer/react';
-import { type RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { type RefObject, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { AnnotationSession } from '../annotations/session';
 import { Snackbar } from '../chrome/Snackbar';
 import { boxOfKind, type CarriedBox, carryBox, isBoxMoving, isEditBox } from '../notes/box-carry';
@@ -25,7 +25,9 @@ import { listNotes, type NoteEntry, type NoteSpot, type NotesFilter, spotOf } fr
 import { distanceBelowTop, goToSpot, noteStops, stepNote } from './navigate';
 import { NotesPanel } from './NotesPanel';
 import styles from './NotesPanelMount.module.css';
+import { PanelEdge } from './PanelEdge';
 import { cardsFolded, notesPanel, openEdit, publishNotesButton, useCardsFolded, useNotesPanelOpen, useOpenEdit } from './panel-state';
+import { notesPanelSpacing, notesPanelWidth, PANEL_DEFAULT_W, showPanelWidth, useNotesPanelSpacing, useNotesPanelWidth } from './panel-size';
 
 export interface NotesPanelMountProps {
   /** The tab's annotation session. Null while there is none: then nothing is shown and the keys do nothing. */
@@ -72,6 +74,31 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
   const panel = useRef<HTMLElement | null>(null);
   const list = useRef<HTMLDivElement | null>(null);
   const focusOnOpen = useRef(false);
+  const panelId = useId();
+  const width = useNotesPanelWidth();
+  const spacing = useNotesPanelSpacing();
+
+  // R107: the width the owner chose, on this page's root (the panel, the page column beside it and the find bar read it).
+  useLayoutEffect(() => showPanelWidth(width), [width]);
+  useLayoutEffect(() => () => showPanelWidth(null), []);
+  /** The panel's ⋮ menu: the spacing, and the usual width back. */
+  const options = useMemo<MenuItemDef[]>(
+    () => [
+      { kind: 'heading', id: `${panelId}-spacing`, label: 'Spacing' },
+      { kind: 'item', id: 'compact', label: 'Compact', radio: 'spacing', checked: spacing === 'compact', onSelect: () => notesPanelSpacing.set('compact') },
+      { kind: 'item', id: 'comfortable', label: 'Comfortable', radio: 'spacing', checked: spacing === 'comfortable', onSelect: () => notesPanelSpacing.set('comfortable') },
+      { kind: 'separator' },
+      {
+        kind: 'item',
+        id: 'reset-width',
+        label: 'Reset width',
+        disabled: width === PANEL_DEFAULT_W,
+        disabledReason: 'the panel is at its usual width',
+        onSelect: () => notesPanelWidth.set(PANEL_DEFAULT_W),
+      },
+    ],
+    [panelId, spacing, width],
+  );
 
   const available = state.mode !== 'view-only';
   const all = useMemo(() => listNotes(state), [state]);
@@ -373,8 +400,20 @@ function Mounted({ session, pageList, viewer, pages, jumps, onCommands }: Mounte
   if (!available) return null;
   return (
     <div className={styles.mount} data-open={open ? 'true' : 'false'}>
+      {open && (
+        <PanelEdge
+          panel={panel}
+          panelId={panelId}
+          width={width}
+          onResizing={(ms) => pageList.current?.holdFullRenders(ms)}
+          onDragging={(on) => pageList.current?.holdLayout(on)}
+        />
+      )}
       {open ? (
         <NotesPanel
+          id={panelId}
+          spacing={spacing}
+          options={options}
           panelRef={panel}
           listRef={list}
           notes={shown}

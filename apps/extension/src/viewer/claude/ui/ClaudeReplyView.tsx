@@ -6,10 +6,14 @@
 // - streaming: the words as they come, with a caret, then the status line ("Searching the web for …") and Stop.
 // - done: the answer with its chips: "Page 4" (jumps and lights the cited sentence), the site of a web source (opens a
 //   new tab), and "Figure 3 · Page 5" for a figure (jumps and selects it). Under the newest everyday answer of the thread,
-//   Think harder, with the model and the cost at the right end of its row on hover (cost-words.ts).
+//   Think harder. R107: a card never shows the model's name or what an answer cost (that is in Settings → Claude, and in
+//   the ask-first dialog when a question costs more than the owner's limit).
 // - error: the text so far stays, then one plain sentence and the buttons that help: Try again, Open Settings; Ask again
 //   after Cancel or Stop; Ask again with more room for an answer cut short; OK for a private PDF's refusal (R105).
-// A Think harder answer says so at its top: "Thought harder · Claude Opus 5.5", the model's name from the Models list.
+// A Think harder answer says so at its top, in plain words: "Thought harder".
+//
+// Normal text never scrolls sideways (R107): it wraps anywhere it must (Chinese and Japanese between any two characters, a
+// long web address or word wherever it has to). Only a wide formula or a code block scrolls, inside its own box.
 //
 // The body is Claude's Markdown, drawn as React elements only. Links are limited to `cite:`, `web:` and https (plan
 // §4 F): any other address keeps its words and loses its link. Repeated chips for one page, or one source, with only
@@ -19,13 +23,12 @@
 //
 // The library's Notes page and Home draw replies with this same view (LibraryClaudeReply below), so a reply reads the
 // same everywhere, maths included. There the chips open the note's reading instead of jumping in it.
-import type { ClaudeReplyMeta, CommentRow, ModelRole, PageCitation, ReplyError, ThreadRow, WebSource } from '@sop/core';
+import type { ClaudeReplyMeta, CommentRow, PageCitation, ReplyError, ThreadRow, WebSource } from '@sop/core';
 import { type Block, type CommentView, Icon, type Inline, parseMarkdown, TextButton } from '@sop/ui';
 import { Fragment, type ReactNode, useContext, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CitationChip, ReplyChipPlace, type ReplyChipPlaceValue } from './CitationChip';
 import { extractMaths, MathView, type MathSpan, splitMaths } from './ClaudeMaths';
 import styles from './ClaudeReplyView.module.css';
-import { costWords } from './cost-words';
 import { FigureChip } from './FigureChip';
 import { claudeUi, type ClaudeUiHost, openClaudeSettings, useClaudeUi } from './host';
 import { figurePageOf } from './jump-target';
@@ -43,7 +46,6 @@ export interface ClaudeReplyViewProps {
 
 /** The parts of `meta` this view reads; a reply written before Phase 4 (or by claude.ai) may lack some. */
 type Meta = Partial<ClaudeReplyMeta> & {
-  modelName?: string;
   /** R105: the owner pressed Cancel in the ask-first dialog; nothing was sent (turn.ts). */
   notSent?: boolean;
   /** The length limit stopped the answer; asking again gives it more room (turn.ts). */
@@ -79,7 +81,7 @@ export function ClaudeReplyView({ thread, comment, comments }: ClaudeReplyViewPr
   const running = status === 'pending' || status === 'streaming';
   const stop = inThisTab && running && host?.stop !== undefined ? () => host.stop?.(comment.id) : undefined;
   const label = live?.label ?? (!inThisTab ? ELSEWHERE : status === 'pending' || body === '' ? readingLabel(undefined) : WRITING);
-  const harder = meta.role === 'think-harder' ? <ThoughtHarder meta={meta} host={host} /> : null;
+  const harder = meta.role === 'think-harder' ? <ThoughtHarder /> : null;
 
   if (status === 'pending' || (status === 'streaming' && body === '')) {
     return (
@@ -119,16 +121,12 @@ function byNumber<T extends { n: number }>(a: readonly T[] | undefined, b: reado
   return out;
 }
 
-/**
- * "Thought harder · Claude Opus 5.5" at the top of a Think harder answer (TB6, visual 9 and experience 13), in the 12/16 of
- * the time under a name. The name is the one the Models list gave the model that answered.
- */
-function ThoughtHarder({ meta, host }: { meta: Meta; host: ClaudeUiHost | null }) {
-  const name = meta.modelName ?? host?.model?.('think-harder')?.displayName ?? null;
+/** "Thought harder" at the top of a Think harder answer (TB6, visual 9 and experience 13), in the 12/16 of the time under a name. */
+function ThoughtHarder() {
   return (
     <p className={styles.harder}>
       <Icon name="psychology" size={20} className={styles.harderIcon} />
-      <span>{name === null ? 'Thought harder' : `Thought harder · ${name}`}</span>
+      <span>Thought harder</span>
     </p>
   );
 }
@@ -175,48 +173,17 @@ export const claudeReplyDismiss = {
   },
 };
 
-/**
- * Under a finished reply. The newest everyday answer of the thread offers Think harder, and the model and cost sit at the
- * right end of that row (on hover or keyboard focus), clear of the reply box below. Without the button the cost line
- * takes no room between two comments; under the last comment of the thread it has a line of its own, so it never touches
- * the reply box.
- */
+/** Under a finished reply: Think harder, under the newest everyday answer of the thread only. */
 function Footer({ meta, host, thread, comment, comments }: { meta: Meta; host: ClaudeUiHost | null; thread: ClaudeReplyViewProps['thread']; comment: CommentView; comments: readonly CommentView[] | undefined }) {
-  const place = useContext(ReplyChipPlace);
-  const role = meta.role ?? null;
   const list = comments ?? [];
-  const offer = host?.thinkHarder !== undefined && role === 'default' && isNewestEveryday(comment, list) && !answeredHarder(comment, list);
+  const offer = host?.thinkHarder !== undefined && (meta.role ?? null) === 'default' && isNewestEveryday(comment, list) && !answeredHarder(comment, list);
+  if (!offer) return null;
   const busy = list.some((c) => c.author === 'claude' && isRunning(c.meta as Meta));
-  const cost = costLine(meta, host, role);
-  const last = list.length === 0 || list.at(-1)?.id === comment.id;
-  if (offer) {
-    return (
-      <div className={styles.footer}>
-        <ThinkHarderButton
-          model={host?.model?.('think-harder')?.displayName ?? null}
-          usd={host?.thinkHarderUsd?.(thread.id) ?? null}
-          disabled={busy}
-          onClick={() => host?.thinkHarder?.(thread.id, comment.id)}
-        />
-        {cost !== null && <span className={`${styles.cost} ${styles.costEnd}`}>{costParts(cost)}</span>}
-      </div>
-    );
-  }
-  if (cost === null) return null;
-  // The library has no reply box under a note, so its cost line never needs a line of its own.
-  const own = last && place.openReading === undefined;
-  return <span className={`${styles.cost} ${own ? styles.costLine : styles.costGap}`}>{cost}</span>;
-}
-
-/** "Haiku 5.5 · less than 1¢" in parts that each stay whole: beside Think harder it may take two lines, broken at a dot. */
-function costParts(cost: string): ReactNode {
-  const parts = cost.split(' · ');
-  return parts.map((part, i) => (
-    <Fragment key={i}>
-      <span className={styles.nowrap}>{i < parts.length - 1 ? `${part} ·` : part}</span>
-      {i < parts.length - 1 && ' '}
-    </Fragment>
-  ));
+  return (
+    <div className={styles.footer}>
+      <ThinkHarderButton disabled={busy} onClick={() => host?.thinkHarder?.(thread.id, comment.id)} />
+    </div>
+  );
 }
 
 const isRunning = (m: Meta) => m.status === 'pending' || m.status === 'streaming';
@@ -236,22 +203,6 @@ function answeredHarder(comment: CommentView, list: readonly CommentView[]): boo
     const m = c.meta as Meta;
     return c.author === 'claude' && m.role === 'think-harder' && (question === null || m.questionId === question);
   });
-}
-
-/**
- * "Haiku 5.5 · less than 1¢ · 1 web search", shown on hover. A Think harder answer names its model at its top, so its line
- * says only the cost. Null when there is nothing to say (a claude.ai reply).
- */
-export function costLine(meta: Meta, host: Pick<ClaudeUiHost, 'model'> | null, role: ModelRole | null): string | null {
-  if (meta.via === 'connector' || role === null) return null;
-  // "Claude" is already the name above the reply; the line names the model only.
-  const model = role === 'think-harder' ? null : ((meta.modelName ?? host?.model?.(role)?.displayName ?? null)?.replace(/^claude\s+/iu, '') ?? null);
-  const usage = meta.usage ?? null;
-  const parts: string[] = [];
-  if (model !== null) parts.push(model);
-  if (usage !== null && usage.usd > 0) parts.push(costWords(usage.usd));
-  if (usage !== null && usage.webSearches > 0) parts.push(usage.webSearches === 1 ? '1 web search' : `${usage.webSearches} web searches`);
-  return parts.length === 0 ? null : parts.join(' · ');
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -464,7 +415,7 @@ function withMaths(text: string, ctx: BodyContext): ReactNode {
       stick === '' ? (
         <MathView key={i} tex={m.tex} display={m.display} />
       ) : (
-        <span key={i} className={styles.nowrap}>
+        <span key={i} className={styles.together}>
           <MathView tex={m.tex} display={false} />
           {stick}
         </span>
@@ -502,8 +453,28 @@ export function citedSentence(before: string, after: string): string {
 /** The word before a chip, glued to it with no break; a long one (a web address) is left alone. */
 const GLUE_MAX = 32;
 
+/** Scripts written without spaces between words, where a line may break between almost any two characters. */
+const NO_SPACES = /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}\p{sc=Thai}\p{sc=Lao}\p{sc=Khmer}\p{sc=Myanmar}]/u;
+const WORDS = new Intl.Segmenter(undefined, { granularity: 'word' });
+
 /**
- * Inline nodes as React elements. A chip, or a run of chips with only spaces between them, goes in one unbreakable span
+ * The word before a chip, and where it starts in `text`: the last run of text with no space in it, as in "solve.". In
+ * Chinese, Japanese or Thai a whole sentence is one such run, and gluing all of it to the chip made a line wider than the
+ * card, which then scrolled sideways (R107): there only its last word goes with the chip ("机制。", not the sentence).
+ */
+function wordBeforeChip(text: string): { at: number; word: string } | null {
+  const m = /(\S+)\s*$/u.exec(text);
+  if (m === null) return null;
+  const run = m[1];
+  if (!NO_SPACES.test(run)) return { at: m.index, word: run };
+  let start = -1;
+  for (const seg of WORDS.segment(run)) if (seg.isWordLike === true) start = seg.index;
+  if (start < 0) start = 0;
+  return { at: m.index + start, word: run.slice(start) };
+}
+
+/**
+ * Inline nodes as React elements. A chip, or a run of chips with only spaces between them, goes in one unbreakable box
  * with the word before it, so the chips end their sentence's line instead of starting the next one (student 4).
  */
 function renderInline(nodes: Inline[], ctx: BodyContext): ReactNode[] {
@@ -533,12 +504,12 @@ function renderInline(nodes: Inline[], ctx: BodyContext): ReactNode[] {
     let lead = '';
     const prev = since.at(-1);
     if (prev?.t === 'text' && out.length > 0) {
-      const m = /(\S+)\s*$/u.exec(prev.v);
-      const word = m?.[1] ?? '';
+      const m = wordBeforeChip(prev.v);
+      const word = m?.word ?? '';
       const longMaths = splitMaths(word).some((p) => typeof p === 'number' && (ctx.maths[p]?.tex.length ?? 0) > SHORT_TEX);
       if (m !== null && word.length <= GLUE_MAX && !longMaths) {
         lead = word;
-        out[out.length - 1] = <Fragment key={`${i}-before`}>{withMaths(prev.v.slice(0, m.index), ctx)}</Fragment>;
+        out[out.length - 1] = <Fragment key={`${i}-before`}>{withMaths(prev.v.slice(0, m.at), ctx)}</Fragment>;
       }
     }
     const sentence = citedSentence(plainOf(since), plainOf(nodes.slice(i + 1)));
