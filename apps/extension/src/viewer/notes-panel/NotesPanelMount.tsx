@@ -27,11 +27,8 @@ import { NotesPanel } from './NotesPanel';
 import styles from './NotesPanelMount.module.css';
 import { PanelEdge } from './PanelEdge';
 import { cardsFolded, notesPanel, openEdit, publishNotesButton, useCardsFolded, useNotesPanelOpen, useOpenEdit } from './panel-state';
-<<<<<<< HEAD
 import { notesPanelSpacing, notesPanelWidth, PANEL_DEFAULT_W, showPanelWidth, useNotesPanelSpacing, useNotesPanelWidth } from './panel-size';
-=======
 import { shownPage, usePageOrder } from '../page-order/shown';
->>>>>>> a93c42b (feat(viewer): reorder pages by dragging thumbnails (R108))
 
 export interface NotesPanelMountProps {
   /** The tab's annotation session. Null while there is none: then nothing is shown and the keys do nothing. */
