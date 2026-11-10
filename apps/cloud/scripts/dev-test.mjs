@@ -6,6 +6,7 @@
 //     OAuth clients at /clients/<name> (test/fake-github.ts),
 //   - `wrangler dev --local` with the Worker's variables pointed at the fake and throwaway secrets.
 //
+// The daily job runs on GET /__scheduled (wrangler's --test-scheduled).
 // Options: --port 8787   --keep   --check (start, ask the Worker its health, print it, stop; exit 1 if anything is wrong)
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -69,11 +70,12 @@ const vars = {
   GITHUB_CLIENT_SECRET: 'fake-secret',
   ALLOWED_GITHUB_ID: String(FAKE_OWNER.id),
   SESSION_SECRET: randomBytes(32).toString('hex'),
-  SOP_EXPORT_TOKEN: randomBytes(24).toString('hex'),
+  // a fixed token from DEV_EXPORT_TOKEN lets a local script try the backup routes; otherwise a random one
+  SOP_EXPORT_TOKEN: process.env.DEV_EXPORT_TOKEN ?? randomBytes(24).toString('hex'),
 };
 const child = spawn(
   process.execPath,
-  [wrangler, 'dev', '--local', '--persist-to', stateDir, '--ip', '127.0.0.1', '--port', String(workerPort), ...Object.entries(vars).flatMap(([k, v]) => ['--var', `${k}:${v}`])],
+  [wrangler, 'dev', '--local', '--test-scheduled', '--persist-to', stateDir, '--ip', '127.0.0.1', '--port', String(workerPort), ...Object.entries(vars).flatMap(([k, v]) => ['--var', `${k}:${v}`])],
   { cwd: appDir, env: { ...process.env, WRANGLER_SEND_METRICS: 'false', CI: 'true', NO_COLOR: '1' }, stdio: ['ignore', 'pipe', 'pipe'] },
 );
 let output = '';

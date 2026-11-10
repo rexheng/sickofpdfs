@@ -30,7 +30,7 @@ export function limitedEnv(budget: QueryBudget = new QueryBudget()): Env {
   return withD1Limits(env, budget);
 }
 
-const META_TABLES = ['comments', 'threads', 'marks', 'history', 'locations', 'aliases', 'documents', 'applied_entry', 'blob_upload', 'audit', 'usage_day', 'doc_text', 'forgotten'];
+const META_TABLES = ['comments', 'threads', 'marks', 'history', 'locations', 'reading_tags', 'auto_tag_removed', 'tags', 'aliases', 'documents', 'sync_guard', 'applied_entry', 'blob_upload', 'audit', 'usage_day', 'doc_text', 'forgotten'];
 
 /** Back to the state a fresh migration leaves: empty tables, the `claude` device, default settings, counter at 0, no files, no KV. */
 export async function resetState(): Promise<void> {
@@ -40,7 +40,7 @@ export async function resetState(): Promise<void> {
     e.META.prepare("DELETE FROM device WHERE id <> 'claude'"),
     e.META.prepare('DELETE FROM setting'),
     e.META.prepare("INSERT INTO setting (key, value) VALUES ('mcp_enabled', 'true'), ('claude_can_comment', 'true')"),
-    e.META.prepare('UPDATE sync_counter SET seq = 0'),
+    e.META.prepare("UPDATE sync_counter SET seq = 0, lock = ''"),
   ]);
   for (const shard of textShards(e)) await shard.batch([shard.prepare('DELETE FROM page'), shard.prepare('DELETE FROM shard_doc')]);
   for (let cursor: string | undefined; ; ) {

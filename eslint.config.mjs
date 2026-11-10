@@ -67,6 +67,7 @@ export default defineConfig(
     '**/dist/**',
     '**/.output/**',
     '**/.wxt/**',
+    '**/.wrangler/**', // wrangler dev's own build output
     '**/coverage/**',
     '**/playwright-report/**',
     '**/test-results/**',

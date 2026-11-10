@@ -17,6 +17,9 @@ export default defineConfig(async () => {
       cloudflareTest({
         wrangler: { configPath: here('./wrangler.jsonc') },
         miniflare: {
+          // As on staging and production: the OAuth library fetches a client's metadata (CIMD) only with this flag. Outbound
+          // fetches still go to the fakes below.
+          compatibilityFlags: ['nodejs_compat', 'global_fetch_strictly_public'],
           bindings: {
             PUBLIC_URL: 'https://sickofpdfs.test',
             GITHUB_CLIENT_ID: 'fake-client-id',

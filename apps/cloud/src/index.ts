@@ -13,6 +13,6 @@ export default {
     return app.fetch(request, forThisRun(env), ctx);
   },
   scheduled(event, env, ctx) {
-    ctx.waitUntil(dailyJob(event, forThisRun(env), ctx));
+    ctx.waitUntil(dailyJob(event, forThisRun(env)));
   },
 } satisfies ExportedHandler<Env>;

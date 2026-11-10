@@ -1,0 +1,359 @@
+// CL4: the sync service (seams.ts `SyncService`). `push` runs CL2's `mergeEntry` on every entry and writes the results in one
+// D1 batch; `pull` hands out every change after a cursor, in `seq` order; `purgeDocument` is Forget.
+//
+// No note may be lost, so a push is all-or-nothing against any other write that ran between reading the rows and writing them:
+//   1. one read batch: the stored rows, this device's replay memory (`applied_entry`), the documents they name, the lock;
+//   2. the merge, in memory;
+//   3. one write batch that starts by swapping `sync_counter.lock` from the value read in step 1 to a new one, then inserts a
+//      row into `sync_guard` that is NULL (and so fails, rolling the whole batch back) unless the lock is now ours. Every push,
+//      Forget and purge changes the lock, so a push that raced one of them writes nothing and starts again from step 1.
+// D1 runs one batch at a time per database and each batch is a transaction, so this is a compare-and-set on the whole push.
+//
+// After every `apply` or `noop`, `entry.hlc` goes into `applied_entry(device, table, row)` in the same batch (plan carried
+// requirement), and `mergeEntry` reads it back as `processedUpTo`: a replayed log can neither add a second conflict copy nor
+// bring back a note that was deleted since.
+
+import type { Sha256 } from '@sop/core';
+import {
+  CLAUDE_DEVICE,
+  type ChangeEntry,
+  MAX_PULL_LIMIT,
+  MAX_PUSH_ENTRIES,
+  type DbRow,
+  type PullResponse,
+  type PushResponse,
+  type RejectedEntry,
+  type ServerRow,
+  SYNCED_TABLES,
+  type SyncedTable,
+  compareStamps,
+  formatHlc,
+  mergeEntry,
+} from '@sop/core/sync';
+import { type Env, textShards } from '../env';
+import type { SyncService } from '../seams';
+import { APPLY_ORDER, chunk, documentOf, entryOf, insertIfAbsent, pkColumn, selectByIds, toServerRow, upsertRow, cloudCheck } from './rows';
+import { QuotaError, addUsage, allowed, rowsWritten, usageStatement } from './meter';
+
+export const blobKey = (sha: string): string => `pdf/${sha.slice(0, 2)}/${sha}.pdf`;
+export const thumbKey = (sha: string): string => `thumb/${sha}.webp`;
+
+/** Thrown when a push lost the race this many times in a row (very unlikely: it means writes are arriving non-stop). */
+export class BusyError extends Error {
+  constructor() {
+    super('The library is busy. Try again in a moment.');
+    this.name = 'BusyError';
+  }
+}
+
+/** The request itself is wrong (not one entry of it). */
+export class PushRequestError extends Error {
+  constructor(
+    readonly status: 400 | 413,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'PushRequestError';
+  }
+}
+
+/** A column value as text (D1 gives text or numbers). */
+const str = (v: unknown): string => (typeof v === 'string' ? v : typeof v === 'number' || typeof v === 'bigint' ? String(v) : '');
+
+const isGuardFailure = (e: unknown): boolean => e instanceof Error && /sync_guard/.test(e.message);
+const newLock = (): string => crypto.randomUUID();
+
+/** Stamps the server writes itself (a Forget in a pull). */
+const serverStamp = (ms: number): string => formatHlc({ ms, counter: 0, device: 'server' });
+
+interface DocFacts {
+  blobStored: boolean;
+  hasText: boolean;
+  indexText: boolean;
+  encrypted: boolean;
+  deleted: boolean;
+}
+
+export function createSyncService(env: Env): SyncService {
+  return {
+    head: () => head(env),
+    pull: (since, limit) => pull(env, since, limit),
+    push: (device, entries) => push(env, device, entries),
+    purgeDocument: (sha) => purgeDocument(env, sha),
+  };
+}
+
+async function head(env: Env): Promise<number> {
+  const r = await env.META.prepare('SELECT seq FROM sync_counter WHERE id = 1').first<{ seq: number }>();
+  return r?.seq ?? 0;
+}
+
+// ─── Pull ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** A pull page stops near this many bytes of JSON, so one answer stays small on a phone. */
+const PULL_MAX_BYTES = 4_000_000;
+
+async function pull(env: Env, since: number, limit: number): Promise<PullResponse> {
+  const from = Number.isSafeInteger(since) && since > 0 ? since : 0;
+  const n = Math.min(Math.max(1, Math.floor(limit) || 200), MAX_PULL_LIMIT);
+  const db = env.META;
+  const results = await db.batch<DbRow>([
+    db.prepare('SELECT seq FROM sync_counter WHERE id = 1'),
+    ...SYNCED_TABLES.map((t) => db.prepare(`SELECT * FROM ${t} WHERE seq > ? ORDER BY seq LIMIT ?`).bind(from, n)),
+    db.prepare('SELECT document_id, at, seq FROM forgotten WHERE seq > ? ORDER BY seq LIMIT ?').bind(from, n),
+  ]);
+  const headSeq = Number(results[0]?.results[0]?.seq ?? 0);
+  const all: PullResponse['entries'] = [];
+  SYNCED_TABLES.forEach((t, i) => {
+    for (const row of results[i + 1]?.results ?? []) all.push(entryOf(t, row));
+  });
+  for (const f of results[SYNCED_TABLES.length + 1]?.results ?? []) {
+    const at = Number(f.at ?? 0);
+    all.push({ table: 'documents', id: str(f.document_id), baseRev: 0, hlc: serverStamp(at), row: { id: str(f.document_id), deletedAt: at, forgotten: true }, rev: 0, seq: Number(f.seq ?? 0), device: 'server' });
+  }
+  all.sort((a, b) => a.seq - b.seq);
+
+  const entries: PullResponse['entries'] = [];
+  let bytes = 0;
+  for (const e of all) {
+    if (entries.length >= n) break;
+    const size = JSON.stringify(e).length;
+    if (entries.length > 0 && bytes + size > PULL_MAX_BYTES) break;
+    entries.push(e);
+    bytes += size;
+  }
+  const truncated = entries.length < all.length;
+  // Read in the same batch as the rows, so nothing between the last row and `head` can be missed
+  const cursor = truncated ? (entries[entries.length - 1]?.seq ?? from) : Math.max(from, headSeq);
+  return { entries, cursor, head: headSeq, more: cursor < headSeq };
+}
+
+// ─── Push ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+async function push(env: Env, device: string, entries: ChangeEntry[]): Promise<PushResponse> {
+  if (typeof device !== 'string' || device === '') throw new PushRequestError(400, 'no_device', 'This sign-in has no sync device yet. Register one first.');
+  if (!Array.isArray(entries)) throw new PushRequestError(400, 'bad_request', 'entries must be a list');
+  if (entries.length > MAX_PUSH_ENTRIES) throw new PushRequestError(413, 'too_many_entries', `Send at most ${MAX_PUSH_ENTRIES} entries in one push.`);
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const r = await tryPush(env, device, entries);
+    if (r !== 'retry') return r;
+  }
+  throw new BusyError();
+}
+
+async function tryPush(env: Env, device: string, raw: ChangeEntry[]): Promise<PushResponse | 'retry'> {
+  const db = env.META;
+  const now = Date.now();
+  const response: PushResponse = { applied: [], rebased: [], needBlobs: [], needText: [], rejected: [] };
+  const rejected = response.rejected as RejectedEntry[];
+
+  // Entries that cannot even be looked up are refused here; the rest are applied in table order (a document before its notes)
+  const valid: ChangeEntry[] = [];
+  for (const e of raw) {
+    const ok = typeof e === 'object' && e !== null && (SYNCED_TABLES as readonly string[]).includes((e).table) && typeof e.id === 'string' && e.id.length > 0 && e.id.length <= 300;
+    if (ok) valid.push(e);
+    else rejected.push({ table: (e as ChangeEntry | null)?.table ?? 'documents', id: typeof e?.id === 'string' ? e.id.slice(0, 300) : '', code: 'bad_entry', message: 'not a sync entry', retryable: false });
+  }
+  const order = (t: SyncedTable) => APPLY_ORDER.indexOf(t);
+  const entries = valid.map((e, i) => ({ e, i })).sort((a, b) => order(a.e.table) - order(b.e.table) || a.i - b.i).map((x) => x.e);
+
+  // 1. Read everything the merge needs, in one batch
+  const ids = new Map<SyncedTable, string[]>();
+  const docIds = new Set<string>();
+  for (const e of entries) {
+    ids.set(e.table, [...(ids.get(e.table) ?? []), e.id]);
+    if (e.table === 'documents') docIds.add(e.id);
+    const d = documentOf(e.table, (typeof e.row === 'object' && e.row !== null ? e.row : {}));
+    if (d !== null && /^[0-9a-f]{64}$/.test(d)) docIds.add(d);
+  }
+  const reads: D1PreparedStatement[] = [db.prepare('SELECT seq, lock FROM sync_counter WHERE id = 1'), usageStatement(env, now)];
+  const kinds: ({ kind: 'rows'; table: SyncedTable } | { kind: 'applied' | 'docs' | 'forgotten' | 'doc_text' })[] = [];
+  for (const [table, list] of ids) for (const s of selectByIds(db, table, list)) {
+    reads.push(s);
+    kinds.push({ kind: 'rows', table });
+  }
+  for (const [table, list] of ids) {
+    for (const part of chunk([...new Set(list)], 80)) {
+      reads.push(db.prepare(`SELECT table_name, row_id, hlc FROM applied_entry WHERE device = ? AND table_name = ? AND row_id IN (${part.map(() => '?').join(',')})`).bind(device, table, ...part));
+      kinds.push({ kind: 'applied' });
+    }
+  }
+  for (const part of chunk([...docIds])) {
+    const q = part.map(() => '?').join(',');
+    reads.push(db.prepare(`SELECT id, blob_stored, has_text, index_text, encrypted, deleted_at FROM documents WHERE id IN (${q})`).bind(...part));
+    kinds.push({ kind: 'docs' });
+    reads.push(db.prepare(`SELECT document_id FROM forgotten WHERE document_id IN (${q})`).bind(...part));
+    kinds.push({ kind: 'forgotten' });
+    reads.push(db.prepare(`SELECT document_id, state FROM doc_text WHERE document_id IN (${q})`).bind(...part));
+    kinds.push({ kind: 'doc_text' });
+  }
+  const got = await db.batch<DbRow>(reads);
+  const counter = got[0]?.results[0] as { seq: number; lock: string } | undefined;
+  if (!counter) throw new Error('sync_counter is missing');
+  if (!allowed(env, 'notes', got[1]?.results[0] as { text_rows: number; note_rows: number } | undefined)) throw new QuotaError('notes');
+
+  const stored = new Map<string, ServerRow>();
+  const seqOf = new Map<string, number>();
+  const processed = new Map<string, string>();
+  const docs = new Map<string, DocFacts>();
+  const forgotten = new Set<string>();
+  const textState = new Map<string, string>();
+  kinds.forEach((k, i) => {
+    const rows = got[i + 2]?.results ?? [];
+    if (k.kind === 'rows') {
+      for (const r of rows) {
+        const s = toServerRow(k.table, r);
+        stored.set(`${k.table}\u0000${s.id}`, s);
+        seqOf.set(`${k.table}\u0000${s.id}`, Number(r.seq ?? 0));
+      }
+    } else if (k.kind === 'applied') for (const r of rows) processed.set(`${str(r.table_name)}\u0000${str(r.row_id)}`, str(r.hlc));
+    else if (k.kind === 'docs')
+      for (const r of rows) docs.set(str(r.id), { blobStored: r.blob_stored === 1, hasText: r.has_text === 1, indexText: r.index_text === 1, encrypted: r.encrypted === 1, deleted: r.deleted_at !== null });
+    else if (k.kind === 'forgotten') for (const r of rows) forgotten.add(str(r.document_id));
+    else for (const r of rows) textState.set(str(r.document_id), str(r.state));
+  });
+
+  // 2. The merge
+  let seq = counter.seq;
+  const writes: D1PreparedStatement[] = [];
+  const pushedDocs = new Set<string>();
+  const ctx = {
+    device,
+    now,
+    documentState: (id: string) => (forgotten.has(id) ? 'forgotten' : docs.has(id) ? 'known' : 'unknown'),
+    processedUpTo: (table: SyncedTable, id: string) => processed.get(`${table}\u0000${id}`) ?? null,
+  };
+  const remember = (e: ChangeEntry) => {
+    const key = `${e.table}\u0000${e.id}`;
+    const before = processed.get(key);
+    const hlc = before !== undefined && compareStamps(before, e.hlc) > 0 ? before : e.hlc;
+    processed.set(key, hlc);
+    writes.push(
+      db.prepare('INSERT INTO applied_entry (device, table_name, row_id, hlc, at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(device, table_name, row_id) DO UPDATE SET hlc = excluded.hlc, at = excluded.at').bind(device, e.table, e.id, hlc, now),
+    );
+  };
+
+  for (const e of entries) {
+    const key = `${e.table}\u0000${e.id}`;
+    const server = stored.get(key) ?? null;
+    let r;
+    try {
+      r = mergeEntry(server, e, ctx);
+    } catch {
+      r = { kind: 'reject' as const, code: 'bad_entry' as const, message: 'the server could not read this entry', retryable: false };
+    }
+    if (r.kind === 'apply') {
+      const bad = cloudCheck(e.table, r.row);
+      if (bad !== null) r = { kind: 'reject' as const, code: 'bad_row' as const, message: bad, retryable: false };
+    }
+    if (r.kind === 'reject') {
+      rejected.push({ table: e.table, id: e.id, code: r.code, message: r.message, retryable: r.retryable });
+      continue;
+    }
+    if (r.conflictCopy) {
+      const copy = r.conflictCopy;
+      const copyKey = `comments\u0000${String(copy.row.id)}`;
+      if (!stored.has(copyKey)) {
+        seq += 1;
+        writes.push(insertIfAbsent(db, 'comments', copy.row, { rev: copy.rev, hlc: copy.hlc, seq, device: copy.device }));
+        stored.set(copyKey, { table: 'comments', id: String(copy.row.id), rev: copy.rev, hlc: copy.hlc, device: copy.device, row: copy.row });
+        seqOf.set(copyKey, seq);
+      }
+    }
+    if (r.kind === 'apply') {
+      seq += 1;
+      writes.push(upsertRow(db, e.table, r.row, { rev: r.rev, hlc: r.hlc, seq, device }));
+      const next: ServerRow = { table: e.table, id: e.id, rev: r.rev, hlc: r.hlc, device, row: r.row };
+      stored.set(key, next);
+      seqOf.set(key, seq);
+      if (e.table === 'documents' && !docs.has(e.id)) docs.set(e.id, { blobStored: false, hasText: false, indexText: false, encrypted: false, deleted: false });
+      response.applied.push({ table: e.table, id: e.id, rev: r.rev, seq });
+      if (r.rebase) response.rebased.push({ table: e.table, id: e.id, baseRev: r.rev, hlc: r.hlc, row: r.row, ...(e.table === 'documents' ? { label: 'learning' as const } : {}), rev: r.rev, seq });
+    } else {
+      // noop: the stored row stays. A replay is acknowledged; anything else hands the device the stored row.
+      const s = server as ServerRow;
+      const sSeq = seqOf.get(key) ?? 0;
+      if (r.why === 'replay' && !r.rebase) response.applied.push({ table: e.table, id: e.id, rev: s.rev, seq: sSeq });
+      else response.rebased.push({ table: e.table, id: e.id, baseRev: s.rev, hlc: s.hlc, row: s.row, ...(e.table === 'documents' ? { label: 'learning' as const } : {}), rev: s.rev, seq: sSeq });
+    }
+    remember(e);
+    if (e.table === 'documents') pushedDocs.add(e.id);
+  }
+
+  // What the device should upload next: the PDF if R2 lacks it, the page text if the shards lack it (never a password-protected
+  // file's text, CD2, nor a reading whose text is not indexed)
+  for (const id of pushedDocs) {
+    const row = stored.get(`documents\u0000${id}`)?.row;
+    if (!row) continue;
+    if (!(docs.get(id)?.blobStored ?? false)) response.needBlobs.push(id as Sha256);
+    const t = textState.get(id);
+    if (row.hasText === true && row.indexText === true && row.encrypted !== true && t !== 'complete') response.needText.push(id as never);
+  }
+
+  if (writes.length === 0) return response;
+
+  // 3. The write, all or nothing
+  const lock = newLock();
+  const batch = [
+    db.prepare('UPDATE sync_counter SET seq = ?, lock = ? WHERE id = 1 AND lock = ?').bind(seq, lock, counter.lock),
+    db.prepare('INSERT INTO sync_guard (ok) SELECT CASE WHEN lock = ? THEN 1 END FROM sync_counter WHERE id = 1').bind(lock),
+    ...writes,
+    db.prepare('DELETE FROM sync_guard'),
+  ];
+  let results: D1Result[];
+  try {
+    results = await db.batch(batch);
+  } catch (e) {
+    if (isGuardFailure(e)) return 'retry';
+    throw e;
+  }
+  await addUsage(env, 'notes', rowsWritten(results), now);
+  if (device !== CLAUDE_DEVICE) await db.prepare('UPDATE device SET last_seen_at = ? WHERE id = ?').bind(now, device).run().catch(() => undefined);
+  return response;
+}
+
+// ─── Forget ───────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Child tables of a document, in the order they are removed. */
+const CHILDREN: readonly SyncedTable[] = ['comments', 'threads', 'marks', 'reading_tags', 'auto_tag_removed', 'locations', 'aliases', 'history'];
+
+/**
+ * Hard delete (Forget, and Trash after 30 days): the PDF and its thumbnail, the page text, every note and row of the document.
+ * The document joins `forgotten` first, so nothing about it is accepted again, and other devices pull `{ forgotten: true }`.
+ * Each step can run again: a Forget cut off halfway finishes on the next call.
+ */
+async function purgeDocument(env: Env, sha: Sha256): Promise<void> {
+  if (!/^[0-9a-f]{64}$/.test(sha)) throw new PushRequestError(400, 'bad_id', 'not a document id');
+  const db = env.META;
+  const now = Date.now();
+  // a. Mark it forgotten (one new seq the first time), and change the lock so a push in flight starts over
+  await db.batch([
+    db.prepare('UPDATE sync_counter SET seq = seq + (CASE WHEN EXISTS (SELECT 1 FROM forgotten WHERE document_id = ?) THEN 0 ELSE 1 END), lock = ? WHERE id = 1').bind(sha, newLock()),
+    db.prepare('INSERT INTO forgotten (document_id, at, seq) SELECT ?, ?, seq FROM sync_counter WHERE id = 1 AND NOT EXISTS (SELECT 1 FROM forgotten WHERE document_id = ?)').bind(sha, now, sha),
+  ]);
+  // b. The page text, in whichever shard holds it
+  for (const shard of textShards(env)) {
+    await shard.batch([
+      shard.prepare('DELETE FROM page WHERE id >= (SELECT docnum * 100000 FROM shard_doc WHERE document_id = ?) AND id < (SELECT docnum * 100000 + 100000 FROM shard_doc WHERE document_id = ?)').bind(sha, sha),
+      shard.prepare('DELETE FROM shard_doc WHERE document_id = ?').bind(sha),
+    ]);
+  }
+  // c. The files
+  const upload = await db.prepare('SELECT upload_id FROM blob_upload WHERE sha256 = ?').bind(sha).first<{ upload_id: string }>();
+  if (upload) await env.BLOBS.resumeMultipartUpload(blobKey(sha), upload.upload_id).abort().catch(() => undefined);
+  await env.BLOBS.delete([blobKey(sha), thumbKey(sha)]);
+  // d. Every row, and this document's replay memory
+  const children = CHILDREN.map((t) => db.prepare(`DELETE FROM applied_entry WHERE table_name = ? AND row_id IN (SELECT ${pkColumn(t)} FROM ${t} WHERE document_id = ?)`).bind(t, sha));
+  await db.batch([
+    db.prepare('UPDATE sync_counter SET lock = ? WHERE id = 1').bind(newLock()),
+    ...children,
+    db.prepare("DELETE FROM applied_entry WHERE table_name = 'documents' AND row_id = ?").bind(sha),
+    ...CHILDREN.map((t) => db.prepare(`DELETE FROM ${t} WHERE document_id = ?`).bind(sha)),
+    db.prepare('DELETE FROM documents WHERE id = ?').bind(sha),
+    db.prepare('DELETE FROM doc_text WHERE document_id = ?').bind(sha),
+    db.prepare('DELETE FROM blob_upload WHERE sha256 = ?').bind(sha),
+    // no document id in the audit: Forget leaves no trace beyond the forgotten list itself
+    db.prepare("INSERT INTO audit (at, actor, client_id, action, target) VALUES (?, 'owner', NULL, 'document.forget', NULL)").bind(now),
+  ]);
+}

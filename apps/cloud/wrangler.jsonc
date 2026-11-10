@@ -23,7 +23,7 @@
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     // navigations to these must reach the Worker, not the SPA shell
-    "run_worker_first": ["/mcp", "/api/*", "/authorize", "/oauth/*", "/login", "/logout", "/.well-known/*"]
+    "run_worker_first": ["/mcp", "/api/*", "/authorize", "/oauth/*", "/login", "/logout", "/.well-known/*", "/app/*"]
   },
   "vars": {
     "ENVIRONMENT": "local",
@@ -41,7 +41,8 @@
   "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "local-only-kv" }],
   // period must be 10 or 60 seconds
   "ratelimits": [
-    { "name": "RL_AUTH", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } },
+    // local: room for many test sign-ins a minute from one address (staging and production keep 20)
+    { "name": "RL_AUTH", "namespace_id": "1001", "simple": { "limit": 300, "period": 60 } },
     { "name": "RL_MCP", "namespace_id": "1002", "simple": { "limit": 120, "period": 60 } },
     { "name": "RL_API", "namespace_id": "1003", "simple": { "limit": 600, "period": 60 } }
   ],
@@ -60,7 +61,7 @@
         "directory": "./public",
         "binding": "ASSETS",
         "not_found_handling": "single-page-application",
-        "run_worker_first": ["/mcp", "/api/*", "/authorize", "/oauth/*", "/login", "/logout", "/.well-known/*"]
+        "run_worker_first": ["/mcp", "/api/*", "/authorize", "/oauth/*", "/login", "/logout", "/.well-known/*", "/app/*"]
       },
       "vars": {
         "ENVIRONMENT": "staging",
@@ -95,7 +96,7 @@
         "directory": "./public",
         "binding": "ASSETS",
         "not_found_handling": "single-page-application",
-        "run_worker_first": ["/mcp", "/api/*", "/authorize", "/oauth/*", "/login", "/logout", "/.well-known/*"]
+        "run_worker_first": ["/mcp", "/api/*", "/authorize", "/oauth/*", "/login", "/logout", "/.well-known/*", "/app/*"]
       },
       "vars": {
         "ENVIRONMENT": "production",

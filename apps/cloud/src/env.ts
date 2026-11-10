@@ -45,6 +45,10 @@ export interface Env {
   // production's sign-in at another host.
   GITHUB_BASE_URL?: string;
   GITHUB_API_URL?: string;
+
+  /** Optional: the Android app's signing certificate (SHA-256, `AA:BB:…`). When set, /.well-known/assetlinks.json lets the app
+   * claim its sign-in address `<PUBLIC_URL>/app/oauth`. Not a secret. */
+  ANDROID_CERT_SHA256?: string;
 }
 
 /** The Hono app type every area uses. `auth` is set by the sign-in middleware (CL3) before an /api handler runs. */

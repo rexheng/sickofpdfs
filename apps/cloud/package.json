@@ -10,6 +10,7 @@
     "db:apply": "node scripts/apply-local.mjs"
   },
   "dependencies": {
+    "@cloudflare/workers-oauth-provider": "1.2.4",
     "@modelcontextprotocol/server": "2.4.0",
     "@sop/core": "workspace:*",
     "hono": "4.13.16",
