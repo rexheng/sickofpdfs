@@ -178,6 +178,22 @@ export default defineConfig(
       'no-restricted-syntax': ['error', ...LOCAL_ONLY_SYNTAX, ...SDK_SYNTAX, ...SCRIPTING_SYNTAX, ...CLICK_PATH_SYNTAX],
     },
   },
+  // CA7 (CL10): the service worker's cloud token broker needs the sign-in token, so it may import exactly the two cloud files of
+  // local-only/ (which reach only db.ts). Everything else in local-only/, the secrets store above all, stays barred for it.
+  {
+    files: ['apps/extension/src/background/cloud-broker.ts'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [{ regex: '(^|/)local-only(/(?!(cloud-auth|cloud-forget)$).*)?$', message: LOCAL_ONLY_MESSAGE }, SDK_IMPORT_PATTERN] }],
+      'no-restricted-syntax': ['error', ...LOCAL_ONLY_SYNTAX, ...SDK_SYNTAX, ...SCRIPTING_SYNTAX, ...CLICK_PATH_SYNTAX],
+    },
+  },
+  // ...and those cloud files never import the secrets store (they touch only `cloud_token` and the Forget queue).
+  {
+    files: ['apps/extension/src/local-only/{db,cloud-auth,cloud-forget}.ts'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [{ group: ['**/secrets-store', '**/secrets-store.*'], message: 'The cloud token broker never reads the secrets store (contracts CA7).' }, SDK_IMPORT_PATTERN] }],
+    },
+  },
   // The two files that may use chrome.scripting (the secrets and SDK bars stay as they are for them).
   {
     files: SCRIPTING_FILES,

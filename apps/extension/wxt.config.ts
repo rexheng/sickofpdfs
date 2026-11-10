@@ -72,7 +72,10 @@ export default defineConfig({
     // permission, and Chrome fills a sender's tab.url from the host permission for that page.)
     // R103: activeTab and scripting put the page reader (entrypoints/page-reader.ts) into the current tab, and only when the
     // owner clicks "Save this page to library" in the menu. Nothing reads a page on its own.
-    permissions: ['declarativeNetRequestWithHostAccess', 'webRequest', 'webNavigation', 'storage', 'unlimitedStorage', 'offscreen', 'activeTab', 'scripting'],
+    // Release 2 (CL10): `alarms` retries a Forget that has not reached the owner's cloud yet (no install warning). `identity` opens
+    // the cloud sign-in window; it is optional, asked for when the owner presses Connect, so a fresh install asks for nothing new.
+    permissions: ['declarativeNetRequestWithHostAccess', 'webRequest', 'webNavigation', 'storage', 'unlimitedStorage', 'offscreen', 'activeTab', 'scripting', 'alarms'],
+    optional_permissions: ['identity'],
     // The schemes PDFs and the pages that show them come from: the redirect and header rules, the request log and
     // the content script need no other (no ws, wss or ftp).
     host_permissions: ['http://*/*', 'https://*/*', 'file:///*'],

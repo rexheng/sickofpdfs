@@ -20,6 +20,9 @@ import { describe, expect, it } from 'vitest';
 const SRC = fileURLToPath(new URL('..', import.meta.url));
 const REPO = resolve(SRC, '../../..');
 const FORBIDDEN_AREAS = ['store', 'background', 'entrypoints/offscreen', 'testing'];
+/** CA7 (CL10): the cloud token broker in the service worker, and the only local-only files it may import. */
+const CA7_BROKER = 'background/cloud-broker.ts';
+const CA7_FILES = ['local-only/db.ts', 'local-only/cloud-auth.ts', 'local-only/cloud-forget.ts'];
 const EXTENSIONS = ['', '.ts', '.tsx', '.js', '.mjs', '/index.ts', '/index.tsx', '/index.js'];
 const isTestFile = (name: string) => /\.(test|spec|spec-blind)\./.test(name) || /\.spec-blind\.[jt]sx?$/.test(name);
 
@@ -129,11 +132,23 @@ describe('the secrets store is out of reach of the store, the service worker, th
     expect(roots).toContain('entrypoints/background.ts');
     expect(roots).toContain('entrypoints/offscreen/main.ts');
     expect(roots).toContain('testing/test-hooks.ts');
-    expect(violations.map((chain) => chain.join('  ->  ')), 'a file that must not read the secrets store imports it').toEqual([]);
+    // CA7 (CL10): the one allowed edge from the service worker into local-only/ is the cloud token broker's, to these three files.
+    const brokerEdge = (chain: string[]) => chain.length >= 2 && chain[chain.length - 2] === CA7_BROKER && CA7_FILES.includes(chain[chain.length - 1]);
+    expect(violations.filter((chain) => !brokerEdge(chain)).map((chain) => chain.join('  ->  ')), 'a file that must not read the secrets store imports it').toEqual([]);
+  });
+
+  it('CA7: the cloud token broker reaches only db.ts, cloud-auth.ts and cloud-forget.ts, and those never reach the secrets store', () => {
+    for (const file of CA7_FILES) {
+      const source = readFileSync(join(SRC, file), 'utf8');
+      const local = runtimeImports(source).map((spec) => resolveImport(spec, join(SRC, file), SRC)).filter((t): t is string => t !== null).map((t) => relative(SRC, t).split('\\').join('/'));
+      expect(local.filter((t) => t.startsWith('local-only/') && t !== 'local-only/db.ts'), `${file} imports nothing in local-only/ but db.ts`).toEqual([]);
+      expect(local.filter((t) => !t.startsWith('local-only/')), `${file} imports nothing else from the extension`).toEqual([]);
+    }
   });
 
   it('the secrets store uses IndexedDB only: no extension storage, no OPFS, no web storage, and nothing from the library store', () => {
-    const source = stripComments(readFileSync(join(SRC, 'local-only/secrets-store.ts'), 'utf8'));
+    // CL10 moved the open code, unchanged, into db.ts beside it (contracts CA7): the two files are read together.
+    const source = stripComments(['local-only/secrets-store.ts', 'local-only/db.ts'].map((f) => readFileSync(join(SRC, f), 'utf8')).join('\n'));
     expect(source).toMatch(/indexedDB\s*\.\s*open\(/);
     for (const forbidden of ['chrome.storage', 'browser.storage', 'localStorage', 'sessionStorage', 'getDirectory', 'sqlite', 'caches.']) {
       expect(source.includes(forbidden), `the secrets store mentions ${forbidden}`).toBe(false);

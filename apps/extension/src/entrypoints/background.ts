@@ -1,5 +1,6 @@
 import { defineBackground } from 'wxt/utils/define-background';
 import { installBackup } from '../backup/service-worker';
+import { installCloudBroker } from '../background/cloud-broker';
 import { installCrashRecovery } from '../background/crash-recovery';
 import { installStoreBroker } from '../background/store-broker';
 import { installFileFallback } from '../background/takeover/file-fallback';
@@ -19,5 +20,6 @@ export default defineBackground(() => {
   installStoreBroker();
   installCrashRecovery();
   installBackup();
+  installCloudBroker();
   registerTakeover().catch((error: unknown) => console.error('sickofpdfs: the takeover is not registered', error));
 });
