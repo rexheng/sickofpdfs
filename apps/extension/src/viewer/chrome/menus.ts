@@ -1,4 +1,5 @@
 // The header's File, View, Tools and Help menus, built from the commands (commands.ts), and how a key combo is shown.
+import { ELEVENREADER_STUDENT_URL } from '@sop/core';
 import type { MenuDef, MenuItemDef } from '@sop/ui';
 import type { KeyCombo } from '../shortcuts';
 import type { ViewerCommandId, ViewerCommands } from '../commands';
@@ -89,6 +90,12 @@ export function buildMenus(cmds: ViewerCommands): MenuDef[] {
         },
       });
     }
+    if (menu.id === 'tools') {
+      // R112: the owner's sponsor link, in a new tab. Not a command (it has no key, so Settings → Shortcuts does not list it).
+      // Nothing is sent until the row is chosen.
+      items.push({ kind: 'separator' });
+      items.push({ kind: 'item', id: 'tools.elevenReader', label: 'Listen with ElevenReader', icon: 'open_in_new', tag: 'Sponsor', onSelect: openElevenReader });
+    }
     if (items.at(-1)?.kind === 'separator') items.pop();
     return { id: menu.id, label: menu.label, items };
   });
@@ -115,4 +122,8 @@ function keyName(key: string): string {
   if (/^Key[A-Z]$/u.test(key)) return key.slice('Key'.length);
   if (/^Numpad\w+$/u.test(key)) return `Num ${key.slice('Numpad'.length)}`;
   return key.length === 1 ? key.toUpperCase() : key;
+}
+
+function openElevenReader(): void {
+  void chrome.tabs.create({ url: ELEVENREADER_STUDENT_URL }).catch(() => window.open(ELEVENREADER_STUDENT_URL, '_blank', 'noopener'));
 }

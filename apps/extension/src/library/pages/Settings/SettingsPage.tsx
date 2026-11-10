@@ -50,8 +50,8 @@ export function SettingsPage() {
     if (el === null) return;
     jumpedAt.current = performance.now();
     setCurrent(id);
-    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    el.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
+    // Instant (owner, Nov 10): a jump lands at once, with no animation.
+    el.scrollIntoView({ block: 'start', behavior: 'instant' });
   }, []);
 
   // The section the address names: on opening, and when a link changes it.

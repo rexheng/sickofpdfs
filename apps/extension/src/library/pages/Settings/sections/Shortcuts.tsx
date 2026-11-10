@@ -19,7 +19,7 @@ import {
 import { SPECS } from '../../../../viewer/commands';
 import type { KeyCombo } from '../../../../viewer/shortcuts';
 import { useLibrary } from '../../../app/context';
-import { SettingsGroup, SettingsNote, SettingsRow, SettingsSection } from '../SettingsSection';
+import { SettingsNote, SettingsSection } from '../SettingsSection';
 import { KeyDialog } from './KeyDialog';
 import { Keys, type ShortcutCommand } from './keys';
 import styles from './sections.module.css';
@@ -85,41 +85,39 @@ export function ShortcutsSection() {
           You changed {Object.keys(overrides).length === 1 ? '1 key' : `${Object.keys(overrides).length} keys`}. Reset puts a key back the way it was.
         </SettingsNote>
       )}
-      {GROUPS.map((g) => {
-        const rows = COMMANDS.filter((c) => g.prefixes.some((p) => c.id.startsWith(p)));
-        if (rows.length === 0) return null;
-        return (
-          <SettingsGroup key={g.id} id={`shortcuts-${g.id}`} title={g.title}>
-            {rows.map((c) => {
-              const changed = overrides[c.id] !== undefined;
-              return (
-                <SettingsRow
-                  key={c.id}
-                  label={c.label}
-                  value={
-                    <>
+      <div className={styles.sheet}>
+        {GROUPS.map((g) => {
+          const rows = COMMANDS.filter((c) => g.prefixes.some((p) => c.id.startsWith(p)));
+          if (rows.length === 0) return null;
+          return (
+            <div key={g.id} className={styles.keyGroup} role="group" aria-labelledby={`shortcuts-${g.id}-head`}>
+              <h3 id={`shortcuts-${g.id}-head`} className={styles.keyGroupTitle}>
+                {g.title}
+              </h3>
+              <div className={styles.keyRows}>
+                {rows.map((c) => {
+                  const changed = overrides[c.id] !== undefined;
+                  return (
+                    <div key={c.id} className={styles.keyRow}>
+                      <span className={styles.keyLabel}>
+                        {c.label}
+                        {changed && <span className={styles.changed}> · changed</span>}
+                      </span>
                       <Keys keys={overrides[c.id] ?? c.defaults} />
-                      {changed && <span className={styles.changed}> · changed by you</span>}
-                    </>
-                  }
-                  actions={
-                    <>
-                      {changed && (
-                        <TextButton
-                          label="Reset"
-                          aria-label={`Reset the key for ${c.label}`}
-                          onClick={() => save(c, null, `${c.label} has its own key again.`)}
-                        />
-                      )}
-                      <TextButton label="Change" aria-label={`Change the key for ${c.label}`} onClick={() => setEditing(c)} />
-                    </>
-                  }
-                />
-              );
-            })}
-          </SettingsGroup>
-        );
-      })}
+                      <span className={styles.keyActions}>
+                        {changed && (
+                          <TextButton className={styles.keyBtn} label="Reset" aria-label={`Reset the key for ${c.label}`} onClick={() => save(c, null, `${c.label} has its own key again.`)} />
+                        )}
+                        <TextButton className={styles.keyBtn} label="Change" aria-label={`Change the key for ${c.label}`} onClick={() => setEditing(c)} />
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
       <KeyDialog
         command={editing}
         keys={editing === null ? [] : (overrides[editing.id] ?? editing.defaults)}

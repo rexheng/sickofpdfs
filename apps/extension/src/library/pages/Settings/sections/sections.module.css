@@ -174,3 +174,79 @@
 .verdictBad {
   color: var(--gm3-sys-color-error);
 }
+
+/*
+ * Settings → Shortcuts, dense: Drive's settings lists with 36 px rows (label, key caps, Change), small caps, and a plain
+ * heading for each group. Two columns when the list is wide enough (a container query on the sheet, not the window, so
+ * the settings list beside it is counted), one when it is not. A long label wraps to a second line; nothing is cut off.
+ */
+.sheet {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.keyGroup {
+  padding-block-start: var(--space-2);
+}
+
+.keyGroupTitle {
+  margin: 0 0 var(--space-1);
+  padding-block-end: var(--space-1);
+  border-block-end: 1px solid var(--drive-row-divider);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-row-name);
+  font-variation-settings: "opsz" 17;
+}
+
+.keyRows {
+  column-gap: var(--space-8);
+}
+
+@container (min-width: 720px) {
+  .keyRows {
+    column-count: 2;
+  }
+}
+
+.keyRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: var(--space-3);
+  align-items: center;
+  box-sizing: border-box;
+  min-block-size: calc(var(--space-8) + var(--space-1));
+  padding-block: var(--space-1);
+  border-block-end: 1px solid var(--drive-row-divider);
+  break-inside: avoid;
+}
+
+.keyLabel {
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-row);
+  font-variation-settings: "opsz" 17;
+  overflow-wrap: anywhere;
+}
+
+.keyActions {
+  display: inline-flex;
+  gap: var(--space-1);
+  justify-content: flex-end;
+  min-inline-size: var(--space-14);
+}
+
+.keyRow .keys {
+  gap: var(--space-1);
+  justify-content: flex-end;
+}
+
+.keyRow .kbd {
+  padding: 1px var(--space-2);
+}
+
+/* A small text button: 28 px tall (the 40 px one would make every row 48 px), still wider than the 24 px minimum target. */
+.keyActions .keyBtn {
+  block-size: calc(var(--space-6) + var(--space-1));
+  padding-inline: var(--space-2);
+}

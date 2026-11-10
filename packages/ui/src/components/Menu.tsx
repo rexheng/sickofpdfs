@@ -16,6 +16,8 @@ export type MenuItemDef =
       icon?: IconName;
       /** Right-aligned and muted, as Drive writes them: "Ctrl+S", "Ctrl+P", "D". */
       shortcut?: string;
+      /** A quiet word after the label, in the shortcut's place and look, read aloud: "Sponsor". */
+      tag?: string;
       disabled?: boolean;
       /**
        * Why the item is greyed out, when it is for a real reason ("400% is the largest size"). Hovering the row shows
@@ -165,6 +167,7 @@ export function MenuItems({ items, kind }: { items: readonly MenuItemDef[]; kind
         )}
         {tickColumn && <span className={styles.tick}>{item.selected === true && <Icon name="check" size={20} />}</span>}
         <span className={styles.label}>{item.label}</span>
+        {item.tag !== undefined && <span className={styles.shortcut}>{item.tag}</span>}
         {item.shortcut !== undefined && (
           <span className={styles.shortcut} aria-hidden="true">
             {item.shortcut}
