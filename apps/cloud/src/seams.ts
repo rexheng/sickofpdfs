@@ -3,6 +3,7 @@
 
 import type { Author, CommentRow, MarkRow, Sha256, ThreadRow } from '@sop/core';
 import type { ChangeEntry, PullResponse, PushResponse } from '@sop/core/sync';
+import type { Env } from './env';
 
 /** Who is calling and what they may do. Set by the sign-in code (CL3) for every /api and /mcp request. */
 export interface AuthContext {
@@ -52,7 +53,7 @@ export interface DocumentSummary {
 export interface LibraryQuery {
   view: 'all' | 'recent' | 'starred' | 'trash';
   sort: { by: 'title' | 'lastOpened' | 'added' | 'pages'; dir: 'asc' | 'desc' };
-  filter?: { starred?: boolean; hasNotes?: boolean; readFrom?: number; readTo?: number; kind?: DocumentSummary['kind'][] };
+  filter?: { starred?: boolean; hasNotes?: boolean; readFrom?: number; readTo?: number; kind?: DocumentSummary['kind'][]; titleContains?: string };
   limit: number;
   cursor?: string;
 }
@@ -94,3 +95,17 @@ export interface QueryApi {
   recentActivity(o: { days: number; limit: number }): Promise<ActivityItem[]>;
   listNotes(o: { author?: Author; limit: number; cursor?: string }): Promise<{ items: { thread: ThreadRow; comments: CommentRow[]; title: string }[]; nextCursor: string | null }>;
 }
+
+// ─── Wiring (CL5/CL6 by interface, plugged in at merge) ──────────────────────────────────────────────────────────────────────
+// CL3 and CL4 are built at the same time as the connector. Until their code is merged these two slots are empty and the
+// connector refuses (401 without a sign-in; "writes are not ready" for comments). The slice that owns each side fills its slot
+// once, at module load: CL3 sets `wiring.authenticate`, CL4 sets `wiring.syncService`. A CL3 middleware that already sets
+// `c.get('auth')` makes the first slot unnecessary.
+
+/** CL3's `authenticate(req, env)`: the signed-in owner, or the 401/403/429/503 Response to send back. */
+export type Authenticate = (req: Request, env: Env) => Promise<AuthContext | Response>;
+
+export const wiring: { authenticate: Authenticate | null; syncService: ((env: Env) => SyncService) | null } = {
+  authenticate: null,
+  syncService: null,
+};

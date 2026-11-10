@@ -10,8 +10,10 @@
     "db:apply": "node scripts/apply-local.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/server": "2.4.0",
     "@sop/core": "workspace:*",
-    "hono": "4.13.16"
+    "hono": "4.13.16",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "1.4.11",
