@@ -557,6 +557,8 @@ export function ThumbnailRail({ scheduler, pages, store, onSelect, onMove, onMen
       const first = nav.current?.querySelector<HTMLElement>(`[data-thumb-index="${d.pages[0]}"]`) ?? null;
       d.ghost = makeGhost(first, d.pages.length);
       setDragging(new Set(d.pages));
+      // A page dragged from outside the picked ones moves alone: the others are let go, as in a filmstrip.
+      if (!selected.has(d.pages[0]) && selected.size > 0) setSelected(new Set());
       d.frame = requestAnimationFrame(tick);
     }
     if (d.ghost) d.ghost.style.transform = `translate(${d.x + 12}px, ${d.y + 8}px)`;
