@@ -50,6 +50,12 @@ export const badgeTitle = (b: BadgeState): string => (b.attention === 'waiting' 
 // A second source (CL11): sync has stopped and needs the owner (signed out, or refused). A backup waiting for its click outranks it.
 // Both are remembered in session storage, so a restarted service worker draws the same badge.
 const SYNC_KEY = 'sop-badge-sync';
+
+/** For the toolbar menu (CL12): why sync has stopped, while the icon shows it; null when sync needs nothing. */
+export async function syncBadgeTitle(): Promise<string | null> {
+  const t = await remembered<unknown>(SYNC_KEY);
+  return typeof t === 'string' && t !== '' ? t : null;
+}
 const BACKUP_KEY = 'sop-badge-backup';
 
 async function remembered<T>(key: string): Promise<T | null> {

@@ -49,10 +49,23 @@ export interface RegisteredDevice {
   head: number;
 }
 
+/** A device that syncs with the owner's cloud (GET /api/devices). */
+export interface CloudDevice {
+  id: string;
+  name: string;
+  kind: string;
+  createdAt: number;
+  lastSeenAt: number | null;
+  /** The device of the sign-in that asked. */
+  thisDevice: boolean;
+}
+
 export interface SyncClient {
   readonly server: string;
   /** POST /api/devices. Send the stored id again after a new sign-in to keep it. */
   registerDevice(o: { id?: string | null; name?: string }): Promise<RegisteredDevice>;
+  /** GET /api/devices: every device that syncs, most recently seen first. */
+  devices(): Promise<CloudDevice[]>;
   head(): Promise<number>;
   pull(since: number, limit?: number): Promise<PullResponse>;
   push(entries: readonly ChangeEntry[]): Promise<PushResponse>;
@@ -129,6 +142,7 @@ export function createSyncClient(o: SyncClientOptions): SyncClient {
   return {
     server: origin,
     registerDevice: ({ id, name }) => call<RegisteredDevice>('POST', '/api/devices', { ...(id ? { id } : {}), ...(name ? { name } : {}) }),
+    devices: async () => (await call<{ devices: CloudDevice[] }>('GET', '/api/devices')).devices,
     head: async () => (await call<{ head: number }>('GET', '/api/sync/head')).head,
     pull: (since, limit = MAX_PULL_LIMIT) => call<PullResponse>('GET', `/api/sync/pull?since=${Math.max(0, Math.floor(since))}&limit=${Math.min(MAX_PULL_LIMIT, Math.max(1, limit))}`),
     push: (entries) => {

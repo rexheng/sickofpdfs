@@ -138,3 +138,9 @@
 .line > :first-child {
   flex: none;
 }
+
+/* CL12: "Sync has stopped", while the icon's badge says so. It opens Settings → Cloud. */
+.error,
+.error .icon {
+  color: var(--gm3-sys-color-error);
+}

@@ -13,6 +13,8 @@ export type CloudMessage =
   /** A fresh access token for the sync engine. Offscreen document only. */
   | { type: 'cloud:token'; refresh?: boolean }
   | { type: 'cloud:status' }
+  /** Settings → Cloud: the devices that sync (asked of the connected server, only while signed in). Library page only. */
+  | { type: 'cloud:devices' }
   /** A reading was forgotten here: forget it in the cloud too (D2). Queued, and retried until it is done. */
   | { type: 'cloud:forget'; sha: string };
 
@@ -25,6 +27,16 @@ export interface CloudStatus {
   forgetsWaiting: number;
 }
 
+/** A device that syncs with the owner's cloud, as Settings → Cloud lists it. */
+export interface CloudDeviceInfo {
+  id: string;
+  name: string;
+  kind: string;
+  createdAt: number;
+  lastSeenAt: number | null;
+  thisDevice: boolean;
+}
+
 export type CloudFailure = 'not-connected' | 'signed-out' | 'offline' | 'cancelled' | 'refused' | 'bad-answer' | 'not-allowed' | 'bad-request';
 
 export type CloudReply<T> = ({ ok: true } & T) | { ok: false; reason: CloudFailure; message: string };
@@ -34,12 +46,13 @@ export interface CloudReplies {
   'cloud:signout': CloudReply<{ status: CloudStatus }>;
   'cloud:token': CloudReply<{ token: string; server: string; expiresAt: number }>;
   'cloud:status': CloudReply<{ status: CloudStatus }>;
+  'cloud:devices': CloudReply<{ devices: CloudDeviceInfo[] }>;
   'cloud:forget': CloudReply<{ queued: boolean }>;
 }
 
 export type CloudReplyOf<M extends CloudMessage> = CloudReplies[M['type']];
 
-const TYPES: ReadonlySet<string> = new Set(['cloud:signin', 'cloud:signout', 'cloud:token', 'cloud:status', 'cloud:forget']);
+const TYPES: ReadonlySet<string> = new Set(['cloud:signin', 'cloud:signout', 'cloud:token', 'cloud:status', 'cloud:devices', 'cloud:forget']);
 
 /** The message, if it is a well-formed cloud message; null otherwise. */
 export function asCloudMessage(x: unknown): CloudMessage | null {
@@ -55,6 +68,8 @@ export function asCloudMessage(x: unknown): CloudMessage | null {
       return { type: 'cloud:token', refresh: m.refresh === true };
     case 'cloud:status':
       return { type: 'cloud:status' };
+    case 'cloud:devices':
+      return { type: 'cloud:devices' };
     case 'cloud:forget':
       return typeof m.sha === 'string' && /^[0-9a-f]{64}$/.test(m.sha) ? { type: 'cloud:forget', sha: m.sha } : null;
     default:
@@ -90,6 +105,8 @@ export async function cloudSignIn(server: string): Promise<CloudReplyOf<{ type: 
 
 export const cloudSignOut = (disconnect = false) => send({ type: 'cloud:signout', disconnect });
 export const cloudStatus = () => send({ type: 'cloud:status' });
+/** Settings → Cloud: the devices that sync. Sends nothing when no server is connected or nobody is signed in. */
+export const cloudDevices = () => send({ type: 'cloud:devices' });
 
 /** For the offscreen sync engine: a fresh access token, or why there is none. */
 export const cloudToken = (refresh = false) => send({ type: 'cloud:token', refresh });

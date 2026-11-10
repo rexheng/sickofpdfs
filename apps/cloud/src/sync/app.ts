@@ -2,6 +2,7 @@
 // library's session cookie (whose changes also need our Origin and the CSRF token). A connector token never works here.
 //
 //   POST   /api/devices                          register this sign-in's device (or bind a known one to it)
+//   GET    /api/devices                          the devices that sync (CL12: the extension's Settings → Cloud lists them)
 //   GET    /api/sync/head                        { head }
 //   GET    /api/sync/pull?since=&limit=          PullResponse
 //   POST   /api/sync/push                        PushRequest -> PushResponse (with `rejected`, CA10)
@@ -117,6 +118,19 @@ syncApp.post('/api/devices', sync, async (c) => {
   ]);
   await audit(c.env, { actor: 'owner', clientId: auth.clientId, action: 'device.create', target: kind });
   return c.json({ device: id, head }, 201, noStore);
+});
+
+syncApp.get('/api/devices', sync, async (c) => {
+  const auth = c.get('auth');
+  const rows = await c.env.META.prepare("SELECT id, name, kind, created_at, last_seen_at FROM device WHERE kind <> 'claude' ORDER BY COALESCE(last_seen_at, created_at) DESC LIMIT 50").all<{
+    id: string;
+    name: string;
+    kind: string;
+    created_at: number;
+    last_seen_at: number | null;
+  }>();
+  const devices = (rows.results ?? []).map((r) => ({ id: r.id, name: r.name, kind: r.kind, createdAt: r.created_at, lastSeenAt: r.last_seen_at, thisDevice: r.id === auth?.device }));
+  return c.json({ devices }, 200, noStore);
 });
 
 // ─── Head, pull, push ──────────────────────────────────────────────────────────────────────────────────────────────────

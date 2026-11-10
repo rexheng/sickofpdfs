@@ -11,6 +11,8 @@ import '@sop/ui/base.css';
 import { Icon, type IconName, registerFonts } from '@sop/ui';
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import { openLibrary } from '../background/open-library';
+import { syncBadgeTitle } from '../backup/badge';
+import { CLOUD_SETTINGS_HASH } from '../sync/status';
 import { buildViewerUrl, VIEWER_PATH } from '../shared/viewer-url';
 import { connectStore } from '../store/client';
 import { type Article, articleTextHash, type ReadResult } from './article';
@@ -103,7 +105,13 @@ export function ActionMenu() {
   const [target, setTarget] = useState<Target>({ kind: 'loading' });
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  /** CL12: why sync has stopped, while the icon's badge says so; its row opens Settings → Cloud. */
+  const [syncStopped, setSyncStopped] = useState<string | null>(null);
   const list = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    syncBadgeTitle().then(setSyncStopped, () => setSyncStopped(null));
+  }, []);
 
   useEffect(() => {
     void registerFonts().catch(() => {});
@@ -164,6 +172,12 @@ export function ActionMenu() {
     }
   };
 
+  const showCloud = () => {
+    void openLibrary(CLOUD_SETTINGS_HASH)
+      .catch(() => chrome.tabs.create({ url: chrome.runtime.getURL(`library.html${CLOUD_SETTINGS_HASH}`) }))
+      .finally(() => window.close());
+  };
+
   const showLibrary = () => {
     void openLibrary()
       .catch(() => chrome.tabs.create({ url: chrome.runtime.getURL('library.html') }))
@@ -202,6 +216,7 @@ export function ActionMenu() {
             <Row icon="library_add" label="Save this page to library" onClick={() => void savePage()} />
           ))}
         <Row icon="library_books" label="Open library" onClick={showLibrary} disabled={busy} />
+        {syncStopped !== null && <Row icon="error" label="Sync has stopped" title={`${syncStopped} Click to open Settings → Cloud.`} tone="error" onClick={showCloud} disabled={busy} />}
       </div>
       {line !== null && (
         <p className={styles.line} role={target.kind === 'closed' ? undefined : 'alert'}>
@@ -213,9 +228,9 @@ export function ActionMenu() {
   );
 }
 
-function Row({ icon, label, onClick, disabled = false }: { icon: IconName; label: string; onClick(this: void): void; disabled?: boolean }) {
+function Row({ icon, label, onClick, disabled = false, title, tone }: { icon: IconName; label: string; onClick(this: void): void; disabled?: boolean; title?: string; tone?: 'error' }) {
   return (
-    <button type="button" role="menuitem" className={styles.row} onClick={onClick} disabled={disabled}>
+    <button type="button" role="menuitem" className={tone === 'error' ? `${styles.row} ${styles.error}` : styles.row} onClick={onClick} disabled={disabled} title={title}>
       <Icon name={icon} size={20} className={styles.icon} />
       <span className={styles.label}>{label}</span>
     </button>

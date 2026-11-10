@@ -7,6 +7,9 @@
 // Plain data both ways; never a token, a title, a file name or a note.
 import type { EngineStatus } from '@sop/core/sync-client';
 
+/** Settings → Cloud (CL12): the library's sync chip, its stopped pill and the toolbar menu's "Sync has stopped" open it. */
+export const CLOUD_SETTINGS_HASH = '#/settings/cloud';
+
 export const SYNC_STATUS_CHANNEL = 'sop-sync-status';
 /** The service worker's message: show or clear the "sync has stopped" badge. */
 export const SYNC_BADGE_MESSAGE = 'sop-sync:badge';

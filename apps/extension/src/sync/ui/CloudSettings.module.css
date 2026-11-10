@@ -1,0 +1,166 @@
+/* Settings → Cloud (CL12): the Settings rows (SettingsSection.module.css), plus the waitlist card (Drive's tonal surface, like its
+   storage card), the small "Connect my own server" link, the server field, the status line's colours and the two "what syncs" lists. */
+.loading {
+  min-block-size: var(--row-h);
+}
+
+/* "Cloud sync is coming": an icon in a round tile, the words, and the tonal button at the end. It wraps on a narrow window. */
+.waitlist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: center;
+  margin: 0 0 var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--shape-content-card);
+  background-color: var(--gm3-sys-color-surface-container-low);
+}
+
+.waitlistIcon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--space-10);
+  block-size: var(--space-10);
+  border-radius: var(--shape-full);
+  background-color: var(--gm3-sys-color-primary-container);
+  color: var(--gm3-sys-color-on-primary-container);
+}
+
+.waitlistText {
+  display: flex;
+  flex: 1 1 calc(var(--space-16) * 4);
+  flex-direction: column;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+
+.waitlistTitle {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-lib-subhead);
+  font-variation-settings: "opsz" 18;
+}
+
+.waitlistBody {
+  margin: 0;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-body);
+  font-variation-settings: "opsz" 17;
+}
+
+/* A small link, not a button that competes with Join the waitlist. */
+.ownLink {
+  align-self: flex-start;
+  margin: 0 0 var(--space-3) var(--space-1);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gm3-sys-color-primary);
+  font: var(--type-row);
+  font-variation-settings: "opsz" 17;
+  text-decoration: underline;
+  text-underline-offset: var(--space-1);
+  cursor: pointer;
+}
+
+.ownLink:focus-visible {
+  border-radius: var(--shape-field);
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* The server field and its buttons, then one line under them: a hint, the sign-in under way, or why it did not work. */
+.entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-block: var(--space-3);
+  border-block-end: 1px solid var(--drive-row-divider);
+}
+
+.entryLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.serverField {
+  flex: 1 1 calc(var(--space-16) * 4);
+  max-inline-size: calc(var(--space-16) * 7);
+}
+
+.status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-block-size: var(--space-5);
+}
+
+.status:empty {
+  display: none;
+}
+
+.hint {
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-row);
+  font-variation-settings: "opsz" 17;
+}
+
+.error {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  color: var(--gm3-sys-color-error);
+  font: var(--type-row);
+  font-variation-settings: "opsz" 17;
+}
+
+/* The status line: green-blue tick when all is synced, the error colour when sync has stopped. */
+.iconOk {
+  color: var(--gm3-sys-color-primary);
+}
+
+.iconProblem,
+.labelProblem {
+  color: var(--gm3-sys-color-error);
+}
+
+.iconMuted {
+  color: var(--gm3-sys-color-on-surface-variant);
+}
+
+/* What syncs, and what never leaves: two short lists side by side, one under the other on a narrow window. */
+.lists {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(var(--space-16) * 4), 1fr));
+  gap: var(--space-4) var(--space-8);
+  padding-block: var(--space-3);
+}
+
+.listHead {
+  margin: 0 0 var(--space-2);
+  color: var(--gm3-sys-color-on-surface);
+  font: var(--type-row-name);
+  font-variation-settings: "opsz" 17;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  color: var(--gm3-sys-color-on-surface-variant);
+  font: var(--type-row);
+  font-variation-settings: "opsz" 17;
+}

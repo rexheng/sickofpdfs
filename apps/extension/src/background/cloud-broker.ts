@@ -3,7 +3,8 @@
 // sync engine, and sends the queued Forgets (local-only/cloud-forget.ts).
 //
 // Who may ask what:
-//   cloud:signin, cloud:signout   the library page (Settings → Cloud) only
+//   cloud:signin, cloud:signout,
+//   cloud:devices                 the library page (Settings → Cloud) only
 //   cloud:token                   the offscreen document only (the sync engine); no page, tab or content script ever gets a token
 //   cloud:status, cloud:forget    any of this extension's own pages
 // A content script runs in a web page's origin and is refused everything here. So is any other extension.
@@ -13,7 +14,7 @@
 import { beginSignIn, createSyncClient, finishSignIn, readRedirect, serverOrigin, SignInError, SyncHttpError } from '@sop/core/sync-client';
 import { accessToken, cloudAuthState, connectedServer, EXTENSION_CLIENT_ID, saveSignIn, signOut } from '../local-only/cloud-auth';
 import { drainForgets, enqueueForget, queuedForgets } from '../local-only/cloud-forget';
-import { asCloudMessage, type CloudFailure, type CloudMessage, type CloudReplies, type CloudStatus } from '../shared/cloud-messages';
+import { asCloudMessage, type CloudDeviceInfo, type CloudFailure, type CloudMessage, type CloudReplies, type CloudStatus } from '../shared/cloud-messages';
 import { OFFSCREEN_PATH } from '../store/transport';
 import { setSyncBadge } from '../backup/badge';
 import { wakeSync } from '../sync/scheduler';
@@ -185,6 +186,30 @@ async function handle(m: CloudMessage, sender: Sender): Promise<CloudReplies[Clo
       if (m.disconnect === true) void setSyncBadge(null).catch(() => {});
       else void wakeSync();
       return { ok: true, status: await status() };
+
+    case 'cloud:devices': {
+      if (!fromLibrary(sender)) return fail('not-allowed', 'Only Settings lists devices.');
+      // Not connected or signed out: nothing is asked of any server.
+      const server = await connectedServer();
+      if (server === null) return fail('not-connected', 'No cloud is connected.');
+      const first = await accessToken();
+      if (!first.ok) return fail(first.reason, first.reason === 'offline' ? 'The server could not be reached.' : 'Signed out of the cloud.');
+      try {
+        const client = createSyncClient({ server, token: async () => { const t = await accessToken(); return t.ok ? t.token : null; } });
+        const devices: CloudDeviceInfo[] = (await client.devices()).slice(0, 50).map((d) => ({
+          id: String(d.id),
+          name: String(d.name).slice(0, 100),
+          kind: String(d.kind),
+          createdAt: Number(d.createdAt),
+          lastSeenAt: typeof d.lastSeenAt === 'number' ? d.lastSeenAt : null,
+          thisDevice: d.thisDevice === true,
+        }));
+        return { ok: true, devices };
+      } catch (e) {
+        if (e instanceof SyncHttpError && e.failure === 'signed-out') return fail('signed-out', 'Signed out of the cloud.');
+        return fail('offline', 'The server could not be reached.');
+      }
+    }
 
     case 'cloud:forget': {
       if (!fromOwnPage(sender)) return fail('not-allowed', 'Not from this extension.');

@@ -4,6 +4,7 @@
 import type { IconName } from '@sop/ui';
 import type { ComponentType } from 'react';
 import { ClaudeSettingsSection } from '../../claude-settings/ClaudeSettingsSection';
+import { CloudSettings } from '../../sync/ui/CloudSettings';
 import { DownloadWithNotesSection } from '../pages/Settings/sections/DownloadWithNotes';
 import { LibraryRulesSection } from '../pages/Settings/sections/LibraryRules';
 import { OnlineLookupsSection } from '../pages/Settings/sections/OnlineLookups';
@@ -29,6 +30,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: 'downloads', label: 'Downloads', icon: 'export_notes', Component: DownloadWithNotesSection },
   { id: 'lookups', label: 'Online lookups', icon: 'public', Component: OnlineLookupsSection },
   { id: 'claude', label: 'Claude', icon: 'auto_awesome', Component: ClaudeSettingsSection },
+  { id: 'cloud', label: 'Cloud', icon: 'cloud_done', Component: CloudSettings },
   { id: 'backup', label: 'Backup', icon: 'backup', Component: BackupSection },
   { id: 'restore', label: 'Restore', icon: 'settings_backup_restore', Component: RestoreSection },
 ];
