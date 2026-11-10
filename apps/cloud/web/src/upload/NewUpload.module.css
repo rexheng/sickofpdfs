@@ -1,0 +1,58 @@
+.picker {
+  display: none;
+}
+
+/* Drive's phone "+": a 56 px rounded square, above the bottom bar at the right. */
+.fab {
+  position: fixed;
+  inset-block-end: calc(var(--phone-nav-h) + var(--space-4) + env(safe-area-inset-bottom));
+  inset-inline-end: var(--space-4);
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--space-14);
+  block-size: var(--space-14);
+  border: 0;
+  border-radius: var(--space-4);
+  background-color: var(--gm3-sys-color-primary-container);
+  box-shadow: var(--phone-fab-shadow);
+  color: var(--gm3-sys-color-on-primary-container);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fab:disabled {
+  opacity: 0.5;
+}
+
+.fab:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* Drive's drop frame: the page tinted, with a blue outline and a note at the bottom. */
+.drop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: var(--space-8);
+  border: var(--focus-ring-width) solid var(--gm3-sys-color-primary);
+  background-color: color-mix(in srgb, var(--gm3-sys-color-primary) 8%, transparent);
+  pointer-events: none;
+}
+
+.dropText {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin: 0;
+  padding: var(--space-3) var(--space-6);
+  border-radius: var(--space-6);
+  background-color: var(--gm3-sys-color-primary);
+  color: var(--gm3-sys-color-on-primary);
+  font: var(--type-row-name);
+}

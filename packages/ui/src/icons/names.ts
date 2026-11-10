@@ -133,6 +133,10 @@ export const ICON_NAMES = [
   'cloud_off',
   'logout',
   'devices',
+  // Release 2 (CL15): the web library's upload panel
+  'check_circle',
+  'expand_more',
+  'expand_less',
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

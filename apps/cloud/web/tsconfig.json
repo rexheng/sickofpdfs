@@ -2,7 +2,7 @@
   "extends": "../../extension/tsconfig.json",
   "compilerOptions": {
     "types": ["chrome", "node", "vite/client"],
-    "paths": { "@ext/*": ["../../extension/src/*"] }
+    "paths": { "@ext/*": ["../../extension/src/*"], "@mobile/*": ["../../mobile/src/*"] }
   },
   "include": ["src", "vite.config.ts"],
   "exclude": ["node_modules", "dist"]

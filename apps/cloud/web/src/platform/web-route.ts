@@ -15,8 +15,28 @@ export function readingHref(sha: string, o: { page?: number | null; note?: strin
   return `/d/${sha}${page}${note}`;
 }
 
+/** The web viewer's page (CL14), served by the Worker for the owner only. */
+export const VIEWER_PAGE = '/viewer';
+
+/** The viewer for a reading: `/viewer?doc=<sha>&name=<title>[&note=…][&q=…][#page=N]` (the extension viewer's own address form). */
+export function webViewerHref(sha: string, o: { page?: number | null; note?: string | null; name?: string | null; q?: string | null } = {}): string {
+  const query = [
+    `doc=${sha}`,
+    o.name ? `name=${encodeURIComponent(o.name)}` : '',
+    o.note ? `note=${encodeURIComponent(o.note)}` : '',
+    o.q ? `q=${encodeURIComponent(o.q)}` : '',
+  ].filter((x) => x !== '');
+  const page = o.page !== null && o.page !== undefined && o.page >= 1 ? `#page=${Math.floor(o.page)}` : '';
+  return `${VIEWER_PAGE}?${query.join('&')}${page}`;
+}
+
 /** Goes to a page of the web library without reloading. Back comes back. */
 export function goTo(href: string, o: { replace?: boolean } = {}): void {
+  // The viewer is its own page: a library address from there is a real navigation.
+  if (location.pathname === VIEWER_PAGE) {
+    location.assign(href);
+    return;
+  }
   if (o.replace === true) history.replaceState(null, '', href);
   else history.pushState(null, '', href);
   window.dispatchEvent(new Event(CHANGED));

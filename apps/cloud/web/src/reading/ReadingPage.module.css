@@ -50,6 +50,13 @@
   align-items: flex-end;
 }
 
+.openButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
 .openSoon {
   color: var(--gm3-sys-color-on-surface-variant);
   font: var(--type-tooltip);

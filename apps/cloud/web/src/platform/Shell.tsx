@@ -1,13 +1,13 @@
 // The web's version of apps/extension/src/library/shell/Shell.tsx (swapped in by vite.config.ts): the library's frame.
-//   - On a computer: Drive's frame, as in Chrome (our mark and the search bar on top, the pages and tags on the left, the page
-//     in the white card), with the sync status and Settings at the top right. There is no "+ New" yet: upload on the web comes
-//     with the next round.
+//   - On a computer: Drive's frame, as in Chrome (our mark and the search bar on top, "+ New" with Upload PDF (CL15), the pages
+//     and tags on the left, the page in the white card), with the sync status and Settings at the top right.
 //   - On a phone (720 px or narrower): a top bar with the page's name, search, the sync status and the other pages, the page in
-//     Drive's white card, and a bottom bar with Home, My library, Recent and Notes.
+//     Drive's white card, a bottom bar with Home, My library, Recent and Notes, and Drive's round "+" to upload a PDF.
+// Uploads show in Drive's panel at the bottom right, and a PDF dropped on the page is uploaded too (upload/).
 // A reading's own page (/d/<sha>) is drawn in the same frame, in place of the library page the address would otherwise show.
 import { DropdownMenu, Icon, IconButton } from '@sop/ui';
 import { LibraryShell, NavList, ProductMark, SearchPill } from '@sop/ui/library';
-import { type ReactNode, type Ref, useContext, useEffect, useImperativeHandle, useSyncExternalStore } from 'react';
+import { type ReactNode, type Ref, useContext, useEffect, useImperativeHandle, useRef, useSyncExternalStore } from 'react';
 import { LibraryContext } from '@ext/library/app/context';
 import { palette } from '@ext/shared/palette';
 import type { UploadOutcome } from '@ext/library/data/types';
@@ -16,6 +16,8 @@ import type { NewMenuHandle } from '@ext/library/shell/NewMenu';
 import { TagsNav } from '@ext/library/tags/TagsNav';
 import { useTagInAddress } from '@ext/library/tags/tag-route';
 import { ReadingPage } from '../reading/ReadingPage';
+import { DropToUpload, UploadFab, UploadInput, type UploadPicker, WebNewButton } from '../upload/NewUpload';
+import { UploadPanel } from '../upload/UploadPanel';
 import { SignOutForm } from '../settings/SignOut';
 import { SyncStatusChip } from './SyncStatus';
 import { useWebRoute } from './web-route';
@@ -54,7 +56,6 @@ export function Shell({ route, onNotify, newMenu, children }: ShellProps) {
   const web = useWebRoute();
   const phone = usePhone();
   const addressTag = useTagInAddress();
-  // "+ New" → Open file has nothing to open on the web yet.
   // "/" opens the search, as in Drive and in the extension's library (not while typing in a field).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -67,15 +68,34 @@ export function Shell({ route, onNotify, newMenu, children }: ShellProps) {
     addEventListener('keydown', onKey);
     return () => removeEventListener('keydown', onKey);
   }, []);
-  useImperativeHandle(newMenu, () => ({ pickFile: () => onNotify('Adding PDFs on the web comes soon. Save them in Chrome for now.') }), [onNotify]);
+  const picker = useRef<UploadPicker>(null);
+  // The library's "open a file" (Ctrl+O, an empty library's button) uploads on the web: there is no viewer tab to open it in.
+  useImperativeHandle(newMenu, () => ({ pickFile: () => picker.current?.pick() }), []);
+  void onNotify;
   // The reading's page needs the library: until it has started, the empty card the library shows while it opens.
   const started = useContext(LibraryContext) !== null;
   const page = web.kind === 'reading' && started ? <ReadingPage key={web.sha} sha={web.sha} page={web.page} note={web.note} /> : children;
   const current = web.kind === 'reading' ? null : route;
-  return phone ? <PhoneFrame route={current}>{page}</PhoneFrame> : <DesktopFrame route={current} tag={current === 'library' ? addressTag : null}>{page}</DesktopFrame>;
+  const pick = () => picker.current?.pick();
+  return (
+    <>
+      {phone ? (
+        <PhoneFrame route={current} upload={<UploadFab onPick={pick} disabled={!started} />}>
+          {page}
+        </PhoneFrame>
+      ) : (
+        <DesktopFrame route={current} tag={current === 'library' ? addressTag : null} newButton={<WebNewButton onPick={pick} disabled={!started} />}>
+          {page}
+        </DesktopFrame>
+      )}
+      <UploadInput ref={picker} />
+      <DropToUpload enabled={started} />
+      <UploadPanel />
+    </>
+  );
 }
 
-function DesktopFrame({ route, tag, children }: { route: RouteId | null; tag: string | null; children: ReactNode }) {
+function DesktopFrame({ route, tag, newButton, children }: { route: RouteId | null; tag: string | null; newButton: ReactNode; children: ReactNode }) {
   return (
     <LibraryShell
       mark={
@@ -90,7 +110,7 @@ function DesktopFrame({ route, tag, children }: { route: RouteId | null; tag: st
           <IconButton icon="settings" label="Settings" size={40} onClick={() => (location.hash = routeHref('settings'))} />
         </>
       }
-      newButton={null}
+      newButton={newButton}
       nav={
         <>
           <NavList items={NAV_ITEMS} current={tag === null ? route : null} label="Library" />
@@ -106,7 +126,7 @@ function DesktopFrame({ route, tag, children }: { route: RouteId | null; tag: st
 /** The bottom bar's pages; the rest are in the top bar's menu. */
 const TABS: RouteId[] = ['home', 'library', 'recent', 'notes'];
 
-function PhoneFrame({ route, children }: { route: RouteId | null; children: ReactNode }) {
+function PhoneFrame({ route, upload, children }: { route: RouteId | null; upload: ReactNode; children: ReactNode }) {
   const more = ROUTES.filter((r) => !TABS.includes(r.id));
   return (
     <div className={styles.phone}>
@@ -126,6 +146,7 @@ function PhoneFrame({ route, children }: { route: RouteId | null; children: Reac
         <SignOutForm id="sop-sign-out" hidden />
       </header>
       <main className={styles.phoneMain}>{children}</main>
+      {upload}
       <nav className={styles.tabs} aria-label="Library">
         {TABS.map((id) => {
           const r = ROUTES.find((x) => x.id === id)!;

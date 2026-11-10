@@ -1,0 +1,12 @@
+/* The status slot of the web viewer's header: the library chip, then the cloud's save status. */
+.status {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-inline-size: 0;
+}
+
+/* The cloud save status, in the dark header colours. */
+.sync {
+  display: inline-flex;
+}

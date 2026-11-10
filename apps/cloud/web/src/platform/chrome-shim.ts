@@ -1,11 +1,11 @@
-// The few `chrome.*` calls the extension's library makes, answered inside the web library (adapted from the phone app's shim,
+// The few `chrome.*` calls the extension's library and viewer make, answered inside the web library (adapted from the phone app's shim,
 // apps/mobile/src/platform/chrome-shim.ts). It must be the first module the page loads: several extension modules read `chrome`
 // as soon as they load.
 //
 // A "tab" is this page: opening the viewer for a reading goes to the reading's page here (Back comes back), and a web link opens
 // in a new browser tab, only when the owner clicked it. Nothing here sends anything over the network.
 import { parseViewerUrl } from '@ext/shared/viewer-url';
-import { goTo, readingHref } from './web-route';
+import { goTo, readingHref, VIEWER_PAGE, webViewerHref } from './web-route';
 
 type Listener = (...args: never[]) => unknown;
 
@@ -131,7 +131,10 @@ export function isAppUrl(url: string): boolean {
 export function navigate(url: string): void {
   if (url.startsWith(appUrl('viewer.html'))) {
     const p = parseViewerUrl(url);
-    if (typeof p.doc === 'string' && /^[0-9a-f]{64}$/.test(p.doc)) goTo(readingHref(p.doc, { page: p.page, note: p.note ?? null }));
+    if (typeof p.doc !== 'string' || !/^[0-9a-f]{64}$/.test(p.doc)) return;
+    // In the viewer (CL14), another reading opens in the viewer; in the library, on its own page.
+    if (location.pathname === VIEWER_PAGE) location.assign(webViewerHref(p.doc, { page: p.page, note: p.note ?? null, name: p.name ?? null, q: p.q ?? null }));
+    else goTo(readingHref(p.doc, { page: p.page, note: p.note ?? null }));
     return;
   }
   if (isAppUrl(url)) {
@@ -144,8 +147,25 @@ export function navigate(url: string): void {
 /** The one "tab": the page on screen. */
 const thisTab = () => ({ id: 1, index: 0, windowId: 1, active: true, url: location.href, incognito: false });
 
-/** No service worker answers here: every message the library sends gets "nothing". */
-const answer = (): unknown => undefined;
+/**
+ * The answers the extension's service worker would give the viewer (shared/messages.ts); every other message gets "nothing".
+ * The web viewer only ever opens the owner's own readings from the cloud, never an address a web page gave it.
+ */
+function answer(message: unknown): unknown {
+  const m = message as { type?: unknown };
+  switch (m.type) {
+    case 'takeover:prepare-fetch':
+      return { known: false, referer: null, back: null, pageTitle: null };
+    case 'takeover:open-in-chrome':
+      return { ok: false };
+    case 'takeover:embedded':
+      return { opened: false };
+    case 'takeover:can-take-over':
+      return false;
+    default:
+      return undefined;
+  }
+}
 
 const manifest = { manifest_version: 3, name: 'sickofpdfs', version: __SOP_APP_VERSION__, description: 'Your sickofpdfs library on the web.' };
 
@@ -154,7 +174,7 @@ const shim = {
     id: 'sickofpdfs-web',
     getURL: appUrl,
     getManifest: () => ({ ...manifest }),
-    sendMessage: () => Promise.resolve(answer()),
+    sendMessage: (message: unknown) => Promise.resolve(answer(message)),
     onMessage: event(),
     onStartup: event(),
     onInstalled: event(),

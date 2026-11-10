@@ -49,6 +49,11 @@ export function startWebSync(store: StoreClient): WebSync {
   let again = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let registered = false;
+  /**
+   * Readings forgotten in this tab ("Forget this PDF", "Delete forever"): the cloud forgets them too, with their PDF, text and
+   * notes (D2), at the start of the next round. Kept until the cloud says so, and counted as not saved until then.
+   */
+  const forgetting = new Set<string>();
 
   async function round(): Promise<void> {
     const before = await store.unsyncedCount().catch(() => 0);
@@ -58,10 +63,16 @@ export function startWebSync(store: StoreClient): WebSync {
         await client.registerDevice({});
         registered = true;
       }
+      for (const sha of [...forgetting]) {
+        await client.forget(sha);
+        forgetting.delete(sha);
+      }
       await runSyncRound(store, client);
-      const unsynced = await store.unsyncedCount().catch(() => 0);
+      const unsynced = (await store.unsyncedCount().catch(() => 0)) + forgetting.size;
       set({ state: unsynced > 0 ? 'saving' : 'saved', unsynced, lastSyncedAt: Date.now() });
-      if (unsynced > 0) again = true; // a batch waited on its reading: once more
+      // A batch waited on its reading: once more, but only while rounds still make progress (a PDF or its page text being
+      // uploaded counts as not saved yet, and must not start a round every moment until it is done).
+      if (unsynced > 0 && unsynced < before) again = true;
     } catch (e) {
       const unsynced = await store.unsyncedCount().catch(() => status.unsynced);
       if (e instanceof SyncHttpError) {
@@ -106,6 +117,7 @@ export function startWebSync(store: StoreClient): WebSync {
   // A change made in this tab (not one the sync itself applied): send it.
   store.onChange((c) => {
     if (c.origin === 'sync') return;
+    if (c.table === 'documents' && c.op === 'delete') for (const id of c.ids) if (/^[0-9a-f]{64}$/.test(id)) forgetting.add(id);
     set({ unsynced: status.unsynced + 1, state: status.state === 'loading' ? 'loading' : 'saving' });
     schedule(AFTER_CHANGE_MS);
   });

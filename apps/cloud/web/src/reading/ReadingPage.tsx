@@ -17,9 +17,10 @@ import { onWhat } from '@ext/library/pages/Notes/NoteCard';
 import notesStyles from '@ext/library/pages/Notes/Notes.module.css';
 import { shownTitle } from '@ext/shared/shown-title';
 import { routeHref } from '@ext/library/routes/routes';
-import { api } from '../sync/api';
+import { api, ownFetch } from '../sync/api';
 import { webLibrary } from '../sync/engine';
-import { goTo, readingHref } from '../platform/web-route';
+import { goTo, readingHref, webViewerHref } from '../platform/web-route';
+import { downloadPdf } from '../viewer/download';
 import { clearDraft, readDraft, writeDraft } from './drafts';
 import styles from './ReadingPage.module.css';
 
@@ -93,6 +94,7 @@ export function ReadingPage({ sha, page, note }: { sha: string; page: number | n
 
 function Reading({ loaded, title, tab, setTab, page, note }: { loaded: Loaded; title: string; tab: Tab; setTab: (t: Tab) => void; page: number | null; note: string | null }) {
   const { doc, link } = loaded;
+  const inCloud = usePdfInCloud(doc.id);
   const { notify } = useLibrary();
   const { store } = webLibrary();
   const noteCount = loaded.threads.length;
@@ -164,14 +166,42 @@ function Reading({ loaded, title, tab, setTab, page, note }: { loaded: Loaded; t
             )}
           </div>
           <div className={styles.open}>
-            <TextButton label="Open PDF" icon="open_in_new" variant="tonal" disabled />
-            <span className={styles.openSoon}>Opening the PDF here comes soon.</span>
+            {inCloud !== false ? (
+              <div className={styles.openButtons}>
+                <TextButton label="Download" icon="download" onClick={() => downloadPdf({ sha: doc.id, name: title })} />
+                <TextButton label="Open PDF" icon="open_in_new" variant="tonal" onClick={() => location.assign(webViewerHref(doc.id, { name: title, page }))} />
+              </div>
+            ) : (
+              <>
+                <TextButton label="Open PDF" icon="open_in_new" variant="tonal" disabled />
+                <span className={styles.openSoon}>The PDF isn’t in your cloud yet. It is on the computer you saved it on.</span>
+              </>
+            )}
           </div>
         </section>
         {tab === 'notes' ? <NotesTab loaded={loaded} focusNote={note} onShowPage={(p) => goTo(readingHref(doc.id, { page: p + 1 }), { replace: false })} /> : <TextTab doc={doc} loaded={loaded} startPage={page} />}
       </div>
     </ContentCard>
   );
+}
+
+/**
+ * Whether the cloud holds this reading's PDF (`blob_stored` is each copy's own, so the row cannot say): a HEAD to its address.
+ * Null while asking, or when the cloud could not say (then "Open PDF" is offered, and the viewer says what it finds).
+ */
+function usePdfInCloud(sha: string): boolean | null {
+  const [held, setHeld] = useState<boolean | null>(null);
+  useEffect(() => {
+    let live = true;
+    ownFetch(`/api/blobs/${sha}`, { method: 'HEAD', cache: 'no-store' }).then(
+      (r) => live && setHeld(r.ok ? true : r.status === 404 ? false : null),
+      () => live && setHeld(null),
+    );
+    return () => {
+      live = false;
+    };
+  }, [sha]);
+  return held;
 }
 
 function hostOf(link: string): string {

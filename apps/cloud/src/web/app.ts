@@ -1,6 +1,7 @@
 // CL13: the web library's side of the Worker.
 //
 //   GET /, /d/<sha>         the web library (a single-page app in the static assets). Signed out: to /login, coming back here.
+//   GET /viewer?doc=<sha>   CL14: the PDF viewer (viewer.html), the same way. The PDF itself comes from /api/blobs/<sha>.
 //   GET /api/web/overview   cookie only: today's use of the daily write budget, the devices that sync, and how big the
 //                           library is, for Settings.
 //   everything else         the static assets (apps/cloud/public, built from apps/cloud/web), with their security headers.
@@ -16,7 +17,10 @@ import { limits, utcDay } from '../sync/meter';
 
 export const webApp = new Hono<AppEnv>();
 
-/** The library loads only its own files; the database engine needs WebAssembly. The same list as web/public/_headers. */
+/**
+ * The library loads only its own files; the database engine and the PDF engine (PDFium) need WebAssembly, which
+ * 'wasm-unsafe-eval' allows without allowing eval. The same list as web/public/_headers.
+ */
 export const WEB_CSP =
   "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self'; img-src 'self' blob: data:; font-src 'self'; style-src 'self' 'unsafe-inline'; manifest-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'";
 
@@ -62,17 +66,19 @@ webApp.get('/api/web/overview', requireAuth({ cookieOnly: true }), async (c) => 
 });
 
 /** The library's own addresses: only for the owner's session. Anyone else is sent to sign in, and learns nothing. */
-async function libraryPage(c: Context<AppEnv>): Promise<Response> {
+async function libraryPage(c: Context<AppEnv>, asset = '/'): Promise<Response> {
   const s = await getSession(c.env, c.req.raw);
   if (!s || !isOwner(c.env, s.uid)) {
     const url = new URL(c.req.url);
     return new Response(null, { status: 302, headers: { location: `/login?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`, 'cache-control': 'no-store' } });
   }
-  const index = new URL('/', c.req.url); // the assets answer / with index.html (and /index.html with a redirect to /)
+  const index = new URL(asset, c.req.url); // the assets answer / with index.html (and /index.html with a redirect to /)
   return withSecurityHeaders(await c.env.ASSETS.fetch(new Request(index, { headers: c.req.raw.headers })), true);
 }
-webApp.get('/', libraryPage);
-webApp.get('/d/:sha{[0-9a-f]{64}}', libraryPage);
+webApp.get('/', (c) => libraryPage(c));
+webApp.get('/d/:sha{[0-9a-f]{64}}', (c) => libraryPage(c));
+// The assets answer /viewer with viewer.html (and /viewer.html with a redirect to /viewer).
+webApp.get('/viewer', (c) => libraryPage(c, '/viewer'));
 
 webApp.all('*', async (c) => {
   const res = await c.env.ASSETS.fetch(c.req.raw);
